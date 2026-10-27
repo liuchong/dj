@@ -15,7 +15,7 @@
 
 ## 原生变更
 
-resource.watch(resource_ref,idempotency_key)登记并请求平台文件事件订阅，resource.watch.get(watch_id)查询真实状态。必须有resource.subscribe权限；native_unknown不盲目重新订阅，blocked记录实际错误与权限信息。subscribed只表示平台订阅请求成功，event_channel=configured只表示本机配置，均不等于已看到真实新事件。
+resource.watch(resource_ref,idempotency_key)登记并请求平台文件事件订阅，resource.watch.get(watch_id)查询真实状态。必须有resource.subscribe权限；native_unknown不盲目重新订阅，blocked记录实际错误与权限信息。只有已确认的原生拒绝进入blocked；断线、5xx或无确定原生响应保留native_unknown。blocked在权限修复后可由调用方用新幂等键显式再申请；同一幂等键只读回原操作，native_unknown和subscribed不重新发起外部订阅。申请前在同一事务内重读并把状态持久预占为native_unknown，避免并发重复请求；不自动循环重试。subscribed只表示平台订阅请求成功，event_channel=configured只表示本机配置，均不等于已看到真实新事件。
 
 当前接收已登记文件的drive.file.bitable_record_changed_v1、drive.file.bitable_field_changed_v1、drive.file.edit_v1；经同一官方WebSocket、持久收件箱、Core形成resource.changed。记录变更按每个真实record_id保留action及字段变更，人员引用从原生after_value解析，重复事件不重复通知；删除记录不自动变成需要修复的任务。收到事件后失效相关内容缓存，不凭旧快照冒充当前内容。
 

@@ -26905,6 +26905,26 @@
       "requirements": [
         "SPEC-0006"
       ]
+    },
+    {
+      "case_id": "T38.resource-watch-retry.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/resources.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "acceptance_ids": [
+        "A01",
+        "A03"
+      ],
+      "requirements": [
+        "SPEC-0008"
+      ]
     }
   ],
   "source_extension_base": "c1eb7b1"
