@@ -120,6 +120,7 @@
               "sender.id"
               "sender.kind"
               "mentions.id"
+              "people.id" "topic.key" "topic.kind" "thread.id" "resource.kind" "resource.token" "resource.table_id" "resource.record_id"
               "sender.person_id"
               "addressed_bot"
               "addressed_self"
@@ -154,7 +155,7 @@
               (nativeGet limits "sources"))
             :event_kinds
             (arraySchema
-              (enumSchema "message.created" "message.edited" "message.deleted")
+              (enumSchema "message.created" "message.edited" "message.deleted" "resource.changed")
               (nativeGet limits "event_kinds")))
           (js-array "sources"))
         :predicate
@@ -188,7 +189,8 @@
   (defconst operationCatalog (new globalThis.Map))
   (defun permissionAction
     (name group)
-    (cond ((= group "working") "delivery.inspect")
+    (cond ((= group "resources") (if (= name "resource.watch") "resource.subscribe" "resource.read"))
+      ((= group "working") "delivery.inspect")
       ((= group "session_rules") (if (= name "session.rules.get") "session.rules.read" "session.rules.manage"))
       ((= group "filters") (if (= name "message.filter.get") "message.filter.inspect" "message.filter.manage"))
       ((js-call (js-array "subscription.pull" "subscription.ack") :includes name) "subscription.consume")
@@ -548,14 +550,26 @@
     (js-array)
     (Object/assign (js-object :event_id idSchema :message_ref idSchema) bodyProperties)
     (js-object :exclusive (js-array "event_id" "message_ref")))
+  (addOperation "resource.resolve" "resources" (js-array "connection_id" "url")
+    (js-object :connection_id idSchema :url (js-object :type "string" :minLength 1 :maxLength 2048) :corpus (enumSchema "local" "native"))
+    (js-object :result "lark_resource"))
+  (addOperation "resource.read" "resources" (js-array "resource_ref")
+    (js-object :resource_ref idSchema :view (enumSchema "content" "children" "fields" "records" "comments")
+      :table_id idSchema :record_id idSchema :range (js-object :type "string" :maxLength 128)
+      :corpus (enumSchema "local" "native") :cursor idSchema :limit (integerSchema 1 50)
+      :offset_bytes (integerSchema 0 (nativeGet NativeNumber "MAX_SAFE_INTEGER")) :max_bytes (integerSchema 1 32768))
+    (js-object :result "resource_page"))
+  (addOperation "resource.watch.get" "resources" (js-array "watch_id") (js-object :watch_id idSchema) (js-object :result "resource_watch"))
+  (addOperation "resource.watch" "resources" (js-array "resource_ref") (js-object :resource_ref idSchema)
+    (js-object :effect "accept" :result "resource_watch"))
   (addOperation "message.context" "message_context" (js-array)
     (js-object :event_id idSchema :message_ref idSchema :context_ref idSchema :native_message_id idSchema
-      :corpus (enumSchema "local" "native") :before (integerSchema 0 20) :after (integerSchema 0 20)
+      :scope (enumSchema "topic" "conversation") :corpus (enumSchema "local" "native") :before (integerSchema 0 20) :after (integerSchema 0 20)
       :offset_bytes (integerSchema 0 (nativeGet NativeNumber "MAX_SAFE_INTEGER")) :reference_depth (integerSchema 0 4) :max_bytes (integerSchema 1024 32768))
     (js-object :exclusive (js-array "event_id" "message_ref" "context_ref") :result "message_context"))
   (addOperation "message.history" "message_context" (js-array)
     (js-object :context_ref idSchema :conversation_ref idSchema :corpus (enumSchema "local" "native")
-      :time_range timeRangeSchema :order (enumSchema "asc" "desc") :limit (integerSchema 1 50)
+      :scope (enumSchema "topic" "conversation") :time_range timeRangeSchema :order (enumSchema "asc" "desc") :limit (integerSchema 1 50)
       :cursor idSchema :max_bytes (integerSchema 1024 32768))
     (js-object :exclusive (js-array "context_ref" "conversation_ref") :result "message_history"))
   (addOperation

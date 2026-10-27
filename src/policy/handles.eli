@@ -10,6 +10,7 @@
       "session_message"
       "message"
       "message_context"
+      "resource"
       "preview"
       "reply_context"
       "cursor"

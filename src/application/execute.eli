@@ -9,6 +9,7 @@
   (import "../policy/authorize.eli" authorize)
   (defconst resourceKinds
     (js-array
+      "resource_watch"
       "inbox"
       "inbox_pull"
       "message_filter"

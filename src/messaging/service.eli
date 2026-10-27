@@ -1,9 +1,10 @@
 (module dj.messaging.service
+  (import "./topics.eli" topicOf trackedTopic)
   (import "../delivery/working.eli" finishWorking)
   (import "../core/native.eli" nativeNullish nativeTypeOf nativeGet)
   (import "../core/errors.eli" success failure)
   (import "../core/types.eli"
-    conversationKey
+    conversationKey sourceReadAction
     stableJson
     addSeconds
     nextRevision
@@ -472,6 +473,7 @@
                   "conversation"
                   "sender"
                   "mentions"
+                  "people" "resource"
                   "reply_to"
                   "root_message_id"
                   "received_at"
@@ -523,6 +525,7 @@
                 (not (nativeGet page "complete")))
               :original_bytes
               (nativeGet (nativeGet event "content") "original_bytes" (nativeGet page "total_bytes"))))
+          (put projection :topic (trackedTopic context event))
           (put
             projection
             :content
@@ -562,7 +565,7 @@
               (and
                 event
                 connection
-                (can context "message.read" (nativeGet event "conversation")))
+                (can context (sourceReadAction (nativeGet event "conversation")) (nativeGet event "conversation")))
               (progn (setq djReturn5Value (failure "forbidden")) (throw djReturn5Token)))
             (unless
               (and

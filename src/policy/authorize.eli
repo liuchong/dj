@@ -78,7 +78,7 @@
                       "session_key"
                       "connection_id"
                       "native_chat_id"
-                      "native_thread_id")
+                      "native_thread_id" "kind" "resource_kind" "resource_token" "table_id" "record_id")
                     :includes
                     field)
                   (object-has? resource field)

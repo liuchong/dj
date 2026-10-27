@@ -92,6 +92,7 @@
     "managed_slots"
     "profile_id"
     "profile_id instance_id instance_epoch launch_token state")
+  (defineTable "resource_watches" "watch_id" "watch_id connection_id identity_revision resource_token state")
   (defineTable
     "sessions"
     "session_key"

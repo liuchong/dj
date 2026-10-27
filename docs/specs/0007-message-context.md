@@ -25,3 +25,11 @@ DJ持久接收消息，自动向订阅会话提供相关前后文、原生引用
 平台补取缓存继承正文保留时长，全局最多10000条，超限只淘汰可重建的上下文缓存，不删除原始事件或用户资料。查询始终公开有限覆盖，缺失较早历史、引用、删除记录或平台不可见消息不能被描述为完整历史。
 
 官方接口依据：[读取消息](https://open.larksuite.com/document/server-docs/im-v1/message/get)、[读取会话历史](https://open.larksuite.com/document/server-docs/im-v1/message/list)。
+
+## 话题与thread归属
+
+通知、消息投影和context公开topic：稳定topic_key、kind、native_thread_id、root_message_id、parent_message_id。原生thread保持原生边界；非thread的回复沿parent/root组成reply_chain，不按文本或关键词推测话题。已被本地回复引用的根消息在读取时按真实引用关系归入同一reply_chain，不改写原始事件。
+
+message.context/history的scope默认topic；有明确thread或回复链时优先同话题，显式scope=conversation可读原授权会话上下文，但不能跨过context_ref绑定的账户/chat/thread边界。没有明确关系的主流消息仍按会话上下文读取，不把每条普通消息猜成新任务。订阅可按topic.key/topic.kind/thread.id过滤。资源记录的话题与来源按0008，不伪装为IM会话。
+
+原生@命中已配置订阅即可通知，不增加DJ任务归属判断；接收AI按自己持久保存的规则决定是否处理或回复。

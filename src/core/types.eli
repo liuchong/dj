@@ -72,12 +72,17 @@
     (target)
     (str "target_" (hashValue (nativeIdentity target))))
   (defun stableSessionKey (target) (str "session_" (hashValue (nativeIdentity target))))
+  (defun sourceContainer (address)
+    (if (= (nativeGet address "kind") "resource")
+      (str "resource:" (nativeGet address "resource_kind") ":" (nativeGet address "resource_token"))
+      (nativeGet address "native_chat_id")))
+  (defun sourceReadAction (address) (if (= (nativeGet address "kind") "resource") "resource.read" "message.read"))
   (defun conversationKey
     (address)
     (hashValue
       (js-array
         (nativeGet address "connection_id")
-        (nativeGet address "native_chat_id")
+        (sourceContainer address)
         (nativeGet address "native_thread_id" nil)
         (nativeGet address "thread_kind" "main"))))
   (defun encodeSeq
@@ -189,7 +194,7 @@
               size)))
         (catch djReturn1Error
           (if (eq djReturn1Error djReturn1Token) djReturn1Value (throw djReturn1Error))))))
-  (export
+  (export sourceContainer sourceReadAction
     utf8Bytes
     isObject
     stableJson

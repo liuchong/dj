@@ -67,6 +67,11 @@ metadata:
 - query: 通过message.context读取锚点前后消息及引用，通过message.history按原context_ref分页拉更多历史；确有缓存缺口才显式corpus=native由DJ直连官方API补取。MCP、GEPO、CLI共用同一方法，详细参数见[上下文读取](references/context.md)。
 - policy: 订阅者按授权设置context_policy=recent及max_events/max_bytes；现有current策略不被开发者静默改写。context_ref只读，不替代reply_context_id或扩大授权。
 
+## 资源与话题
+
+- topic: 信封topic保留原生thread、根/父消息及稳定topic_key；默认按topic读上下文，scope=conversation只在原授权范围内扩大到会话，不猜测文本话题。
+- resource: Lark文档/表格/Wiki经resource.resolve/read读取，默认本地缓存，缺失才显式native；人员字段用people.id，不冒充普通@。原生变更登记与订阅及权限边界见[资源接入](references/resources.md)。
+
 ## 处理中标记与完成
 
 - working: Lark的IM投递获原生accepted后，DJ按固定出口自动登记Typing（敲键盘）表情；它只表示正在交给会话处理，不自动创建任务或发送回答。delivery.working查询本条处理与清理状态。

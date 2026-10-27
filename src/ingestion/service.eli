@@ -1,8 +1,9 @@
 (module dj.ingestion.service
+  (import "../messaging/topics.eli" topicOf)
   (import "../connections/manager.eli" imPort)
   (import "../core/native.eli" nativeTypeOf nativeGet)
   (import "../core/errors.eli" success failure)
-  (import "../core/types.eli" conversationKey utf8Bytes sliceUtf8 addSeconds isUtcTime)
+  (import "../core/types.eli" conversationKey sourceReadAction utf8Bytes sliceUtf8 addSeconds isUtcTime)
   (import "../core/limits.eli" limits)
   (import "../application/context.eli" utcNow nextId inTransaction must safeFields)
   (defun allowedAddress
@@ -11,6 +12,9 @@
       (not (= (nativeGet connection "disabled") t))
       (= (nativeGet connection "connection_id") (nativeGet address "connection_id"))
       (cond
+        ((and (= (nativeGet connection "platform") "lark") (= (nativeGet address "kind") "resource"))
+          (and (js-call (js-array "docx" "sheet" "bitable") :includes (nativeGet address "resource_kind"))
+            (= (nativeTypeOf (nativeGet address "resource_token")) "string")))
         ((= (nativeGet connection "platform") "lark")
           (or (and (= (nativeGet connection "source_delivery") "events")
                    (= (nativeGet connection "event_scope" "all_authorized") "all_authorized"))
@@ -156,7 +160,7 @@
                             source-cursor
                             "source_not_allowed"))
                         (throw djReturn3Token)))
-                    (unless (= (nativeGet normalized "event_kind") "message.created")
+                    (unless (js-call (js-array "message.created" "resource.changed") :includes (nativeGet normalized "event_kind"))
                       (progn
                         (setq
                           djReturn3Value
@@ -257,7 +261,7 @@
                             (safeFields
                               address
                               (js-array
-                                "connection_id"
+                                "connection_id" "kind" "resource_kind" "resource_token" "table_id" "record_id"
                                 "native_chat_id"
                                 "native_thread_id"
                                 "thread_kind"))
@@ -266,7 +270,7 @@
                             :native_message_id
                             (nativeGet normalized "native_message_id")
                             :event_kind
-                            "message.created"
+                            (nativeGet normalized "event_kind")
                             :source_revision
                             (nativeGet normalized "source_revision" "1")
                             :identity_revision
@@ -318,6 +322,8 @@
                       (when (object-has? normalized :chat_type) (put event :chat_type (nativeGet normalized "chat_type")))
                       (when (object-has? normalized :addressed_bot)
                         (put event :addressed_bot (nativeGet normalized "addressed_bot")))
+                      (when (nativeGet normalized "resource") (put event :resource (nativeGet normalized "resource")))
+                      (when (Array/isArray (nativeGet normalized "people")) (put event :people (nativeGet normalized "people")))
                       (when (nativeGet normalized "root_message_id") (put event :root_message_id (nativeGet normalized "root_message_id")))
                       (when (nativeGet normalized "reply_to")
                         (put
@@ -326,6 +332,7 @@
                           (safeFields
                             (nativeGet normalized "reply_to")
                             (js-array "id" "sender_id"))))
+                      (put event :topic (topicOf event))
                       (js-call repository :insert "events" event)
                       (let*
                         (

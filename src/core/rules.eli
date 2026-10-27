@@ -1,7 +1,7 @@
 (module dj.core.rules
   (import "./native.eli" nativeNullish nativeTypeOf nativeGet)
   (import "./limits.eli" limits)
-  (import "./types.eli" isObject hashValue)
+  (import "./types.eli" isObject hashValue sourceContainer)
   (import "./errors.eli" success invalidField)
   (defconst fields
     (Object/freeze
@@ -10,6 +10,7 @@
         "string"
         :connection_id "string"
         :mentions.id "string"
+        :people.id "string" :topic.key "string" :topic.kind "string" :thread.id "string" :resource.kind "string" :resource.token "string" :resource.table_id "string" :resource.record_id "string"
         :sender.id
         "string"
         :sender.kind
@@ -105,6 +106,11 @@
     (event field)
     (cond ((= field "text") (nativeGet (nativeGet event "content") "text"))
       ((= field "mentions.id") (nativeGet event "mentions"))
+      ((= field "people.id") (nativeGet event "people"))
+      ((= field "topic.key") (nativeGet (nativeGet event "topic") "topic_key"))
+      ((= field "topic.kind") (nativeGet (nativeGet event "topic") "kind"))
+      ((= field "thread.id") (nativeGet (nativeGet event "conversation") "native_thread_id"))
+      ((js-call field :startsWith "resource.") (nativeGet (nativeGet event "resource") (js-call field :slice 9)))
       ((= field "sender.id") (nativeGet (nativeGet event "sender") "id"))
       ((= field "sender.person_id") (nativeGet (nativeGet event "sender") "person_id"))
       ((= field "sender.kind") (nativeGet (nativeGet event "sender") "kind"))
@@ -172,7 +178,7 @@
                   (and (= field "text") (= (nativeGet (nativeGet event "content") "truncated") t))))
               (when (nativeNullish value)
                 (progn (setq djReturn3Value "indeterminate") (throw djReturn3Token)))
-              (when (= field "mentions.id")
+              (when (js-call (js-array "mentions.id" "people.id") :includes field)
                 (setq djReturn3Value (if (and (Array/isArray value)
                   (js-call value :some (lambda (mention) (if (= op "in")
                     (js-call wanted :includes (nativeGet mention "id")) (= (nativeGet mention "id") wanted))))) "true" "false"))
@@ -202,7 +208,8 @@
     (let ((conversation (nativeGet event "conversation")))
       (and
         (= (nativeGet address "connection_id") (nativeGet event "connection_id"))
-        (= (nativeGet address "native_chat_id") (nativeGet conversation "native_chat_id"))
+        (= (sourceContainer address) (sourceContainer conversation))
+        (or (not (nativeGet address "table_id")) (= (nativeGet address "table_id") (nativeGet conversation "table_id")))
         (or
           (=
             (nativeGet address "native_thread_id" nil)

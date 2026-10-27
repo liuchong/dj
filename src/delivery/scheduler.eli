@@ -1,4 +1,6 @@
 (module dj.delivery.scheduler
+  (import "../messaging/topics.eli" topicOf trackedTopic)
+  (import "../resources/service.eli" resourceEnvelope)
   (import "../messaging/context.eli" envelopeContext)
   (import "../connections/replies.eli" selectReplyRoute)
   (import "./working.eli" trackWorking finishWorking)
@@ -393,8 +395,9 @@
               (configuredPrincipal
                 (nativeGet (nativeGet context "config") "principals")
                 (nativeGet agent "recipient_principal_id")))
-            (selected (selectReplyRoute context event (nativeGet (js-call (nativeGet context "repository") :get "routes" (nativeGet record "route_id")) "session_key")))
-            (reply (replyContext context record event recipient read selected))
+            (resource-event (= (nativeGet (nativeGet event "conversation") "kind") "resource"))
+            (selected (if resource-event (js-object :status "not_applicable" :mention_ids (js-array)) (selectReplyRoute context event (nativeGet (js-call (nativeGet context "repository") :get "routes" (nativeGet record "route_id")) "session_key"))))
+            (reply (and (not resource-event) (replyContext context record event recipient read selected)))
             (content
               (js-object
                 :type
@@ -438,7 +441,7 @@
             (nativeGet event "event_id")
             :source
             (Object/assign
-              (js-object :kind "im" :native_message_id (nativeGet event "native_message_id"))
+              (js-object :kind (if resource-event "resource" "im") :native_message_id (nativeGet event "native_message_id"))
               (nativeGet event "conversation"))
             :sender
             (nativeGet event "sender")
@@ -453,7 +456,14 @@
             :allowed_actions
             (if reply (js-array "reply") (js-array))))
                  (instructions (composeInstructions contributions event body)))
-            (put envelope :context (envelopeContext context recipient event contributions))
+            (put envelope :topic (trackedTopic context event))
+            (if resource-event
+              (let ((resource (resourceEnvelope context recipient event)))
+                (put envelope :resource resource)
+                (put envelope :context (js-object :resource resource :external_data t :query_available t :as_of (utcNow context)
+                  :messages (js-array) :references (js-array) :coverage_complete false :truncated (nativeGet content "truncated"))))
+              (put envelope :context (envelopeContext context recipient event contributions)))
+            (when (nativeGet event "people") (put envelope :people (nativeGet event "people")))
             (when (object-has? event :mentions) (put envelope :mentions (nativeGet event "mentions")))
             (put envelope :reply_route (js-object :status (if (and (= (nativeGet selected "status") "ready") (not reply)) "forbidden" (nativeGet selected "status"))
               :connection_id (nativeGet selected "connection_id" "") :identity (nativeGet selected "identity" "") :mention_ids (nativeGet selected "mention_ids")))

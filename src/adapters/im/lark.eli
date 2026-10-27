@@ -22,6 +22,7 @@
     nativeCallContext)
   (import "../../ingestion/service.eli" acceptEvent allowedAddress)
   (import "./lark-http.eli" createLarkHttpTransport)
+  (import "./lark-resources.eli" requestResource)
   (defun watchAddress
     (config watch)
     (js-object
@@ -863,6 +864,7 @@
                           readPollPage
                           :commitPollPage
                           commitPollPage
+                          :resource (async (command parameters context) (await (requestResource http command parameters context)))
                           :history (async (parameters context)
                             (let ((response (await (js-call http :perform (if (nativeGet parameters "message_id") "get" "list") parameters context))))
                               (if (nativeGet response "ok") (success (nativeGet (nativeGet response "data") "data")) response)))

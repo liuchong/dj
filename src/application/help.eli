@@ -59,6 +59,12 @@
       "在获准本地 IM 正文中做区分大小写的字面子串检索；不是语义搜索。"
       :message.get
       "按 event_id 或 message_ref 读取仍可见正文，按 UTF-8 字节边界分页。"
+      :resource.resolve
+      "核验Lark文档/表格/Wiki准确地址，解析实际资源并发放受控读取与订阅来源引用。"
+      :resource.read
+      "默认读取DJ资源缓存；显式native读取官方文档、记录、表格范围、评论或子项。"
+      :resource.watch
+      "登记并请求原生文件事件订阅；subscribed只证明平台受理，不证明事件通道或AI订阅已就绪。"
       :message.context
       "按当前消息或context_ref读取前后文与引用链；native通过官方API补取，不触发订阅。"
       :message.history
@@ -191,6 +197,8 @@
         (put defaults :max_bytes (nativeGet limits "body_page_default_bytes")))
       (when (js-call (js-array "message.list" "message.search") :includes name)
         (put defaults :corpus "local"))
+      (when (= name "resource.resolve") (put defaults :corpus "local"))
+      (when (= name "resource.read") (Object/assign defaults (js-object :corpus "local" :view "content" :limit 20)))
       (when (= name "message.context") (Object/assign defaults (js-object :corpus "local" :before 10 :after 0 :reference_depth 4 :max_bytes 16384)))
       (when (= name "message.history") (Object/assign defaults (js-object :corpus "local" :order "desc" :limit 20 :max_bytes 16384)))
       (when (= name "session.message.list") (put defaults :corpus "indexed"))

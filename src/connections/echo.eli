@@ -17,11 +17,12 @@
             (or (not (nativeGet source "tenant_ref")) (not (nativeGet sent "tenant_ref"))
               (= (nativeGet source "tenant_ref") (nativeGet sent "tenant_ref"))))))))
   (defun echoState (context event)
+    (if (= (nativeGet (nativeGet event "conversation") "kind") "resource") "clear"
     (let* ((db (nativeGet (nativeGet context "store") "db"))
       (chat (nativeGet (nativeGet event "conversation") "native_chat_id"))
       (sent (js-call (js-call db :query "SELECT o.payload FROM echo_index e JOIN outbound o ON o.outbound_id=e.outbound_id WHERE e.native_message_id=? AND json_extract(o.payload,'$.destination.native_chat_id')=?")
         :all (nativeGet event "native_message_id") chat)))
       (if (js-call sent :some (lambda (row) (sameNativeConversation context (JSON/parse (nativeGet row "payload")) event))) "echo"
         (let ((pending (js-call (js-call db :query "SELECT o.payload FROM echo_gates g JOIN outbound o ON o.outbound_id=g.outbound_id WHERE json_extract(o.payload,'$.destination.native_chat_id')=?") :all chat)))
-          (if (js-call pending :some (lambda (row) (sameNativeConversation context (JSON/parse (nativeGet row "payload")) event t))) "held" "clear")))))
+          (if (js-call pending :some (lambda (row) (sameNativeConversation context (JSON/parse (nativeGet row "payload")) event t))) "held" "clear"))))))
   (export echoState sameNativeConversation))

@@ -45,6 +45,8 @@ Lark 必须直连官方 WebSocket 与 HTTPS API，禁止 SDK、CLI 及其子进�
 
 ## 正式规格与接续要求
 
+- Lark文档、表格、Wiki读取与原生变更按[0008](docs/specs/0008-resource-sources.md)，复用连接、权限和订阅路由。人员字段不冒充IM @；没有真实事件不得把读取成功当实时通知通过。
+
 - 历史、引用和主动上下文读取统一通过DJ，按[0007](docs/specs/0007-message-context.md)执行；默认直接读本地缓存，缺失才由调用方显式请求原生补取，不以search/平台轮询替代正常收件。
 
 - 用户确认的产品职责、行为和硬边界必须保存为 `docs/specs/` 下四位数字前缀的正式 spec；同一问题继续更新原 spec，不靠聊天记忆或另起重复说明。

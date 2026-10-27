@@ -1,4 +1,5 @@
 (module dj.delivery.service
+  (import "../core/types.eli" sourceContainer sourceReadAction)
   (import "../core/native.eli" nativeGet nativeNullish)
   (import "../core/errors.eli" success failure)
   (import "../core/types.eli" nextRevision addSeconds encodeSeq)
@@ -149,14 +150,14 @@
         (nativeGet
           (authorize
             owner
-            "message.read"
+            (sourceReadAction (nativeGet event "conversation"))
             (nativeGet event "conversation")
             (nativeGet owner "authorization_revision"))
           "allowed")
         (nativeGet
           (authorize
             recipient
-            "message.read"
+            (sourceReadAction (nativeGet event "conversation"))
             (nativeGet event "conversation")
             (nativeGet recipient "authorization_revision"))
           "allowed"))))

@@ -1,4 +1,5 @@
 (module dj.routing.matcher
+  (import "../core/types.eli" sourceContainer sourceReadAction)
   (import "../connections/echo.eli" echoState)
   (import "../core/native.eli" nativeNullish nativeTypeOf nativeGet)
   (import "../core/errors.eli" success failure)
@@ -64,7 +65,7 @@
             (js-call db :query sql)
             :all
             (nativeGet event "connection_id")
-            (nativeGet address "native_chat_id")
+            (sourceContainer address)
             (nativeGet event "event_kind")
             thread-key
             0
@@ -81,7 +82,7 @@
               (js-call db :query sql)
               :all
               (nativeGet event "connection_id")
-              (nativeGet address "native_chat_id")
+              (sourceContainer address)
               (nativeGet event "event_kind")
               "null"
               1

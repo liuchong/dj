@@ -1,5 +1,6 @@
 (module dj.ingestion.visibility
   (import "../core/native.eli" nativeGet)
+  (import "../core/types.eli" sourceReadAction)
   (import "../application/context.eli" can utcNow)
   (import "./service.eli" allowedAddress)
   (defun eventContentAvailable
@@ -30,5 +31,5 @@
     (context event)
     (and
       (eventContentAvailable context event)
-      (can context "message.read" (nativeGet event "conversation"))))
+      (can context (sourceReadAction (nativeGet event "conversation")) (nativeGet event "conversation"))))
   (export eventContentAvailable eventReadable))

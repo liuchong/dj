@@ -1,4 +1,5 @@
 (module dj.subscriptions.service
+  (import "../core/types.eli" sourceContainer sourceReadAction)
   (import "../core/native.eli" nativeNullish nativeGet)
   (import "../core/errors.eli" success failure invalidField)
   (import "../core/types.eli"
@@ -81,8 +82,8 @@
                   (=
                     (nativeGet source "source_revision")
                     (nativeGet connection "identity_revision" (nativeGet connection "revision")))
-                  (can context "message.read" source)
-                  (recipientCan context recipient "message.read" source))
+                  (can context (sourceReadAction source) source)
+                  (recipientCan context recipient (sourceReadAction source) source))
                 (progn
                   (setq djReturn1Value (failure "preview_stale"))
                   (throw djReturn1Token))))
@@ -145,8 +146,8 @@
                     (throw djReturn2Token)))
                 (unless
                   (and
-                    (can context "message.read" source)
-                    (recipientCan context recipient "message.read" source))
+                    (can context (sourceReadAction source) source)
+                    (recipientCan context recipient (sourceReadAction source) source))
                   (progn
                     (setq djReturn2Value (failure "forbidden"))
                     (throw djReturn2Token)))
@@ -239,7 +240,7 @@
               (js-call
                 (nativeGet (nativeGet spec "selector") "event_kinds")
                 :every
-                (lambda (kind) (= kind "message.created"))))
+                (lambda (kind) (js-call (js-array "message.created" "resource.changed") :includes kind))))
             (progn (setq djReturn4Value (failure "unsupported")) (throw djReturn4Token)))
           (let*
             ((target (targetState context agent))
@@ -265,7 +266,7 @@
                         (recipientCan
                           context
                           recipient
-                          "message.read"
+                          (sourceReadAction (nativeGet event "conversation"))
                           (nativeGet event "conversation")))
                       (must (failure "forbidden")))
                     (let
@@ -484,7 +485,7 @@
                     "INSERT OR IGNORE INTO subscription_sources(connection_id,native_chat_id,thread_key,event_kind,subscription_id,revision,include_threads) VALUES (?,?,?,?,?,?,?)")
                   :run
                   (nativeGet source "connection_id")
-                  (nativeGet source "native_chat_id")
+                  (sourceContainer source)
                   (stableJson (nativeGet source "native_thread_id" nil))
                   kind
                   (nativeGet subscription "subscription_id")

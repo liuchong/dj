@@ -53,6 +53,7 @@
     :address
     (obj
       (js-object
+        :kind stringSchema :resource_kind stringSchema :resource_token stringSchema :table_id nullableString :record_id nullableString
         :connection_id
         stringSchema
         :native_chat_id
@@ -70,8 +71,8 @@
     :delivery_source
     (obj
       (strings
-        "kind connection_id native_chat_id thread_kind native_message_id"
-        (js-object :native_thread_id nullableString))))
+        "kind connection_id native_chat_id thread_kind native_message_id resource_kind resource_token"
+        (js-object :native_thread_id nullableString :table_id nullableString :record_id nullableString))))
   (put
     definitions
     :content
@@ -532,14 +533,22 @@
           :delivery_mode stringSchema
           :submitted_count
           integerSchema))))
+  (put definitions :lark_resource (obj (strings "connection_id kind token node_token space_id title url resource_ref conversation_ref event_type action"
+    (js-object :table_id nullableString :record_id nullableString))))
+  (put definitions :resource_page (obj (strings "text format as_of"
+    (js-object :resource (ref "lark_resource") :data (js-object) :offset_bytes integerSchema :next_offset_bytes integerSchema :total_bytes integerSchema
+      :next_cursor nullableString :complete boolSchema :body_complete boolSchema :cache_hit boolSchema :external_data boolSchema :coverage_complete boolSchema))))
+  (put definitions :resource_watch (obj (strings "watch_id operation_id state event_channel"
+    (js-object :resource (ref "lark_resource") :identity_revision integerSchema :native_error (js-object)))))
+  (put definitions :topic (obj (strings "topic_key kind root_message_id" (js-object :native_thread_id nullableString :parent_message_id nullableString))))
   (put definitions :inbox_envelope (obj (js-object
     :schema_version integerSchema :kind stringSchema :origin stringSchema
     :delivery_id nullableString :inbox_id stringSchema :event_id stringSchema
     :source (ref "delivery_source") :sender (ref "sender") :content (ref "content")
     :attachments (arr (ref "attachment")) :reply_context_id nullableString :allowed_actions (arr stringSchema)
     :matched (arr (obj (js-object :subscription_id stringSchema :subscription_revision integerSchema :result stringSchema)))
-    :conversation_rules (ref "conversation_rules") :mentions (arr (ref "mention")) :reply_route (ref "reply_route")
-    :context (ref "message_context")
+    :conversation_rules (ref "conversation_rules") :people (arr (ref "mention")) :mentions (arr (ref "mention")) :reply_route (ref "reply_route")
+    :resource (ref "lark_resource") :context (ref "message_context") :topic (ref "topic")
     :instructions (arr (obj (js-object :subscription_id stringSchema :subscription_revision integerSchema
       :prompt stringSchema :task_template stringSchema :task stringSchema))))))
   (put definitions :inbox (obj (strings "operation_id inbox_id subscription_id event_id state expires_at claim_ref lease_until"
@@ -578,8 +587,8 @@
           (ref "address")
           :sender
           (ref "sender")
-          :mentions (arr (ref "mention"))
-          :reply_to (obj (strings "id sender_id"))
+          :mentions (arr (ref "mention")) :people (arr (ref "mention")) :resource (ref "lark_resource")
+          :reply_to (obj (strings "id sender_id")) :topic (ref "topic")
           :content
           (ref "content")
           :attachments
@@ -902,7 +911,7 @@
   (put definitions :context_reference (obj (strings "native_message_id relation status reason"
     (js-object :message (ref "message")))))
   (put definitions :message_context (obj (strings "context_ref as_of corpus scope coverage_reason"
-    (js-object :anchor (ref "message") :messages (arr (ref "message")) :references (arr (ref "context_reference"))
+    (js-object :resource (ref "lark_resource") :topic (ref "topic") :anchor (ref "message") :messages (arr (ref "message")) :references (arr (ref "context_reference"))
       :coverage_complete boolSchema :truncated boolSchema :query_available boolSchema :external_data boolSchema))))
   (put definitions :message_history (obj (strings "context_ref corpus as_of coverage_reason"
     (js-object :items (arr (ref "message")) :next_cursor nullableString :complete boolSchema
