@@ -35,7 +35,9 @@
     "tests/integration/mention-replies.test.eli",
     "tests/unit/mention-replies.test.eli",
     "tests/integration/working.test.eli",
-    "tests/unit/working.test.eli"
+    "tests/unit/working.test.eli",
+    "tests/integration/echo.test.eli",
+    "tests/unit/echo.test.eli"
   ],
   "outDir": "dist-tests"
 }

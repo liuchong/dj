@@ -26442,6 +26442,66 @@
       "requirements": [
         "SPEC-0006"
       ]
+    },
+    {
+      "case_id": "T38.cross-connection-echo.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/echo.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "acceptance_ids": [
+        "A01",
+        "A03"
+      ],
+      "requirements": [
+        "SPEC-0003"
+      ]
+    },
+    {
+      "case_id": "T40.cross-connection-echo-gate.integration",
+      "parent_id": "T40",
+      "file": "tests/integration/echo.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "acceptance_ids": [
+        "A01",
+        "A03"
+      ],
+      "requirements": [
+        "SPEC-0003"
+      ]
+    },
+    {
+      "case_id": "T38.native-echo-scope.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/echo.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "pure",
+      "acceptance_ids": [
+        "A01",
+        "A03"
+      ],
+      "requirements": [
+        "SPEC-0003"
+      ]
     }
   ],
   "source_extension_base": "c1eb7b1"

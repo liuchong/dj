@@ -1,4 +1,5 @@
 (module dj.subscriptions.replay
+  (import "../connections/echo.eli" echoState)
   (import "../core/native.eli" nativeGet)
   (import "../core/errors.eli" success failure)
   (import "../core/rules.eli" evaluatePredicate matchesSource)
@@ -24,8 +25,7 @@
                   (js-call (nativeGet current "resolved_sources") :some (lambda (source)
                     (matchesSource source (nativeGet source "include_threads") event)))) (must (failure "forbidden")))
                 (unless (and (js-call (nativeGet connection "allowed_sender_kinds" (js-array "human")) :includes (nativeGet (nativeGet event "sender") "kind"))
-                  (not (js-call (js-call db :query "SELECT 1 FROM echo_index WHERE connection_id=? AND native_message_id=?") :get (nativeGet event "connection_id") (nativeGet event "native_message_id")))
-                  (not (js-call (js-call db :query "SELECT 1 FROM echo_gates WHERE connection_id=? AND conversation_key=? LIMIT 1") :get (nativeGet event "connection_id") (nativeGet event "conversation_key"))))
+                  (= (echoState context event) "clear"))
                   (must (failure "forbidden")))
                 (let* ((answer (evaluatePredicate (nativeGet current "predicate") event))
                   (decision (js-object :event_id id :subscription_id (nativeGet current "subscription_id") :revision (nativeGet current "revision")

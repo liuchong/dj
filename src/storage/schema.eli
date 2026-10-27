@@ -124,6 +124,7 @@
         (js-array
           "CREATE TABLE IF NOT EXISTS work_items(delivery_id TEXT PRIMARY KEY REFERENCES deliveries(delivery_id),state TEXT NOT NULL,expires_at TEXT NOT NULL,payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
           "CREATE TABLE IF NOT EXISTS work_marks(mark_id TEXT PRIMARY KEY,revision INTEGER NOT NULL CHECK(revision>=1),state TEXT NOT NULL,next_due_at TEXT NOT NULL,payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+          "CREATE INDEX IF NOT EXISTS echo_native_message ON echo_index(native_message_id)"
           "CREATE INDEX IF NOT EXISTS work_marks_due ON work_marks(state,next_due_at)"
           "CREATE TABLE IF NOT EXISTS session_rules(session_key TEXT PRIMARY KEY,revision INTEGER NOT NULL CHECK(revision>=1),payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
           "CREATE TABLE IF NOT EXISTS message_filter_policies(policy_id TEXT PRIMARY KEY,revision INTEGER NOT NULL CHECK(revision>=1),payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"

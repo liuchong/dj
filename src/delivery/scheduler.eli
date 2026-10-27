@@ -1,6 +1,7 @@
 (module dj.delivery.scheduler
   (import "../connections/replies.eli" selectReplyRoute)
   (import "./working.eli" trackWorking finishWorking)
+  (import "../connections/echo.eli" echoState)
   (import "../connections/manager.eli" imPort)
   (import "../core/native.eli" nativeNullish nativeGet)
   (import "../core/errors.eli" success failure)
@@ -570,6 +571,11 @@
                           "routing_incomplete"))
                       (throw djReturn4Token)))
                   (setq event (js-call repository :get "events" (nativeGet record "event_id")))
+                  (let ((echo (echoState context event)))
+                    (unless (= echo "clear")
+                      (setq djReturn4Value (holdDelivery context record claim
+                        (if (= echo "echo") "cancelled" "blocked") (if (= echo "echo") "own_echo" "echo_gate")))
+                      (throw djReturn4Token)))
                   (when (nativeGet (evaluateTriggerFilters context event) "suppressed")
                     (setq djReturn4Value (holdDelivery context record claim "cancelled" "trigger_suppressed"))
                     (throw djReturn4Token))
