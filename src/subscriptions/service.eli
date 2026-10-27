@@ -91,71 +91,36 @@
           (success nil))
         (catch djReturn1Error
           (if (eq djReturn1Error djReturn1Token) djReturn1Value (throw djReturn1Error))))))
-  (defun resolveSources
-    (context selector recipient)
-    (let ((djReturn2Token (js-object)) (djReturn2Value nil))
-      (try
-        (let
-          ((sources (js-array))
-            (index 0)
-            (inputs (nativeGet selector "sources"))
-            (repository (nativeGet context "repository")))
-          (while (< index (js-length inputs))
-            (let*
-              ((input (aref inputs index))
-                (resolved
-                  (resolveResourceHandle
-                    context
-                    (nativeGet input "conversation_ref")
-                    "conversation")))
-              (unless (nativeGet resolved "ok")
-                (progn (setq djReturn2Value resolved) (throw djReturn2Token)))
-              (let*
-                ((handle (nativeGet resolved "data"))
-                  (address (nativeGet handle "address"))
-                  (connection
-                    (js-call repository :get "connections" (nativeGet address "connection_id")))
-                  (source
-                    (Object/assign
-                      (js-object)
-                      address
-                      (js-object
-                        :include_threads
-                        (= (nativeGet input "include_threads") t)
-                        :source_revision
-                        (nativeGet handle "source_revision")))))
-                (unless
-                  (and
-                    connection
-                    (=
-                      (nativeGet handle "source_revision")
-                      (nativeGet connection "identity_revision" (nativeGet connection "revision"))))
-                  (progn
-                    (setq djReturn2Value (failure "stale_reference"))
-                    (throw djReturn2Token)))
-                (when
-                  (and
-                    (nativeGet source "include_threads")
-                    (not (nativeNullish (nativeGet source "native_thread_id"))))
-                  (progn
-                    (setq
-                      djReturn2Value
-                      (invalidField
-                        (str "/spec/selector/sources/" index "/include_threads")
-                        "false for an exact thread reference"))
-                    (throw djReturn2Token)))
-                (unless
-                  (and
-                    (can context (sourceReadAction source) source)
-                    (recipientCan context recipient (sourceReadAction source) source))
-                  (progn
-                    (setq djReturn2Value (failure "forbidden"))
-                    (throw djReturn2Token)))
-                (js-call sources :push source)))
-            (setq index (1+ index)))
-          (success sources))
-        (catch djReturn2Error
-          (if (eq djReturn2Error djReturn2Token) djReturn2Value (throw djReturn2Error))))))
+  (defun resolveSources (context selector recipient)
+    (let ((repository (nativeGet context "repository")) (sources (js-array))
+      (inputs (nativeGet selector "sources" (js-array))))
+      (when (= (js-length inputs) 0)
+        (setq inputs (js-call (js-call (nativeGet (nativeGet context "config") "connections") :filter
+          (lambda (connection) (and (not (nativeGet connection "disabled"))
+            (can context "message.read" (js-object :connection_id (nativeGet connection "connection_id")))
+            (recipientCan context recipient "message.read" (js-object :connection_id (nativeGet connection "connection_id"))))))
+          :map (lambda (connection) (js-object :connection_id (nativeGet connection "connection_id"))))))
+      (when (= (js-length inputs) 0) (must (failure "forbidden")))
+      (when (> (js-length inputs) (nativeGet limits "sources")) (must (failure "limit_exceeded")))
+      (js-call inputs :forEach (lambda (input)
+        (let* ((global (nativeGet input "connection_id"))
+          (handle (and (not global) (must (resolveResourceHandle context (nativeGet input "conversation_ref") "conversation"))))
+          (address (if global (js-object :connection_id global :scope "connection" :native_thread_id nil :include_threads t)
+            (nativeGet handle "address")))
+          (connection (js-call repository :get "connections" (nativeGet address "connection_id")))
+          (revision (nativeGet connection "identity_revision" (nativeGet connection "revision")))
+          (source (Object/assign (js-object) address (js-object :include_threads (if global t (= (nativeGet input "include_threads") t)) :source_revision revision))))
+          (unless (and connection (not (nativeGet connection "disabled"))) (must (failure "forbidden")))
+          (when (and handle (not (= (nativeGet handle "source_revision") revision))) (must (failure "stale_reference")))
+          (when (and (not global) (nativeGet source "include_threads") (not (nativeNullish (nativeGet source "native_thread_id"))))
+            (must (invalidField "/spec/selector/sources" "include_threads=false for an exact thread")))
+          (unless (and (can context (sourceReadAction source) source) (recipientCan context recipient (sourceReadAction source) source))
+            (must (failure "forbidden")))
+          (js-call sources :push source))))
+      (success (js-call sources :filter (lambda (source)
+        (or (= (nativeGet source "scope") "connection")
+          (not (js-call sources :some (lambda (other) (and (= (nativeGet other "scope") "connection")
+            (= (nativeGet source "connection_id") (nativeGet other "connection_id"))))))))))))
   (defun targetState
     (context agent)
     (let ((djReturn3Token (js-object)) (djReturn3Value nil))

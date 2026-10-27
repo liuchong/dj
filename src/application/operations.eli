@@ -149,15 +149,17 @@
           (js-object
             :sources
             (arraySchema
-              (objectSchema
-                (js-object :conversation_ref idSchema :include_threads booleanSchema)
-                (js-array "conversation_ref"))
-              (nativeGet limits "sources"))
+              (Object/assign (objectSchema
+                (js-object :connection_id idSchema :conversation_ref idSchema :include_threads booleanSchema) (js-array))
+                (js-object :oneOf (js-array
+                  (js-object :required (js-array "connection_id") :properties (js-object :connection_id idSchema))
+                  (js-object :required (js-array "conversation_ref") :properties (js-object :conversation_ref idSchema)))))
+              (nativeGet limits "sources") 0)
             :event_kinds
             (arraySchema
               (enumSchema "message.created" "message.edited" "message.deleted" "resource.changed")
               (nativeGet limits "event_kinds")))
-          (js-array "sources"))
+          (js-array))
         :predicate
         (js-object :$ref "#/$defs/predicate")
         :context_policy

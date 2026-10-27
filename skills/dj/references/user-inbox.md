@@ -32,3 +32,5 @@
 - update: 先 subscription.get，再 subscription.preview 传 subscription_id、expected_revision 和完整新 spec；核对 normalized_spec 后 subscription.update 传同一订阅ID、expected_revision、preview_id、稳定 idempotency_key。
 - busy: 当前订阅仅支持 busy=queue；对话忙时保留队列，空闲后走原生 start_idle。不得以接收端正忙为由换对话或创建 Agent CLI。
 - health: connection.probe.event_source 的 connected、transport=lark-websocket、coverage、last_received_at 用于核对真实收件；pending 或 queued 不等于原对话已收到。
+
+- source_default: selector.sources省略或[]默认覆盖双方获准账号下全部群、私聊及thread；明确选连接可用sources=[{connection_id:"账号连接ID"}]。只有用户要求收窄才用conversation_ref；不要把调试群列表留成正式默认。来源范围与原生@/私聊等触发条件分开，并统一应用服务级黑名单。HTTP历史可读不证明实时事件覆盖。

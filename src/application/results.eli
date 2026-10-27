@@ -53,7 +53,7 @@
     :address
     (obj
       (js-object
-        :kind stringSchema :resource_kind stringSchema :resource_token stringSchema :table_id nullableString :record_id nullableString
+        :scope stringSchema :kind stringSchema :resource_kind stringSchema :resource_token stringSchema :table_id nullableString :record_id nullableString
         :connection_id
         stringSchema
         :native_chat_id

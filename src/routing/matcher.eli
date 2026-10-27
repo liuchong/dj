@@ -59,7 +59,7 @@
         (revision (or (nativeGet work "last_revision") 0))
         (thread-key (stableJson (nativeGet address "native_thread_id" nil)))
         (sql
-          "SELECT i.subscription_id,i.revision,v.payload FROM subscription_sources i JOIN subscription_versions v ON v.subscription_id=i.subscription_id AND v.revision=i.revision WHERE i.connection_id=? AND i.native_chat_id=? AND i.event_kind=? AND i.thread_key=? AND (?=0 OR i.include_threads=1) AND v.state='active' AND v.start_seq<=? AND (v.cutover_seq IS NULL OR v.cutover_seq>=?) AND (i.subscription_id>? OR (i.subscription_id=? AND i.revision>?)) ORDER BY i.subscription_id,i.revision LIMIT ?")
+          "SELECT i.subscription_id,i.revision,v.payload FROM subscription_sources i JOIN subscription_versions v ON v.subscription_id=i.subscription_id AND v.revision=i.revision WHERE i.connection_id=? AND i.native_chat_id IN (?, '') AND i.event_kind=? AND i.thread_key=? AND (?=0 OR i.include_threads=1) AND v.state='active' AND v.start_seq<=? AND (v.cutover_seq IS NULL OR v.cutover_seq>=?) AND (i.subscription_id>? OR (i.subscription_id=? AND i.revision>?)) ORDER BY i.subscription_id,i.revision LIMIT ?")
         (exact
           (js-call
             (js-call db :query sql)

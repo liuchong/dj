@@ -208,9 +208,9 @@
     (let ((conversation (nativeGet event "conversation")))
       (and
         (= (nativeGet address "connection_id") (nativeGet event "connection_id"))
-        (= (sourceContainer address) (sourceContainer conversation))
+        (or (= (nativeGet address "scope") "connection") (= (sourceContainer address) (sourceContainer conversation)))
         (or (not (nativeGet address "table_id")) (= (nativeGet address "table_id") (nativeGet conversation "table_id")))
-        (or
+        (or (= (nativeGet address "scope") "connection")
           (=
             (nativeGet address "native_thread_id" nil)
             (nativeGet conversation "native_thread_id" nil))

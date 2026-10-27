@@ -232,11 +232,11 @@
             (
               (sources
                 (js-call
-                  (nativeGet selector "sources")
+                  (nativeGet selector "sources" (js-array))
                   :map
                   (lambda
                     (source)
-                    (Object/assign (js-object :include_threads false) source)))))
+                    (Object/assign (js-object :include_threads (if (nativeGet source "connection_id") t false)) source)))))
             (put
               selector
               :sources

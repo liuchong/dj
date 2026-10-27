@@ -73,9 +73,10 @@
     (str "target_" (hashValue (nativeIdentity target))))
   (defun stableSessionKey (target) (str "session_" (hashValue (nativeIdentity target))))
   (defun sourceContainer (address)
+    (if (= (nativeGet address "scope") "connection") ""
     (if (= (nativeGet address "kind") "resource")
       (str "resource:" (nativeGet address "resource_kind") ":" (nativeGet address "resource_token"))
-      (nativeGet address "native_chat_id")))
+      (nativeGet address "native_chat_id"))))
   (defun sourceReadAction (address) (if (= (nativeGet address "kind") "resource") "resource.read" "message.read"))
   (defun conversationKey
     (address)
