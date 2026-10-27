@@ -1,7 +1,7 @@
 (module dj.adapters.im.lark-events
   (import "./lark-resource-events.eli" resourceEvents normalizeResourceEvents)
   (import "../../core/native.eli" nativeGet nativeTypeOf NativeNumber nativeSetTimeout nativeClearTimeout nativeSetInterval nativeClearInterval)
-  (import "../../core/types.eli" utf8Bytes conversationKey)
+  (import "../../core/types.eli" utf8Bytes)
   (import "../../core/errors.eli" success)
   (import "../../application/context.eli" inTransaction must)
   (import "../../application/write-batch.eli" enqueueWrite)
@@ -214,13 +214,6 @@
               (js-call (js-call db :query "DELETE FROM im_event_inbox WHERE connection_id=? AND seq<=?") :run id after) (success nil)))))))
             (js-object :items items :cursor cursor :ready ready :gap_status "possible"
               :reason_codes (if reason (js-array reason) (js-array)))))
-        :resolveConversation (async (address call-context context)
-          (let* ((db (nativeGet (nativeGet context "store") "db"))
-                 (found (js-call (js-call db :query "SELECT 1 FROM events WHERE connection_id=? AND conversation_key=? LIMIT 1") :get
-                   (nativeGet config "connection_id") (conversationKey address))))
-            (if found (js-object :ok t :address address :evidence_level "service_record" :coverage "received_native_event"
-              :checked_at (js-call (new globalThis.Date) :toISOString))
-              (js-object :ok false :reason "native_event_required"))))
         :probe (async (connection context) (js-object :ok t :credential_state (if ready "ready" "unknown")
           :event_source (Object/assign (js-object :state state :reason reason :identity "application" :send_identity (nativeGet config "identity")
             :transport "lark-websocket" :coverage (nativeGet config "event_scope" "all_authorized") :last_received_at last-received) permissions)))

@@ -33,3 +33,5 @@ DJ持久接收消息，自动向订阅会话提供相关前后文、原生引用
 message.context/history的scope默认topic；有明确thread或回复链时优先同话题，显式scope=conversation可读原授权会话上下文，但不能跨过context_ref绑定的账户/chat/thread边界。没有明确关系的主流消息仍按会话上下文读取，不把每条普通消息猜成新任务。订阅可按topic.key/topic.kind/thread.id过滤。资源记录的话题与来源按0008，不伪装为IM会话。
 
 原生@命中已配置订阅即可通知，不增加DJ任务归属判断；接收AI按自己持久保存的规则决定是否处理或回复。
+
+长连接收件与主动查询分别核验。conversation.resolve通过同一连接的官方API确认获准会话，不要求该会话预先出现接收事件；主动历史补取不生成事件、订阅触发或实时覆盖证明。
