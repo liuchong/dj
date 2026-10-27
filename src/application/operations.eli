@@ -198,7 +198,7 @@
       ((= group "registry") (if (= name "agent.whoami") "agent.whoami" "agent.bind"))
       ((= group "subscriptions") "subscription.manage")
       ((js-call name :startsWith "conversation.") "conversation.discover")
-      ((js-call (js-array "message.list" "message.get") :includes name) "message.read")
+      ((js-call (js-array "message.list" "message.get" "message.context" "message.history") :includes name) "message.read")
       ((= name "message.search") "message.search")
       ((js-call (js-array "delivery.list" "delivery.get") :includes name)
         "delivery.inspect")
@@ -548,6 +548,16 @@
     (js-array)
     (Object/assign (js-object :event_id idSchema :message_ref idSchema) bodyProperties)
     (js-object :exclusive (js-array "event_id" "message_ref")))
+  (addOperation "message.context" "message_context" (js-array)
+    (js-object :event_id idSchema :message_ref idSchema :context_ref idSchema :native_message_id idSchema
+      :corpus (enumSchema "local" "native") :before (integerSchema 0 20) :after (integerSchema 0 20)
+      :offset_bytes (integerSchema 0 (nativeGet NativeNumber "MAX_SAFE_INTEGER")) :reference_depth (integerSchema 0 4) :max_bytes (integerSchema 1024 32768))
+    (js-object :exclusive (js-array "event_id" "message_ref" "context_ref") :result "message_context"))
+  (addOperation "message.history" "message_context" (js-array)
+    (js-object :context_ref idSchema :conversation_ref idSchema :corpus (enumSchema "local" "native")
+      :time_range timeRangeSchema :order (enumSchema "asc" "desc") :limit (integerSchema 1 50)
+      :cursor idSchema :max_bytes (integerSchema 1024 32768))
+    (js-object :exclusive (js-array "context_ref" "conversation_ref") :result "message_history"))
   (addOperation
     "message.send"
     "messaging"

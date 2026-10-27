@@ -539,6 +539,7 @@
     :attachments (arr (ref "attachment")) :reply_context_id nullableString :allowed_actions (arr stringSchema)
     :matched (arr (obj (js-object :subscription_id stringSchema :subscription_revision integerSchema :result stringSchema)))
     :conversation_rules (ref "conversation_rules") :mentions (arr (ref "mention")) :reply_route (ref "reply_route")
+    :context (ref "message_context")
     :instructions (arr (obj (js-object :subscription_id stringSchema :subscription_revision integerSchema
       :prompt stringSchema :task_template stringSchema :task stringSchema))))))
   (put definitions :inbox (obj (strings "operation_id inbox_id subscription_id event_id state expires_at claim_ref lease_until"
@@ -571,13 +572,14 @@
     :message
     (obj
       (strings
-        "event_id message_ref session_message_ref native_message_id native_session_id session_key content_version event_kind source_revision connection_id received_at source_time text role created_at"
+        "event_id message_ref session_message_ref native_message_id native_session_id session_key content_version event_kind source_revision connection_id received_at source_time text role created_at root_message_id relation unavailable_reason"
         (js-object
           :conversation
           (ref "address")
           :sender
           (ref "sender")
           :mentions (arr (ref "mention"))
+          :reply_to (obj (strings "id sender_id"))
           :content
           (ref "content")
           :attachments
@@ -897,6 +899,14 @@
         :next_actions
         (arr (ref "action")))
       (js-array "code" "message" "retryable" "details" "field_errors" "next_actions")))
+  (put definitions :context_reference (obj (strings "native_message_id relation status reason"
+    (js-object :message (ref "message")))))
+  (put definitions :message_context (obj (strings "context_ref as_of corpus scope coverage_reason"
+    (js-object :anchor (ref "message") :messages (arr (ref "message")) :references (arr (ref "context_reference"))
+      :coverage_complete boolSchema :truncated boolSchema :query_available boolSchema :external_data boolSchema))))
+  (put definitions :message_history (obj (strings "context_ref corpus as_of coverage_reason"
+    (js-object :items (arr (ref "message")) :next_cursor nullableString :complete boolSchema
+      :coverage_complete boolSchema :truncated boolSchema))))
   (defun pageSchema
     (name)
     (obj

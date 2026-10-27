@@ -318,6 +318,7 @@
                       (when (object-has? normalized :chat_type) (put event :chat_type (nativeGet normalized "chat_type")))
                       (when (object-has? normalized :addressed_bot)
                         (put event :addressed_bot (nativeGet normalized "addressed_bot")))
+                      (when (nativeGet normalized "root_message_id") (put event :root_message_id (nativeGet normalized "root_message_id")))
                       (when (nativeGet normalized "reply_to")
                         (put
                           event

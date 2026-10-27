@@ -73,7 +73,7 @@ tools/verify.eli 仅做薄选择器：读取 manifest → 验证请求 suite/cas
 | T27 | P 热路径/巨大扇出/公平/背压 | performance/router | A20 |
 | T28 | P 固定票据/revision/重复提交 | integration/delivery | A11 |
 | T29 | P 响应丢失/原键找回/迟到提交竞态 | system/recovery；integration/interfaces | A05/A19 |
-| T30 | P queue/current/不同 TTL/grants；R steer/recent；D 其他正向合并 | integration/delivery | A13 |
+| T30 | P queue/current/不同 TTL/grants；R steer；D 其他正向合并 | integration/delivery | A13 |
 | T31 | P submitting 前后 pause/cancel/崩溃 | integration/delivery；system/recovery | A13/A18 |
 | T32 | P 截断否定/空 all；R 未启用事件；D edited/deleted 正向 | unit/rules | A03 |
 | T33 | P recipient/权限/提交前回复引用；R 缺约束/越权 | integration/delivery；system/ownership | A04/A06/A17 |
@@ -289,3 +289,5 @@ OpenCode 现有 Desktop 分页修复：复用 T63.opencode-native-read.integrati
 ## 消息触发过滤（规格0002）
 
 仅运行 filters 集成3项及保护单测1项；验证人员/字面字符可组合、策略权限/版本/幂等/重启、消息仍可 list/get、排队push取消、pull领取复核、已提交/领取可见性不变及显式直发。空/重复/未知规则与Unicode、截断、策略更新不复用旧结果由单测保护，不扩展为全平台或性能验收。
+
+消息上下文0007：定向覆盖本地前后文/引用、独立主体和连接身份、持久缓存恢复、70条历史翻页、原生显式补取不触发订阅、字节上限下原生页内续读，以及MCP目录与输出schema。保护UTF-8边界、准确chat/thread/account及多贡献取小；不扩成全套回归或跨工具矩阵。

@@ -45,6 +45,8 @@ request_id 可选，用于追踪；所有受理变更要求 idempotency_key。�
 | message.list | conversation_ref、time_range?、corpus?、limit?、cursor? | 事件摘要及读取引用 | read |
 | message.search | conversation_ref、query、time_range?、corpus?、limit?、cursor? | 匹配摘要、语料来源与完整性 | search；字面检索 |
 | message.get | event_id 或 message_ref（二选一）、offset_bytes?、max_bytes? | 元数据、正文分页、附件引用 | read |
+| message.context | event_id/message_ref/context_ref之一、before?、after?、reference_depth?、max_bytes?、corpus? | 锚点、前后文、引用链及context_ref | read；默认DJ缓存 |
+| message.history | context_ref/conversation_ref之一、limit?、cursor?、order?、time_range?、max_bytes?、corpus? | 同会话历史分页 | read；默认DJ缓存 |
 | message.send | destination_ref、content | Outbound、state、revision | send；创建出站意图 |
 | message.reply | reply_context_id、content | Outbound、state、revision | reply；固定目的地 |
 | outbound.get | outbound_id | Outbound、parts、安全回执 | 自有/授权记录 |
@@ -88,7 +90,7 @@ ConversationAddress 的原生地址与 ConversationHandle 的公共 conversation
 
 content 必须为 {type:"text",text:string}，非空且 UTF-8 最多 16384 字节；不接受任意额外类型。平台更低上限在受理前校验是否可安全拆分。分片策略、幂等与未知结果见投递文档。缺少回复权限时不签发可用 reply_context。
 
-corpus 缺省 local，native 仅对具备能力的源开放。native 记录经过权限和字段规范化后形成只读 MessageSnapshot/message_ref，不创建实时 Event、不消耗 ingress_seq，也不占用源入库去重键；稍后真正到达的 live 事件仍按自己的规则处理。message.get 接收 event_id 或 message_ref 两种互斥参数，不能混用。time_range 为 {from,to}，端点 RFC3339；query 是非空字面子串，不分词、不推理。查询不标记平台消息已读，也不加入群。
+message.list/search的corpus缺省local，仅查询已入库事件。上下文历史通过message.context/history默认读本地；显式corpus=native时由具备能力的连接补取，形成独立只读上下文缓存/context_ref，不创建实时Event、不消耗ingress_seq，也不占用源入库去重键；稍后真正到达的 live 事件仍按自己的规则处理。message.get 接收 event_id 或 message_ref 两种互斥参数，不能混用。time_range 为 {from,to}，端点 RFC3339；query 是非空字面子串，不分词、不推理。查询不标记平台消息已读，也不加入群。
 
 message.get 的 offset_bytes 默认 0，必须在 UTF-8 边界；max_bytes 默认 16384，上限 32768。返回 next_offset_bytes，内容删除/过期返回明确状态。附件首轮仅元数据，没有未定义的“自动获取附件”操作。引用包含值不代表永远有权读取。
 
@@ -139,3 +141,7 @@ time_range 为 from 包含、to 不包含，from<to；无范围表示当前保�
 这一 API 只是同一 execute 的投影，跨入口仍按同一主体/操作/幂等键去重。不以 IM 聊天消息作为管理命令入口，也不维护 UI 状态库；既有 IM 读写 API 继续保留。
 
 施工落实的传输状态映射见 [施工接口](../construction/contracts.md#1-操作目录与入口)：有效业务 Result 用 HTTP 200 承载，业务成败仍检查 ok/code/effect_state；格式/认证/请求预算/服务启动故障使用相应 HTTP 状态并尽可能保留安全 envelope。不能因 HTTP 200 就把 unknown 或领域失败当成功。
+
+## 消息上下文
+
+message.context/history与自动信封context统一按[0007](../specs/0007-message-context.md)执行。MCP为dj_message_context/dj_message_history，GEPO为POST /message/context和/message/history，CLI为dj message context/history。正常查询只读缓存；原生补取必须显式选择，不设置自动历史轮询或关键词search。

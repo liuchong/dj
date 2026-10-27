@@ -45,6 +45,8 @@ Lark 必须直连官方 WebSocket 与 HTTPS API，禁止 SDK、CLI 及其子进�
 
 ## 正式规格与接续要求
 
+- 历史、引用和主动上下文读取统一通过DJ，按[0007](docs/specs/0007-message-context.md)执行；默认直接读本地缓存，缺失才由调用方显式请求原生补取，不以search/平台轮询替代正常收件。
+
 - 用户确认的产品职责、行为和硬边界必须保存为 `docs/specs/` 下四位数字前缀的正式 spec；同一问题继续更新原 spec，不靠聊天记忆或另起重复说明。
 - Lark处理中Typing表情按[0006](docs/specs/0006-working-reactions.md)持久登记，回复/无需回复/失败/到期均须清理；只有官方读回确认消失才算撤销，不能依赖AI结束前记得删除。
 - 原生提及到回复身份及原消息位置由DJ按[0005](docs/specs/0005-mention-replies.md)固定；AI只决定是否、何时调用回复工具提交内容。禁止把普通输出或最终回答自动接到IM。

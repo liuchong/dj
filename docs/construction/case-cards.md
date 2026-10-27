@@ -130,7 +130,7 @@ T42 的每个组合都记录 setup/test/teardown、原生身份/源消息/投递
 | T23.other-clients.future | D | e2e/skill | 其他客户端的Skill采用须单独实测；首期不安装 |
 | T24.events-disabled.integration | R | F03；integration/im | edited/deleted或native IM corpus，preview/查询明确unsupported |
 | T24.events-native.future | D | integration/im | 编辑/删除及native历史正向，待扩展启用与原生证据 |
-| T30.recent-disabled.sqlite | R | F04；integration/delivery | recent/steer合法已知分支unsupported，不静默改current/queue |
+| T30.recent-disabled.sqlite | R | F04；integration/delivery | steer合法已知分支unsupported，不静默改queue；recent当前正向覆盖见0007 |
 | T30.mixed-policy.future | D | integration/delivery | 扩展启用后再测queue/steer、current/recent策略合并 |
 | T32.deleted-selector.future | D | unit/rules | 源适配扩展后再验证edited/deleted的正向事件版本触发 |
 | T34.multipart-recovery.future | D | integration/im | 多片前片已接受、后片unknown/失败的恢复/后缀retry；首期只测拒绝 |
@@ -210,3 +210,5 @@ T63.opencode-native-read.integration 补充当前 OpenCode 消息分页与有界
 | T31.message-filter-cutover.integration | 未提交自动通知取消，已提交保持，显式直发不拦截 |
 | T40.message-filter-pull.integration | 待领取复核并抑制，已领取不隐藏，消息查询保持 |
 | T38.message-filters.unit | 严格结构/上限、字面Unicode、disabled、indeterminate、无跨消息/版本缓存 |
+
+0007：T38.message-context.integration、T40.message-history-pages.integration、T38.native-context-cache.integration、T40.native-history-byte-pages.integration、T38.context-official-http.integration；T38.context-boundaries.unit保护精确作用域、Unicode分页及贡献策略取小。

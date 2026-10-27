@@ -12,6 +12,8 @@ DJ 的核心流程：登记真实 Agent 会话 → 创建消息订阅 → DJ 常
 
 订阅可设置固定提示词与确定性任务模板（spec.instruction_policy）；规则命中后，DJ 将各有效订阅的说明与原消息一起送到原会话。模板字段、版本与超限行为见[统一操作契约](docs/interfaces/operations.md#规则与提交)。DJ 不生成自然语言决策或执行任务，任务仍由接收 AI 处理。
 
+历史与引用通过[消息上下文](docs/specs/0007-message-context.md)统一提供：通知自带有界context，AI可调用MCP的dj_message_context/dj_message_history继续按消息位置或会话分页读取。默认直接用DJ本地缓存，不做search；缺失时才显式请求平台补取。
+
 需要由 AI 主动消费时，订阅设置 `spec.delivery_mode="pull"`，使用 `subscription.pull` 领取与 `subscription.ack` 确认或重试；租约与待办持久保存，消息、提示词和回复上下文沿用权限重检，不向原生会话重复推送。确认消费不等同于任务完成，具体授权、幂等和时效见[操作契约](docs/interfaces/operations.md)。
 
 无需订阅时：查询或精确定位会话 → 只读核验 → 定向输入 → 查投递/原生回答；需要新实例或会话则显式 start/create。所有输入共用原生会话队列与未知结果屏障。完整分支、停止并发和创建后的接线见[统一业务流程](docs/workflows.md#统一路径与收口)，首期正向与拒绝范围见[能力矩阵](docs/release-scope.md#首期统一能力与验收适用矩阵)。

@@ -53,7 +53,7 @@ runtime_state 为 unknown/idle/busy/waiting_permission/offline/incompatible。�
 
 ## 订阅 spec
 
-完整领域合同与首期开放能力分别维护；首期对未启用的 steer/recent、编辑/删除来源事件等返回 unsupported，范围见 [首批接入](release-scope.md)。
+完整领域合同与首期开放能力分别维护；当前对未启用的 steer、编辑/删除来源事件等返回 unsupported，范围见 [首批接入](release-scope.md)。
 
 以下为传给 subscription.preview 的 spec；句柄来自发现结果，示例不可直接复用为真实目标。
 
@@ -86,7 +86,7 @@ predicate 缺省 {all:[]}。AST 为 all/any/not 或叶子，节点形状互斥�
 
 ## 上下文、投递与生效边界
 
-current 为默认，recent 仅选当前事件之前、同连接/原生对话/同话题且目标主体有权读的事件，最多 20 条/32 KiB；当前事件最多注入 16 KiB。所有截断显式给出 bytes 与读取引用，附件只提供元数据。列表和上下文不借机遍历整个目标历史。
+recent 为默认，current 可显式选择；recent 仅选当前事件之前、同连接/原生对话/同话题且目标主体有权读的事件，最多 20 条/32 KiB；当前事件最多注入 16 KiB。所有截断显式给出 bytes 与读取引用，附件只提供元数据。列表和上下文不借机遍历整个目标历史。历史、引用链和继续读取统一见 [消息上下文](specs/0007-message-context.md)，默认直接读DJ本地缓存，不执行search或平台轮询。
 
 busy=queue 为默认，steer 必须显式并具备能力；offline 首轮仅 hold。ttl 默认 86400 秒，允许 60–604800。start 首轮仅 now，按 commit 后的 ingress_seq 生效；backfill 尚不支持，不能把旧事件自动补成实时输入。
 

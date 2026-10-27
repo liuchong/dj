@@ -852,3 +852,7 @@ native_api 列表继续只报告已加载的本机对话，不为枚举加载历
 1. NC1：Claude Code 与 Antigravity 仅接入已有同用户进程；端点绑定 PID、进程出生时间、准确工作区与原生会话。Claude 使用原生 UDS 注册与回调，Antigravity 使用已核验监听端口、私有 CSRF 及固定叶证书的 loopback HTTPS。无云端控制、配对、扩展注入或新 Agent argv 回退。
 2. NC2：生产装配支持两端的原会话发现、核验、有界文本读取与 start_idle 提交；Antigravity 保留原模型/用户配置，Claude 保留原生 accept/hold/refuse 权限。无 ACK/held/超时不重发；只在原生确认后接受，实际模型完成和平台出站另记。明确 unsupported 的创建/启停/完成观察不伪造支持。
 3. NC3：native configure 仅产生新的私有本机端点/凭据文件；不改客户端信任/配置，不启动 AI。按最新用户范围，接线与原生接收为验收目标，模型额度不阻塞接线交付。无活 Claude Code 时仅报告实现与本地协议结果，不能以 Claude Desktop 或历史 JSONL 冒充真实 Code 接收。
+
+## 当前消息上下文合同
+
+消息历史、引用链和AI主动读取统一按[0007](../specs/0007-message-context.md)执行；默认直接读取DJ缓存，recent已启用且为新订阅默认，current仍是明确的正文策略而非兼容分支。MCP/API/GEPO/CLI共用message.context/history，显式原生补取只写上下文缓存、不重新路由；历史文档中的recent未启用描述不再适用。

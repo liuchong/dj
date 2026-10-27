@@ -472,6 +472,8 @@
                   "conversation"
                   "sender"
                   "mentions"
+                  "reply_to"
+                  "root_message_id"
                   "received_at"
                   "source_time"
                   "ingress_seq"

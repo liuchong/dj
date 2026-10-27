@@ -42,9 +42,9 @@ Lark 用户身份适合验证当前主要聊天入口；Telegram 提供 DJ 自�
 ## 首期功能裁剪
 
 - 接收仅 `message.created` 文本；来源准确保留连接、作者、原消息和话题。非文本保留必要元数据和 unsupported 诊断，不 OCR/摘要、不当作空文本触发。规则引擎的 edited/deleted 合同保留，但这些首期连接的订阅预览返回 unsupported；不承诺察觉源端未推送的删除。
-- 规则采用既定确定性谓词；默认只接所选范围内的人类来源，机器人链需另行显式授权。首期运行配置采用 busy=queue、offline=hold、context=current；steer/recent 不作为首期发布能力，预览明确拒绝而不静默替换。
+- 规则采用既定确定性谓词；默认只接所选范围内的人类来源，机器人链需另行显式授权。首期运行配置采用 busy=queue、offline=hold、context=recent（可显式current）；steer 不作为当前能力，预览明确拒绝而不静默替换。
 - 对话列表来自操作员允许范围与核验结果，complete 只指该范围的快照列完；不声称能枚举 Telegram bot 的所有聊天。需要精确原生地址时走 conversation.resolve，不按名称试发。
-- `message.list/search` 首期只查 local 入库语料；native corpus 返回 unsupported。精确地址验证所需的平台元数据读取不等于开放 native 历史检索。附件仅元数据，无下载/上传、富文本编辑、反应或撤回功能。
+- `message.list/search` 首期只查 local 入库语料；native corpus 返回 unsupported。精确地址验证所需的平台元数据读取不等于开放 native 历史检索。上下文历史及引用通过message.context/history读取DJ缓存，显式native可由Lark官方API补取。附件仅元数据，反应当前仅支持DJ管理的Typing工作标记，无下载/上传、富文本编辑或撤回功能。
 - 首期发送/回复只发单条纯文本。保持统一 16384 UTF-8 字节上限，并在受理前按平台的更低字符/字节限制检查；超限明确拒绝，不摘要、不截断后冒充完整发送。多片 outbox 合同与 T34 保留为后续能力，首期不对外声明已支持。
 - 身份、登记、预览/订阅、暂停/恢复/删除、操作台账、输入与出站状态/核对/安全取消、operator-only 不重发结案都属于首期。不能因裁剪平台功能而裁掉 unknown、权限撤销或幂等。
 - 自动把 Agent 的最后回答发回 IM 不在首期；Agent 使用 CLI/MCP 的 `message.reply` 明确提交。输入提示只告知可回复能力，不自动授权所有未来消息外发。
@@ -60,17 +60,17 @@ Lark 用户身份适合验证当前主要聊天入口；Telegram 提供 DJ 自�
 | 免订阅 Agent 输入 | 单个未登记或已登记精确会话、纯文本、queue/hold、独立 direct 台账和共享 route | 不群发、不自动启动/恢复/注册，不附 IM 历史；不截短后发送 | T49/T50/T54/T62/T72 |
 | 启动/创建/停止 | 预配 OpenCode/Pi start；OpenCode 实例内空 create；自有 managed 安全 stop | Pi 同 RPC create unsupported；不停止 existing，不强停，不用 manual 结案释放未知 slot | T51–T53/T58/T64–T66/T68 |
 | 新会话接入订阅 | 操作员预配 recipient/工具作用域并核验后登记、preview/create | create 不自动配置凭据/Skill/MCP，不改绑创建者；未接线不报回复可用 | T33/T43/T44/T67 |
-| IM 订阅与回复 | 两 IM × 两 Agent、created 文本、确定性规则、current/queue/hold、local 查询和单条回复 | edited/deleted、steer/recent、backfill、native IM corpus、媒体操作、多片出站均不启用 | T01/T06/T41/T42；下述分支表 |
+| IM 订阅与回复 | 两 IM × 两 Agent、created 文本、确定性规则、recent/current、queue/hold、local查询及显式Lark上下文补取和单条回复 | edited/deleted、steer、backfill、非Lark原生历史、媒体操作、多片出站均不启用 | T01/T06/T41/T42；下述分支表 |
 | 共同正确性 | 权限撤销、三入口幂等、unknown、人工不重发结案、容量/公平调度、停机恢复 | 无 source replay/lookup/原生 fencing 的能力如实报告，不虚构保证 | T08–T21/T25–T29/T31/T33/T35/T38–T40/T45/T55/T56/T65/T70 |
 
 本矩阵是全首期统一发布门禁。每个复合场景在实现阶段拆出稳定子用例后归档，至少如下：
 
 | 原场景 | 首期执行并留证据 | 保留待扩展，不能标运行通过 |
 | --- | --- | --- |
-| T07/T30 | queue/current、不同 TTL/grants 的合并与撤销；显式请求 steer/recent 的 unsupported | 正向 steer/recent 与跨策略合并 |
+| T07/T30 | queue/current、不同 TTL/grants 的合并与撤销；显式请求steer的unsupported、recent上下文见0007 | 正向steer与其他未实现策略合并 |
 | T10/T22 | 缺原生去重/版本/运行权限时的明确限制或失败；只测首期适配器 | 其他厂商正向适配、稳定 dispatch key 保证 |
 | T23/T44 | OpenCode/Pi 的 CLI Skill 采用；MCP 代理协议另测、宿主兼容有证才声明 | 其他客户端采用与 Pi MCP 宿主能力 |
-| T24/T32 | created、local 查询、分页、截断三值判定；未启用事件/native corpus 拒绝 | edited/deleted、native IM 历史的正向路径 |
+| T24/T32 | created、local 查询、分页、截断三值判定；未启用事件/native corpus 拒绝 | edited/deleted；Lark上下文历史正向路径见0007 |
 | T34/T36/T37 | 多片请求受理前拒绝；外部正文隔离；目录明确删除导致索引/读取失效归 T61 | 多片恢复、IM 删除通知与原文投递 tombstone、native IM 快照和 live 联动 |
 
 每个首期子用例记录 enabled-positive / required-rejection / deferred，不以父编号通过掩盖 deferred。启动/创建与订阅共享 gate 的冲突验收、无 IM 闭环、四组合回复、性能和依赖门禁均不可省略。接口存在、空会话创建成功或消息受理不能代替这些证据。
@@ -82,7 +82,7 @@ Lark 用户身份适合验证当前主要聊天入口；Telegram 提供 DJ 自�
 
 历史 bot consumer 合同还包括 ready marker、stdin 生命周期及提前 ACK 风险；这些不属于当前 user 轮询实现/验收。当前 user 也只从 DJ 持久入库开始提供内部保证，不能拿历史 consumer 的 ready 或接收结果证明 user 接入通过。
 
-当前首期采用 Lark 国际版、用户 OAuth、DJ 自有有界轮询；App 凭证不等于用户授权。CLI 1.0.76 的消息事件仅支持 bot，不能把 `--as user` 硬加给 event consume。2026-10-23 只读核对消息/话题列表支持 user、分页和原消息回复；完整轮询与恢复合同见 [IM 接入](adapters/im.md#lark-user-poll)。内部读取不开放公共 native 历史查询、不把旧历史触发工作；收信延迟及源缺口单列，不降低四组合验收。
+当前Lark接入按0001直连官方WebSocket与HTTPS，user/bot身份独立核验。上下文默认读DJ缓存；显式平台历史读取通过0007的message.context/history，不把历史记录重新触发订阅，也不以历史读取证明实时事件覆盖。
 
 ### Telegram
 

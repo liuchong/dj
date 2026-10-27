@@ -22,6 +22,7 @@
   (import "../lifecycle/service.eli" :as Lifecycle)
   (import "../delivery/service.eli" :as Delivery)
   (import "../messaging/service.eli" :as Messaging)
+  (import "../messaging/context.eli" :as MessageContext)
   (import "../adapters/im/lark.eli" createReadLimiter)
   (import "../connections/manager.eli" createConnectionManager)
   (import "../adapters/agent/opencode-http.eli" createOpenCodePort)
@@ -251,6 +252,7 @@
                   (js-array "delivery" Delivery)
                   (js-array "connections" Messaging)
                   (js-array "im_catalog" Messaging)
+                  (js-array "message_context" MessageContext)
                   (js-array "messaging" Messaging))
                 :forEach
                 (lambda

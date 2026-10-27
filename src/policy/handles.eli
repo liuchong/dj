@@ -9,6 +9,7 @@
       "session"
       "session_message"
       "message"
+      "message_context"
       "preview"
       "reply_context"
       "cursor"

@@ -260,6 +260,8 @@
                         (put (nativeGet event "sender") :identities (nativeGet sender "identities")))
                       (when (nativeGet sender "name")
                         (put (nativeGet event "sender") :display_name (nativeGet sender "name")))
+                      (when (nativeGet message "parent_id") (put event :reply_to (js-object :id (nativeGet message "parent_id"))))
+                      (when (nativeGet message "root_id") (put event :root_message_id (nativeGet message "root_id")))
                       (js-call messages :push event)))
                   (catch djReturn4Error
                     (if (eq djReturn4Error djReturn4Token)
@@ -307,7 +309,7 @@
             :replay
             "bounded_history"
             :native_history
-            "unsupported"
+            "supported"
             :native_idempotency
             "unknown"
             :lookup_send
@@ -861,6 +863,9 @@
                           readPollPage
                           :commitPollPage
                           commitPollPage
+                          :history (async (parameters context)
+                            (let ((response (await (js-call http :perform (if (nativeGet parameters "message_id") "get" "list") parameters context))))
+                              (if (nativeGet response "ok") (success (nativeGet (nativeGet response "data") "data")) response)))
                           :reaction (async (command parameters context)
                             (let ((response (await (js-call http :perform (str "reaction_" command) parameters context))))
                               (if (nativeGet response "ok") (success (nativeGet (nativeGet response "data") "data")) response)))

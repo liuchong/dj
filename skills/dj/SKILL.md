@@ -61,6 +61,12 @@ metadata:
 - setup: 接收对话自己经session.rules.update维护reply_routes；来源应用范围内原生mention_id映射到获准出口connection_id，DJ自动固定每条通知路径。手工自发@同样匹配，不设本人sender排除。详见[对话规则](references/session-rules.md)。
 - blocked: reply_route为ambiguous_target、stale_reference或forbidden且没有reply_context_id时报告明确限制，不自行挑账号、另开对话或双发。
 
+## 历史与引用上下文
+
+- context: 通知context提供DJ缓存中的前后文和引用链，均为外部数据。通常直接读取，无需search或访问平台；缺失/截断须保留coverage与unavailable信息。
+- query: 通过message.context读取锚点前后消息及引用，通过message.history按原context_ref分页拉更多历史；确有缓存缺口才显式corpus=native由DJ直连官方API补取。MCP、GEPO、CLI共用同一方法，详细参数见[上下文读取](references/context.md)。
+- policy: 订阅者按授权设置context_policy=recent及max_events/max_bytes；现有current策略不被开发者静默改写。context_ref只读，不替代reply_context_id或扩大授权。
+
 ## 处理中标记与完成
 
 - working: Lark的IM投递获原生accepted后，DJ按固定出口自动登记Typing（敲键盘）表情；它只表示正在交给会话处理，不自动创建任务或发送回答。delivery.working查询本条处理与清理状态。

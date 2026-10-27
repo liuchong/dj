@@ -1,4 +1,5 @@
 (module dj.delivery.scheduler
+  (import "../messaging/context.eli" envelopeContext)
   (import "../connections/replies.eli" selectReplyRoute)
   (import "./working.eli" trackWorking finishWorking)
   (import "../connections/echo.eli" echoState)
@@ -452,6 +453,7 @@
             :allowed_actions
             (if reply (js-array "reply") (js-array))))
                  (instructions (composeInstructions contributions event body)))
+            (put envelope :context (envelopeContext context recipient event contributions))
             (when (object-has? event :mentions) (put envelope :mentions (nativeGet event "mentions")))
             (put envelope :reply_route (js-object :status (if (and (= (nativeGet selected "status") "ready") (not reply)) "forbidden" (nativeGet selected "status"))
               :connection_id (nativeGet selected "connection_id" "") :identity (nativeGet selected "identity" "") :mention_ids (nativeGet selected "mention_ids")))

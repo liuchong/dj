@@ -213,9 +213,9 @@
             (Object/assign
               (js-object
                 :mode
-                "current"
+                "recent"
                 :max_events
-                1
+                10
                 :max_bytes
                 (nativeGet limits "text_bytes"))
               (nativeGet spec "context_policy")))

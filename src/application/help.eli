@@ -59,6 +59,10 @@
       "在获准本地 IM 正文中做区分大小写的字面子串检索；不是语义搜索。"
       :message.get
       "按 event_id 或 message_ref 读取仍可见正文，按 UTF-8 字节边界分页。"
+      :message.context
+      "按当前消息或context_ref读取前后文与引用链；native通过官方API补取，不触发订阅。"
+      :message.history
+      "在context_ref或conversation_ref绑定的会话内有界分页读取历史，区分local/native覆盖。"
       :message.send
       "向 destination_ref 固定的 IM 地址发送一条纯文本；需要独立主动发送授权。"
       :message.reply
@@ -187,6 +191,8 @@
         (put defaults :max_bytes (nativeGet limits "body_page_default_bytes")))
       (when (js-call (js-array "message.list" "message.search") :includes name)
         (put defaults :corpus "local"))
+      (when (= name "message.context") (Object/assign defaults (js-object :corpus "local" :before 10 :after 0 :reference_depth 4 :max_bytes 16384)))
+      (when (= name "message.history") (Object/assign defaults (js-object :corpus "local" :order "desc" :limit 20 :max_bytes 16384)))
       (when (= name "session.message.list") (put defaults :corpus "indexed"))
       (when (js-call (js-array "session.list" "session.search") :includes name)
         (put defaults :sort "session_key_asc"))
@@ -227,9 +233,9 @@
             :context_policy
             (js-object
               :mode
-              "current"
+              "recent"
               :max_events
-              1
+              10
               :max_bytes
               (nativeGet limits "text_bytes"))
             :delivery_policy

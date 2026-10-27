@@ -37,7 +37,9 @@
     "tests/integration/working.test.eli",
     "tests/unit/working.test.eli",
     "tests/integration/echo.test.eli",
-    "tests/unit/echo.test.eli"
+    "tests/unit/echo.test.eli",
+    "tests/integration/context.test.eli",
+    "tests/unit/context.test.eli"
   ],
   "outDir": "dist-tests"
 }

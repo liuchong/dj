@@ -26502,6 +26502,126 @@
       "requirements": [
         "SPEC-0003"
       ]
+    },
+    {
+      "case_id": "T38.message-context.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/context.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "acceptance_ids": [
+        "A01",
+        "A03"
+      ],
+      "requirements": [
+        "SPEC-0007"
+      ]
+    },
+    {
+      "case_id": "T40.message-history-pages.integration",
+      "parent_id": "T40",
+      "file": "tests/integration/context.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "acceptance_ids": [
+        "A01",
+        "A03"
+      ],
+      "requirements": [
+        "SPEC-0007"
+      ]
+    },
+    {
+      "case_id": "T38.native-context-cache.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/context.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "acceptance_ids": [
+        "A01",
+        "A03"
+      ],
+      "requirements": [
+        "SPEC-0007"
+      ]
+    },
+    {
+      "case_id": "T38.context-official-http.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/context.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "acceptance_ids": [
+        "A01",
+        "A03"
+      ],
+      "requirements": [
+        "SPEC-0007"
+      ]
+    },
+    {
+      "case_id": "T40.native-history-byte-pages.integration",
+      "parent_id": "T40",
+      "file": "tests/integration/context.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "acceptance_ids": [
+        "A01",
+        "A03"
+      ],
+      "requirements": [
+        "SPEC-0007"
+      ]
+    },
+    {
+      "case_id": "T38.context-boundaries.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/context.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "pure",
+      "acceptance_ids": [
+        "A01",
+        "A03"
+      ],
+      "requirements": [
+        "SPEC-0007"
+      ]
     }
   ],
   "source_extension_base": "c1eb7b1"

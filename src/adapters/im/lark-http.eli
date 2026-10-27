@@ -11,6 +11,8 @@
         (try
           (setq text (nativeGet (JSON/parse (nativeGet (nativeGet message "body") "content" "{}")) "text"))
           (catch invalid nil)))
+      (unless (= (nativeTypeOf text) "string")
+        (setq text (str "[" (nativeGet message "msg_type" "unknown") "] " (nativeGet (nativeGet message "body") "content" ""))))
       (Object/assign (js-object) message
         (js-object :sender (Object/assign (js-object) (nativeGet message "sender")
           (js-object :identities (larkIdentities (or brand "lark") app nil
@@ -112,17 +114,20 @@
         (let ((result-token (js-object)) (result nil))
         (try
           (let* ((path nil) (method "GET") (body nil)
-                 (thread (nativeGet parameters "thread_id")) (reading (= command "list")))
+                 (thread (nativeGet parameters "thread_id")) (reading (js-call (js-array "list" "get") :includes command)))
             (cond
+              ((= command "get")
+                (setq path (str "/open-apis/im/v1/messages/" (nativeEncodeURIComponent (nativeGet parameters "message_id")))))
               ((= command "list")
                 (let ((query (new globalThis.URLSearchParams)))
                   (js-call query :set "container_id_type" (if thread "thread" "chat"))
                   (js-call query :set "container_id" (or thread (nativeGet parameters "chat_id")))
-                  (js-call query :set "page_size" "50")
+                  (js-call query :set "page_size" (str (nativeGet parameters "limit" 50)))
                   (js-call query :set "sort_type" (if (= (nativeGet parameters "order") "desc") "ByCreateTimeDesc" "ByCreateTimeAsc"))
                   (when (nativeGet parameters "page_token") (js-call query :set "page_token" (nativeGet parameters "page_token")))
-                  (unless thread
-                    (js-call query :set "start_time" (str (Math/floor (/ (Date/parse (nativeGet parameters "start")) 1000))))
+                  (when (and (not thread) (nativeGet parameters "start"))
+                    (js-call query :set "start_time" (str (Math/floor (/ (Date/parse (nativeGet parameters "start")) 1000)))))
+                  (when (and (not thread) (nativeGet parameters "end"))
                     (js-call query :set "end_time" (str (Math/ceil (/ (Date/parse (nativeGet parameters "end")) 1000)))))
                   (setq path (str "/open-apis/im/v1/messages?" (js-call query :toString)))))
               ((js-call (js-array "reaction_list" "reaction_create" "reaction_delete") :includes command)
@@ -158,11 +163,11 @@
                 (if reading
                   (if (and (Array/isArray (nativeGet data "items"))
                            (<= (js-length (nativeGet data "items")) 50)
-                           (= (nativeTypeOf (nativeGet data "has_more")) "boolean"))
+                           (or (= command "get") (= (nativeTypeOf (nativeGet data "has_more")) "boolean")))
                     (success (js-object :ok t :identity (nativeGet config "identity") :data (js-object
                       :messages (js-call (nativeGet data "items") :map
                         (lambda (message) (formatLarkMessage message thread (nativeGet config "brand" "lark") application-id)))
-                      :has_more (nativeGet data "has_more") :page_token (nativeGet data "page_token"))))
+                      :has_more (nativeGet data "has_more" false) :page_token (nativeGet data "page_token"))))
                     (failure "incompatible"))
                   (success (js-object :ok t :identity (nativeGet config "identity") :data data))))))
           (catch unavailable
