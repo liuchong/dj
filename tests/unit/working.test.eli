@@ -1,6 +1,6 @@
 (module dj.tests.unit.working
   (import "../../src/core/native.eli" nativeGet)
-  (import "../../src/delivery/working.eli" finishWorking projectWorking)
+  (import "../../src/delivery/working.eli" finishWorking projectWorking projectAcknowledgement)
   (import "../../src/core/errors.eli" success failure)
   (import "../support/case.eli" withUnitCase)
   (import "bun:test" expect)
@@ -34,5 +34,17 @@
       (js-call (expect (nativeGet (nativeGet result "data") "state")) :toBe "not_marked")
       (js-call (expect (nativeGet (nativeGet result "data") "cleanup_state")) :toBe "done")
       (js-call (expect (nativeGet delivery "state")) :toBe "accepted")
-      (js-call (expect (nativeGet (projectWorking context (Object/assign (js-object) delivery (js-object :recipient_principal_id "other"))) "ok")) :toBe false))))
+      (js-call (expect (nativeGet (projectWorking context (Object/assign (js-object) delivery (js-object :recipient_principal_id "other"))) "ok")) :toBe false)
+      (js-call (nativeGet principal "grants") :push (js-object :action "message.reply" :resources (js-array "connection")))
+      (let* ((mark (js-object :mark_id "ack" :acknowledgement t :principal_id "recipient" :state "posting"
+          :destination (js-object :connection_id "connection")))
+        (pending (projectAcknowledgement context mark)))
+        ;; Accepted intent is not native confirmation. A foreign owner cannot inspect it.
+        (js-call (expect (nativeGet (nativeGet pending "data") "native_acknowledged")) :toBe false)
+        (put mark :acknowledged t) (put mark :state "done")
+        (js-call (expect (nativeGet (nativeGet (projectAcknowledgement context mark) "data") "native_acknowledged")) :toBe t)
+        (put mark :principal_id "other")
+        (js-call (expect (nativeGet (projectAcknowledgement context mark) "ok")) :toBe false)
+        (put mark :principal_id "recipient") (put mark :acknowledgement false)
+        (js-call (expect (nativeGet (projectAcknowledgement context mark) "ok")) :toBe false)))))
 )

@@ -1,6 +1,6 @@
 (module dj.messaging.service
   (import "./topics.eli" topicOf trackedTopic)
-  (import "../delivery/working.eli" finishWorking)
+  (import "../delivery/working.eli" finishWorking queueAcknowledgement)
   (import "../core/native.eli" nativeNullish nativeTypeOf nativeGet)
   (import "../core/errors.eli" success failure)
   (import "../core/types.eli"
@@ -1642,6 +1642,14 @@
               :includes
               operation)
             (queryMessages context operation args))
+          ((= operation "message.acknowledge")
+            (let ((reply (must (resolveReply context (nativeGet args "reply_context_id")))))
+              (must (requirePermission context "message.reply" (nativeGet reply "destination")))
+              (when (nativeGet reply "source_destination")
+                (must (requirePermission context "message.reply" (nativeGet reply "source_destination"))))
+              (js-call context :accept (lambda (tx operation-id)
+                (queueAcknowledgement context (must (resolveReply context (nativeGet args "reply_context_id")))))
+                (lambda (data) (js-array (typedRef "acknowledgement" (nativeGet data "acknowledgement_id")))))))
           ((js-call (js-array "message.send" "message.reply") :includes operation)
             (acceptOutbound context operation args))
           ((= operation "outbound.get")

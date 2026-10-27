@@ -74,6 +74,8 @@ metadata:
 
 ## 处理中标记与完成
 
+- acknowledge: 明确原生@本人或机器人、按本对话规则判断无需文字回复时，可message.acknowledge(reply_context_id,idempotency_key)用Get表示收到；通过message.acknowledge.get查native_acknowledged，未确认不声称已点。原消息/身份由DJ固定，不改为主动发送；随后仍需delivery.complete(no_reply)清理Typing。Get保留，不自动转发普通输出，不把每条通知都变成任务或文字回复。
+
 - working: Lark的IM投递获原生accepted后，DJ按固定出口自动登记Typing（敲键盘）表情；它只表示正在交给会话处理，不自动创建任务或发送回答。delivery.working查询本条处理与清理状态。
 - complete: 每条已处理通知在完成/无需回复/失败/取消时调用delivery.complete，参数delivery_id、reason=completed/no_reply/failed/cancelled、稳定idempotency_key；不能只用普通输出或最终回答表示结束。若已通过DJ回复并获accepted，DJ自动结束对应租约，仍可幂等complete。
 - cleanup: 多接收方共享同一表情，全部结束后才删；清理持久化且超时、重启自动续试，原有人工Typing不删除。cleanup_state=done才是撤销确认，其余为待清理，不能谎报已撤销；无需回复时不得为了清理而额外发IM。处理租约30分钟，到期自动收回表情，不阻止业务后续推进。

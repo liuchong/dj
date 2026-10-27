@@ -262,6 +262,8 @@
   (put definitions :reply_route (obj (strings "status identity connection_id" (js-object :mention_ids (arr stringSchema)))))
   (put definitions :reply_binding (obj (strings "source_connection_id mention_id reply_connection_id"
     (js-object :source_identity_revision integerSchema :reply_identity_revision integerSchema))))
+  (put definitions :acknowledgement (obj (strings "acknowledgement_id emoji_type state reaction_id last_error"
+    (js-object :delivery_id nullableString :native_acknowledged boolSchema))))
   (put definitions :working (obj (strings "delivery_id state reason expires_at cleanup_state last_error")))
   (put definitions :session_rules (obj (strings "session_key tool native_namespace native_session_id text sha256 updated_at updated_by"
     (js-object :revision integerSchema :reply_routes (arr (ref "reply_binding")))) (js-array "session_key" "tool" "native_namespace" "native_session_id" "text" "sha256" "revision")))

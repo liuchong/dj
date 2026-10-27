@@ -2,7 +2,7 @@
   (import "../core/native.eli" nativeNullish nativeGet)
   (import "../core/errors.eli" success failure)
   (import "../core/limits.eli" limits)
-  (import "../delivery/working.eli" projectWorking)
+  (import "../delivery/working.eli" projectWorking projectAcknowledgement)
   (import "../resources/service.eli" projectWatch projectResourceRecovery)
   (import "../messaging/recovery.eli" projectRecovery)
   (import "../sessions/rules.eli" projectRules)
@@ -60,6 +60,7 @@
                   :resource_recovery "operations"
                   :resource_watch "resource_watches"
                   :working "work_items"
+                  :acknowledgement "work_marks"
                   :session_rules "session_rules"
                   :message_filter "message_filter_policies"
                   :inbox "inbox_entries"
@@ -91,6 +92,7 @@
             ((= kind "resource_recovery") (projectResourceRecovery context record))
             ((= kind "resource_watch") (projectWatch context record))
             ((= kind "working") (projectWorking context record))
+            ((= kind "acknowledgement") (projectAcknowledgement context record))
             ((= kind "session_rules") (projectRules context record))
             ((= kind "message_filter") (projectFilterPolicy context record))
             ((= kind "inbox") (projectInbox context record))

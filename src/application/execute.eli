@@ -17,6 +17,7 @@
       "message_filter"
       "session_rules"
       "working"
+      "acknowledgement"
       "subscription"
       "delivery"
       "outbound"

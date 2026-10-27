@@ -26,3 +26,9 @@ DJ将Lark `Typing`（敲键盘）作为已交给接收会话处理的标记，�
 普通历史查询不启动Typing或任务。用户明确要求补处理漏收消息时，操作员可用message.recover给出同一连接下1..16个准确原生message_id、原因及固定幂等键，由DJ核验官方消息、当前身份和授权，再按原消息键去重进入原订阅/黑名单/投递路径。这里只登记explicit_native_recovery证据，不冒充WebSocket实时事件，不移动收件游标，不自动扩大订阅或重建已有任务。
 
 恢复消息按当前原订阅通知原对话；原case和owner继续复用。正式投递accepted后复用同一Typing租约，回复、delivery.complete、失败/无需回复或租约到期均走既有撤销机制。此接口仅操作员可调用，不是每次主动查询的隐式动作。
+
+## 收到确认与无需文字回复
+
+明确原生@本人或机器人后，AI判断无需文字回复时，可以显式调用message.acknowledge(reply_context_id,idempotency_key)留一个Get（收到/知道了）确认；是否调用由原接收对话的持久规则决定，不因普通输出自动发送，不对所有关键词或私聊事件一律确认。DJ沿0005固定的原消息与user/bot身份执行，AI不选择chat、message_id或身份。此操作复用message.reply授权与受控回复引用，不适用于资源事件。
+
+Get是持久收到确认，Typing只是临时处理中：AI仍须delivery.complete(no_reply)结束处理；DJ撤销Typing，保留Get，不为了确认发文字。两者共用现有持久表情队列，按emoji区分；Get在官方GET核对存在后才native_acknowledged=true，可通过message.acknowledge.get查询。已存在的本人同类Get直接确认，不删除人工表情；网络未知或丢失POST响应时只重查，不盲目重发POST。执行前复核当前主体授权、账号栅栏、源读取有效期；失效则终止待发送确认并保留明确状态，不借新账号发送。
