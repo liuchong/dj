@@ -1,0 +1,3016 @@
+{
+  "schema_version": 1,
+  "repository": "https://github.com/liuchong/eliscript",
+  "source_commit": "b1c7741365545d5a048079d64f863524cf7117e2",
+  "prepared_source_ref": ".local/toolchains/eliscript-b1c7741/source",
+  "file_count": 492,
+  "source_inputs_sha256": "6fd89941eba21098e56a31e2c9c7751894d582789709dd8b0c39fab6499022db",
+  "compiler_executed": false,
+  "stage": "S1-prepared-only",
+  "files": [
+    {
+      "path": "Makefile",
+      "kind": "file",
+      "sha256": "b89faaf6f1b06725110877d995cacec88d8897219a6816ce6255ee8f60b96b25",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bin/eliscript",
+      "kind": "file",
+      "sha256": "54ea98a8090f43cc40dd1b5a5bed9b589660ecc09e25d970b9488d49b1fa38a7",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bin/eliscript-bootstrap",
+      "kind": "symlink",
+      "target": "../tools/bootstrap-command.el",
+      "sha256": "b6053875aeb4cc134513cd5c753dc6e94f623b1ec5181673e7c489fc2063a5ec",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bin/eliscript-build",
+      "kind": "file",
+      "sha256": "e1317d4642761a3ac6d5ea085c3af1f61c91a2d925b21a2e1eec69ab6f56a9e9",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bin/eliscript-check",
+      "kind": "file",
+      "sha256": "4d38f35e97f15e85dfabd47c191254e978bf8a3dc21f810738df84b2c562bc52",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bin/eliscript-compiler",
+      "kind": "symlink",
+      "target": "../bootstrap/host/eliscript-cli.mjs",
+      "sha256": "b337c18099daa8a39d70ccdc8e7d1d4acdc559a1862e086d101e50469d63d9eb",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bin/eliscript-eval",
+      "kind": "file",
+      "sha256": "8e0a7ced3b10085f0153cc1fccb7bc649e88d0af65dd31e157dea152da4336de",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bin/eliscript-format",
+      "kind": "file",
+      "sha256": "730387553059cb4cbf538ab88309eba657ef71bca0cb20d5450ef8974fa3645d",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bin/eliscript-org",
+      "kind": "file",
+      "sha256": "4898125fe52f447b2970beb5d985f9453731af9f608bc46efea46fe9c17e5890",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bin/eliscript-portable",
+      "kind": "file",
+      "sha256": "c775b2b0fcd8a7aee048266912f1784f73576b634a5592fa1621f4ee03773beb",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bin/eliscript-seed",
+      "kind": "file",
+      "sha256": "f392ed5a035c5888fdf0fd38eeb57cac9b3d5d3e2605acd3308c805bc4f500d8",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bin/eliscript-seed-build",
+      "kind": "file",
+      "sha256": "44e1b613d4b3ef0c939abe4ef48be4d4d6a4d85efab45275c26b03cab2140bab",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bin/eliscript-watch",
+      "kind": "file",
+      "sha256": "6fbe6a5140c0b1a8889204b6aa8f92aa74449b8a454b4a01fd7c83171a71e266",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/README.md",
+      "kind": "file",
+      "sha256": "98a8fa72de8c408d7a1da09e664d59e5ab98151d64d9d426e046133965c37bf7",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/backends/README.md",
+      "kind": "file",
+      "sha256": "21f3fb30ee9dc7d941b5da5f818f49c03730398d68ad4e0666c40c00e3e3c88f",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/backends/async.eli",
+      "kind": "file",
+      "sha256": "e6fd7f209c5303a8c8cb5b542691c5b99bf8993064df4b1f707c6ca8ffca2756",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/backends/binary.eli",
+      "kind": "file",
+      "sha256": "04de114697944bfa493a36020cb581be28a22e8d9b2a4c3c28ee5d9039faeb62",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/backends/capabilities.eli",
+      "kind": "file",
+      "sha256": "00e511b95b15000c226fa336670fa62ad27a4cfa0ae9a26432009b74fdcd0766",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/backends/elf.eli",
+      "kind": "file",
+      "sha256": "5e1b4247e88b362230d87074230f268b88f318e6a47950b8d597655c1ca09331",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/backends/managed.eli",
+      "kind": "file",
+      "sha256": "7c8df0e3443350d78f3ed86fd557db3f3c4776c919c9cc80779b8cdd66915383",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/backends/memory.eli",
+      "kind": "file",
+      "sha256": "ec181d35e6f7c8e5e827b5ad3287b675e6762837d5277fadd7c553580bb01bab",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/backends/native.eli",
+      "kind": "file",
+      "sha256": "adfa6a500fb996fd3e174bffc56b633849f91265622d9873bdea70e1a8771fa8",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/backends/numeric.eli",
+      "kind": "file",
+      "sha256": "4980444bea1dd87c7a3a69aa92f4fc96978ff76ebc98999c493d3e4ea192abd8",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/backends/optimize.eli",
+      "kind": "file",
+      "sha256": "25239f88a1f5f9837b560bcf2c7df186b646fdbfcd6723180bea66baad2cc516",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/backends/regexp.eli",
+      "kind": "file",
+      "sha256": "1824ba5c2ba53a34ee9b78c1cc15fbcba3029b5e19d9408d69bccebb198252b1",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/backends/sha256.eli",
+      "kind": "file",
+      "sha256": "dd41dd47ebee71448e8b529c98f066f525984c1546e795572a2870813f77d9de",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/backends/wasm.eli",
+      "kind": "file",
+      "sha256": "5901bb1a38d0adf5dc801b88622f14fbbe813fe42529f54277ca553aeeb2581f",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/compiler/analyzer.eli",
+      "kind": "file",
+      "sha256": "8581ed12afaa44888e1ab63cd9016cf9cb197d23e88b953ff8b1b3d9d792f71a",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/compiler/compiler.eli",
+      "kind": "file",
+      "sha256": "91eda23277de117ae2e0559c249ecdd095f17154e93f40bac30ef5f25e011f90",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/compiler/emitter.eli",
+      "kind": "file",
+      "sha256": "c10c573d9e847fedb83cc013cd4e7f86370a6dfac17296b7647fb9cd98b9533b",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/compiler/expander.eli",
+      "kind": "file",
+      "sha256": "f72553eaaf4ef2bba6a2712ed6008e85c88afb45e54c65949bd3371406770b7f",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/compiler/formatter.eli",
+      "kind": "file",
+      "sha256": "813bfe08ca503d1ed1d40d90e3b22df5ea77919674145aa587a5317e7a808972",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/compiler/ir.eli",
+      "kind": "file",
+      "sha256": "e4cd2ed6194e9c12a2472822c006f93a64cbb008140e86c952ec8c89048286a0",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/compiler/lower.eli",
+      "kind": "file",
+      "sha256": "04a385a62964f1960152bbe16a7f9c468bb6710e4b2d704087383e54aea3c883",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/compiler/project.eli",
+      "kind": "file",
+      "sha256": "50d255fb195f58d4dee48c6a36e1ef8de89b9bbe9bcbe09d80dd4e24af1f1bcf",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/compiler/reader.eli",
+      "kind": "file",
+      "sha256": "7beaa3873898b34efed5ce141601107c4923f8d59652d0af259c328c686ffafb",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/compiler/source-map.eli",
+      "kind": "file",
+      "sha256": "a0848454e383744a017e3e7ad01bea4b2979d3c476e862dcc50329e48143ba5a",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/compiler/symbol.eli",
+      "kind": "file",
+      "sha256": "ed27940198db226eb0ae81c56d64fd2af37e1511f708f91265eee9fd6946f798",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/compiler/syntax.eli",
+      "kind": "file",
+      "sha256": "a75ef5facca5236bb511bb63ebf5d4737536b2928017ac578a5f244fa59dae40",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/compiler/transient-analysis.eli",
+      "kind": "file",
+      "sha256": "87f615daf0f3aa971c51421ca6b7ebe733fbcde6464c4267b4b9c1c4ec744d44",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/host/build.eli",
+      "kind": "file",
+      "sha256": "f4c4219064da74c56ec8a835b2003238ed337482866648243708ca7c20a5125d",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/host/bun.eli",
+      "kind": "file",
+      "sha256": "4274ca2edf1e389d0764cee1748d6896386bfd88422fd7245da68d5b13706720",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/host/check-cli-legacy.eli",
+      "kind": "file",
+      "sha256": "a6fcac321c629e78d57e779ee3588a5270a299b4f256a14f0ce1b923311712b3",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/host/compiler-session.eli",
+      "kind": "file",
+      "sha256": "b17591e522e62c1643e4d8343285b03c2f22f5460fe2510020e9fe930d6d296e",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/host/compiler-tools.eli",
+      "kind": "file",
+      "sha256": "0c44019c6a49eada36214b9a6afafb3dad21ded8c28fce0fb6ea74db24fb2506",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/host/evaluation-cli.eli",
+      "kind": "file",
+      "sha256": "13c0e89e84af9997d2b34096d1f08cdb3313f2e574a51dc48c614f1b054b708d",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/host/evaluation.eli",
+      "kind": "file",
+      "sha256": "594578d0b06bf5d26f22379478e7be6b2999d751e697c53e7125fc44c72d5ced",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/host/format-cli.eli",
+      "kind": "file",
+      "sha256": "a88a140e0168113c06d733af139e7237c7290e2d3152ebede6d2dfe2fd5193eb",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/host/project-cli-legacy.eli",
+      "kind": "file",
+      "sha256": "deb6ad8723e78ec183d1bb1ab9c3b59d45b4037430b3f52b10e37a987be9e845",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/host/project-legacy.eli",
+      "kind": "file",
+      "sha256": "05af4052724f575a7921da35bc35185bc372c06bf9bd4558bd4143fdda18b0ab",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/host/watch-cli.eli",
+      "kind": "file",
+      "sha256": "53827e2f4b821633333bef6405770d876cbc0948b2caf7a5280414807864d4cd",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/host/watch.eli",
+      "kind": "file",
+      "sha256": "f99e8b544782e03c09b9f7f21068018c8991b7050a0138b7652a506c2adb617b",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/runtime/UNICODE-LICENSE.txt",
+      "kind": "file",
+      "sha256": "e7a93b009565cfce55919a381437ac4db883e9da2126fa28b91d12732bc53d96",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "bootstrap/runtime/memory.eli",
+      "kind": "file",
+      "sha256": "8386bb77853996c286b68e3ee970113473f676a718921b54e7ef607055e8bd86",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "compiler/README.md",
+      "kind": "file",
+      "sha256": "34b5f47384917a7b91ea2813d08f64c439500ef77443bd4c17306aabef39078d",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "compiler/eliscript-analyzer.el",
+      "kind": "file",
+      "sha256": "5f4a44aae8fc5501278c2b23d5cffcbd01339c67395a88b7a856c961ff3d051a",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "compiler/eliscript-cli.el",
+      "kind": "file",
+      "sha256": "01082444fae9e45be51ccefe1b65331e7d96b223be2e4f624f1336f0158fd428",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "compiler/eliscript-diagnostic.el",
+      "kind": "file",
+      "sha256": "6e720411abd3f2f10e86203edd659adf669ca4dfbb97cce120b79e559c5a0802",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "compiler/eliscript-emitter.el",
+      "kind": "file",
+      "sha256": "8b4d2c371ea965a091a71013b029a6b9634220dda1a0ab090ae2b31d8fa65c56",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "compiler/eliscript-evaluation.el",
+      "kind": "file",
+      "sha256": "9d9a1b9aac1449c452a22cc3e77d35c3e16163fef26971978494864a4552f93c",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "compiler/eliscript-expander.el",
+      "kind": "file",
+      "sha256": "2c30ae084404c6396b74822da92a268b6b0e952b69b91482f85398779327c1f9",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "compiler/eliscript-form.el",
+      "kind": "file",
+      "sha256": "4c63862e7cddae7f19d91f56b1e804bddccc2ad1d1d1d11fe0ee77ae2382d317",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "compiler/eliscript-ir-emitter.el",
+      "kind": "file",
+      "sha256": "aa55a0e013b5660755fb1ca3a675136564d94a35de0f174e4e6ee8929f318fcb",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "compiler/eliscript-ir.el",
+      "kind": "file",
+      "sha256": "f567a3a6300630a2427df35fbe93521cf87f24bed4fb8ab3c0fa6d2088188641",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "compiler/eliscript-lower.el",
+      "kind": "file",
+      "sha256": "1b288bd7abbb5d7655fae8b44549d62f3b11b9ae522e03dad683452b89c07160",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "compiler/eliscript-macro-eval.el",
+      "kind": "file",
+      "sha256": "5d0266c6466eecf54792ff1a27ca34e2dae0b1aae87e30bcfe2fe7cd1dc5ec6e",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "compiler/eliscript-parameters.el",
+      "kind": "file",
+      "sha256": "b493b7696447e96a01252b03279c6b56d82cdac4377698f9f4e10a5dbe28baab",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "compiler/eliscript-portable.el",
+      "kind": "file",
+      "sha256": "6aa69b7fefa9477c9ebe7221105204bdbfd8798909bf4b3f43d44149f700d4d3",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "compiler/eliscript-project-cli.el",
+      "kind": "file",
+      "sha256": "eccf30ceb6c4f53d1d56263e81b475ed5d67e73db540bb63acedb5941ab2c3c1",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "compiler/eliscript-project.el",
+      "kind": "file",
+      "sha256": "813d28a51158bc5f96e7b5e5bca080b7af2f59e0ab19e6c3232a4c171665c343",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "compiler/eliscript-reader.el",
+      "kind": "file",
+      "sha256": "096dd635465dc166ca2cf0b0a7a57802158a2759857d342e1ffc03bf936b1a0e",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "compiler/eliscript-source-map.el",
+      "kind": "file",
+      "sha256": "ff4dde7fd4487fd8466bd864d9c2c05c29b5e02875352f7313ce5f4a2cbaa793",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "compiler/eliscript-symbol.el",
+      "kind": "file",
+      "sha256": "05b4dc7e703c92efb4d71e0f5d2a9b10f4bda5ef4373eea7df2be6b5f4c2516f",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "compiler/eliscript-transient-analysis.el",
+      "kind": "file",
+      "sha256": "e9c97a6dff1d3c455c255b4090f7218749b4c9a2a521d380afa889c564364066",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "compiler/eliscript.el",
+      "kind": "file",
+      "sha256": "e07d31e6c4cb4574200e3f37f3ee05a1bc1bd940ceff213e180f444190806416",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "package.json",
+      "kind": "file",
+      "sha256": "26d8283a9b4cae2dbc1aa381de214180a43c73caa28d3d455992ac20dc1ee6dc",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "platform/browser.eli",
+      "kind": "file",
+      "sha256": "40cee55fbe70a2538f6639ec6461eb89597eea8f970d08c5cf0b0793a241c1db",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "platform/http.eli",
+      "kind": "file",
+      "sha256": "0def42a27113fcf6cb9b0c353b21936c1a33c14b0be5d3ea5379719918b743cc",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "platform/worker.eli",
+      "kind": "file",
+      "sha256": "e7ddf88cc73fe607128a614a1651b10839e369cbe22f0fec28d6200188081c8a",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/README.md",
+      "kind": "file",
+      "sha256": "7ec5986e8dd8bf0aebbefba8bcf40a9f5d495265fd73404195af4a9c6c45295e",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/array-text.eli",
+      "kind": "file",
+      "sha256": "ec6967785a77017defb8c96d8975a126f34a6787f2e11bfcc57d53babf03a118",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/collection-internals.eli",
+      "kind": "file",
+      "sha256": "bdb829335adc47b9c96fd2d51a990d64a67172dae860355b01895ecc91b8e7db",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/collection.eli",
+      "kind": "file",
+      "sha256": "0ad1393f42e973520329ddc8ef2db8f96bbb2e27a3b67f8f5e718aaf1f175b7d",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/data-text.eli",
+      "kind": "file",
+      "sha256": "82010ab167a846d92531426b2440c42fd3c63a4ee677eea4f20b9e8e7a632c7d",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/data.eli",
+      "kind": "file",
+      "sha256": "d9e5e9c1d19e1889728be74bd5dbcbf5c5b73409a9772d6d4fc1f172381e7e51",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/identifier.eli",
+      "kind": "file",
+      "sha256": "9a50a91bc31d9e86d3f211d155df4f941ff0c2d5f9c0cdb734e4135bceb22dcb",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/lazy-sequence.eli",
+      "kind": "file",
+      "sha256": "b326e9b073bb11ff7c147562ff1289ef29d551171526c41334efc0827eb92b6b",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/list-internals.eli",
+      "kind": "file",
+      "sha256": "7e7821b543c6ca02faaec2ff06b2e378e803343d44dc1dc718d07de124577895",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/list.eli",
+      "kind": "file",
+      "sha256": "b4c808bd1a11d66aada1c0aabd7851dca06c1f008be65cb1563e1d6367092dfc",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/map-internals.eli",
+      "kind": "file",
+      "sha256": "5b43ff9ad85f465be6078468628f8d79e7c9665d06710e20126960abca78ec10",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/map.eli",
+      "kind": "file",
+      "sha256": "08fa8070c218e02be0316d84f022950e264636e8077babd02eb33251c1d5a7a4",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/metadata-internals.eli",
+      "kind": "file",
+      "sha256": "88a345508086af5709a4088a9d80a0c2578418a7ecccf8cba0ab7b51d69d1220",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/metadata.eli",
+      "kind": "file",
+      "sha256": "7bc1a4214ab228cc1dabd05a0d43d6b5d71075d8c43e41634fd7f79ed10bf7ce",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/object.eli",
+      "kind": "file",
+      "sha256": "5aa4e02f64490d5a913054033dda198e95e2f9ae42a7a8d4e0815a91dcf9a458",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/order.eli",
+      "kind": "file",
+      "sha256": "14e05a22cd37f62e56159f78122a5b58c1e88359067aab27b3c578705924f2d8",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/persistent-kind.eli",
+      "kind": "file",
+      "sha256": "d4af5f043b02db203d75bef500aeaabb5095c675edcb5fb13c6219986c7552f2",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/protocol-error.eli",
+      "kind": "file",
+      "sha256": "fd6976e76606cbecbf17f163ef20d4a91d086410e09a8dacdb42880f3f56e1d6",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/protocol.eli",
+      "kind": "file",
+      "sha256": "49b70ef705b930d060367a798147b78def9d579c77fd06ae9a1d03328129ccbd",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/queue-internals.eli",
+      "kind": "file",
+      "sha256": "92939c5ad1b6ecb9d97938c0b8b47f13317849e5963fcf436838e5ec1ee77272",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/queue.eli",
+      "kind": "file",
+      "sha256": "0d5e75138c1d7fbf247cb87c7851817224c1ee1af5de2e0a48952af1650c51aa",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/record.eli",
+      "kind": "file",
+      "sha256": "7f2a94436b9d9c1681d83064e50fc471cf8038b21cf15833ad70bff4632629e4",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/regex.eli",
+      "kind": "file",
+      "sha256": "e80f6b2d7da6a64a4ff98c9ca20d7969b06f27637ef9430fd13e22e05f300dae",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/sequence.eli",
+      "kind": "file",
+      "sha256": "4919f1ff5d26f86b40058d2825c76d6a858a2357c00ba2efea76ec2b30b2998a",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/set-algebra.eli",
+      "kind": "file",
+      "sha256": "7e3050c2afc3a56f6e327eb7300176bb06a8d3be2d97f363f9ba111b475fbc9c",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/set-internals.eli",
+      "kind": "file",
+      "sha256": "c85e54d6eaca2c7dc2f41dff73f13b42cae2ed69867ea5f90d1250e36e2c07c5",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/set.eli",
+      "kind": "file",
+      "sha256": "f83e58be61dc156265ddf777c8fe59ae42429c104c091f764ac5c861f1e565e1",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/sorted-internals.eli",
+      "kind": "file",
+      "sha256": "2cd6892c8fd1422f022304543485a3cf1398fc956f04b1c5015b3a481ef10a88",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/sorted.eli",
+      "kind": "file",
+      "sha256": "e64d1943db4c3adacbb43d5e76739c74009219478535f0ab777fa18dcaa888c3",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/text.eli",
+      "kind": "file",
+      "sha256": "017795aca4a560576b86cc3459c18cf9364454e58b8e4f8efc8c2ed001947511",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/transducer.eli",
+      "kind": "file",
+      "sha256": "cee3eab5bfecf49663586310266d93743029f4da8ca0f4de57e401d1b2378064",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/transient-internals.eli",
+      "kind": "file",
+      "sha256": "420c3017d2fa9f01aadfc05c74d27e00529facc634d6b4e015f46ad257b78748",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/transient.eli",
+      "kind": "file",
+      "sha256": "3112f371f5ff4203126f09269a428f9cd80fc9724befb8de7d722da65bc190af",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/truth.eli",
+      "kind": "file",
+      "sha256": "644391b91749c56baa688357ef744383d16b40546be370c8b00a725eac34ee5e",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/type.eli",
+      "kind": "file",
+      "sha256": "1ce5d8808676fd6dc57d0ef8760ca753d68dc51039e10aba110d7f8615cd3c39",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/value-internals.eli",
+      "kind": "file",
+      "sha256": "f44ed4ad16a2373ef0374f81809a61afb85f7b65f45975e606fb7da0c41ce783",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/value.eli",
+      "kind": "file",
+      "sha256": "bd8eb77e152cba6823468cd83f7aa98ca2b3c90985bd51da2b974681672d4cd7",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/vector-internals.eli",
+      "kind": "file",
+      "sha256": "29129747efb976038646fdfb7f00fc5882a4bb13bbc5e62abd47dc927ab3e76b",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/core/vector.eli",
+      "kind": "file",
+      "sha256": "512b5caa99744352dde8cdf7d71bb454c77d872055ad1757897965f51f67a2bc",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/emacs-compat.eli",
+      "kind": "file",
+      "sha256": "f64e26cf163f550249a5ccd4c50293d0cced86b332bc77c9d68a0a2449f669c6",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/literals.eli",
+      "kind": "file",
+      "sha256": "51a805316af97ac8e40edcb16482b3f117c6fdbc4a9ed2fe06748ac21b5076fd",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/math.eli",
+      "kind": "file",
+      "sha256": "c7cf12d8494a35391744b6ea20b0feffb2225d230e614e9298365e73053c7e9b",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/number-radix.eli",
+      "kind": "file",
+      "sha256": "08f4117ad9491b5dece2f69f56d32bd53f75bbf1474c35bc3fef82644eaa70e4",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/source-mapping.eli",
+      "kind": "file",
+      "sha256": "af7c6aeee7f51b1dab5111f18b5ab5407d54ac5b944b1ed2e4966bbabcae5262",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/testing/list.eli",
+      "kind": "file",
+      "sha256": "ceba8aff80a4b87f7bef3a2b7c39ac0b6d05fa31830cb99cfdfd502677008df8",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/testing/map.eli",
+      "kind": "file",
+      "sha256": "cb0fca669c32d0d35a48819dbe32d215262cf35f04621e15ac768bd46b5ffd36",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/testing/queue.eli",
+      "kind": "file",
+      "sha256": "67aa61eb1dd3344054c4ecf4808706ce880119f38f7a7e6c63a7e0083a6efdd1",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/testing/set.eli",
+      "kind": "file",
+      "sha256": "3c4a549f21e58bb1e9fc9926a1b93b55aab04cdbf6bd55fe8c39b4b50aa98dcd",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/testing/sorted.eli",
+      "kind": "file",
+      "sha256": "ab251866ad7f27f87bca2116e883625467a1503debdab46e2d99a07074b41c6a",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/testing/value.eli",
+      "kind": "file",
+      "sha256": "4feed8c52d5ca83f41dcc55921201b78bd961c5024338fe9c0967b57293ac509",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/testing/vector.eli",
+      "kind": "file",
+      "sha256": "f4539d4ba73c97fb8b4019b85cb30bcf64c153591635b2815070324518702f86",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/unicode-case-data.eli",
+      "kind": "file",
+      "sha256": "caeaf3ec056053bac6fda11e7c6fb9442deff002157dfdb13e3c6993cd2cd94f",
+      "sha256_utf16le": "6972ed0e897ca08ee3d21600d88f0f72a7163952c4f5a30257e94c9a86293a9c",
+      "origin": "digest-bound-packaged-generated-source"
+    },
+    {
+      "path": "runtime/unicode-case.eli",
+      "kind": "file",
+      "sha256": "e0c8575d782a0c7c6ee51941b113c5bf70b601f95098061969e328747227e44b",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/wire/http-rpc.eli",
+      "kind": "file",
+      "sha256": "f0890800339862890d13c67ed78fd9c9a81cb95dc72bfe849af986101636ddc5",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/wire/markdown.eli",
+      "kind": "file",
+      "sha256": "1f0882349df31d7897107a3633caaf8879d1eefd79e9f997476d7ef36e4c62bb",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/wire/schema.eli",
+      "kind": "file",
+      "sha256": "80e6afc1324f31f73610d1f879b8b87c20a77a3672ffcf2f3dcbdf88a862b59e",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/worker-value-codec.eli",
+      "kind": "file",
+      "sha256": "ab787b818f3d7882ac36d2037fada9e8b08ba3535051b028efce85d78af7e432",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/worker-value-stream.eli",
+      "kind": "file",
+      "sha256": "049268ecf7b76b9f3d0f7b081b57556e6a0b784f7ef5f5db931d6d8a4996bc71",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "runtime/worker.eli",
+      "kind": "file",
+      "sha256": "7992d8f8529b6a3d06275248889afedf556df21ed4130a7561d69737dab0cd26",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/README.md",
+      "kind": "file",
+      "sha256": "406a1913c7e0059a4d2882129fcc7257c1aa645d08addfaf623a51b87c2cb5d3",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/bit.eli",
+      "kind": "file",
+      "sha256": "7e053898dc9e5e5e7f2fff3ac17421563e44e3474c9521292e0daeedfc80825c",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/core/collection.eli",
+      "kind": "file",
+      "sha256": "fa12870b04547a03e8d42521457470434dd88a67a9dfb305e9000a733d40267b",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/core/data-text.eli",
+      "kind": "file",
+      "sha256": "4b39e54eeb4e6433d2fae9fc7169a514f15d7a9c7ae463a5a6d66782b78d2cd0",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/core/data.eli",
+      "kind": "file",
+      "sha256": "0f9ba1199a20cf0f19f937f084227fc6c56ee7cf09f9097865472253ed5e38a2",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/core/identifier.eli",
+      "kind": "file",
+      "sha256": "f561fe8448b218346d06cbe1847feaebe78e031f3213c4d410f9f5999d53d86c",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/core/lazy-sequence.eli",
+      "kind": "file",
+      "sha256": "252eae6d9b3a325d3ee04413696e471334614498de39b71fda83081ec32652b5",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/core/metadata.eli",
+      "kind": "file",
+      "sha256": "020acce1ec7782416411f3e4a826a81feead3f1d18f05ded27ab4c85a5453532",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/core/object.eli",
+      "kind": "file",
+      "sha256": "38407d2eda173e30ccbabd930f17541cf2cf1fbdf86e675e2b6302b7f2d72da0",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/core/order.eli",
+      "kind": "file",
+      "sha256": "2ac4bac02d54a993cbecf6203c28728a622bbce851a9bfe94f895f047e5a69c7",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/core/protocol.eli",
+      "kind": "file",
+      "sha256": "16b9c9628c15c307ddaa49064dc2396a301b7cbecf2763987eeaa47f3f6776aa",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/core/record.eli",
+      "kind": "file",
+      "sha256": "7af9079a6daaf5b6a7c553dc2ffab318bfc506d56f322f89117bc36db479cf13",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/core/regex.eli",
+      "kind": "file",
+      "sha256": "2541b870d01f06054065afdbe927e75c730ab7a8cf9fabe24f8d02e8eededade",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/core/seq.eli",
+      "kind": "file",
+      "sha256": "fac66501ee5bf7ea6f37c7313231d1248ac682220c87487815aa3564b651a1ca",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/core/set.eli",
+      "kind": "file",
+      "sha256": "5afd3d1398277005c09d5438d39043f95f2b39631089205bf5c4a2feae9cbcbf",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/core/sorted.eli",
+      "kind": "file",
+      "sha256": "363ee7a2e59ad8f6fc0369ddc1b9bc86889c89a624b79a3204c64e981aac03ac",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/core/text.eli",
+      "kind": "file",
+      "sha256": "4939e33fc595cc213790552a9d63e90e4db4c334072a24216a8bad16ec5b24cf",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/core/transducer.eli",
+      "kind": "file",
+      "sha256": "bdcc65f296ad820b0a0fd9addf0b60bf90d901dc970680bb43a9c3b49b2280b4",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/core/transient.eli",
+      "kind": "file",
+      "sha256": "bf608875e0e69920b351e530368d91e374a2c1b0c868f5023858a5df4c197152",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/core/type.eli",
+      "kind": "file",
+      "sha256": "7217294bab8bdcc4f4c6770babc79c32e47cdbea92b3eb206f800d17ae8f14a5",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/core/walk.eli",
+      "kind": "file",
+      "sha256": "a1be78990fb7a0de4c52384da2e4a8a527f5a0732964f0a129a87d12b48b2967",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/core/zipper.eli",
+      "kind": "file",
+      "sha256": "6a32c85826761ef6ce618dd9130a3d0c2ff2a18b52c91494a1473251f414ba58",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/data-text.eli",
+      "kind": "file",
+      "sha256": "ad635f9a840a65ab604ba6a847a0a610f6d982d0a007878e9ac0ee1e0d04ca8b",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/data.eli",
+      "kind": "file",
+      "sha256": "21164d552a7c7d407c31ea2dba9840e6d424caf3d2ab9743591a017faa1de358",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/deferred.eli",
+      "kind": "file",
+      "sha256": "3a69402821fcfe0851021aaf49a1db782b4576fddfe3be22e0acf7f1b959bb1f",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/function.eli",
+      "kind": "file",
+      "sha256": "015214cae477e7a0135359d255841cdad99a6dd1af8b2c4da6cd755cbdd4cd53",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/gepo.eli",
+      "kind": "file",
+      "sha256": "fce4b043dc7a02ecf891d6527bb0b39e892bef3feff3c06bb4ee817306142e5b",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/hierarchy.eli",
+      "kind": "file",
+      "sha256": "75fbb1a15374badd5d3476d1852dcb42a8e8f3d77d4079921dfdbbb819585aff",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/identifier.eli",
+      "kind": "file",
+      "sha256": "8481fc5de4242acf3896cab3b0284e95658f2cd4085d93b433b0855a63a0756c",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/interop/js.eli",
+      "kind": "file",
+      "sha256": "3304e489ab6ace797f9177473279ed95840949719bf39dda7308d03184ba82ac",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/json.eli",
+      "kind": "file",
+      "sha256": "1729214c99fbd07f70ac05376cce6bbebc46cc05e26ff027086e25d6ae9fa67c",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-literal-protocols.eli",
+      "kind": "file",
+      "sha256": "8b62c05694831ceb2b34234925b310f3cadcf93c3b3a0aee3f766ef2d15343cb",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-literals.eli",
+      "kind": "file",
+      "sha256": "9fe7ea1d0d1931fb170b71f64c7accf97fa734198edddb30cbc78a2304aba1a1",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-protocol-error.eli",
+      "kind": "file",
+      "sha256": "f4fe3fe24e8eab99bb0909fefef53ec8773c577f8435b09075e870f156d5c405",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-queue-state.eli",
+      "kind": "file",
+      "sha256": "f9d6baf4f3a26819941133798f0dd6eb78127d0d544c7152774229ae6bbde2ed",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-runtime-collection-internals.eli",
+      "kind": "file",
+      "sha256": "0702310126efa7b4fad026de50b87c2dfa777e0b780c5db7c73f7460a2eb8aca",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-runtime-collection.eli",
+      "kind": "file",
+      "sha256": "74ba1f13c5f390dfce5d8b36a04b9f7540a97fdd1438ff72a5fe66dd26eb0211",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-runtime-data-text.eli",
+      "kind": "file",
+      "sha256": "2c6edfb45534407b303f86f04ba26b24c0be84cc7433ca53cb521ee203eb9646",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-runtime-data.eli",
+      "kind": "file",
+      "sha256": "bca40bf5ca85f36b2b5510685133ddb062cfb3af13412060ee8ea18cd958e3a4",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-runtime-identifier.eli",
+      "kind": "file",
+      "sha256": "9da84cdd7e099aba5a0c9cdbf7fa861b37005818f7d3b5fe03f407e0ada9519f",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-runtime-lazy-sequence.eli",
+      "kind": "file",
+      "sha256": "445fa18094d97501d3d05cb9a264240f292bc2c8da0e4f7867082354c449b18c",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-runtime-list.eli",
+      "kind": "file",
+      "sha256": "c3cd48e705f8b9f48c19e74c9d9d0b50bdd8d5faf864eda52289f5db04ca7426",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-runtime-literals.eli",
+      "kind": "file",
+      "sha256": "b3b17993ae6ae16b30c5732fb5a7a9aeda052ba7eabe39ce4a18e1d9a0abbb5f",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-runtime-map.eli",
+      "kind": "file",
+      "sha256": "b3ec142000d35dc45a1d96e1d001240f0f81731c8e8b1f8e586cacae17a5c8c1",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-runtime-metadata-internals.eli",
+      "kind": "file",
+      "sha256": "6fe945781d56e999bab909488e65f4bcc4c97016845a10f9f728a2fc3f29a835",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-runtime-metadata.eli",
+      "kind": "file",
+      "sha256": "cbc7c2dacf8e63cf8923136bf12fda52901b3366f19ac08b6b895fd33eaab522",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-runtime-object.eli",
+      "kind": "file",
+      "sha256": "c950adba2d952de2585a7dec2cddad53c5f22f1bd5c6f9911128c8dc4852655e",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-runtime-order.eli",
+      "kind": "file",
+      "sha256": "d409e26503507e73d9678998ae85e08e06f85fe92b014da6c7f80dea1d08b894",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-runtime-persistent-kind.eli",
+      "kind": "file",
+      "sha256": "ad41552cbf243563a3a7071ce24c2affb235237ff3f7f0159089838c064a9914",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-runtime-protocol.eli",
+      "kind": "file",
+      "sha256": "8622069f54812590fd026106757e27f31d91cda33fe718920d5cc4fc56514977",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-runtime-queue.eli",
+      "kind": "file",
+      "sha256": "1ae7376a77407d7cd077245900c549f78f5161aa381fe14180b1a50840f7870d",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-runtime-record.eli",
+      "kind": "file",
+      "sha256": "8e5035d4280d1ae137fc9830dc44a6f5f2c9213603be71fb787310cd3352e705",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-runtime-regex.eli",
+      "kind": "file",
+      "sha256": "620c7747460ddd4b69860e85e36ee8ae6c996ee722f17e7c98ce0f265778b2b9",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-runtime-sequence.eli",
+      "kind": "file",
+      "sha256": "a9a39ec7d9f64c99265ed38e0e760a5c765eae02955277e5389e0e910a793f36",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-runtime-set-algebra.eli",
+      "kind": "file",
+      "sha256": "5e2cec03e1d80dcbebe53b14a6d78b163fd0fc02eaff03b0af7d23f67b5bb72b",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-runtime-set.eli",
+      "kind": "file",
+      "sha256": "0f76626e0f2a856ca09c72c55e699cb5f800e5f8548c8d88c71e4350bc6a7526",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-runtime-sorted.eli",
+      "kind": "file",
+      "sha256": "a4546e54ed33f601e02df5e4377eceb94dddcebc9ecefdfeb7fefc7a6f78e58b",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-runtime-text.eli",
+      "kind": "file",
+      "sha256": "bbe24d59811e722b5acc75858e4b41631acd5303687b7a41a85e341766dec504",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-runtime-transducer.eli",
+      "kind": "file",
+      "sha256": "338cfdf54837874c25f3660cd601c13f47874e8439b6004a2a6b48a36ddf957d",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-runtime-transient.eli",
+      "kind": "file",
+      "sha256": "5eb0c5f8ba0d93d3a204b401c1ff4827d31254e03762456ff09eb6a73a483ca1",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-runtime-truth.eli",
+      "kind": "file",
+      "sha256": "c3c23a0dc5451a18962624bb9663ba1286cf831a19489a5c6a40e561cbbafd74",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-runtime-type.eli",
+      "kind": "file",
+      "sha256": "d3d39d03afed3669ea9d58f5d60ec2b82aa4942fc7cf622b6c7da6aed37c76aa",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-runtime-value-internals.eli",
+      "kind": "file",
+      "sha256": "cad7a3780d5c2ccbae4245fa54d062e065b51a4e6534eb3506da991b1c12a7cb",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-runtime-value.eli",
+      "kind": "file",
+      "sha256": "41b1d5997234e9c01c8bdda7324bb8e3024b38d61b4e0db6b4a608b1f28ff7bf",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-runtime-vector.eli",
+      "kind": "file",
+      "sha256": "29e91eedc19e8535b3e88b363a6a3561d0de1da732a552e2e9068b954ebdcc69",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-sorted-state.eli",
+      "kind": "file",
+      "sha256": "9e868edc628892a4699eb9d7031c909c67af94b4eeb948049d868fc07a7c46e5",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-testing-value.eli",
+      "kind": "file",
+      "sha256": "0e383a5bc71f096af7ad32ef81cc1fe6458620ddc02fa6ca9e8c7826303d67ab",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-transient-state.eli",
+      "kind": "file",
+      "sha256": "f6575d388653dcef6f2fbf78980e38c47601f74f6f229c70bd8baa3a2c0c23b5",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-value-state.eli",
+      "kind": "file",
+      "sha256": "e93fef7c510e995ad9ccf424490f1cb353eda48f39a25b5a30b34a01fcc3936e",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-vector-view-state.eli",
+      "kind": "file",
+      "sha256": "5a0d04da8515f287ab581ec25356355eca7ff59887ae0800b2316994eebfc7eb",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-wire-http-rpc.eli",
+      "kind": "file",
+      "sha256": "8d170e385b8a4c3fdaf635131cf49b891871a2a804de08a68652f8fd25d66b42",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-wire-markdown.eli",
+      "kind": "file",
+      "sha256": "7b47f4c8cf83405e6b2c28df687d48bfe029b3abc65aab0235d06cdb2fc93b20",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/managed-wire-schema.eli",
+      "kind": "file",
+      "sha256": "6a7d34a757ce7b96b380fedb490dfc7da7da11244e7671e9f9f3833bf4d091fc",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/mdp.eli",
+      "kind": "file",
+      "sha256": "d48073efcc09557b0a008acdfda6aab6cde73678de49e4405a00a06a41bce19f",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/mds.eli",
+      "kind": "file",
+      "sha256": "d06d493abd744c600379b5a6b68944603fc2c36255c7af7c0814117b00bd5fc4",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/metadata.eli",
+      "kind": "file",
+      "sha256": "74ce8e83690bd80ff596643953beaef7a552f0a5f1d9862b544ef97f38f7394c",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/multimethod.eli",
+      "kind": "file",
+      "sha256": "b838db352d25f3972a44be0d677ee86521c861e7212768fa629881871745cb02",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/numeric.eli",
+      "kind": "file",
+      "sha256": "20685979d1974c9629afe06be14c63cf4ad10a99d304dafbf0bf724b649940ac",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/object.eli",
+      "kind": "file",
+      "sha256": "9825a519e64d2ef101155031e4a609fcf10fcac60ec67d8db80a42c1d49c09ed",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/persistent-list.eli",
+      "kind": "file",
+      "sha256": "192c860e81292669ba31e35a523ff674bddf38d09f3b5666ffced7c3ae415cfa",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/persistent-map.eli",
+      "kind": "file",
+      "sha256": "089a77fb3e909cdae70cfb27a0e3ef9a56f9618d88a61ade83f649ee7c7dd7d5",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/persistent-queue.eli",
+      "kind": "file",
+      "sha256": "eb180214ecce852ae0952c8a72c76f43062d10cfa98fd2a5440ec103cce2b427",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/persistent-set.eli",
+      "kind": "file",
+      "sha256": "854d8cc9561bdfc973483d779a4fe2632ed09b2f964a2980edf8634c388ef5d8",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/persistent-vector.eli",
+      "kind": "file",
+      "sha256": "200a8d8d4673b01e0e3ae6ad57afa469c53f83644fe34d23e15bd440fcb8de9c",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/result.eli",
+      "kind": "file",
+      "sha256": "2da3e3559858621ce3f4910cf7f0707d4c0c5d336571e8ae5b81d7c268c4f2fc",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/sequence.eli",
+      "kind": "file",
+      "sha256": "400d4a5371ba802201ba9c3204824658bf6e5edbf4b0c35189f970bcb10a3e59",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/state/atom.eli",
+      "kind": "file",
+      "sha256": "1707d088a44e1c9c9cd2bdb6d811095e71c6be7647cd4ad7ef26ba94f7fcf218",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/text.eli",
+      "kind": "file",
+      "sha256": "7474e54e9bddbd47bf2d2274698129eeb511373649caa14a99e78c21a04aaad4",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "stdlib/value.eli",
+      "kind": "file",
+      "sha256": "bb2616efda941ef7030f6ef5c7835b8fca44ce1b9034698b319e22683e34a2bd",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/README.md",
+      "kind": "file",
+      "sha256": "7346374e0996e0047118bf33e077b21d5696de1ee59da1f3864ac5a3d47a006c",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/acceptance/README.md",
+      "kind": "file",
+      "sha256": "878404b3cfcec089e71bad4af37aed4c4011b6831be2ea59cc129fe5aea8fb4f",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/acceptance/check-legacy.eli",
+      "kind": "file",
+      "sha256": "b5ab240e4449fe8238c3e881022b2ea76fdfd54fbf2a48dc831dc5a429ba466b",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/acceptance/check.eli",
+      "kind": "file",
+      "sha256": "6e93496cb3c3eb3a99d8df5f76bee0de16329d37b3e82be513f6643c51747016",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/acceptance/compile-evidence.el",
+      "kind": "file",
+      "sha256": "645dc96eb3bef1334906d6c5826b621193eafb3804f3e495db323804012a7a3a",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/acceptance/finalize-legacy.eli",
+      "kind": "file",
+      "sha256": "f16c2b211630f9f0595786d8e38846ae21ec6d5030022b3a024772fef2c4e03d",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/acceptance/finalize.eli",
+      "kind": "file",
+      "sha256": "00da422a9e76752b270d3ef49eb6eea541fe339254bae46588f25fe3d1669a4b",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/acceptance/repeat.eli",
+      "kind": "file",
+      "sha256": "58f84e315f60a1388dd9f55f106af0ee02da9edd24905dae208dfec6fd89dcb1",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/acceptance/retained-performance-snapshot.eli",
+      "kind": "file",
+      "sha256": "27d978c70d0b728370f8823fb38565712e268736c287a06f7c91a44658802ee4",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/acceptance/retained-soak.eli",
+      "kind": "file",
+      "sha256": "083d5ff69962f131210ba344994443eec478ed6003776d47f81e752e223add3e",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/acceptance/retained-transient.eli",
+      "kind": "file",
+      "sha256": "b43f13b8082cde355686fe7b1a916941cb2ad9b0bf822adbc3e69edf6d9a4b14",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/README.md",
+      "kind": "file",
+      "sha256": "81c0f62e23d83d698de51072de41c8be21cd1941cc24bee335dcf416a0d1074e",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/batches.eli",
+      "kind": "file",
+      "sha256": "2535a7746112c3ffcd541357193334116a79c06a9db5b62859cce2310e6a5d0f",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/benchmark.eli",
+      "kind": "file",
+      "sha256": "78625e286f946acb682906a08ec1b839c34d948c1d87d0943cecedfb47593c6f",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/bootstrap.el",
+      "kind": "file",
+      "sha256": "753250c107349b18d8b0593c695c17c4323cc8ed3a6ef5b9f4b617884a3f2828",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/build.eli",
+      "kind": "file",
+      "sha256": "3d0b913672683a68c15a5e9edf51fcb2d5fd5d1cc78a7e72d2566c42bef47276",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/compile.eli",
+      "kind": "file",
+      "sha256": "551a35fe2bb99217efa88f10836741b1d43651a41b1515b97fc7d6058f881f2e",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/compiler-bootstrap.eli",
+      "kind": "file",
+      "sha256": "4ad761f845197700f892d8b20fc8a4b99f2903cd5f92a65fab00506d7459f741",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/compiler-browser.eli",
+      "kind": "file",
+      "sha256": "75351324d2c9626e8ee761f8cdf7b34adf629aa6a627ab557c1430c2ffc60d94",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/compiler-build.eli",
+      "kind": "file",
+      "sha256": "7525b12ed69b53ef2c1f8b5d2c925e3fdea4b5c8107f5b7a24ad85fe152aa89b",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/compiler-cli-legacy.eli",
+      "kind": "file",
+      "sha256": "cf913f52254112bb7b0fed208c925118276e895ff42d7927b67f047a6fb3dfb8",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/compiler-corpus-cli-adapters-legacy.eli",
+      "kind": "file",
+      "sha256": "9e30b204087f8437e3dc01ee1acd4c5e07bba0ab61c392c7cc8ecfda6fd7bf95",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/compiler-corpus-evaluation-adapters.eli",
+      "kind": "file",
+      "sha256": "d72e3b78ef60a61d0553cea95eb2d859dec5787bc562974d7f7021371fd538b3",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/compiler-corpus-execution-legacy.eli",
+      "kind": "file",
+      "sha256": "4c9ef227e96c4612ff52a39bb0b0c9ee265385e005a87f79690672841e3980b6",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/compiler-corpus-generations.eli",
+      "kind": "file",
+      "sha256": "b425f182a0284db140fdab9d13b437cf255b9f252b3f90b8d5881dbf54a6349f",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/compiler-corpus-host-context-legacy.eli",
+      "kind": "file",
+      "sha256": "47b28404dc661c1784cc2ce79e2446da1cc5f92e865bea89e9b686a34d9830b5",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/compiler-corpus-identity-value-adapters-legacy.eli",
+      "kind": "file",
+      "sha256": "8ea26472428cfc47fdb0b068f154393a76d170c3081aae126a10f03e14265d47",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/compiler-corpus-legacy.eli",
+      "kind": "file",
+      "sha256": "17ad4be2ee17617b988cc9335df191c17d828a651c38c9968983de151a483094",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/compiler-corpus-managed-adapters-legacy.eli",
+      "kind": "file",
+      "sha256": "63d2db54e85988af87da940a68c19b5303b92dadb868e453ad82a7dfa2f72167",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/compiler-corpus-managed-cases.eli",
+      "kind": "file",
+      "sha256": "9f230186a4f88a31c3c35177b325a5bbf84aa0c3411a1f20c71e80fe6aa7c8e3",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/compiler-corpus-managed-fixtures-legacy.eli",
+      "kind": "file",
+      "sha256": "04a24b4b5b9b7b322ee3b3e4e8f5de459b75f1c2884e4cb224e0c70b82815113",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/compiler-corpus-project-adapters-legacy.eli",
+      "kind": "file",
+      "sha256": "b9693deb89109e2adc968863c10dbbfc1f8ab37c7561b991fb508975780b0902",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/compiler-corpus-reference-legacy.eli",
+      "kind": "file",
+      "sha256": "c3295dfc05145b20bda304d96cfadaad91c818647afb87cbddd47a9992b3bf67",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/compiler-corpus-runtime-adapters-legacy.eli",
+      "kind": "file",
+      "sha256": "ee2053f48fe2fe84fe502e1123a52a13bd7fdfca547af1eb4b6d8d94be29f932",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/compiler-corpus-source-archive.eli",
+      "kind": "file",
+      "sha256": "e5a3653650b9bc293d9d36751215692f1093dc695316ae9b6f0768fa3d346f78",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/compiler-corpus-tools-artifact-adapters.eli",
+      "kind": "file",
+      "sha256": "f01cfe4b08919e5f5feffd60f432ae45f05818159a7415e7c76ba28a7c82eeca",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/compiler-debug.eli",
+      "kind": "file",
+      "sha256": "5f8ec63ad5501c0aa3e8a35e242228d1a6cfed73d0833b2776877481c21bdfbb",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/compiler-metadata.eli",
+      "kind": "file",
+      "sha256": "98fe3b94b9f10d110232df41d52480b487ca6cfb9047bf030ab24be2d3b1487c",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/compiler-package-legacy.eli",
+      "kind": "file",
+      "sha256": "74b028612da0057ae7352bb1bb87d7e0f4c1ed1e509600464751fdb67e2f2ad4",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/compiler-project.eli",
+      "kind": "file",
+      "sha256": "f88bc246bdf09017c3f96ff2843c7e6c9ce2c89316d4dedd268e67ba3e50ec0d",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/compiler-session.eli",
+      "kind": "file",
+      "sha256": "31966b196d4e5a14bd1b008dba6d6a6fe52f72d1b817c9a6a7e103804ee718dc",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/compiler-sha256.eli",
+      "kind": "file",
+      "sha256": "467ab3fdbebb3cb7020f835d2df75f9e524f98ecd92c136f6590cedfd175b2ca",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/compiler-worker.eli",
+      "kind": "file",
+      "sha256": "fcaace1b2aaaf38e9e9dce8c3225806ebd9ce529a85d5dda9f70933095210165",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/bootstrap-js-stages.eli",
+      "kind": "file",
+      "sha256": "22340219fda7ac87a00f8443e553b0e26a514ad5197dbb784acfaa24217e56ca",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/compiler-cli-entry.eli",
+      "kind": "file",
+      "sha256": "a0ecfe71a2640cad023253f32c05eb1abef2303f7f956d399a4dc6f16df0f48b",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/compiler-corpus-bit.eli",
+      "kind": "file",
+      "sha256": "e73477485dbccbf9ed6d942bbdfe5b0b32fb24452543c0695192263e6b44a776",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/compiler-corpus-cli-adapters.eli",
+      "kind": "file",
+      "sha256": "0b61f291b41d5c7cf4ca3c9e82041331cd95129a50c7d3cb7cdd239ed837f237",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/compiler-corpus-debugging.eli",
+      "kind": "file",
+      "sha256": "d5a251a3329769e72e7511cff96acd5a0aeeda4bf2baaebd6a2b42a4d62bb842",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/compiler-corpus-emitter.eli",
+      "kind": "file",
+      "sha256": "a6c2475e59cdda4929f9c4bcab91793298e989f930d991d5b989b742bc06c533",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/compiler-corpus-execution.eli",
+      "kind": "file",
+      "sha256": "5bbdc354569dfa38e178fec9516ee28a93102dcbb64082021c8a63989a147392",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/compiler-corpus-fuzz.eli",
+      "kind": "file",
+      "sha256": "c8775f7223c9804e358b87ea57dac0df39a043b4aba6d3dc58d6ab2077405944",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/compiler-corpus-host-context.eli",
+      "kind": "file",
+      "sha256": "68521703467dcd635079245a1e75d79491a307501e7982a133d110b39ec19eeb",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/compiler-corpus-identity-host.eli",
+      "kind": "file",
+      "sha256": "4f1c01e2448e22161d5b6901734cc0d01581f02b932385a5909c2cbfd0e6f8ad",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/compiler-corpus-identity-value-adapters.eli",
+      "kind": "file",
+      "sha256": "377fb3e655a77795653ebf7c1cd50d659561ebb464125f482dfe0a36337eddc1",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/compiler-corpus-isolated-exports.eli",
+      "kind": "file",
+      "sha256": "4246bf85bbece56a43130fdb85c32a56c03693facb508641f6a9da56e43af531",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/compiler-corpus-literal-provider.eli",
+      "kind": "file",
+      "sha256": "9dcd5d94bcd66669219be6bef225648601faac6a6143a4447602b9aebb7990d9",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/compiler-corpus-managed-adapters.eli",
+      "kind": "file",
+      "sha256": "31aa3de0e1f70d2b6dcebbda58b2b5abfce8d23c8666f35b9e61ef8e4af4859c",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/compiler-corpus-managed-fixtures.eli",
+      "kind": "file",
+      "sha256": "a09b26a22269bcdfdd44181cb0cb5e02add27f53894f002217ca8b6081aa7b12",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/compiler-corpus-matchers.eli",
+      "kind": "file",
+      "sha256": "cad68589f82045ca4753ce1bb77220b72215c1b445976350129831c80152eb8f",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/compiler-corpus-original-program.eli",
+      "kind": "file",
+      "sha256": "e93c1d820d840636d6f279268ee2659d2bc3e007aa49a14f7743c54873015220",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/compiler-corpus-process.eli",
+      "kind": "file",
+      "sha256": "9a0bef2fc8c9f175861d45de9d6eeaa687232715426f3576968c954e9a300b57",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/compiler-corpus-program-driver.eli",
+      "kind": "file",
+      "sha256": "a18eda2bee3cc6d7b22f70c86d46ab307e3745b498527c5288763042937d4ba4",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/compiler-corpus-project-adapters.eli",
+      "kind": "file",
+      "sha256": "6e3965b11e3fd41e6d1aaa7090aaf24f932c2888e0230bc3fe55f9845ac12616",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/compiler-corpus-project-entry-host.eli",
+      "kind": "file",
+      "sha256": "4bdbc41b002a41971fb26905b23fda75f24c24988f81c6530e19803b01a00e49",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/compiler-corpus-project-transport.eli",
+      "kind": "file",
+      "sha256": "d53518570a0400e31bae8fee2dd6c7f98ef1147732b59b3addf5870b94c8c7da",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/compiler-corpus-raw-fixture-observer.eli",
+      "kind": "file",
+      "sha256": "716b3f3be405d0604e6f8e7c5da61ae5c9453073953f1cea1b281bb6402c5977",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/compiler-corpus-raw-language-fixtures.eli",
+      "kind": "file",
+      "sha256": "2757b47da167da6c848841541815c1e71c6ca19340e00b27ecc10bb7935b84d3",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/compiler-corpus-raw-math-fixture.eli",
+      "kind": "file",
+      "sha256": "3f65ca7ee39d5a150ba3b0b3bf6751847335bb9e006dafa452d04093fe2f52ac",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/compiler-corpus-raw-special-fixtures.eli",
+      "kind": "file",
+      "sha256": "cf230a6a5f1373555fd19927b6c10f33715eab243b615d57a73ee71e55fa9975",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/compiler-corpus-reference.eli",
+      "kind": "file",
+      "sha256": "feffe8d326d538998780fa60c8f1b23bb8d87888d44f4c17ced0a51808e6ce2a",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/compiler-corpus-runtime-adapters.eli",
+      "kind": "file",
+      "sha256": "c1be7260406d57d31fcc6956acde5968f4003f502ea4bd997ec23783db1a2b3d",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/compiler-corpus-tools-cli.eli",
+      "kind": "file",
+      "sha256": "9456d2381fa279a696a236de44d130faa5b666762a04e7a23aea042cb975ad7b",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/compiler-corpus-tools-reference.eli",
+      "kind": "file",
+      "sha256": "9410a3f9da57e59312249d3f3990be4fcc6ba4c9228d2448425b6dcea16227dd",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/compiler-corpus.eli",
+      "kind": "file",
+      "sha256": "4b81ec7b26cf3bfbd8f04f766939b36a3d668e926724f2390fec255d62f0eb4c",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/compiler-matrix.eli",
+      "kind": "file",
+      "sha256": "e65d52ee794a01f7ce4ca404809044c30bfcc9f34107a4bd531c32b1ea46b78b",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/compiler-package-browser.eli",
+      "kind": "file",
+      "sha256": "35e02928a526d2038230190cb081ec8dd334baaaecabbe5fce7af884a485b538",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/compiler-package.eli",
+      "kind": "file",
+      "sha256": "634c5acc6b83b9d8d2f6e8809a142fe21406e997f5e2a1a5e8d0506adacb3142",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/compiler-unicode-profile-host.eli",
+      "kind": "file",
+      "sha256": "35d21a77b82dd89c1e639c60964ff6cc7fcd06eea20ee0dda3e29b2d69c5eaec",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/managed-foreign-binding.eli",
+      "kind": "file",
+      "sha256": "d48d852260f921c58ff1c16cda82d0db8d2df8c546abc2862c7f9c71c6e7ff4a",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/managed-host-lifecycle.eli",
+      "kind": "file",
+      "sha256": "d965af5a9be65cd73f36b0e46513aa1c4f79557469aba67c4bd4de343a86b792",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/managed-host-object-provider.eli",
+      "kind": "file",
+      "sha256": "f97cdb6f7f691cffa5252b105c00a7a4cf77f1eda89050809f66563ac7d1c523",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/managed-host-object-realm.eli",
+      "kind": "file",
+      "sha256": "4f5476f1d51063d61703ef7f5c5d757f7682de6639681c7ea1018282813dd006",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/managed-host-proxy.eli",
+      "kind": "file",
+      "sha256": "8ef32f3f66cb61891b57688494a36a7a9b1e7aeb85971516eabbe8cb65dabf71",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/managed-host-runtime.eli",
+      "kind": "file",
+      "sha256": "50b8a9771055465f692721a7fa000a990313b36b57733ab52a7f939bd3f1fd48",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/managed-host.eli",
+      "kind": "file",
+      "sha256": "157c44fee018aa05c4ed1fd6ee6c5e220ea9333110ff70c915a51904f9f3f8f0",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/managed-ir-inventory.eli",
+      "kind": "file",
+      "sha256": "bf122f02f1194cd271cb78e747239cc2cc01c60e3fd0f10f66b24a26605d0be5",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/managed-module-graph.eli",
+      "kind": "file",
+      "sha256": "4ace48f9fd7178f6148be9ed09a277fed32995e44dbc5f60d624a7db18c92dcd",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/managed-runtime.eli",
+      "kind": "file",
+      "sha256": "51eb570566dc2e482f99b132df541b62d4d49318078b70a9f38c0708e01baf13",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/managed-source-view.eli",
+      "kind": "file",
+      "sha256": "947c3f345edb800df01449b41bd349a341d85951724cfe0097c57169b49a914f",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/native-managed-runtime.eli",
+      "kind": "file",
+      "sha256": "995c8f9342cf705b136068141a6dbc3ac3581ec824ff665bb980eba7037725c6",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/native-memory.eli",
+      "kind": "file",
+      "sha256": "729db87c459918be5b49867e7c9423927523d5c81925f94f3d8881367089657a",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/package-cli-entry.eli",
+      "kind": "file",
+      "sha256": "3488a6e2e0b6f08be5550abbf9b488f1b53672c28734e38406ab67066befb7b7",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/record-grid.eli",
+      "kind": "file",
+      "sha256": "e48d83a03d94b815d894930f0cd4bf43e643710c95b2306b5524fba2c6f467e3",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/release-cli.eli",
+      "kind": "file",
+      "sha256": "17260accdfc2a9b7888304ebcf482a61401504e3d95ccaf7d39a4cfacf42d921",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/run-artifact.eli",
+      "kind": "file",
+      "sha256": "39088e544b2ad25f7ff6989ccaa473f2fb1b1674af6dc14494064eb5e013cb34",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/eliscript/stage3-targets.eli",
+      "kind": "file",
+      "sha256": "370368674911e2dd27c13965d9f9896470164cdfac158ede41eb6312ac3fe097",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/managed-host-legacy.eli",
+      "kind": "file",
+      "sha256": "6056c93df941631b5036ae1f5c2def79b6ce9cc564cbd4d10d501b5d3056de3c",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/managed-module-graph-legacy.eli",
+      "kind": "file",
+      "sha256": "2415ce88809e73f6e8818c0afd5be9d6739e88cdd98de880b3013ac954aab4c3",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/managed-runtime-host-legacy.eli",
+      "kind": "file",
+      "sha256": "2175b3b70f68157283e42c3e2b571b450302945fcc83268b6ff1693261b00dc1",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/managed-source-view-legacy.eli",
+      "kind": "file",
+      "sha256": "04c082ec2b45cd02bb4e13a35968ef80324590bd7fa25127a3eb69785b43a567",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/memory-runtime.eli",
+      "kind": "file",
+      "sha256": "8035e98a9e50aa1fc63d04cfc28dda8b9a65072fd76fafab5ce093be8a633526",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/native-benchmark.eli",
+      "kind": "file",
+      "sha256": "dc45fff971e3a1d6656f48338b642f1a54ff149b9e89bb1a405a130078ca3cbb",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/native-node-memory.eli",
+      "kind": "file",
+      "sha256": "e8cc6cc971c5da38cecf8b1cf9f8566fa184e1c11a66dc5b2d544451e3415b26",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/native-node-runner.eli",
+      "kind": "file",
+      "sha256": "4555e87958f5e978d389a59d30d9d339b198e5a3c179ea0ea22c7e945b15f7fb",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/native-node-watchdog.eli",
+      "kind": "file",
+      "sha256": "edf3f363a5590f0bb2a70614b00add9bd867057d1c6463f4ba922d53a1d8ed3f",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/native-node-worker.eli",
+      "kind": "file",
+      "sha256": "8feda1f13c5521cb8475ce7b279ae24c2411ec7861c4fc4d7c73d619b37df6ad",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/original-program-bun-launcher.el",
+      "kind": "file",
+      "sha256": "9b0cdaaf1abd629abc743a3c713fdd348097f3e234d23a1ee40f5044c4618ea2",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/results/direct-wasm-array-sort-first-macos-arm64.json",
+      "kind": "file",
+      "sha256": "a5b1c50ae6ff05705d6cf44178b1a384b1182ea5e6ab33a53bfc18bbea0b7c38",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/results/direct-wasm-macos-arm64.json",
+      "kind": "file",
+      "sha256": "f8179002ef6391ba6d10e443b6972fc4c05af990389a7b3107fa3526870d68ab",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/results/direct-wasm-memory-recheck-confirmation-macos-arm64.json",
+      "kind": "file",
+      "sha256": "cf81166aa48549e0075a97c4e09b8ddae34b30dafebd50ae3d351d87506f1876",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/results/direct-wasm-memory-recheck-first-macos-arm64.json",
+      "kind": "file",
+      "sha256": "54535689147613c68df09852d5d8e2c72ec1c95bd4e50dabff4dc0841c19d225",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/results/direct-wasm-native-recheck-first-macos-arm64.json",
+      "kind": "file",
+      "sha256": "4ba2146f47f903f30fcc3d94a3a7f8c70792f4265d305b3ef5d253567dd0d5e8",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/results/direct-wasm-source-collections-first-macos-arm64.json",
+      "kind": "file",
+      "sha256": "84476b880ec8ac42e5134d0bb83fdc5ea8b1a6a749cc03beef3c473afaf60a78",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/results/direct-wasm-word-recheck-confirmation-macos-arm64.json",
+      "kind": "file",
+      "sha256": "fc63839f1fb55c699cbf7e8d61a45b42f75dfbc4092af640ad9ce85b1cd5e6ec",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/results/direct-wasm-word-recheck-first-macos-arm64.json",
+      "kind": "file",
+      "sha256": "4531bdb231923ee45db85c1b22a7497b2829d12a4a387f28b2ab8fa59c733669",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/results/native-baseline-macos-arm64.json",
+      "kind": "file",
+      "sha256": "9ec079d0441ffed4b6810848df64a694f59c5f65accf8beb92867f1efbba71b6",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/backends/results/native-macos-arm64.json",
+      "kind": "file",
+      "sha256": "a5d638d554726994c829d7de251d3a06d0c9824271f23cd55a0e1f3fe7e15c13",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/bootstrap-command.el",
+      "kind": "file",
+      "sha256": "6b78ec7b31c5390781b6fbd772c2d51457c59328c3156a8f38f729934851661e",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/bootstrap-runtime.el",
+      "kind": "file",
+      "sha256": "125c0ebb08a37015677b21a58d0970f8c12e08bc5784657c9219c8ce7575d6f5",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/bootstrap-seed.el",
+      "kind": "file",
+      "sha256": "6218f575808486cfd46777469959e73c2bcafd73a73804e31332308b7b19f00c",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/browser/matrix.eli",
+      "kind": "file",
+      "sha256": "642f1995dc369caf0119c2f0228c17051c5b530de9f18bb478f57f2f21f904d7",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/ci/release-workflow.eli",
+      "kind": "file",
+      "sha256": "2cadd3c8233314843f4c056c562a9fdc6e9ab3fc578b4ae096abccc941f18357",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/ci/render-browser-workflow-legacy.eli",
+      "kind": "file",
+      "sha256": "ed91cd6af4e3c9a78cd6452aad7931441553b825819911c0918fcfd6258b2386",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/ci/render-browser-workflow.eli",
+      "kind": "file",
+      "sha256": "eb26057d1961a273572eac39ec734d089e6601870caf6a5073adda05ac49685d",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/ci/render-workflow.eli",
+      "kind": "file",
+      "sha256": "75f9c960977c78ff3d69e07c403be18c17fd31def438b427ecc146b33f0f9953",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/ci/strict-byte-compile.sh",
+      "kind": "file",
+      "sha256": "5dbef49a790f62a5f4f9591b0de49dda2bf354c8076eadb81777d9f2e9c231d8",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/collections/benchmark.eli",
+      "kind": "file",
+      "sha256": "ea79f7d1019f348c27e156f2fc4890ef9540cb6246c6ae137edf7a85dcb8b90b",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/collections/browser/index.html",
+      "kind": "file",
+      "sha256": "4ede65708f659965b117c2ea735b0ec7f88dfe84471e0c1fd5b428ad616e1453",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/collections/browser/main.eli",
+      "kind": "file",
+      "sha256": "81b80252ece20e315223c3302b87841bc7f1fc2f96594adbc64c61b426b1f91d",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/collections/layout-benchmark.eli",
+      "kind": "file",
+      "sha256": "5d1dfc1ff6bf72afdf2259c603060813f5e0c18dd9c2c1bbd5bd18ffb901fec6",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/collections/layout-host.eli",
+      "kind": "file",
+      "sha256": "9f4d6fe89563e212fffe06134537fc22837f9e9887af03ac677721d0d1f0e86e",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/collections/persistent-semantics.eli",
+      "kind": "file",
+      "sha256": "d5738aaa0c42f9749403583dbd6f1234b31c07079b9c4e887c754a5fe2576eec",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/collections/transient-builder-benchmark.eli",
+      "kind": "file",
+      "sha256": "c4f893f847d668ff1edf8ed304c47ee3eb5b426617488ffcd0006d453ce2b4b1",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/compatibility/corpus.eli",
+      "kind": "file",
+      "sha256": "1501c73d1728df13fe395837a34972d2dce4f0fc7f4e58f75d20fe79074781b6",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/compatibility/matrix.eli",
+      "kind": "file",
+      "sha256": "1c0383df2eeb1d00cda31205d62a73fdc03d0367291551bf58ecfaa50a585b8f",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/compatibility/rehearse.eli",
+      "kind": "file",
+      "sha256": "b6735d7d03327091b41257bb4978b2b58b32e1194d1fb076d11c7e1b944e13cf",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/compiler/array-text-capsule.eli",
+      "kind": "file",
+      "sha256": "aaba575211af1d0a782792d37c123a6d274069d919465ad9122418e137d80d02",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/compiler/binary-comparison-benchmark.eli",
+      "kind": "file",
+      "sha256": "d137b190e16bd28bce8bea1bf469aca979a4c7ba4641d5af19f134ddbe19fe21",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/compiler/controlled-baseline.eli",
+      "kind": "file",
+      "sha256": "386777f52720dfb9bf4ee32c7ae14f36f4c1d96aaf453f7a589253a04d2b1f38",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/compiler/eliscript/runtime-scan-cases.eli",
+      "kind": "file",
+      "sha256": "9f70a3b83fc50761edc8ddb8c28bed66ba7d95e20187886832672a1cc5adf4a4",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/compiler/experiments/private-counter.eli",
+      "kind": "file",
+      "sha256": "644126349eee6df8121b7e61ac8cfec94263272bb0f4e4305a57c45b14aa6db4",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/compiler/indent-benchmark.eli",
+      "kind": "file",
+      "sha256": "8fbda577400f79b2984979956e34160508b04845edab38a12cd1025e97585318",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/compiler/ir-kind-benchmark.eli",
+      "kind": "file",
+      "sha256": "b016a7d3f7e40733646104c831ba1e8ebc9b0d48770d5293a1d1db46ebc3eeb4",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/compiler/locate-benchmark.eli",
+      "kind": "file",
+      "sha256": "f97188319496e1071073cb57e5aab2d5b386323fa59dcbe8012964e4240c4e26",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/compiler/reader-character-benchmark.eli",
+      "kind": "file",
+      "sha256": "76ddc63cd4c4fe89469e92b8cd327be59b9acd45312b5c43bcdd01a20e76d909",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/compiler/results/reader-array-text-codegen-ab-macos-arm64.json",
+      "kind": "file",
+      "sha256": "c66e8537177d48af2c8053a419d7c201722682fe19b3a459d8f159b165e9a53d",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/compiler/results/reader-character-arrow-first-macos-arm64.json",
+      "kind": "file",
+      "sha256": "7815ef7888117a76e96a1b07255b64ec20a8fce342647e139e7a4326c07efad9",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/compiler/results/reader-combine-ab-macos-arm64.json",
+      "kind": "file",
+      "sha256": "94c6699742f6aff7ff89b767df421226245b29c75f3309872607e16d3967d4b9",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/compiler/results/reader-portable-direct-first-macos-arm64.json",
+      "kind": "file",
+      "sha256": "03162851c05e5e3f2b1e88a33573856f19f154c76c849efa42139e8db0e3568a",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/compiler/results/reader-portable-first-macos-arm64.json",
+      "kind": "file",
+      "sha256": "a928d182d390663bf84bdf1098dfe9f6b266c2590cebdb0e4bc7ccb04a6a33de",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/compiler/results/reader-vlq-ab-macos-arm64.json",
+      "kind": "file",
+      "sha256": "69e3045238e599e42ea6dc31e1e176cb2a91b61140a9d57ae58ec788f4daa024",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/compiler/runtime-scan-benchmark.eli",
+      "kind": "file",
+      "sha256": "d3dfcfb965cfa03d17bb6494167556db10f661c0e3d812b1188e72580ae5a872",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/compiler/source-map-cursor-benchmark.eli",
+      "kind": "file",
+      "sha256": "80983058d445fe677909b41befb7a42ee8c10c0fca8bca19a6b095a73b0b9b43",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/conformance/check.eli",
+      "kind": "file",
+      "sha256": "2b83700ac075a7237f120fb57a6b0ca4a30fff171576d3b0db990cf758584994",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/debugging/check.eli",
+      "kind": "file",
+      "sha256": "2abfeb81019200f1fe2122772179b02646951e89aa1b17f631b8612ace30885c",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/diagnostics/check.eli",
+      "kind": "file",
+      "sha256": "cff3068ef27af26f09e86d0e88ad9db38ef80bfaf9280a27f189f56b54a928f3",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/documentation/README.md",
+      "kind": "file",
+      "sha256": "f5a36c3fe43e30c03f99a22d16cbeae855cc7169785a58f39bf21d5fc402d5ab",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/documentation/check.eli",
+      "kind": "file",
+      "sha256": "b9aee78c1195124934bf9d84c9d87f5d02fa2d964a4f53e6d3706dff83428a3a",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/experiments/native-wasm/README.md",
+      "kind": "file",
+      "sha256": "e578ed99e56cb9bf395108150785101ee63b82bdde74dd02da1c6167ecb74145",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/experiments/native-wasm/cases.eli",
+      "kind": "file",
+      "sha256": "845d49dd2fb1e17b01983493e0b327d15db94fdb8587be3543b36c1619f6f3dd",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/experiments/native-wasm/emit-c.eli",
+      "kind": "file",
+      "sha256": "c8db583d17787ba8ba59ce05be6826688a4aaa67de617d21878ec22e191ff5bf",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/experiments/native-wasm/kernels.eli",
+      "kind": "file",
+      "sha256": "a028137b4fd4cf509f3725145c3ef8175e80a8d94ef89928ea1882da69f7b5a1",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/experiments/native-wasm/measure-js.eli",
+      "kind": "file",
+      "sha256": "45a12e43474e23292261e92383b16b0ddbd701d04d1730ba1f51b70d65b68c64",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/experiments/native-wasm/reference-js.eli",
+      "kind": "file",
+      "sha256": "176d09f818ff30bd24ecaaad606da20f623d33cf02e1f276909a9a5f9c8f781c",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/experiments/native-wasm/results/indent-reference-diagnostic-macos-arm64.json",
+      "kind": "file",
+      "sha256": "a5f3aa0b3d133b1877860ac45a26b3782653f2faae8002ad7467ffbabe37dd6b",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/experiments/native-wasm/results/js-codegen-probe-macos-arm64.json",
+      "kind": "file",
+      "sha256": "bf6da27477802a39212ede2fcd78f8795eac51e36985dd39c2bec0e149fb130a",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/experiments/native-wasm/results/native-wasm-probe-macos-arm64.json",
+      "kind": "file",
+      "sha256": "5425f79046ae56e7e583fbd9fddc6fa9acf5914f51f479f03b10506d2f0ff59c",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/experiments/native-wasm/run.eli",
+      "kind": "file",
+      "sha256": "74b11e893ef79eb7252a3c9e0acaa51504f5b9766edb13b31aebe417982d143a",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/fuzz/README.md",
+      "kind": "file",
+      "sha256": "7d6a01ffa89cba590bec6454d25a7fad9827eb6f6c7057b52640d5bd9040fc47",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/fuzz/program-emission-node.eli",
+      "kind": "file",
+      "sha256": "608f9273a6bc3fed638d1aa87cc86096c203bc070ea726ac0cae81d2407032eb",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/fuzz/program-emission-oracle.el",
+      "kind": "file",
+      "sha256": "b79109b2358ae294504b491ae34da9b5a392d261b6435f0bc00c06f04482a746",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/fuzz/program-emission-proof.eli",
+      "kind": "file",
+      "sha256": "2733be63f7b665a8f864f13ff050c72b2814af63a42e70ddde07a6f43fa76356",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/fuzz/reader-oracle.el",
+      "kind": "file",
+      "sha256": "a484a57195fca216d4c8000ae6c0e4cea1868274dc90ee6b6be91de978fff61b",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/fuzz/reader-program-acceptance.eli",
+      "kind": "file",
+      "sha256": "af26f69a0db5c4e3bdc47bd7fd2bd4f82dea2f928f98348210b6916a8124920f",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/fuzz/reader-program-corpus-host.eli",
+      "kind": "file",
+      "sha256": "b74c70d373e2003a3b6703561615cb6e4b68de8491b7433469baae99f7b35ac9",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/fuzz/reader-program-fuzz-legacy.eli",
+      "kind": "file",
+      "sha256": "646b92e12d3533d441362135a351d37307b124135d4366805f5c896073de0235",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/fuzz/reader-program-fuzz.eli",
+      "kind": "file",
+      "sha256": "712e97e190c21728d86f75279d93dcc9b621f0619b44d0d4f7337bf3f631cbc7",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/fuzz/reader-program-host.eli",
+      "kind": "file",
+      "sha256": "7a3fe8f2f9dd893e2a6b25bdba5be40578f897b4b3664ef73b4cdb35ba9ec91c",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/integrity/README.md",
+      "kind": "file",
+      "sha256": "b6d688fc2aba3ead84127ea91948dbcf250de578399bc2ec59fa9845f205ce5e",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/integrity/check-legacy.eli",
+      "kind": "file",
+      "sha256": "719a230501de5dabcf0d918e2d2698d9bc01595ae93e92752aa38580ba29f66f",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/integrity/eliscript/check.eli",
+      "kind": "file",
+      "sha256": "577241739407a043117e66c324a43efb276a5e210ae42c5d805782f75da83856",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/onboarding/check.eli",
+      "kind": "file",
+      "sha256": "b0609cba62fcfa21b269dcb455d3b3e77b494e8fb0b59bca812af59658ad0fae",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/org/README.md",
+      "kind": "file",
+      "sha256": "a22470cbbbff4e49d440b77f47229e87f202279e281441a84282ba1d85c1b410",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/org/eliscript-org-cli.el",
+      "kind": "file",
+      "sha256": "7c053dc9f668ec288bbcd698115ccbf22da5ae41407a6e8746fd8350aca7fb72",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/org/eliscript-org.el",
+      "kind": "file",
+      "sha256": "e60dbb6700fe5899742e1d794987393d0254f7773900c1c67d14ab7a406e4096",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/org/vite-plugin.eli",
+      "kind": "file",
+      "sha256": "03e025caf59c7864d4e90165231bd4f0a5f0c5b00b216324c5a07c6b0b438106",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/pages/assemble.eli",
+      "kind": "file",
+      "sha256": "135a6f7ca8bb677c2341d926e8bec44978026f89c29d76c530bad719082d0a57",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/parity/check.eli",
+      "kind": "file",
+      "sha256": "8f674dadf871c250b9b919bcc4d3f1f34eee830548cd2b2a3636388227accbee",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/performance/README.md",
+      "kind": "file",
+      "sha256": "1110fdc6799a6d7beec2c67f0279fddc714c6a429bed6dabaa41773c553d38e6",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/performance/core-benchmark.eli",
+      "kind": "file",
+      "sha256": "36f64e68474829a2561e49526d91615863016bc83d2ec78fccff2836add7bb77",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/performance/version-comparison.eli",
+      "kind": "file",
+      "sha256": "cfde0ec464c0734ba9a67dc7bff2869462444f33274156641d3dfa5f40cde271",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/progress/check.eli",
+      "kind": "file",
+      "sha256": "748f16866af9ea6e3b6ebeb98308570d98c602e1418e97caf65a1f6da9a694d5",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/project/README.md",
+      "kind": "file",
+      "sha256": "25192382465af2783ddd618a4d6ca21baba1f47dfa14dffafb886c2d9d9be197",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/project/check-cli.eli",
+      "kind": "file",
+      "sha256": "926e5c014da28d79b036f7b5adacaffab7086729c7b1c3c8fbae112af80948f5",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/project/project-cli.eli",
+      "kind": "file",
+      "sha256": "c2ac55bfbbf5f01ca4ee30e3f6499ba9c0cad7420a96afbd96d77d806670df1f",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/project/project.eli",
+      "kind": "file",
+      "sha256": "688df3418152a1a2deeebdcbace0845d3bcf173f382da02b8698bb92dc7e9534",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/project/scale-invalidation.eli",
+      "kind": "file",
+      "sha256": "1832d3c6099af7fe66c1568add35d8730089cbbdd1b428a972ed07871ed8a395",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/runtime/unicode-case-data.eli",
+      "kind": "file",
+      "sha256": "a5e297305a2db313fba574d76729e58ec88832be3352075cac6bbc7b801ec7fe",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/runtime/unicode-case-profiles.eli",
+      "kind": "file",
+      "sha256": "12679c77f2a4450ee5878324e24d3e91aa5f7e30ec0c2d8580ad81406d99787b",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/runtime/unicode-case-runtime.el",
+      "kind": "file",
+      "sha256": "fb74299e26ac8b0685a31ec471bad8907f54d98ae310060b923916f74554ce85",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/runtime/unicode-emoji-data.eli",
+      "kind": "file",
+      "sha256": "aaf94600b7505eebca46cb914f03775596088d89797ab658224de94eb5cc070f",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/runtime/unicode-emoji-inputs.json",
+      "kind": "file",
+      "sha256": "c5ed19738481f9dfdfcab384e5038ad86922dcae52f3ff746ffcea5f0c274497",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/runtime/unicode-property-aliases-legacy.eli",
+      "kind": "file",
+      "sha256": "66262955889b5de969ef2df9f1667a3b57ca0329bbbdeb8a7a267d90029766da",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/runtime/unicode-property-aliases.eli",
+      "kind": "file",
+      "sha256": "143f3a345263e54ef82df01e98ea76a1073935cf663d2baa758007f164b13446",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/runtime/unicode-property-aliases.json",
+      "kind": "file",
+      "sha256": "ec667736991b7b4b0fc17d9658345bc11c4a5fc63a000c3ceae3dd482172d798",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/runtime/unicode-property-ranges.eli",
+      "kind": "file",
+      "sha256": "62c692e1b0d82d84fc2d731421e6d6f4d657224ac0f28a31c9059b33e8a91140",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/runtime/unicode-property-ranges.json",
+      "kind": "file",
+      "sha256": "c3e65e25fa52a189bafa6f183867becfd4051e1e0e7ca3ebdb80620fbebbd13c",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/surface/check.eli",
+      "kind": "file",
+      "sha256": "c99b269c4336ca9e69cf8954cd2de0da75a9016f5f134007e66653ab8ec23719",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/surface/generate-api.eli",
+      "kind": "file",
+      "sha256": "b94629cf206576fb7c4852a22c9cec592b86e9b419e04b177f8183cecaa209c1",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/array-text-fixture.eli",
+      "kind": "file",
+      "sha256": "f164aaa47b79470c55fcf15bda685d38ca223f8ff9ddf922a0715eefbe22027a",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/bootstrap-compiler-fixture.eli",
+      "kind": "file",
+      "sha256": "2c04e687f9dd6616e8cc7624d7eec07c638d3dc4cfa54250cf6d80580d75b11a",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/bootstrap-emitter-corpus-host.eli",
+      "kind": "file",
+      "sha256": "f75db5de04ffc23958c77e59e8e5c622b4d41cbc35d12ee9520af37a0366a7d2",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/bootstrap-emitter.eli",
+      "kind": "file",
+      "sha256": "fee3e2a5cf1c114f053ed0fd91bb5bb50aa87709f285627d61ae02425dc14187",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/bounded-assertions.eli",
+      "kind": "file",
+      "sha256": "296787bb43353010967182ffbc9235a06fa21ab80a784bbd5981a52ac7ae0969",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/compiler-package-execution.eli",
+      "kind": "file",
+      "sha256": "7626c299a314f27bbce5f750e6d7f81685a33a6f966f153d881e2e47f44f7661",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/compiler-package-product.eli",
+      "kind": "file",
+      "sha256": "be6da81f3ff8bcef9701156557dd229b12e6ca4ac4495eda58d7288a367b50d1",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/compiler-portable-fixtures.eli",
+      "kind": "file",
+      "sha256": "d7cc0091eebf89b79d154db73c8ae2b907edbac2eb532e038bb73d6eaf40ca2d",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/file-workers.eli",
+      "kind": "file",
+      "sha256": "42c79435a9e2a5093462f0b645c0dd6995b701d154c419976b8d559c537833df",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/final-functional-scope.eli",
+      "kind": "file",
+      "sha256": "4e10fb866aad052c315cc737b1856bdd44f4aed4efe0a9e5a0c9a586599d7c82",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/fixture-environment.eli",
+      "kind": "file",
+      "sha256": "e9cf871e6ca5f2ef75b2d432745f9bf2ea88a055c0ed6ccc98d85826db99b10d",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/fixtures/portable-reader-failure.eli",
+      "kind": "file",
+      "sha256": "36014e171a24f82315150a023c2999cb0ef1e14fd6e279c7dc493ea9ac921ce5",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/generated-fixture-module.eli",
+      "kind": "file",
+      "sha256": "21174f203615d3ba712a1a5c3fc2cf59d1da18da5416cd8807d2623c2764935d",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/guarded-command.eli",
+      "kind": "file",
+      "sha256": "65f0774c14e9b6fc946746767c1d9cce435d514bafc565e247ed075f71878e2b",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/independent-cli-fixture.eli",
+      "kind": "file",
+      "sha256": "a2b4f1d16be4235424bc43e65f856691519350d3867612d26211b274d3bc59d1",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/initializer-array-fixture.eli",
+      "kind": "file",
+      "sha256": "72ae9b677bbc8eb3693cb7a12b0d50ff918d6c8c89c927b6414da8aad682364e",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/managed-array-repairs.eli",
+      "kind": "file",
+      "sha256": "8e8b1ca877020f87f894232be7fd178aeedcc5167ce8b97298278c679d1c5172",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/managed-fixture-repairs.eli",
+      "kind": "file",
+      "sha256": "d9b7e450c076166c23bfb4bebabebbf848039b8c1031f1bb3c37e363456e7dcc",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/managed-function-properties-repairs.eli",
+      "kind": "file",
+      "sha256": "c3dbf5984580080b0f83c8f24fb32f39f9292f23ad9cc57890e24558d5e74684",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/managed-host-default-contract.eli",
+      "kind": "file",
+      "sha256": "2c9cfb88cb6e2d730c894d59c50616757cdced8fa17eabfe6ba1b3a1be3bcd61",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/managed-numeric-fixtures.eli",
+      "kind": "file",
+      "sha256": "f6757d9aec707050f7ae702c0b4d37f3dde152b656d7a700362294e01942ecf9",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/managed-primitive-own-repairs.eli",
+      "kind": "file",
+      "sha256": "1a78abf2d76b638775d2b047d8296e05dc5b5166433e8da1200d9e7aede937b7",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/managed-regexp-repairs.eli",
+      "kind": "file",
+      "sha256": "cb3f725fc5783651ab8ef9c68902328e59daf526e78e08c445b3a10b74257715",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/managed-sharing-fixture.eli",
+      "kind": "file",
+      "sha256": "f265deb35195b809cdb76c241534aae32eabb3c2cc698035ee409af29bd6864b",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/math-oracle-fixture.eli",
+      "kind": "file",
+      "sha256": "4322c4c613f8dcf8bb69c609d75f79cde2f56bcaf5c7ffda7d61db52ee8b341c",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/native-node-fixtures.eli",
+      "kind": "file",
+      "sha256": "867e9706d53f9a4cb12cd427da1eb5ddf80a391a94667522bc3c60ffc63c0f9f",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/number-spelling-selfhost-driver.eli",
+      "kind": "file",
+      "sha256": "a09bb581fd61f6ebb493a1c47f6cdfdaea375be0ae57a285024bc72dd3524b1c",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/number-text-node.eli",
+      "kind": "file",
+      "sha256": "87c5330fe37b66cb202e36585b3684bccfe50dfda7dc014ddb0cb37983b6f503",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/number-text-regressions.eli",
+      "kind": "file",
+      "sha256": "21b8dd646d8f1f4aacdad76cda456b7bb694b241247133c6ee5d20dafc778df8",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/original-regression-product.eli",
+      "kind": "file",
+      "sha256": "1b2f49ed0d9e0d74c4c48c870bff3c75265fe2005206a337c7f717239f2f380e",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/persistent-literal-fixture.eli",
+      "kind": "file",
+      "sha256": "94009f6501210f5315d024f2bd5760e2d33fd70b5e1ba74de5232d4f3dfdf84d",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/persistent-literal-oracle.eli",
+      "kind": "file",
+      "sha256": "6fada646b540292d8c44d346b4806e651c659489ef6dbe10b0a6df4fc3e031ba",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/portable-node-fixtures.eli",
+      "kind": "file",
+      "sha256": "1550c164ed4f5c0265a2283526d4ba51b1a7de0df14c777f080583ff6e328af6",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/resource-supervisor.eli",
+      "kind": "file",
+      "sha256": "7984b789743bf2a3657d919b4a32b54e594fcfdb100f0f1d0b70f0099ae78d0e",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/source-debugging-corpus-host.eli",
+      "kind": "file",
+      "sha256": "927aaf3d2dec8c0913af46eaf4a44ce73304cbf17e7abcee935b54d92a0b2edd",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/source-debugging.eli",
+      "kind": "file",
+      "sha256": "b8f00a36b0540e260ad1b116fa108da8c6c9bce35f23f9a1bdb5443a7ee2d852",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/stdlib-bit-corpus-host.eli",
+      "kind": "file",
+      "sha256": "7bced7015d69030330c830b93b8eeee008a725aae2e0d39442b8160329d881d5",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/stdlib-bit.eli",
+      "kind": "file",
+      "sha256": "136d9c1cab946c457a744784b1cdc80ce9ab4bafe2346e887c38b4f26df8ab94",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/wasm-analyzer-corpus.eli",
+      "kind": "file",
+      "sha256": "60c5943fb4c4ead487811388c7c5c97586a856e22b7472b5638fdcd7729e00a0",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/wasm-static-repairs.eli",
+      "kind": "file",
+      "sha256": "f7888578cbceecdb814a5acb8685bf2978ef51d9982faf096bbf8f1a4dd38bf9",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/wasm-static-snapshot.eli",
+      "kind": "file",
+      "sha256": "f275e58847b2eb408984edfac743643d794d06b5504cd1140289b74d913132ef",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/testing/wire-project-fixture.eli",
+      "kind": "file",
+      "sha256": "d30d63a953747cd619fc04cb10ee901015035d131422f9343c9ab73d37732f49",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/vite/README.md",
+      "kind": "file",
+      "sha256": "77887bae15786b7ea06d96ab68c172df5df8d4b84363df9bb26027f7febf0742",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/vite/index.eli",
+      "kind": "file",
+      "sha256": "a50061be5889b6262fe2a1e4bfd4e17ea429112f80d3e93ad50e7995565b46eb",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/worker/README.md",
+      "kind": "file",
+      "sha256": "82c9ec913b104ca28607a71991c7a6a38c732a33fab4d8e9371b5b8090111fdd",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/worker/analysis-benchmark.el",
+      "kind": "file",
+      "sha256": "fe4544d7cafc777db95cd6af8fa99a55d5ccde2677598f8815e18cf7843b5a58",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/worker/analysis-soak.el",
+      "kind": "file",
+      "sha256": "01119551858f66e56eb39ef855f1b8e2e6ef260f0993d2a5e1aab29270bb49e3",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/worker/benchmark.el",
+      "kind": "file",
+      "sha256": "c57bd06195d22b5ae3e2a7520943060c8ed7f4f6f8b02e765a51c8df7361c04b",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/worker/eliscript-analysis.el",
+      "kind": "file",
+      "sha256": "f0c669de61ffc9f024b366c8b1c90d88e6538e3cdc3f12bd0f8a55ca1b1b0d3f",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/worker/eliscript-index.el",
+      "kind": "file",
+      "sha256": "736c3daa62f9d214d8605a1ce3b5f263a9e8d295feaecb9db9c811b0bb77bf82",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/worker/eliscript-service.el",
+      "kind": "file",
+      "sha256": "c4d47e4ee5b9f4db46f8c0d2129bd893e5aa38749597eb6d434596e12221b209",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/worker/eliscript-value-codec.el",
+      "kind": "file",
+      "sha256": "8e62c7247f089a37fedc84b085c45491e9931a3066ceaa3ba48cb79aa8b21339",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/worker/eliscript-value-stream.el",
+      "kind": "file",
+      "sha256": "18d4430d49997c30a9eecd3744045f487193a5c65cfe7f6e8c94399cb703c91d",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/worker/eliscript-worker.el",
+      "kind": "file",
+      "sha256": "e63c195a7ddcda45846aeaff5073dd173bfae39491670d1e94c601ec4abadf03",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/worker/lifecycle-soak.el",
+      "kind": "file",
+      "sha256": "6fb8858d9b4651ea6bd1f77422cef1728ea2874f012f467447eb71683ebe0ab5",
+      "origin": "fixed-git-source"
+    },
+    {
+      "path": "tools/worker/value-stream-probe.el",
+      "kind": "file",
+      "sha256": "abc621860a426871e9dd02c8160790b84ad18fe4bfa7dc1586c33901e3640e4a",
+      "origin": "fixed-git-source"
+    }
+  ],
+  "rebuild": {
+    "phase": "S3-after-all-DJ-implementation",
+    "cwd_ref": ".local/toolchains/eliscript-b1c7741/source",
+    "env": {
+      "ELISCRIPT_JS_RUNTIME": "bun"
+    },
+    "commands": [
+      [
+        "emacs",
+        "--batch",
+        "-Q",
+        "-l",
+        "tools/backends/bootstrap.el"
+      ],
+      [
+        "emacs",
+        "--batch",
+        "-Q",
+        "-l",
+        "tools/backends/bootstrap.el",
+        "--stage0",
+        "--output",
+        "dist/bootstrap-release/stage0"
+      ],
+      [
+        "bun",
+        "tools/backends/dist/release-cli.mjs",
+        "bootstrap",
+        "--stage0-manifest",
+        "dist/bootstrap-release/stage0/stage0.json",
+        "--output",
+        "dist/bootstrap-release"
+      ],
+      [
+        "bun",
+        "tools/backends/dist/release-cli.mjs",
+        "prepare-release-package",
+        "--bootstrap-manifest",
+        "dist/bootstrap-release/bootstrap.json"
+      ]
+    ],
+    "success_requires": [
+      "actual commands completed",
+      "stage2-stage3 exact product equality",
+      "current maintained literal sources in stage3 metadata",
+      "DJ graph compiler/runtime identities recorded",
+      "A01 actual interoperability passed"
+    ]
+  }
+}

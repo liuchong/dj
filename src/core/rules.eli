@@ -1,0 +1,200 @@
+(module dj.core.rules
+  (import "./native.eli" nativeNullish nativeTypeOf nativeGet)
+  (import "./limits.eli" limits)
+  (import "./types.eli" isObject hashValue)
+  (import "./errors.eli" success invalidField)
+  (defconst fields
+    (Object/freeze
+      (js-object
+        :event_kind
+        "string"
+        :sender.id
+        "string"
+        :sender.kind
+        "string"
+        :addressed_bot
+        "boolean"
+        :addressed_self "boolean"
+        :chat_type "string"
+        :reply_to.id
+        "string"
+        :text
+        "string")))
+  (defun validatePredicate
+    (predicate)
+    (let ((leaves 0) (bad nil))
+      (let ((visit nil))
+        (setq
+          visit
+          (lambda
+            (node depth path)
+            (let ((djReturn1Token (js-object)) (djReturn1Value nil))
+              (try
+                (when bad (progn (setq djReturn1Value false) (throw djReturn1Token)))
+                (unless (and (isObject node) (<= depth (nativeGet limits "rule_depth")))
+                  (setq bad path)
+                  (progn (setq djReturn1Value false) (throw djReturn1Token)))
+                (let ((keys (Object/keys node)))
+                  (cond
+                    (
+                      (and
+                        (= (js-length keys) 1)
+                        (or (object-has? node :all) (object-has? node :any)))
+                      (let* ((name (aref keys 0)) (children (nativeGet node name)) (index 0))
+                        (unless
+                          (and
+                            (Array/isArray children)
+                            (<= (js-length children) (nativeGet limits "rule_leaves"))
+                            (or (= name "all") (> (js-length children) 0)))
+                          (setq bad path)
+                          (progn (setq djReturn1Value false) (throw djReturn1Token)))
+                        (while (< index (js-length children))
+                          (visit
+                            (aref children index)
+                            (1+ depth)
+                            (str path "/" name "/" index))
+                          (setq index (1+ index)))))
+                    ((and (= (js-length keys) 1) (object-has? node :not))
+                      (visit (nativeGet node "not") (1+ depth) (str path "/not")))
+                    (
+                      (and
+                        (= (js-length keys) 3)
+                        (object-has? node :field)
+                        (object-has? node :op)
+                        (object-has? node :value))
+                      (setq leaves (1+ leaves))
+                      (let*
+                        ((field (nativeGet node "field"))
+                          (op (nativeGet node "op"))
+                          (value (nativeGet node "value"))
+                          (type (nativeGet fields field)))
+                        (unless
+                          (and
+                            (object-has? fields field)
+                            (<= leaves (nativeGet limits "rule_leaves"))
+                            (cond ((= op "eq") (= (nativeTypeOf value) type))
+                              ((= op "in")
+                                (and
+                                  (Array/isArray value)
+                                  (> (js-length value) 0)
+                                  (<= (js-length value) (nativeGet limits "rule_in_values"))
+                                  (js-call
+                                    value
+                                    :every
+                                    (lambda (item) (= (nativeTypeOf item) type)))))
+                              ((or (= op "contains") (= op "prefix"))
+                                (and (= field "text") (= (nativeTypeOf value) "string")))
+                              (t false)))
+                          (setq bad path))))
+                    (t (setq bad path))))
+                (catch djReturn1Error
+                  (if (eq djReturn1Error djReturn1Token)
+                    djReturn1Value
+                    (throw djReturn1Error)))))))
+        (visit predicate 0 "/predicate")
+        (if bad
+          (invalidField
+            bad
+            "bounded all/any/not tree or a strictly typed literal predicate")
+          (success predicate)))))
+  (defun fieldValue
+    (event field)
+    (cond ((= field "text") (nativeGet (nativeGet event "content") "text"))
+      ((= field "sender.id") (nativeGet (nativeGet event "sender") "id"))
+      ((= field "sender.kind") (nativeGet (nativeGet event "sender") "kind"))
+      ((= field "reply_to.id") (nativeGet (nativeGet event "reply_to") "id"))
+      (t (nativeGet event field))))
+  (defconst predicateHashes (new globalThis.WeakMap))
+  (defun evaluatePredicate
+    (predicate event &optional memo budget)
+    (let ((djReturn2Token (js-object)) (djReturn2Value nil))
+      (try
+        (if memo
+          (let ((key (js-call predicateHashes :get predicate)))
+            (unless key
+              (setq key (hashValue predicate))
+              (js-call predicateHashes :set predicate key))
+            (when (js-call memo :has key)
+              (progn
+                (setq djReturn2Value (js-call memo :get key))
+                (throw djReturn2Token)))
+            (let ((answer (evaluateNode predicate event memo budget)))
+              (when (>= (nativeGet memo "size") (nativeGet limits "predicate_memo_entries"))
+                (js-call memo :delete (nativeGet (js-call (js-call memo :keys) :next) "value")))
+              (js-call memo :set key answer)
+              answer))
+          (evaluateNode predicate event nil budget))
+        (catch djReturn2Error
+          (if (eq djReturn2Error djReturn2Token) djReturn2Value (throw djReturn2Error))))))
+  (defun evaluateNode
+    (predicate event memo budget)
+    (let ((djReturn3Token (js-object)) (djReturn3Value nil))
+      (try
+        (cond
+          ((object-has? predicate :all)
+            (let ((unknown false) (children (nativeGet predicate "all")) (index 0))
+              (while (< index (js-length children))
+                (let
+                  ((answer (evaluatePredicate (aref children index) event memo budget)))
+                  (when (= answer "false")
+                    (progn (setq djReturn3Value "false") (throw djReturn3Token)))
+                  (when (= answer "indeterminate") (setq unknown t)))
+                (setq index (1+ index)))
+              (if unknown "indeterminate" "true")))
+          ((object-has? predicate :any)
+            (let ((unknown false) (children (nativeGet predicate "any")) (index 0))
+              (while (< index (js-length children))
+                (let
+                  ((answer (evaluatePredicate (aref children index) event memo budget)))
+                  (when (= answer "true")
+                    (progn (setq djReturn3Value "true") (throw djReturn3Token)))
+                  (when (= answer "indeterminate") (setq unknown t)))
+                (setq index (1+ index)))
+              (if unknown "indeterminate" "false")))
+          ((object-has? predicate :not)
+            (let ((answer (evaluatePredicate (nativeGet predicate "not") event memo budget)))
+              (cond ((= answer "true") "false")
+                ((= answer "false") "true")
+                (t "indeterminate"))))
+          (t
+            (let*
+              ((field (nativeGet predicate "field"))
+                (value (fieldValue event field))
+                (wanted (nativeGet predicate "value"))
+                (op (nativeGet predicate "op"))
+                (truncated
+                  (and (= field "text") (= (nativeGet (nativeGet event "content") "truncated") t))))
+              (when (nativeNullish value)
+                (progn (setq djReturn3Value "indeterminate") (throw djReturn3Token)))
+              (when (and budget (= field "text"))
+                (js-call budget :visit (js-length value)))
+              (cond
+                ((= op "eq")
+                  (if truncated "indeterminate" (if (= value wanted) "true" "false")))
+                ((= op "in")
+                  (if truncated
+                    "indeterminate"
+                    (if (js-call wanted :includes value) "true" "false")))
+                ((= op "contains")
+                  (if (js-call value :includes wanted)
+                    "true"
+                    (if truncated "indeterminate" "false")))
+                ((= op "prefix")
+                  (cond ((js-call value :startsWith wanted) "true")
+                    ((and truncated (js-call wanted :startsWith value)) "indeterminate")
+                    (t "false")))
+                (t "indeterminate")))))
+        (catch djReturn3Error
+          (if (eq djReturn3Error djReturn3Token) djReturn3Value (throw djReturn3Error))))))
+  (defun matchesSource
+    (address include-threads event)
+    (let ((conversation (nativeGet event "conversation")))
+      (and
+        (= (nativeGet address "connection_id") (nativeGet event "connection_id"))
+        (= (nativeGet address "native_chat_id") (nativeGet conversation "native_chat_id"))
+        (or
+          (=
+            (nativeGet address "native_thread_id" nil)
+            (nativeGet conversation "native_thread_id" nil))
+          (and (= include-threads t) (nativeNullish (nativeGet address "native_thread_id")))))))
+  (export validatePredicate evaluatePredicate matchesSource))

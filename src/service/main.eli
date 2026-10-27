@@ -1,0 +1,344 @@
+(module dj.service.main
+  (import "../core/native.eli"
+    nativeTypeOf
+    nativeClearInterval
+    nativeClearTimeout
+    nativeSetInterval
+    nativeSetTimeout nativeGet)
+  (import "node:path" resolve dirname)
+  (import "node:os" homedir)
+  (import "node:fs/promises" lstat unlink chmod readFile)
+  (import "node:net" createConnection)
+  (import "../core/errors.eli" success failure)
+  (import "../host/bun/io.eli" createHostPorts)
+  (import "../interfaces/gepo.eli" handleServiceRequest)
+  (import "./config.eli" loadConfig)
+  (import "./core.eli" createCore)
+  (defasync socketIsAbsent
+    (path)
+    (await
+      (new
+        globalThis.Promise
+        (lambda
+          (resolve reject)
+          (let ((connection nil) (timer nil) (finished false))
+            (let ((finish nil))
+              (setq
+                finish
+                (lambda
+                  (absent)
+                  (unless finished
+                    (setq finished t)
+                    (when timer (nativeClearTimeout timer))
+                    (when connection (js-call connection :destroy))
+                    (funcall resolve absent))))
+              (setq connection (createConnection (js-object :path path)))
+              (js-call connection :once "connect" (lambda () (finish false)))
+              (js-call
+                connection
+                :once
+                "error"
+                (lambda
+                  (error)
+                  (finish
+                    (js-call
+                      (js-array "ECONNREFUSED" "ENOENT")
+                      :includes
+                      (nativeGet error "code")))))
+              (setq timer (nativeSetTimeout (lambda () (finish false)) 500))))))))
+  (defasync prepareSocket
+    (path)
+    (let ((djReturn1Token (js-object)) (djReturn1Value nil))
+      (try
+        (let ((previous nil))
+          (try
+            (setq previous (await (lstat path)))
+            (catch missing
+              (when (eq missing djReturn1Token) (throw missing))
+              (unless (= (nativeGet missing "code") "ENOENT") (throw missing))))
+          (unless previous
+            (progn (setq djReturn1Value (success nil)) (throw djReturn1Token)))
+          (unless
+            (and
+              (js-call previous :isSocket)
+              (not (js-call previous :isSymbolicLink))
+              (= (nativeGet previous "uid") (js-call globalThis.process :getuid)))
+            (progn
+              (setq djReturn1Value (failure "owner_conflict"))
+              (throw djReturn1Token)))
+          (unless (await (socketIsAbsent path))
+            (progn
+              (setq djReturn1Value (failure "owner_conflict"))
+              (throw djReturn1Token)))
+          (let ((current (await (lstat path))))
+            (unless
+              (and
+                (= (nativeGet current "ino") (nativeGet previous "ino"))
+                (= (nativeGet current "dev") (nativeGet previous "dev")))
+              (progn
+                (setq djReturn1Value (failure "owner_conflict"))
+                (throw djReturn1Token)))
+            (await (unlink path))
+            (success nil)))
+        (catch djReturn1Error
+          (if (eq djReturn1Error djReturn1Token) djReturn1Value (throw djReturn1Error))))))
+  (defasync installedBuildId
+    ()
+    (try
+      (let*
+        ((entry (resolve (aref (nativeGet globalThis.process "argv") 1)))
+          (identity
+            (JSON/parse
+              (await
+                (readFile (resolve (dirname entry) "../../build-identity.json") "utf8")))))
+        (if
+          (and
+            (= (nativeGet identity "schema_version") 1)
+            (= (nativeTypeOf (nativeGet identity "build_id")) "string"))
+          (nativeGet identity "build_id")
+          "source-unverified"))
+      (catch unavailable "source-unverified")))
+  (defasync runService
+    (&optional config-ref supplied-host)
+    (let ((djReturn2Token (js-object)) (djReturn2Value nil))
+      (try
+        (let*
+          ((path (resolve (or config-ref (resolve (homedir) ".dj/service.json"))))
+            (reader-host
+              (or supplied-host (createHostPorts (js-object :root (dirname path)))))
+            (loaded (await (loadConfig path reader-host))))
+          (unless (nativeGet loaded "ok")
+            (progn (setq djReturn2Value loaded) (throw djReturn2Token)))
+          (let*
+            ((config (nativeGet loaded "data"))
+              (host
+                (or
+                  supplied-host
+                  (createHostPorts (js-object :root (nativeGet config "config_root")))))
+              (core nil)
+              (server nil)
+              (socket (nativeGet (nativeGet config "service") "socket"))
+              (socket-identity nil)
+              (timer nil)
+              (tick-running false)
+              (shutdown-running false)
+              (requested false)
+              (done nil)
+              (completed nil)
+              (last-drain-state nil)
+              (signal-handler nil)
+              (reload-handler nil)
+              (reload-running false))
+            (put host :build_id (await (installedBuildId)))
+            (setq core (createCore host config))
+            (let ((started (await (js-call core :start))))
+              (unless (nativeGet started "ok")
+                (progn (setq djReturn2Value started) (throw djReturn2Token))))
+            (let ((ready (await (prepareSocket socket))))
+              (unless (nativeGet ready "ok")
+                (await
+                  (js-call
+                    core
+                    :stop
+                    "listener_conflict"
+                    (+ (js-call (nativeGet host "clock") :monoNow) 5000)))
+                (progn (setq djReturn2Value ready) (throw djReturn2Token))))
+            (setq
+              completed
+              (new globalThis.Promise (lambda (resolve reject) (setq done resolve))))
+            (let ((diagnostic nil) (finishSocket nil) (stopWhenSafe nil))
+              (setq
+                diagnostic
+                (lambda
+                  (code state)
+                  (js-call
+                    (nativeGet host "audit")
+                    :record
+                    (js-object :code code :state state))))
+              (setq
+                finishSocket
+                (async
+                  ()
+                  (when server (await (js-call server :stop false)))
+                  (when socket-identity
+                    (try
+                      (let ((current (await (lstat socket))))
+                        (when
+                          (and
+                            (js-call current :isSocket)
+                            (= (nativeGet current "uid") (js-call globalThis.process :getuid))
+                            (= (nativeGet current "ino") (nativeGet socket-identity "ino"))
+                            (= (nativeGet current "dev") (nativeGet socket-identity "dev")))
+                          (await (unlink socket))))
+                      (catch missing
+                        (unless (= (nativeGet missing "code") "ENOENT")
+                          (diagnostic "socket_cleanup_unavailable" "stopped")))))))
+              (setq
+                stopWhenSafe
+                (async
+                  ()
+                  (let ((djReturn3Token (js-object)) (djReturn3Value nil))
+                    (try
+                      (when shutdown-running
+                        (progn (setq djReturn3Value nil) (throw djReturn3Token)))
+                      (setq shutdown-running t)
+                      (try
+                        (let*
+                          (
+                            (result
+                              (await
+                                (js-call
+                                  core
+                                  :stop
+                                  "signal"
+                                  (+ (js-call (nativeGet host "clock") :monoNow) 5000))))
+                            (state (nativeGet (nativeGet result "data") "state")))
+                          (unless (= state last-drain-state)
+                            (diagnostic "service_stop_progress" (or state "draining"))
+                            (setq last-drain-state state))
+                          (when (and (nativeGet result "ok") (= state "stopped"))
+                            (when timer (nativeClearInterval timer) (setq timer nil))
+                            (await (finishSocket))
+                            (funcall done result)))
+                        (catch unavailable
+                          (when (eq unavailable djReturn3Token) (throw unavailable))
+                          (diagnostic "service_drain_unavailable" "draining"))
+                        (finally (setq shutdown-running false)))
+                      (catch djReturn3Error
+                        (if (eq djReturn3Error djReturn3Token)
+                          djReturn3Value
+                          (throw djReturn3Error)))))))
+              (try
+                (setq
+                  server
+                  (Bun/serve
+                    (js-object
+                      :unix
+                      socket
+                      :idleTimeout
+                      30
+                      :fetch
+                      (lambda (request) (handleServiceRequest request core)))))
+                (setq socket-identity (await (lstat socket)))
+                (unless
+                  (and
+                    (js-call socket-identity :isSocket)
+                    (= (nativeGet socket-identity "uid") (js-call globalThis.process :getuid)))
+                  (throw
+                    (new globalThis.Error "service did not create its private socket")))
+                (await (chmod socket 384))
+                (setq signal-handler (lambda () (setq requested t) (stopWhenSafe)))
+                (js-call globalThis.process :on "SIGTERM" signal-handler)
+                (js-call globalThis.process :on "SIGINT" signal-handler)
+                (setq
+                  reload-handler
+                  (async
+                    ()
+                    (unless reload-running
+                      (setq reload-running t)
+                      (try
+                        (let ((candidate (await (loadConfig path host))))
+                          (if (nativeGet candidate "ok")
+                            (let
+                              (
+                                (reloaded
+                                  (await
+                                    (js-call core :reloadConfig (nativeGet candidate "data")))))
+                              (diagnostic
+                                (if (nativeGet reloaded "ok")
+                                  "policy_reloaded"
+                                  "policy_reload_rejected")
+                                (if (nativeGet reloaded "ok")
+                                  (js-call core :transportState)
+                                  (nativeGet (nativeGet reloaded "error") "code"))))
+                            (diagnostic
+                              "policy_reload_rejected"
+                              (nativeGet (nativeGet candidate "error") "code"))))
+                        (catch invalid
+                          (diagnostic "policy_reload_rejected" "invalid_argument"))
+                        (finally (setq reload-running false))))))
+                (js-call globalThis.process :on "SIGHUP" reload-handler)
+                (setq
+                  timer
+                  (nativeSetInterval
+                    (async
+                      ()
+                      ;; Drain owns native completion/probes after shutdown is requested.
+                      ;; Do not replenish observation jobs before each drain attempt.
+                      (unless (or requested tick-running)
+                        (setq tick-running t)
+                        (try
+                          (await (js-call core :tick))
+                          (catch unavailable
+                            (diagnostic
+                              "service_tick_unavailable"
+                              (js-call core :transportState)))
+                          (finally (setq tick-running false))))
+                      (when requested (await (stopWhenSafe))))
+                    20))
+                (diagnostic "service_ready" "ready")
+                (await completed)
+                (catch unavailable
+                  (when (eq unavailable djReturn2Token) (throw unavailable))
+                  (diagnostic "service_listener_unavailable" "draining")
+                  (let
+                    (
+                      (result
+                        (await
+                          (js-call
+                            core
+                            :stop
+                            "listener_failure"
+                            (+ (js-call (nativeGet host "clock") :monoNow) 5000)))))
+                    (when
+                      (and
+                        (nativeGet result "ok")
+                        (= (nativeGet (nativeGet result "data") "state") "stopped"))
+                      (await (finishSocket)))
+                    (failure "unavailable")))
+                (finally
+                  (when timer (nativeClearInterval timer))
+                  (when signal-handler
+                    (js-call
+                      globalThis.process
+                      :removeListener
+                      "SIGTERM"
+                      signal-handler)
+                    (js-call globalThis.process :removeListener "SIGINT" signal-handler))
+                  (when reload-handler
+                    (js-call globalThis.process :removeListener "SIGHUP" reload-handler)))))))
+        (catch djReturn2Error
+          (if (eq djReturn2Error djReturn2Token) djReturn2Value (throw djReturn2Error))))))
+  (defasync main
+    ()
+    (let ((djReturn4Token (js-object)) (djReturn4Value nil))
+      (try
+        (let
+          ((argv (js-call (nativeGet globalThis.process "argv") :slice 2))
+            (path nil)
+            (result nil))
+          (if (and (= (js-length argv) 2) (= (aref argv 0) "--config"))
+            (setq path (aref argv 1))
+            (when (> (js-length argv) 0)
+              (js-call
+                (nativeGet globalThis.process "stderr")
+                :write
+                (str (JSON/stringify (failure "invalid_argument")) "\n"))
+              (put globalThis.process :exitCode 2)
+              (progn (setq djReturn4Value nil) (throw djReturn4Token))))
+          (setq result (await (runService path)))
+          (unless (nativeGet result "ok")
+            (js-call
+              (nativeGet globalThis.process "stderr")
+              :write
+              (str (JSON/stringify result) "\n")))
+          (put globalThis.process :exitCode (if (nativeGet result "ok") 0 1)))
+        (catch djReturn4Error
+          (if (eq djReturn4Error djReturn4Token) djReturn4Value (throw djReturn4Error))))))
+  (when
+    (js-call
+      (or (aref (nativeGet globalThis.process "argv") 1) "")
+      :endsWith
+      "/service/main.mjs")
+    (main))
+  (export runService prepareSocket socketIsAbsent))

@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "bun": {
+    "version": "1.4.4",
+    "platform": "darwin",
+    "arch": "arm64",
+    "package": "@oven/bun-darwin-aarch64"
+  },
+  "compiler": {
+    "source_repository": "https://github.com/liuchong/eliscript",
+    "source_commit": "b1c7741365545d5a048079d64f863524cf7117e2",
+    "source_root_env": "ELISCRIPT_SOURCE_ROOT",
+    "entry": "bin/eliscript-build",
+    "entry_sha256": "e1317d4642761a3ac6d5ea085c3af1f61c91a2d925b21a2e1eec69ab6f56a9e9",
+    "artifact_state": "installed-with-stale-frozen-literals",
+    "artifact_digest": "7b16d539d691e8044c51fc4f7c5b4ac481bfc85fb4d0101c592d1ccb8223f6bf",
+    "provenance_record": "config/compiler-provenance.json",
+    "unresolved_source_bindings": [
+      "runtime/unicode-case-data.eli",
+      "stdlib/managed-literal-protocols.eli",
+      "stdlib/managed-runtime-order.eli",
+      "stdlib/managed-runtime-sequence.eli"
+    ],
+    "rebuild_required": true,
+    "rebuild_phase": "S3-after-all-implementation",
+    "supplemental_source": {
+      "path": "runtime/unicode-case-data.eli",
+      "package": "eliscript@0.1.0",
+      "sha256_utf16le": "6972ed0e897ca08ee3d21600d88f0f72a7163952c4f5a30257e94c9a86293a9c",
+      "destination": "isolated-toolchain-source-only"
+    },
+    "prepared_source_record": "config/compiler-source-inputs.json",
+    "prepared_source_inputs_sha256": "6fd89941eba21098e56a31e2c9c7751894d582789709dd8b0c39fab6499022db",
+    "build_status": "not_run"
+  },
+  "runtime": {
+    "package": "eliscript",
+    "version": "0.1.0",
+    "provenance": "source-mismatch-unresolved"
+  },
+  "stage": "S1",
+  "validation": "not_run"
+}

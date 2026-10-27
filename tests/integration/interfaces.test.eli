@@ -1,0 +1,1129 @@
+(module dj.tests.integration.interfaces
+  (import "../../src/core/native.eli" nativeFetch nativeGet nativeTypeOf)
+  (import "../../tools/opencode-observer.eli" observeOpenCode)
+  (import "../../tools/opencode-observer-controller.eli" loadObserverBinding readObserverRequest)
+  (import "../../src/core/types.eli" stableSessionKey)
+  (import "bun:test" expect)
+  (import "node:path" resolve)
+  (import "node:crypto" randomUUID)
+  (import "../../tools/resource-capture.eli"
+    validateCaptureBinding openNativeProcessReader captureOwnedDeployment)
+  (import "../../tools/resource-controller.eli"
+    loadCaptureBinding readCaptureRequest handleResourceRequest)
+  (import "node:fs"
+    readFileSync mkdirSync writeFileSync chmodSync symlinkSync unlinkSync rmSync statSync existsSync)
+  (import "../support/case.eli" withCase caseMetadata)
+  (import "../support/fixtures.eli" createFixture closeFixture callOk getSession createdEvent createAgentPeer)
+  (import "../../src/interfaces/gepo.eli" handleServiceRequest)
+  (import "../../src/service/main.eli" prepareSocket)
+  (import "../../src/application/operations.eli" operationCatalog)
+  (import "../../src/application/schema.eli" validateRequest)
+  (defconst manifest (JSON/parse (readFileSync "tests/cases.json" "utf8")))
+  (defconst vectors
+    (nativeGet (JSON/parse (readFileSync "tests/operation-vectors.json" "utf8")) "operations"))
+  (defun iReq (operation) (js-object :schema_version 1 :request_id "req-int" :operation operation :run_id "run-int" :parameters (if (= operation "observe-empty-opencode") (js-object :run_id "run-int" :instance_id "instance_test" :native_session_id "ses_test" :session_key (stableSessionKey (js-object :tool "opencode" :native_namespace "project_test" :native_session_id "ses_test"))) (js-object :run_id "run-int" :tool "opencode" :native_session_id "ses_test" :delivery_id "delivery-int"))))
+  (defun iBinding (base directory) (js-object :schema_version 1 :authorized t :endpoint (js-object :base_url base :directory directory :native_namespace "project_test" :instance_id "instance_test" :native_instance_id "native_instance_test") :auth (js-object :type "none") :targets (js-array "ses_test")))
+  (defun iRow (id role origin parent) (js-object :info (js-object :id id :role role :sessionID "ses_test" :parentID parent) :parts (js-array (js-object :id (str "prt_" id) :messageID id :sessionID "ses_test" :type "text" :text (if origin (JSON/stringify (js-object :schema_version 1 :kind "external_message" :origin origin :delivery_id "delivery-int" :content (js-object :text "native run-int marker"))) "native assistant")))))
+  (defasync iReject (thunk) (let* ((caught false)) (try (await (funcall thunk)) (catch failure (setq caught t))) caught))
+  (defasync iCli (root ref stdin) (let* ((child (Bun/spawn (js-array (nativeGet globalThis.process "execPath") (resolve "dist-tools/tools/opencode-observer-controller.mjs") ref) (js-object :cwd root :stdin (new globalThis.Blob (js-array stdin)) :stdout "pipe" :stderr "pipe")))) (try (let* ((values (await (Promise/all (js-array (js-call (new globalThis.Response (nativeGet child "stdout")) :text) (js-call (new globalThis.Response (nativeGet child "stderr")) :text) (nativeGet child "exited")))))) (js-object :stdout (aref values 0) :stderr (aref values 1) :code (aref values 2))) (finally (when (= (nativeGet child "exitCode") nil) (js-call child :kill "SIGKILL")) (await (nativeGet child "exited"))))))
+  (withCase "T38.opencode-observer.integration" (lambda () nil) (async (unused) (let* ((root (resolve ".local/tests" (str "observer-" (randomUUID)))) (file (resolve root "opencode-observer.binding.json")) (directory (resolve root "native-work")) (calls (js-array)) (state (js-object :project "project_test" :directory directory :rows (js-array))) (server nil)) (try (mkdirSync root (js-object :mode 448)) (setq server (Bun/serve (js-object :hostname "127.0.0.1" :port 0 :fetch (async (request) (let* ((url (new globalThis.URL (nativeGet request "url"))) (path (nativeGet url "pathname"))) (js-call calls :push (js-object :method (nativeGet request "method") :auth (js-call (nativeGet request "headers") :get "authorization") :directory (js-call (nativeGet url "searchParams") :get "directory"))) (cond ((= path "/global/health") (new globalThis.Response (JSON/stringify (js-object :healthy t :version "1.18.30")))) ((= path "/session/ses_test") (new globalThis.Response (JSON/stringify (js-object :id "ses_test" :projectID (nativeGet state "project") :directory (nativeGet state "directory"))))) ((= path "/session/ses_test/message") (new globalThis.Response (JSON/stringify (nativeGet state "rows")))) (t (new globalThis.Response "missing" (js-object :status 404))))))))) (let* ((base (str "http://127.0.0.1:" (nativeGet server "port") "/")) (binding (iBinding base directory))) (writeFileSync file (JSON/stringify binding) (js-object :mode 384)) (js-call (expect (nativeGet (await (loadObserverBinding root "opencode-observer.binding.json")) "authorized")) :toBe t) (put state :rows (js-array (iRow "msg_input" "user" "direct" nil))) (let* ((result (await (iCli root "opencode-observer.binding.json" (JSON/stringify (iReq "observe-direct-input"))))) (response (JSON/parse (nativeGet result "stdout")))) (js-call (expect (nativeGet result "code")) :toBe 0) (js-call (expect (nativeGet response "ok")) :toBe t) (js-call (expect (nativeGet response "run_id")) :toBe "run-int") (js-call (expect (nativeGet response "request_id")) :toBe "req-int") (js-call (expect (nativeGet (nativeGet response "data") "native_event_id")) :toBe "msg_input") (js-call (expect (js-call (nativeGet result "stdout") :includes "secret-pass")) :toBe false)) (put state :rows (js-array (iRow "msg_input" "user" "subscription_event" nil) (iRow "msg_assistant" "assistant" nil "msg_input"))) (let* ((result (await (iCli root "opencode-observer.binding.json" (JSON/stringify (iReq "observe-native-start"))))) (response (JSON/parse (nativeGet result "stdout")))) (js-call (expect (nativeGet result "code")) :toBe 0) (js-call (expect (nativeGet response "ok")) :toBe t) (js-call (expect (nativeGet response "run_id")) :toBe "run-int") (js-call (expect (nativeGet response "request_id")) :toBe "req-int") (js-call (expect (nativeGet (nativeGet response "data") "native_event_id")) :toBe "msg_assistant") (js-call (expect (js-call (nativeGet result "stdout") :includes "secret-pass")) :toBe false)) (put state :rows (js-array)) (let* ((result (await (iCli root "opencode-observer.binding.json" (JSON/stringify (iReq "observe-empty-opencode"))))) (response (JSON/parse (nativeGet result "stdout")))) (js-call (expect (nativeGet result "code")) :toBe 0) (js-call (expect (nativeGet response "ok")) :toBe t) (js-call (expect (nativeGet response "run_id")) :toBe "run-int") (js-call (expect (nativeGet response "request_id")) :toBe "req-int") (js-call (expect (nativeGet (nativeGet response "data") "native_event_id")) :toBe "ses_test") (js-call (expect (js-call (nativeGet result "stdout") :includes "secret-pass")) :toBe false)) (put binding :auth (js-object :type "basic" :username "user" :password "secret-pass")) (writeFileSync file (JSON/stringify binding) (js-object :mode 384)) (put state :rows (js-array (iRow "msg_input" "user" "direct" nil))) (let* ((result (await (iCli root "opencode-observer.binding.json" (JSON/stringify (iReq "observe-direct-input")))))) (js-call (expect (nativeGet result "code")) :toBe 0) (js-call (expect (js-call calls :some (lambda (entry) (= (nativeGet entry "auth") (str "Basic " (js-call (Buffer/from "user:secret-pass") :toString "base64")))))) :toBe t) (js-call (expect (js-call (nativeGet result "stdout") :includes "secret-pass")) :toBe false) (js-call (expect (js-call (nativeGet result "stderr") :includes "secret-pass")) :toBe false)) (put state :rows (js-array)) (put state :project "wrong") (js-call (expect (await (iReject (lambda () (observeOpenCode (iReq "observe-empty-opencode") binding (js-object :fetch nativeFetch :now (lambda () (performance/now)))))))) :toBe t) (put state :project "project_test") (put state :directory (resolve root "other")) (js-call (expect (await (iReject (lambda () (observeOpenCode (iReq "observe-empty-opencode") binding (js-object :fetch nativeFetch :now (lambda () (performance/now)))))))) :toBe t) (put state :directory directory) (put state :rows (js-array (iRow "msg_a" "assistant" nil "msg_old"))) (js-call (expect (await (iReject (lambda () (observeOpenCode (iReq "observe-empty-opencode") binding (js-object :fetch nativeFetch :now (lambda () (performance/now)))))))) :toBe t) (put state :rows (js-array)) (writeFileSync (resolve root "group.json") (JSON/stringify binding) (js-object :mode 420)) (chmodSync (resolve root "group.json") 420) (symlinkSync file (resolve root "link.json")) (writeFileSync (resolve root "large.json") (js-call "x" :repeat 65537) (js-object :mode 384)) (js-call (expect (await (iReject (lambda () (loadObserverBinding root "group.json"))))) :toBe t) (js-call (expect (await (iReject (lambda () (loadObserverBinding root "link.json"))))) :toBe t) (js-call (expect (await (iReject (lambda () (loadObserverBinding root "missing.json"))))) :toBe t) (js-call (expect (await (iReject (lambda () (loadObserverBinding root "large.json"))))) :toBe t) (js-call (expect (await (iReject (lambda () (loadObserverBinding root "../outside.json"))))) :toBe t) (let* ((result (await (iCli root "opencode-observer.binding.json" "{} {}"))) (response (JSON/parse (nativeGet result "stdout")))) (js-call (expect (nativeGet result "code")) :toBe 1) (js-call (expect (nativeGet result "stderr")) :toBe "native_observer_failed\n") (js-call (expect (nativeGet response "request_id")) :toBe nil) (js-call (expect (nativeGet response "run_id")) :toBe nil) (js-call (expect (nativeGet response "operation")) :toBe nil) (js-call (expect (nativeGet (nativeGet response "error") "code")) :toBe "native_observation_unavailable") (js-call (expect (js-call (nativeGet result "stdout") :includes "secret-pass")) :toBe false) (js-call (expect (js-call (nativeGet result "stderr") :includes "secret-pass")) :toBe false)) (let* ((result (await (iCli root "opencode-observer.binding.json" "{bad"))) (response (JSON/parse (nativeGet result "stdout")))) (js-call (expect (nativeGet result "code")) :toBe 1) (js-call (expect (nativeGet result "stderr")) :toBe "native_observer_failed\n") (js-call (expect (nativeGet response "request_id")) :toBe nil) (js-call (expect (nativeGet response "run_id")) :toBe nil) (js-call (expect (nativeGet response "operation")) :toBe nil) (js-call (expect (nativeGet (nativeGet response "error") "code")) :toBe "native_observation_unavailable") (js-call (expect (js-call (nativeGet result "stdout") :includes "secret-pass")) :toBe false) (js-call (expect (js-call (nativeGet result "stderr") :includes "secret-pass")) :toBe false)) (let* ((result (await (iCli root "opencode-observer.binding.json" (new globalThis.Uint8Array (js-array 255))))) (response (JSON/parse (nativeGet result "stdout")))) (js-call (expect (nativeGet result "code")) :toBe 1) (js-call (expect (nativeGet result "stderr")) :toBe "native_observer_failed\n") (js-call (expect (nativeGet response "request_id")) :toBe nil) (js-call (expect (nativeGet response "run_id")) :toBe nil) (js-call (expect (nativeGet response "operation")) :toBe nil) (js-call (expect (nativeGet (nativeGet response "error") "code")) :toBe "native_observation_unavailable") (js-call (expect (js-call (nativeGet result "stdout") :includes "secret-pass")) :toBe false) (js-call (expect (js-call (nativeGet result "stderr") :includes "secret-pass")) :toBe false)) (let* ((result (await (iCli root "opencode-observer.binding.json" (js-call "x" :repeat 65537)))) (response (JSON/parse (nativeGet result "stdout")))) (js-call (expect (nativeGet result "code")) :toBe 1) (js-call (expect (nativeGet result "stderr")) :toBe "native_observer_failed\n") (js-call (expect (nativeGet response "request_id")) :toBe nil) (js-call (expect (nativeGet response "run_id")) :toBe nil) (js-call (expect (nativeGet response "operation")) :toBe nil) (js-call (expect (nativeGet (nativeGet response "error") "code")) :toBe "native_observation_unavailable") (js-call (expect (js-call (nativeGet result "stdout") :includes "secret-pass")) :toBe false) (js-call (expect (js-call (nativeGet result "stderr") :includes "secret-pass")) :toBe false)) (let* ((result (await (iCli root "missing.json" (JSON/stringify (iReq "observe-direct-input"))))) (response (JSON/parse (nativeGet result "stdout")))) (js-call (expect (nativeGet response "request_id")) :toBe "req-int") (js-call (expect (nativeGet (nativeGet response "error") "code")) :toBe "native_observation_unavailable")) (let* ((bytes (js-call (new globalThis.TextEncoder) :encode (JSON/stringify (iReq "observe-direct-input")))) (stream (new globalThis.ReadableStream (js-object :start (lambda (c) (js-call c :enqueue (js-call bytes :subarray 0 13)) (js-call c :enqueue (js-call bytes :subarray 13)) (js-call c :close))))) (result (await (readObserverRequest stream)))) (js-call (expect (nativeGet result "request_id")) :toBe "req-int")) (let* ((cancelled false) (stream (new globalThis.ReadableStream (js-object :start (lambda (c) (js-call c :enqueue (new globalThis.Uint8Array 65537))) :cancel (lambda (reason) (setq cancelled t)))))) (js-call (expect (await (iReject (lambda () (readObserverRequest stream))))) :toBe t) (js-call (expect cancelled) :toBe t)) (js-call (expect (js-call calls :every (lambda (entry) (= (nativeGet entry "method") "GET")))) :toBe t) (js-call (expect (js-call calls :every (lambda (entry) (= (nativeGet entry "directory") directory)))) :toBe t) (put state :rows (js-array (iRow "msg_input" "user" "direct" nil))) (let* ((result (await (iCli root "opencode-observer.binding.json" (JSON/stringify (iReq "observe-direct-input"))))) (data (nativeGet (JSON/parse (nativeGet result "stdout")) "data"))) (js-call (expect (nativeGet result "code")) :toBe 0) (js-call (expect (js-call (nativeGet result "stdout") :includes "native run-int marker")) :toBe false) (js-call (expect (js-call (nativeGet result "stdout") :includes base)) :toBe false) (js-call (expect (nativeGet data "observed_delivery_id")) :toBe "delivery-int") (js-call (expect (nativeGet data "native_message_id")) :toBe "msg_input")) (put state :rows (js-array (iRow "msg_input" "user" "subscription_event" nil) (iRow "msg_assistant" "assistant" nil "msg_input"))) (let* ((result (await (iCli root "opencode-observer.binding.json" (JSON/stringify (iReq "observe-native-start"))))) (data (nativeGet (JSON/parse (nativeGet result "stdout")) "data"))) (js-call (expect (nativeGet result "code")) :toBe 0) (js-call (expect (js-call (nativeGet result "stdout") :includes "native run-int marker")) :toBe false) (js-call (expect (js-call (nativeGet result "stdout") :includes base)) :toBe false) (js-call (expect (nativeGet data "observed_delivery_id")) :toBe "delivery-int") (js-call (expect (nativeGet data "native_message_id")) :toBe "msg_input")) (put state :rows (js-array)) (let* ((result (await (iCli root "opencode-observer.binding.json" (JSON/stringify (iReq "observe-empty-opencode"))))) (data (nativeGet (JSON/parse (nativeGet result "stdout")) "data"))) (js-call (expect (nativeGet result "code")) :toBe 0) (js-call (expect (js-call (nativeGet result "stdout") :includes "native run-int marker")) :toBe false) (js-call (expect (js-call (nativeGet result "stdout") :includes base)) :toBe false) (js-call (expect (nativeGet data "prompt_count")) :toBe 0) (js-call (expect (nativeGet data "session_key")) :toBe (nativeGet (nativeGet (iReq "observe-empty-opencode") "parameters") "session_key")) (js-call (expect (nativeGet data "native_instance_id")) :toBe "native_instance_test") (js-call (expect (nativeGet data "instance_identity_source")) :toBe "authorized_endpoint_binding")) (let* ((result (await (iCli root "opencode-observer.binding.json" "DO_NOT_ECHO_NATIVE_BODY http://private.invalid/raw-error"))) (response (JSON/parse (nativeGet result "stdout")))) (js-call (expect (nativeGet result "code")) :toBe 1) (js-call (expect (nativeGet result "stderr")) :toBe "native_observer_failed\n") (js-call (expect (nativeGet response "request_id")) :toBe nil) (js-call (expect (nativeGet response "run_id")) :toBe nil) (js-call (expect (nativeGet response "operation")) :toBe nil) (js-call (expect (js-call (nativeGet result "stdout") :includes "DO_NOT_ECHO_NATIVE_BODY")) :toBe false) (js-call (expect (js-call (nativeGet result "stdout") :includes "private.invalid")) :toBe false) (js-call (expect (js-call (nativeGet result "stderr") :includes "raw-error")) :toBe false))) (finally (when server (await (js-call server :stop t))) (rmSync root (js-object :recursive t :force t)))))) (lambda (unused) nil))
+  (withCase
+    "T70.resources.integration.native-reader"
+    (lambda () nil)
+    (async
+      (unused)
+      (let* ((reader (openNativeProcessReader))
+             (pid (nativeGet globalThis.process "pid"))
+             (uid (js-call globalThis.process :getuid)))
+        (try
+          (let ((first (await (js-call reader :read pid)))
+                (second (await (js-call reader :read pid))))
+            (js-call (expect (nativeGet first "pid")) :toBe pid)
+            (js-call (expect (nativeGet first "uid")) :toBe uid)
+            (js-call (expect (nativeGet first "executable")) :toBe (nativeGet globalThis.process "execPath"))
+            (js-call (expect (nativeGet first "start_abstime")) :toBe (nativeGet second "start_abstime"))
+            (js-call (expect (Number/isSafeInteger (nativeGet first "rss_bytes"))) :toBe t)
+            (js-call (expect (Number/isSafeInteger (nativeGet first "physical_footprint_bytes"))) :toBe t)
+            (js-call (expect (>= (nativeGet first "rss_bytes") 0)) :toBe t)
+            (js-call (expect (>= (nativeGet first "physical_footprint_bytes") 0)) :toBe t))
+          ;; The idle child belongs to this test and is never a real Agent/deployment.
+          (let ((child (Bun/spawn (js-array (nativeGet globalThis.process "execPath")
+                (resolve "dist-tools/tools/resource-controller.mjs") "missing-private-binding.json")
+                (js-object :stdin "pipe" :stdout "pipe" :stderr "pipe"))))
+            (try
+              (js-call (expect (js-call (js-call reader :children pid) :includes (nativeGet child "pid"))) :toBe t)
+              (let ((observed (js-call reader :read (nativeGet child "pid"))))
+                (js-call (expect (nativeGet observed "ppid")) :toBe pid)
+                (js-call (expect (nativeGet observed "uid")) :toBe uid)
+                (js-call (expect (nativeGet observed "executable")) :toBe (nativeGet globalThis.process "execPath")))
+              (finally
+                (when (= (nativeGet child "exitCode") nil) (js-call child :kill "SIGKILL"))
+                (await (nativeGet child "exited")))))
+          (let ((caught 0))
+            (try (await (js-call reader :read 0)) (catch error (setq caught (1+ caught))))
+            (try (await (js-call reader :read 2147483648)) (catch error (setq caught (1+ caught))))
+            (js-call (expect caught) :toBe 2))
+          (finally (js-call reader :close)))
+        (let ((closed-caught false))
+          (try (await (js-call reader :read pid)) (catch error (setq closed-caught t)))
+          (js-call (expect closed-caught) :toBe t))
+        (js-call reader :close))
+      (let* ((root (resolve ".local/tests" (str "capture-" (randomUUID))))
+             (file (resolve root "resources.json"))
+             (binding-data (js-object :schema_version 1 :authorized t :roots
+               (js-array
+                 (js-object :pid 101 :start_abstime "1" :executable (resolve "capture-a") :category "dj" :roles (js-array "dj"))
+                 (js-object :pid 102 :start_abstime "2" :executable (resolve "capture-b") :category "dj" :roles (js-array "lark_websocket"))
+                 (js-object :pid 103 :start_abstime "3" :executable (resolve "capture-c") :category "dj" :roles (js-array "mcp_proxy"))
+                 (js-object :pid 104 :start_abstime "4" :executable (resolve "capture-d") :category "external_agent" :roles (js-array "external_agent"))))))
+        (try
+          (mkdirSync root (js-object :mode 448))
+          (writeFileSync file (JSON/stringify binding-data) (js-object :mode 384))
+          (chmodSync file 384)
+          (let ((binding (await (loadCaptureBinding root "resources.json"))))
+            (js-call (expect (js-length (nativeGet binding "roots"))) :toBe 4)
+            (let* ((clock 0)
+                   (reader (js-object
+                     :read (lambda (pid)
+                       (let ((root-record (js-call (nativeGet binding "roots") :find (lambda (r) (= (nativeGet r "pid") pid)))))
+                         (and root-record (js-object :pid pid :ppid 0 :uid (js-call globalThis.process :getuid)
+                           :executable (nativeGet root-record "executable") :start_abstime (nativeGet root-record "start_abstime")
+                           :exit_abstime "0" :rss_bytes 64 :physical_footprint_bytes 128))))
+                     :children (lambda (pid) (js-array))))
+                   (runtime (js-object :reader reader :now (lambda () clock)
+                     :sleep (async (ms) (setq clock (+ clock ms)))
+                     :uid (js-call globalThis.process :getuid) :capture_id "int-capture"))
+                   (request (js-object :schema_version 1 :operation "measure-owned-deployment"
+                     :request_id "req-int" :run_id "run-int"
+                     :parameters (js-object :run_id "run-int" :duration_ms 60000 :interval_ms 100))))
+              (let ((response (await (handleResourceRequest request binding runtime))))
+                (js-call (expect (nativeGet response "request_id")) :toBe "req-int")
+                (js-call (expect (nativeGet response "run_id")) :toBe "run-int")
+                (js-call (expect (nativeGet response "operation")) :toBe "measure-owned-deployment")
+                (js-call (expect (nativeGet (nativeGet response "data") "complete")) :toBe t))))
+          (let ((rejected 0))
+            (chmodSync file 438)
+            (try (await (loadCaptureBinding root "resources.json")) (catch error (setq rejected (1+ rejected))))
+            (chmodSync file 384)
+            (symlinkSync file (resolve root "link.json"))
+            (try (await (loadCaptureBinding root "link.json")) (catch error (setq rejected (1+ rejected))))
+            (try (await (loadCaptureBinding root "../escape.json")) (catch error (setq rejected (1+ rejected))))
+            (writeFileSync (resolve root "big.json") (js-call "x" :repeat 65537) (js-object :mode 384))
+            (chmodSync (resolve root "big.json") 384)
+            (try (await (loadCaptureBinding root "big.json")) (catch error (setq rejected (1+ rejected))))
+            (writeFileSync (resolve root "unauthorized.json")
+              (JSON/stringify (Object/assign (js-object) binding-data (js-object :authorized false))) (js-object :mode 384))
+            (chmodSync (resolve root "unauthorized.json") 384)
+            (try (await (loadCaptureBinding root "unauthorized.json")) (catch error (setq rejected (1+ rejected))))
+            (js-call (expect rejected) :toBe 5))
+          (finally (rmSync root (js-object :recursive t :force t))))
+      (let* ((stream (new globalThis.ReadableStream (js-object :start (lambda (controller)
+                (js-call controller :enqueue (js-call (new globalThis.TextEncoder) :encode
+                  (JSON/stringify (js-object :schema_version 1 :operation "measure-owned-deployment"
+                    :request_id "stream" :run_id "stream" :parameters
+                    (js-object :run_id "stream" :duration_ms 60000 :interval_ms 100)))))
+                (js-call controller :close))))))
+        (let ((request (await (readCaptureRequest stream))))
+          (js-call (expect (nativeGet request "request_id")) :toBe "stream")))
+      (let* ((bad (new globalThis.ReadableStream (js-object :start (lambda (controller)
+                (js-call controller :enqueue (js-call (new globalThis.TextEncoder) :encode "{bad"))
+                (js-call controller :close)))))
+             (caught false))
+        (try (await (readCaptureRequest bad)) (catch error (setq caught t)))
+        (js-call (expect caught) :toBe t))
+      (let ((stream (new globalThis.ReadableStream (js-object :start (lambda (controller)
+          (js-call controller :enqueue (new globalThis.Uint8Array 65537)) (js-call controller :close)))))
+            (caught false))
+        (try (await (readCaptureRequest stream)) (catch failure (setq caught t)))
+        (js-call (expect caught) :toBe t))
+      ;; Bad requests never reach native capture or deployment; bounded child is test-owned.
+      (let ((variants (js-array "bad-json" "bad-operation" "missing-binding")) (i 0))
+        (while (< i (js-length variants))
+          (let* ((variant (aref variants i))
+                 (request (js-object :schema_version 1 :operation (if (= variant "bad-operation") "invalid" "measure-owned-deployment")
+                   :request_id "cli-test" :run_id "cli-test"
+                   :parameters (js-object :run_id "cli-test" :duration_ms 60000 :interval_ms 100)))
+                 (child (Bun/spawn (js-array (nativeGet globalThis.process "execPath")
+                   (resolve "dist-tools/tools/resource-controller.mjs") "missing-private-binding.json")
+                   (js-object :cwd (resolve ".local/tests") :stdin (new globalThis.Blob (js-array
+                     (if (= variant "bad-json") "{bad" (JSON/stringify request)))) :stdout "pipe" :stderr "pipe"))))
+            (try
+              (let ((values (await (Promise/all (js-array
+                (js-call (new globalThis.Response (nativeGet child "stdout")) :text)
+                (js-call (new globalThis.Response (nativeGet child "stderr")) :text)
+                (nativeGet child "exited"))))))
+                (js-call (expect (not (= (aref values 2) 0))) :toBe t)
+                (js-call (expect (nativeGet (JSON/parse (aref values 0)) "ok")) :toBe false)
+                (js-call (expect (js-call (aref values 1) :trim)) :toBe "resource_controller_failed")
+                (js-call (expect (js-call (aref values 1) :includes "missing-private-binding")) :toBe false))
+              (finally
+                (when (= (nativeGet child "exitCode") nil) (js-call child :kill "SIGKILL"))
+                (await (nativeGet child "exited")))))
+          (setq i (1+ i))))))
+    (lambda (unused) nil))
+  (defasync setup () (await (createFixture "interfaces" "one")))
+  (withCase
+    "T18.cross-entry-idem.integration"
+    setup
+    (async
+      (f)
+      (let*
+        ((session (await (getSession f "s1")))
+          (args
+            (js-object
+              :session_ref
+              (nativeGet session "session_ref")
+              :content
+              (js-object :type "text" :text "once")
+              :idempotency_key
+              "once-key"))
+          (one (await (js-call f :call (nativeGet f "S") "session.send" args)))
+          (two (await (js-call f :call (nativeGet f "S") "session.send" args))))
+        (js-call (expect (nativeGet one "operation_id")) :toBe (nativeGet two "operation_id"))
+        (js-call
+          (expect (nativeGet (nativeGet one "data") "delivery_id"))
+          :toBe
+          (nativeGet (nativeGet two "data") "delivery_id"))
+        (let
+          (
+            (conflict
+              (await
+                (js-call
+                  f
+                  :call
+                  (nativeGet f "S")
+                  "session.send"
+                  (Object/assign
+                    (js-object)
+                    args
+                    (js-object :content (js-object :type "text" :text "changed")))))))
+          (js-call (expect (nativeGet conflict "ok")) :toBe false)
+          (js-call
+            (expect (nativeGet (nativeGet conflict "error") "code"))
+            :toBe
+            "idempotency_conflict"))
+        (await (js-call f :tick))
+        (js-call (expect (js-length (nativeGet (nativeGet f "opencode") "inputs"))) :toBe 1)))
+    closeFixture)
+  (withCase
+    "T26.strict-input.integration"
+    setup
+    (async
+      (f)
+      (let
+        (
+          (result
+            (await
+              (js-call
+                f
+                :call
+                (nativeGet f "O")
+                "session.send"
+                (js-object
+                  :session_ref
+                  "r1"
+                  :agent_id
+                  "a1"
+                  :content
+                  (js-object :type "text" :text "x")
+                  :idempotency_key
+                  "invalid")))))
+        (js-call (expect (nativeGet result "ok")) :toBe false)
+        (js-call (expect (nativeGet (nativeGet result "error") "code")) :toBe "invalid_argument")
+        (js-call (expect (nativeGet result "effect_state")) :toBe "none")
+        (js-call (expect (js-length (nativeGet (nativeGet f "opencode") "inputs"))) :toBe 0)))
+    closeFixture)
+  ;; Per-operation root/unknown/missing cases test the actual authoritative schema.
+  ;; Transport parity cases below will additionally exercise real proxy processes.
+  (js-call
+    (nativeGet manifest "cases")
+    :forEach
+    (lambda
+      (meta)
+      (let ((id (nativeGet meta "case_id")))
+        (when
+          (and (= (nativeGet meta "parent_id") "T26") (nativeGet (nativeGet meta "parameters") "operation"))
+          (withCase
+            id
+            setup
+            (async
+              (f)
+              (let*
+                ((params (nativeGet meta "parameters"))
+                  (operation (nativeGet params "operation"))
+                  (descriptor
+                    (js-call
+                      vectors
+                      :find
+                      (lambda (row) (= (nativeGet row "operation") operation))))
+                  (input
+                    (if (= (nativeGet params "kind") "root-type")
+                      (nativeGet params "value")
+                      (JSON/parse (JSON/stringify (nativeGet descriptor "valid_arguments")))))
+                  (kind (nativeGet params "kind")))
+                (js-call
+                  (expect
+                    (nativeGet
+                      (validateRequest
+                        operation
+                        (JSON/parse (JSON/stringify (nativeGet descriptor "valid_arguments"))))
+                    "ok"))
+                :toBe
+                t)
+              (cond
+                ((= kind "wrong-field-type")
+                  (put input (nativeGet params "field") (nativeGet params "value")))
+                ((= kind "unknown-field") (put input :__unknown_field "rejected"))
+                ((= kind "missing-field")
+                  ;; Each XOR alternative starts present in its own valid form.
+                  (when (js-call (nativeGet descriptor "exclusive_fields") :includes (nativeGet params "field"))
+                    (js-call (nativeGet descriptor "exclusive_fields") :forEach
+                      (lambda (name) (Reflect/deleteProperty input name)))
+                    (put input (nativeGet params "field") "test-ref")
+                    (js-call (expect (nativeGet (validateRequest operation input) "ok")) :toBe t))
+                  (Reflect/deleteProperty input (nativeGet params "field")))
+                ((= kind "xor-none")
+                  (js-call
+                    (nativeGet descriptor "exclusive_fields")
+                    :forEach
+                    (lambda (name) (Reflect/deleteProperty input name))))
+                ((= kind "xor-both")
+                  (js-call
+                    (nativeGet descriptor "exclusive_fields")
+                    :forEach
+                    (lambda (name) (put input name "test-ref")))))
+              (let ((result (await (js-call f :call (nativeGet f "O") operation input))))
+                (js-call (expect (nativeGet result "ok")) :toBe false)
+                (js-call
+                  (expect (nativeGet (nativeGet result "error") "code"))
+                  :toBe
+                  "invalid_argument")
+                (js-call (expect (nativeGet result "effect_state")) :toBe "none")
+                (js-call (expect (js-length (nativeGet (nativeGet f "opencode") "inputs"))) :toBe 0)
+                (js-call (expect (js-length (nativeGet (nativeGet f "lark") "sent"))) :toBe 0))))
+          closeFixture)))))
+  (withCase
+    "T70.catalog-digest.integration"
+    setup
+    (async
+      (f)
+      (let ((status (await (callOk f "O" "service.status" (js-object)))))
+        (js-call (expect (nativeGet status "api_version")) :toBe "1")
+        (js-call
+          (expect (nativeGet status "operation_catalog_digest"))
+          :toMatch
+          (new globalThis.RegExp "^[a-f0-9]{64}$"))
+        (js-call (expect (js-length (nativeGet status "visible_operations"))) :toBe 61)))
+    closeFixture)
+  (import "../support/process.eli" spawnFixture closeProcess until)
+  (import "../support/entries.eli" callCli createMcpClient)
+  (defconst cases (nativeGet (JSON/parse (readFileSync "tests/cases.json" "utf8")) "cases"))
+  (defasync setupEntry () (await (spawnFixture)))
+  (defun comparable
+    (result)
+    (js-object
+      :ok
+      (nativeGet result "ok")
+      :effect_state
+      (nativeGet result "effect_state")
+      :code
+      (nativeGet (nativeGet result "error" (js-object)) "code")
+      :field_errors
+      (nativeGet (nativeGet result "error" (js-object)) "field_errors")))
+  (js-call
+    cases
+    :forEach
+    (lambda
+      (meta)
+      (when (and (= (nativeGet meta "parent_id") "T55") (nativeGet (nativeGet meta "parameters") "entry"))
+        (withCase
+          (nativeGet meta "case_id")
+          setupEntry
+          (async
+            (p)
+            (let*
+              ((params (nativeGet meta "parameters"))
+                (operation (nativeGet params "operation"))
+                (args (js-object :__unknown_field "reject-this-field"))
+                (reference (await (js-call p :request "O" operation args)))
+                (actual nil))
+              (cond
+                ((= (nativeGet params "entry") "api")
+                  (setq actual (await (js-call p :request "O" operation args))))
+                ((= (nativeGet params "entry") "cli")
+                  (setq actual (nativeGet (await (callCli p "O" operation args)) "envelope")))
+                ((= (nativeGet params "entry") "mcp")
+                  (let ((client (await (createMcpClient p "O"))))
+                    (try
+                      (setq actual (await (js-call client :call operation args)))
+                      (finally (await (js-call client :close)))))))
+              (js-call (expect (nativeGet reference "ok")) :toBe false)
+              (js-call
+                (expect (nativeGet (nativeGet reference "error") "code"))
+                :toBe
+                "invalid_argument")
+              (js-call (expect (comparable actual)) :toEqual (comparable reference))
+              (js-call (expect (nativeGet actual "effect_state")) :toBe "none")))
+          closeProcess))))
+  (import "bun:sqlite" Database)
+  (import "ajv/dist/2020.js" :default Ajv2020)
+  (import "@modelcontextprotocol/server" Server)
+  (withCase
+    "T38.eli-interop.integration"
+    setup
+    (lambda
+      (f)
+      (let*
+        ((db (new Database ":memory:"))
+          (ajv
+            (new
+              Ajv2020
+              (js-object
+                :strict
+                t
+                :allErrors
+                t
+                :coerceTypes
+                false
+                :removeAdditional
+                false
+                :useDefaults
+                false)))
+          (validate
+            (js-call
+              ajv
+              :compile
+              (js-object
+                :type
+                "object"
+                :additionalProperties
+                false
+                :properties
+                (js-object
+                  :flag
+                  (js-object :type "boolean")
+                  :null_value
+                  (js-object :type "null")
+                  :values
+                  (js-object :type "array")
+                  :object_value
+                  (js-object :type "object")
+                  :zero
+                  (js-object :type "number")
+                  :text
+                  (js-object :type "string")
+                  :seq
+                  (js-object :type "string")))))
+          (value
+            (js-object
+              :flag
+              false
+              :null_value
+              nil
+              :values
+              (js-array)
+              :object_value
+              (js-object)
+              :zero
+              0
+              :text
+              "😀中文"
+              :seq
+              "9007199254740993")))
+        (try
+          (js-call db :run "CREATE TABLE interop(value TEXT NOT NULL)")
+          (js-call
+            db
+            :run
+            "INSERT INTO interop VALUES (?)"
+            (js-array (JSON/stringify value)))
+          (let
+            (
+              (roundtrip
+                (JSON/parse
+                  (nativeGet
+                    (js-call (js-call db :query "SELECT value FROM interop") :get)
+                    "value"))))
+            (js-call (expect (funcall validate roundtrip)) :toBe t)
+            (js-call (expect (nativeGet roundtrip "flag")) :toBe false)
+            (js-call (expect (nativeGet roundtrip "null_value")) :toBe nil)
+            (js-call (expect (object-has? roundtrip :missing)) :toBe false)
+            (js-call (expect (nativeGet roundtrip "seq")) :toBe "9007199254740993")
+            (js-call (expect (nativeGet roundtrip "text")) :toBe "😀中文"))
+          (let
+            (
+              (server
+                (new
+                  Server
+                  (js-object :name "interop-test" :version "1")
+                  (js-object :capabilities (js-object :tools (js-object))))))
+            (js-call
+              server
+              :setRequestHandler
+              "tools/list"
+              (async (request) (js-object :tools (js-array))))
+            (js-call (expect server) :toBeDefined))
+          (finally (js-call db :close)))))
+    closeFixture)
+  (withCase
+    "T54.action-grants.integration"
+    setup
+    (async
+      (f)
+      (let
+        ((list (await (js-call f :call (nativeGet f "S") "session.list" (js-object))))
+          (start
+            (await
+              (js-call
+                f
+                :call
+                (nativeGet f "S")
+                "instance.start"
+                (js-object
+                  :profile_id
+                  "oc-profile"
+                  :expected_profile_revision
+                  1
+                  :idempotency_key
+                  "not-delegated"))))
+          (free-argv
+            (await
+              (js-call
+                f
+                :call
+                (nativeGet f "O")
+                "instance.start"
+                (js-object
+                  :profile_id
+                  "oc-profile"
+                  :expected_profile_revision
+                  1
+                  :argv
+                  (js-array "unapproved")
+                  :idempotency_key
+                  "free-argv")))))
+        (js-call (expect (nativeGet list "ok")) :toBe t)
+        (js-call (expect (nativeGet start "ok")) :toBe false)
+        (js-call (expect (nativeGet (nativeGet start "error") "code")) :toBe "forbidden")
+        (js-call (expect (nativeGet (nativeGet free-argv "error") "code")) :toBe "invalid_argument")
+        (js-call (expect (js-length (nativeGet (nativeGet f "opencode") "starts"))) :toBe 0)))
+    closeFixture)
+  (withCase
+    "T55.entry-equivalence.integration"
+    setupEntry
+    (async
+      (p)
+      (let*
+        ((api (await (js-call p :request "O" "service.status" (js-object))))
+          (cli (nativeGet (await (callCli p "O" "service.status" (js-object))) "envelope"))
+          (mcp (await (createMcpClient p "O"))))
+        (try
+          (let ((result (await (js-call mcp :call "service.status" (js-object)))))
+            (js-call (expect (nativeGet api "ok")) :toBe t)
+            (js-call
+              (expect (nativeGet (nativeGet cli "data") "operation_catalog_digest"))
+              :toBe
+              (nativeGet (nativeGet api "data") "operation_catalog_digest"))
+            (js-call
+              (expect (nativeGet (nativeGet result "data") "operation_catalog_digest"))
+              :toBe
+              (nativeGet (nativeGet api "data") "operation_catalog_digest")))
+          (finally (await (js-call mcp :close))))))
+    closeProcess)
+  (import "../support/entries.eli" writeClientProfile)
+  (import "../../src/interfaces/client.eli" callService)
+  (import "../../tools/verify.eli" parseSelection selectCases)
+  (withCase
+    "T70.catalog-digest.integration.mismatch"
+    setupEntry
+    (async
+      (p)
+      (let*
+        ((profile-path (await (writeClientProfile p "O")))
+          (profile (JSON/parse (readFileSync profile-path "utf8"))))
+        (put profile :expected_operation_catalog_digest (js-call "0" :repeat 64))
+        (let ((result (await (callService profile "service.status" (js-object) 30))))
+          (js-call (expect (nativeGet result "ok")) :toBe false)
+          (js-call (expect (nativeGet (nativeGet result "error") "code")) :toBe "incompatible")
+          (js-call (expect (nativeGet result "effect_state")) :toBe "none"))))
+    closeProcess)
+  (withCase
+    "T70.selector.integration"
+    setup
+    (lambda
+      (f)
+      (let
+        (
+          (minimal
+            (js-object
+              :cases
+              (js-array
+                (js-object
+                  :case_id
+                  "unit-one"
+                  :suite
+                  "unit"
+                  :applicability
+                  "enabled-positive")
+                (js-object
+                  :case_id
+                  "real-one"
+                  :suite
+                  "e2e"
+                  :applicability
+                  "enabled-positive")
+                (js-object
+                  :case_id
+                  "future-one"
+                  :suite
+                  "unit"
+                  :applicability
+                  "deferred")))))
+      (js-call
+        (expect (js-length (selectCases minimal (parseSelection (js-array)))))
+        :toBe
+        1)
+      (js-call
+        (expect
+          (nativeGet (aref (selectCases minimal (parseSelection (js-array))) 0) "case_id"))
+        :toBe
+        "unit-one")
+      (js-call
+        (expect (lambda () (parseSelection (js-array "--suite" "unknown"))))
+        :toThrow)
+      (js-call
+        (expect
+          (lambda
+            ()
+            (selectCases minimal (parseSelection (js-array "--case" "missing")))))
+        :toThrow)))
+  closeFixture)
+  (defasync senderSession
+    (p)
+    (await
+      (js-call
+        p
+        :request
+        "O"
+        "catalog.refresh"
+        (js-object :idempotency_key "entry-refresh")))
+    (await (js-call p :control (js-object :kind "tick")))
+    (let*
+      (
+        (listed
+          (nativeGet
+            (await
+              (js-call
+                p
+                :request
+                "O"
+                "session.list"
+                (js-object :scope (js-object :tools (js-array "opencode")))))
+            "data"))
+        (key (nativeGet (aref (nativeGet listed "items") 0) "session_key")))
+      (nativeGet
+        (await (js-call p :request "S" "session.get" (js-object :session_key key)))
+        "data")))
+  (defasync skillCliTest (args)
+    (let* ((child (Bun/spawn
+             (js-call (js-array (nativeGet globalThis.process "execPath") "dist/src/interfaces/cli.mjs" "skill") :concat args)
+             (js-object :stdin "ignore" :stdout "pipe" :stderr "pipe")))
+           (values (await (Promise/all (js-array
+             (js-call (new globalThis.Response (nativeGet child "stdout")) :text)
+             (js-call (new globalThis.Response (nativeGet child "stderr")) :text)
+             (nativeGet child "exited")))))
+           (text (if (= (aref values 2) 0) (aref values 0) (aref values 1))))
+      (js-object :exit_code (aref values 2) :result (JSON/parse text))))
+  (defasync exerciseSkillCli (project)
+    (let* ((prefix (js-array "--target" "codex" "--scope" "project" "--project" project))
+           (cursor (js-array "--target" "cursor" "--scope" "project" "--project" project)))
+      (mkdirSync project (js-object :mode 448))
+      (let ((planned (await (skillCliTest (js-call (js-array "install") :concat prefix (js-array "--dry-run"))))))
+        (js-call (expect (nativeGet planned "exit_code")) :toBe 0)
+        (js-call (expect (nativeGet (nativeGet (nativeGet planned "result") "data") "state")) :toBe "planned")
+        (js-call (expect (existsSync (resolve project ".agents"))) :toBe false))
+      (let* ((installed (await (skillCliTest (js-call (js-array "install") :concat prefix))))
+             (data (nativeGet (nativeGet installed "result") "data")))
+        (js-call (expect (nativeGet data "state")) :toBe "installed")
+        (js-call (expect (nativeGet data "client_adoption")) :toBe "unverified")
+        (js-call (expect (nativeGet data "agent_started")) :toBe false)
+        (js-call (expect (readFileSync (resolve project ".agents/skills/dj/SKILL.md") "utf8")) :toBe
+          (readFileSync "skills/dj/SKILL.md" "utf8"))
+        (js-call (expect (readFileSync (resolve project ".agents/skills/dj/references/clients.md") "utf8")) :toBe
+          (readFileSync "skills/dj/references/clients.md" "utf8")))
+      (js-call (expect (nativeGet (nativeGet (nativeGet
+        (await (skillCliTest (js-call (js-array "install") :concat prefix))) "result") "data") "state")) :toBe "unchanged")
+      (js-call (expect (nativeGet (await (skillCliTest (js-call (js-array "check") :concat prefix))) "exit_code")) :toBe 0)
+      (js-call (expect (nativeGet (await (skillCliTest (js-call (js-array "install") :concat cursor))) "exit_code")) :toBe 0)
+      (let* ((profile (resolve project "recipient.json"))
+             (codex-config (nativeGet (nativeGet (await (skillCliTest
+               (js-array "config" "--target" "codex" "--client-profile" profile))) "result") "data"))
+             (toml (js-call (nativeGet globalThis.Bun "TOML") :parse (nativeGet codex-config "config")))
+             (cursor-config (nativeGet (nativeGet (await (skillCliTest
+               (js-array "config" "--target" "cursor" "--client-profile" profile))) "result") "data")))
+        (js-call (expect (nativeGet (nativeGet (nativeGet toml "mcp_servers") "dj") "args")) :toEqual
+          (nativeGet (nativeGet (nativeGet (nativeGet cursor-config "config") "mcpServers") "dj") "args"))
+        (js-call (expect (existsSync profile)) :toBe false)
+        (js-call (expect (existsSync (resolve project ".cursor/mcp.json"))) :toBe false)
+        (let* ((options (js-array "--client-profile" profile "--agent" "agent-local" "--subscription" "sub-local"))
+               (codex-hooks (nativeGet (nativeGet (await (skillCliTest
+                 (js-call (js-array "hooks" "--target" "codex") :concat options))) "result") "data"))
+               (cursor-hooks (nativeGet (nativeGet (await (skillCliTest
+                 (js-call (js-array "hooks" "--target" "cursor") :concat options))) "result") "data")))
+          (js-call (expect (js-length (nativeGet (nativeGet (nativeGet codex-hooks "config") "hooks") "UserPromptSubmit"))) :toBe 1)
+          (js-call (expect (nativeGet (aref (nativeGet (nativeGet (nativeGet cursor-hooks "config") "hooks") "stop") 0) "loop_limit")) :toBe 1)
+          (js-call (expect (nativeGet cursor-hooks "client_config_modified")) :toBe false)
+          (js-call (expect (existsSync (resolve project ".cursor/hooks.json"))) :toBe false)
+          (js-call (expect (nativeGet (nativeGet (nativeGet (await (skillCliTest
+            (js-call (js-array "hooks" "--target" "pi") :concat options))) "result") "error") "code")) :toBe "unsupported")))
+      (let ((path (resolve project ".cursor/skills/dj/SKILL.md")))
+        (writeFileSync path "caller-owned conflict")
+        (js-call (expect (nativeGet (await (skillCliTest (js-call (js-array "install") :concat cursor))) "exit_code")) :toBe 2)
+        (js-call (expect (readFileSync path "utf8")) :toBe "caller-owned conflict"))
+      (let ((linked (resolve project "linked-project")))
+        (mkdirSync linked)
+        (symlinkSync (resolve project ".agents") (resolve linked ".agents"))
+        (js-call (expect (nativeGet (await (skillCliTest (js-array "install" "--target" "codex"
+          "--scope" "project" "--project" linked))) "exit_code")) :toBe 2))))
+  (defasync requestGepo (p actor path method &optional args extra)
+    (let* ((headers (Object/assign (js-object :content-type "application/json") extra))
+           (options (js-object :unix (nativeGet p "socket") :method method :headers headers)))
+      (when actor (put headers :authorization (str "Bearer " (nativeGet (nativeGet p "credentials") actor))))
+      (when args (put options :body (if (= (nativeTypeOf args) "string") args (JSON/stringify args))))
+      (let* ((response (await (nativeFetch (str "http://localhost" path) options)))
+             (text (await (js-call response :text))))
+        (js-object :status (nativeGet response "status") :text text
+          :type (js-call (nativeGet response "headers") :get "content-type")))))
+  (defasync exerciseNativeHooks ()
+    (let ((targets (js-array "codex" "cursor")) (index 0))
+      (while (< index (js-length targets))
+        (let* ((tool (aref targets index))
+               (f (await (createFixture "hooks" tool (js-object :configure
+                 (lambda (config ports)
+                   (put config :managed_profiles (js-array))
+                   (let* ((old (js-call (nativeGet ports "agent_ports") :get "opencode"))
+                          (session (Object/assign (js-object) (aref (nativeGet old "sessions") 0)
+                            (js-object :tool tool :native_namespace "ns-hooks" :native_session_id "hook-session")))
+                          (principal (js-call (nativeGet config "principals") :find (lambda (p) (= (nativeGet p "principal_id") "A")))))
+                     (js-call (nativeGet ports "agent_ports") :set tool (createAgentPeer tool (js-array session)))
+                     (put config :agent_endpoints (js-array (js-object :tool tool :instance_id "oc-existing"
+                       :native_namespace "ns-hooks" :ownership "existing" :endpoint_ref "test:hooks" :workspace_refs (js-array "ws-test")
+                       :workspace_ref "ws-test" :directory (nativeGet config "config_root")
+                       :history_database "state/hook-history.sqlite" :socket_path "run/controlled-peer.sock"
+                       :manifest_path "run/controlled-manifest.json" :window_id 1)))
+                     (put principal :target_constraint (js-object :tool tool :native_namespace "ns-hooks" :native_session_id "hook-session"))
+                     (js-call (nativeGet principal "grants") :push (js-object :action "subscription.consume" :resources (js-array "self")))))))))
+               (socket (resolve (nativeGet f "root") "run/hooks.sock")) (server nil))
+          (try
+            (await (prepareSocket socket))
+            (setq server (Bun/serve (js-object :unix socket :fetch
+              (lambda (request) (handleServiceRequest request (nativeGet f "core"))))))
+            (let* ((candidate (aref (nativeGet (await (callOk f "O" "agent.discover" (js-object :tool tool :scope "live"))) "items") 0))
+                   (agent (await (callOk f "O" "agent.register" (js-object :candidate_ref (nativeGet candidate "candidate_ref")
+                     :binding_mode "existing" :recipient_principal_id "A" :display_name "hook target" :idempotency_key "hook-agent"))))
+                   (source (await (callOk f "A" "conversation.resolve" (js-object :connection_id "lark" :chat_id "c1" :thread_id nil))))
+                   (preview (await (callOk f "A" "subscription.preview" (js-object :spec
+                     (js-object :agent_id (nativeGet agent "agent_id") :delivery_mode "pull"
+                       :instruction_policy (js-object :prompt "authorized hook work")
+                       :selector (js-object :sources (js-array (js-object :conversation_ref (nativeGet source "conversation_ref")))))))))
+                   (subscription (await (callOk f "A" "subscription.create"
+                     (js-object :preview_id (nativeGet preview "preview_id") :idempotency_key "hook-sub"))))
+                   (p (js-object :root (nativeGet f "root") :credentials (nativeGet f "credentials")))
+                   (profile (await (writeClientProfile p "A")))
+                   (profile-data (JSON/parse (readFileSync profile "utf8")))
+                   (input (if (= tool "codex") (js-object :hook_event_name "UserPromptSubmit" :session_id "hook-session" :turn_id "turn-1")
+                     (js-object :hook_event_name "stop" :conversation_id "hook-session" :generation_id "turn-1" :status "completed" :loop_count 0)))
+                   (run (async (event)
+                     (let* ((child (Bun/spawn (js-array (nativeGet globalThis.process "execPath") "dist/src/interfaces/cli.mjs"
+                               "hook" "pull" "--target" tool "--client-profile" profile "--agent" (nativeGet agent "agent_id")
+                               "--subscription" (nativeGet subscription "subscription_id"))
+                               (js-object :stdin (new globalThis.Blob (js-array (JSON/stringify event))) :stdout "pipe" :stderr "pipe")))
+                            (out (await (Promise/all (js-array (js-call (new globalThis.Response (nativeGet child "stdout")) :text)
+                              (js-call (new globalThis.Response (nativeGet child "stderr")) :text) (nativeGet child "exited"))))))
+                       (js-call (expect (aref out 2)) :toBe 0)
+                       (js-call (expect (js-call (aref out 1) :includes (nativeGet (nativeGet f "credentials") "A"))) :toBe false)
+                       (JSON/parse (aref out 0))))))
+              (put (aref (nativeGet profile-data "endpoints") 0) :socket_ref socket)
+              (writeFileSync profile (JSON/stringify profile-data) (js-object :mode 384))
+              ;; Empty polls stay empty for this native turn, even after arrival.
+              (js-call (expect (await (funcall run input))) :toEqual (js-object))
+              (await (js-call f :ingest (createdEvent "lark" "hook-event" "external hook data")))
+              (await (js-call f :tick))
+              (js-call (expect (await (funcall run input))) :toEqual (js-object))
+              (put input (if (= tool "codex") "turn_id" "generation_id") "turn-2")
+              (let* ((output (await (funcall run input)))
+                     (context (if (= tool "codex") (nativeGet (nativeGet output "hookSpecificOutput") "additionalContext")
+                       (nativeGet output "followup_message")))
+                     (item (JSON/parse (js-call context :slice (1+ (js-call context :indexOf "\n"))))))
+                (js-call (expect (js-call context :includes "external hook data")) :toBe t)
+                (js-call (expect (js-call context :includes "authorized hook work")) :toBe t)
+                (js-call (expect (await (funcall run input))) :toEqual output)
+                (let ((wrong (Object/assign (js-object) input)))
+                  (put wrong (if (= tool "codex") "session_id" "conversation_id") "foreign-session")
+                  (js-call (expect (await (funcall run wrong))) :toEqual (js-object)))
+                (when (= tool "cursor")
+                  (put input :loop_count 1)
+                  (js-call (expect (await (funcall run input))) :toEqual (js-object))
+                  (put input :loop_count 0) (put input :status "aborted")
+                  (js-call (expect (await (funcall run input))) :toEqual (js-object))
+                  (put input :status "completed"))
+                (let ((ack (await (callOk f "A" "subscription.ack"
+                             (js-object :claim_ref (nativeGet item "claim_ref") :disposition "consumed" :idempotency_key "hook-ack")))))
+                  (js-call (expect (nativeGet ack "state")) :toBe "consumed"))
+                (js-call (expect (await (funcall run input))) :toEqual (js-object)))
+              (js-call (expect (js-length (nativeGet (nativeGet f "opencode") "inputs"))) :toBe 0))
+            (finally
+              (when server (js-call server :stop t))
+              (await (closeFixture f)))))
+        (setq index (1+ index)))))
+  (withCase
+    "T18.cli-mcp-api-single-operation.integration"
+    setupEntry
+    (async
+      (p)
+      (await (exerciseNativeHooks))
+      (let*
+        ((session (await (senderSession p)))
+          (args
+            (js-object
+              :session_ref
+              (nativeGet session "session_ref")
+              :content
+              (js-object
+                :type
+                "text"
+                :text
+                "one logical mutation through three entries")
+              :idempotency_key
+              "entry-shared-key"))
+          (cli (nativeGet (await (callCli p "S" "session.send" args)) "envelope"))
+          (mcp (await (createMcpClient p "S"))))
+        (try
+          (let*
+            ((skill-check (await (exerciseSkillCli (resolve (nativeGet p "root") "skill-project"))))
+              (mcp-result (await (js-call mcp :call "session.send" args)))
+              (api-result (await (js-call p :request "S" "session.send" args)))
+              (lookup
+                (await
+                  (js-call
+                    p
+                    :request
+                    "S"
+                    "operation.get"
+                    (js-object
+                      :operation
+                      "session.send"
+                      :idempotency_key
+                      "entry-shared-key")))))
+            (js-call (expect (nativeGet cli "ok")) :toBe t)
+            (js-call
+              (expect (nativeGet mcp-result "operation_id"))
+              :toBe
+              (nativeGet cli "operation_id"))
+            (js-call
+              (expect (nativeGet api-result "operation_id"))
+              :toBe
+              (nativeGet cli "operation_id"))
+            (js-call
+              (expect (nativeGet (nativeGet lookup "data") "operation_id"))
+              :toBe
+              (nativeGet cli "operation_id"))
+            (js-call
+              (expect (nativeGet (nativeGet mcp-result "data") "delivery_id"))
+              :toBe
+              (nativeGet (nativeGet cli "data") "delivery_id"))
+            ;; GEPO discovery/usage are metadata, not another execution.
+            (let ((root (await (requestGepo p "S" "/.well-known/gepo" "GET")))
+                  (index (await (requestGepo p "S" "/session?.gepo" "GET")))
+                  (usage (await (requestGepo p "S" "/session/send" "GET")))
+                  (head (await (requestGepo p "S" "/session/send" "HEAD"))))
+              (js-call (expect (nativeGet root "status")) :toBe 200)
+              (js-call (expect (js-call (nativeGet root "text") :includes "GEPO 0.2")) :toBe t)
+              (js-call (expect (js-call (nativeGet index "text") :includes "`/session/send`")) :toBe t)
+              (js-call (expect (js-call (nativeGet usage "type") :startsWith "text/markdown")) :toBe t)
+              (js-call (expect (js-call (nativeGet usage "text") :includes "idempotency_key")) :toBe t)
+              (js-call (expect (nativeGet head "text")) :toBe ""))
+            (let* ((reply (await (requestGepo p "S" "/session/send" "POST" args)))
+                   (gepo (JSON/parse (nativeGet reply "text"))))
+              (js-call (expect (nativeGet gepo "ok")) :toBe t)
+              (js-call (expect (nativeGet gepo "operation_id")) :toBe (nativeGet cli "operation_id"))
+              (js-call (expect (nativeGet (nativeGet gepo "data") "delivery_id"))
+                :toBe (nativeGet (nativeGet cli "data") "delivery_id")))
+            (js-call (expect (nativeGet (await (requestGepo p nil "/.gepo" "GET")) "status")) :toBe 401)
+            (js-call (expect (nativeGet (await (requestGepo p "S" "/instance/start" "GET")) "status")) :toBe 404)
+            (js-call (expect (nativeGet (await (requestGepo p "S" "/service/status" "GET" nil
+              (js-object :origin "https://untrusted.invalid"))) "status")) :toBe 403)
+            (js-call (expect (nativeGet (await (requestGepo p "S" "/service/status" "POST" "{")) "status")) :toBe 400)
+            (js-call (expect (nativeGet (await (requestGepo p "S" "/service/status" "GET" nil
+              (js-object :x-dj-operation-catalog-digest (js-call "0" :repeat 64)))) "status")) :toBe 400)
+            (let* ((bad (await (requestGepo p "S" "/session/send" "POST" (js-object :unexpected t))))
+                   (result (JSON/parse (nativeGet bad "text"))))
+              (js-call (expect (nativeGet result "ok")) :toBe false)
+              (js-call (expect (nativeGet result "effect_state")) :toBe "none"))
+            (await (js-call p :control (js-object :kind "tick")))
+            (js-call
+              (expect
+                (nativeGet (await (js-call p :control (js-object :kind "stats"))) "inputs"))
+              :toBe
+              1)
+            (let ((recipient (await (createMcpClient p "A"))))
+              (try
+                (let* ((candidates (nativeGet (nativeGet (await (js-call p :request "O" "agent.discover"
+                                     (js-object :tool "opencode" :scope "live"))) "data") "items"))
+                       (candidate (js-call candidates :find (lambda (c) (= (nativeGet c "native_session_id") "s1"))))
+                       (agent (nativeGet (await (js-call p :request "O" "agent.register"
+                         (js-object :candidate_ref (nativeGet candidate "candidate_ref") :binding_mode "existing"
+                           :recipient_principal_id "A" :display_name "pull target" :idempotency_key "entry-pull-agent"))) "data"))
+                       (source (nativeGet (await (js-call p :request "A" "conversation.resolve"
+                         (js-object :connection_id "lark" :chat_id "c1" :thread_id nil))) "data"))
+                       (preview (await (js-call recipient :call "subscription.preview"
+                         (js-object :spec (js-object :agent_id (nativeGet agent "agent_id") :delivery_mode "pull"
+                           :instruction_policy (js-object :task_template "process {{message.text}}")
+                           :selector (js-object :sources (js-array (js-object :conversation_ref (nativeGet source "conversation_ref")))))))))
+                       (subscription (await (js-call recipient :call "subscription.create"
+                         (js-object :preview_id (nativeGet (nativeGet preview "data") "preview_id") :idempotency_key "entry-pull-sub")))))
+                  (js-call (expect (nativeGet preview "ok")) :toBe t)
+                  (js-call (expect (nativeGet subscription "ok")) :toBe t)
+                  (await (js-call p :control (js-object :kind "ingest" :event (createdEvent "lark" "entry-pull-event" "pull message"))))
+                  (await (js-call p :control (js-object :kind "tick")))
+                  (let* ((args (js-object :subscription_id (nativeGet (nativeGet subscription "data") "subscription_id")
+                                 :idempotency_key "entry-pull-claim"))
+                         (claimed (await (js-call recipient :call "subscription.pull" args)))
+                         (claim (nativeGet (nativeGet (nativeGet claimed "data") "item") "claim_ref"))
+                         (gepo (JSON/parse (nativeGet (await (requestGepo p "A" "/subscription/pull" "POST" args)) "text"))))
+                    (js-call (expect (nativeGet claimed "ok")) :toBe t)
+                    (js-call (expect (nativeGet gepo "ok")) :toBe t)
+                    (js-call (expect (nativeGet (nativeGet (nativeGet gepo "data") "item") "claim_ref")) :toBe claim)
+                    (let ((acked (await (js-call recipient :call "subscription.ack"
+                            (js-object :claim_ref claim :disposition "consumed" :idempotency_key "entry-pull-ack")))))
+                      (js-call (expect (nativeGet acked "ok")) :toBe t)
+                      (js-call (expect (nativeGet (nativeGet acked "data") "state")) :toBe "consumed"))))
+                (finally (await (js-call recipient :close))))))
+          (finally (await (js-call mcp :close))))))
+    closeProcess)
+  (withCase
+    "T55.mcp-descriptors-and-errors.integration"
+    setupEntry
+    (async
+      (p)
+      (let ((client (await (createMcpClient p "O"))))
+        (try
+          (let*
+            ((listed (await (js-call client :request "tools/list" (js-object))))
+              (tools (nativeGet listed "tools"))
+              (read
+                (js-call
+                  tools
+                  :find
+                  (lambda (tool) (= (nativeGet tool "name") "dj_session_list"))))
+              (send
+                (js-call
+                  tools
+                  :find
+                  (lambda (tool) (= (nativeGet tool "name") "dj_session_send"))))
+              (raw
+                (await
+                  (js-call
+                    client
+                    :request
+                    "tools/call"
+                    (js-object
+                      :name
+                      "dj_session_search"
+                      :arguments
+                      (js-object :query "business error inside valid protocol shell"))))))
+            (js-call (expect (js-length tools)) :toBe 61)
+            (js-call (expect (nativeGet (nativeGet read "annotations") "readOnlyHint")) :toBe t)
+            (js-call (expect (nativeGet (nativeGet send "annotations") "readOnlyHint")) :toBe false)
+            (js-call (expect (nativeGet (nativeGet send "annotations") "idempotentHint")) :toBe t)
+            (js-call
+              (expect (nativeGet send "inputSchema"))
+              :toEqual
+              (nativeGet (js-call operationCatalog :get "session.send") "input_schema"))
+            (js-call
+              (expect (nativeGet (nativeGet send "inputSchema") "additionalProperties"))
+              :toBe
+              false)
+            (js-call (expect (nativeGet send "outputSchema")) :toBeDefined)
+            (js-call (expect (nativeGet raw "isError")) :toBe t)
+            (js-call
+              (expect (nativeGet (nativeGet raw "structuredContent") "effect_state"))
+              :toBe
+              "none")
+            (js-call
+              (expect (nativeGet (nativeGet (nativeGet raw "structuredContent") "error") "code"))
+              :toBe
+              "invalid_argument")
+            (let ((protocol-error false))
+              (try
+                (await (js-call client :request "not-a-protocol-method" (js-object)))
+                (catch failure (setq protocol-error t)))
+              (js-call (expect protocol-error) :toBe t)
+              (js-call
+                (expect
+                  (js-call
+                    (nativeGet client "messages")
+                    :some
+                    (lambda
+                      (message)
+                      (= (nativeGet (nativeGet message "error" (js-object)) "code") -32601))))
+                :toBe
+                t)))
+          (finally (await (js-call client :close))))))
+    closeProcess)
+  (defasync rawApi
+    (p actor wire &optional signal)
+    (let
+      (
+        (response
+          (await
+            (nativeFetch
+              "http://localhost/v1/operations"
+              (js-object
+                :unix
+                (nativeGet p "socket")
+                :method
+                "POST"
+                :signal
+                signal
+                :headers
+                (js-object
+                  :content-type
+                  "application/json"
+                  :authorization
+                  (str "Bearer " (nativeGet (nativeGet p "credentials") actor)))
+                :body
+                (JSON/stringify wire))))))
+      (await (js-call response :json))))
+  (js-call
+    (js-array "before" "after")
+    :forEach
+    (lambda
+      (phase)
+      (withCase
+        (str "T29.transport-loss.integration." phase)
+        setupEntry
+        (async
+          (p)
+          (let*
+            ((session (await (senderSession p)))
+              (key (str "timeout-" phase))
+              (args
+                (js-object
+                  :session_ref
+                  (nativeGet session "session_ref")
+                  :content
+                  (js-object :type "text" :text "one late acceptance")
+                  :idempotency_key
+                  key))
+              (controller (new globalThis.AbortController)))
+            (await
+              (js-call
+                p
+                :control
+                (js-object :kind "hold-operation" :phase phase :idempotency_key key)))
+            (let
+              ((disconnected false)
+                (request
+                  (js-call
+                    (rawApi
+                      p
+                      "S"
+                      (js-object
+                        :api_version
+                        "1"
+                        :operation
+                        "session.send"
+                        :arguments
+                        args)
+                      (nativeGet controller "signal"))
+                    :catch
+                    (lambda (failure) nil))))
+              (await
+                (until
+                  "controlled request boundary"
+                  (async
+                    ()
+                    (js-call
+                      (nativeGet
+                        (await (js-call p :control (js-object :kind "stats")))
+                        "holds")
+                      :some
+                      (lambda
+                        (hold)
+                        (and (= (nativeGet hold "idempotency_key") key) (nativeGet hold "entered")))))
+                  10000))
+              (js-call controller :abort)
+              (js-call (expect (await request)) :toBe nil)
+              (let
+                (
+                  (lookup
+                    (await
+                      (js-call
+                        p
+                        :request
+                        "S"
+                        "operation.get"
+                        (js-object :operation "session.send" :idempotency_key key)))))
+                (if (= phase "before")
+                  (js-call (expect (nativeGet (nativeGet lookup "error") "code")) :toBe "not_found")
+                  (js-call (expect (nativeGet lookup "ok")) :toBe t)))
+              (await
+                (js-call
+                  p
+                  :control
+                  (js-object :kind "release-operation" :idempotency_key key)))
+              (let*
+                ((replay (nativeGet (await (callCli p "S" "session.send" args)) "envelope"))
+                  (found
+                    (await
+                      (js-call
+                        p
+                        :request
+                        "S"
+                        "operation.get"
+                        (js-object :operation "session.send" :idempotency_key key)))))
+                (js-call (expect (nativeGet replay "ok")) :toBe t)
+                (js-call
+                  (expect (nativeGet (nativeGet found "data") "operation_id"))
+                  :toBe
+                  (nativeGet replay "operation_id")))
+              (await (js-call p :control (js-object :kind "tick")))
+              (js-call
+                (expect
+                  (nativeGet (await (js-call p :control (js-object :kind "stats"))) "inputs"))
+                :toBe
+                1))))
+        closeProcess)))
+  (js-call
+    (js-array "version" "extra-field" "oversized")
+    :forEach
+    (lambda
+      (variant)
+      (withCase
+        (str "T26.api-wire.integration." variant)
+        setupEntry
+        (async
+          (p)
+          (let
+            (
+              (wire
+                (js-object
+                  :api_version
+                  "1"
+                  :operation
+                  "service.status"
+                  :arguments
+                  (js-object))))
+            (cond ((= variant "version") (put wire :api_version "999"))
+              ((= variant "extra-field") (put wire :principal_id "O"))
+              ((= variant "oversized")
+                (put (nativeGet wire "arguments") :text (js-call "x" :repeat 262145))))
+            (let ((result (await (rawApi p "S" wire))))
+              (js-call (expect (nativeGet result "ok")) :toBe false)
+              (js-call (expect (nativeGet result "effect_state")) :toBe "none"))
+            (let ((stats (await (js-call p :control (js-object :kind "stats")))))
+              (js-call (expect (nativeGet stats "inputs")) :toBe 0)
+              (js-call (expect (nativeGet stats "starts")) :toBe 0)
+              (js-call (expect (nativeGet stats "creates")) :toBe 0))))
+        closeProcess))))

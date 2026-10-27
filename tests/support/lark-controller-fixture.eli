@@ -1,0 +1,14 @@
+(module dj.tests.support.lark-controller-fixture
+  (import "../../src/core/native.eli" NativeBun nativeGet nativeSetInterval)
+  (defasync main ()
+    (let* ((argv (nativeGet globalThis.process "argv")) (mode (aref argv 2)))
+      (cond
+        ((= mode "echo")
+          (js-call (nativeGet globalThis.process "stdout") :write
+            (JSON/stringify (js-object :argv (js-call argv :slice 3)))))
+        ((= mode "overflow") (await (js-call NativeBun :write (nativeGet NativeBun "stdout") (js-call "x" :repeat 2097153))))
+        ((= mode "large-stderr") (await (js-call NativeBun :write (nativeGet NativeBun "stderr") (js-call "x" :repeat 32769))))
+        ((= mode "invalid-utf8") (await (js-call NativeBun :write (nativeGet NativeBun "stdout") (new globalThis.Uint8Array (js-array 255)))))
+        ((= mode "sleep") (nativeSetInterval (lambda () nil) 1000))
+        (t (js-call (nativeGet globalThis.process "stderr") :write "fixture_error") (put globalThis.process :exitCode 3)))))
+  (when (js-call (or (aref (nativeGet globalThis.process "argv") 1) "") :endsWith "/tests/support/lark-controller-fixture.mjs") (main)))

@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "authorized": false,
+  "operations": [],
+  "expected_app_id": "cli_REPLACE_WITH_TEST_APP",
+  "expected_user_open_id": "ou_REPLACE_WITH_TEST_USER",
+  "state_ref": "lark-intents.sqlite",
+  "targets": [
+    {
+      "connection_id": "REPLACE_WITH_TEST_CONNECTION",
+      "chat_id": "oc_REPLACE_WITH_TEST_CHAT",
+      "thread_id": null,
+      "thread_root_message_id": null
+    }
+  ],
+  "credential_ref": "user-oauth.json"
+}

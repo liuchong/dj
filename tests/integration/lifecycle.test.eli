@@ -1,0 +1,636 @@
+(module dj.tests.integration.lifecycle
+  (import "../../src/core/native.eli" nativeGet)
+  (import "bun:test" expect)
+  (import "../support/case.eli" withCase)
+  (import "../support/fixtures.eli" createFixture closeFixture callOk)
+  (import "../support/faults.eli" atFault createBarrier)
+  (defasync setup () (await (createFixture "lifecycle" "one")))
+  (withCase
+    "T53.create-unknown.sqlite"
+    setup
+    (async
+      (f)
+      (let
+        (
+          (start
+            (await
+              (callOk
+                f
+                "O"
+                "instance.start"
+                (js-object
+                  :profile_id
+                  "oc-profile"
+                  :expected_profile_revision
+                  1
+                  :idempotency_key
+                  "unknown-create-start")))))
+        (await (js-call f :tick))
+        (let*
+          (
+            (ready
+              (await
+                (callOk
+                  f
+                  "O"
+                  "lifecycle.get"
+                  (js-object :lifecycle_id (nativeGet start "lifecycle_id")))))
+            (instance
+              (await
+                (callOk
+                  f
+                  "O"
+                  "instance.get"
+                  (js-object :instance_id (nativeGet ready "instance_id")))))
+            (args
+              (js-object
+                :instance_id
+                (nativeGet instance "instance_id")
+                :expected_instance_epoch
+                (nativeGet instance "instance_epoch")
+                :workspace_ref
+                "ws-test"
+                :idempotency_key
+                "unknown-create")))
+          (put (nativeGet (nativeGet f "opencode") "behavior") :create "throw_after")
+          (let ((first (await (callOk f "O" "session.create" args))))
+            (await (js-call f :tick))
+            (let*
+              (
+                (record
+                  (await
+                    (callOk
+                      f
+                      "O"
+                      "lifecycle.get"
+                      (js-object :lifecycle_id (nativeGet first "lifecycle_id")))))
+                (again (await (callOk f "O" "session.create" args))))
+              (js-call (expect (nativeGet record "state")) :toBe "unknown")
+              (js-call
+                (expect (nativeGet again "lifecycle_id"))
+                :toBe
+                (nativeGet first "lifecycle_id"))
+              (await
+                (callOk
+                  f
+                  "O"
+                  "lifecycle.reconcile"
+                  (js-object
+                    :lifecycle_id
+                    (nativeGet first "lifecycle_id")
+                    :idempotency_key
+                    "reconcile-create")))
+              (await (js-call f :tick))
+              (js-call (expect (js-length (nativeGet (nativeGet f "opencode") "creates"))) :toBe 1))))))
+    closeFixture)
+  (withCase
+    "T64.stable-key.sqlite"
+    setup
+    (async
+      (f)
+      (let
+        (
+          (action
+            (await
+              (callOk
+                f
+                "O"
+                "instance.start"
+                (js-object
+                  :profile_id
+                  "pi-profile"
+                  :expected_profile_revision
+                  1
+                  :idempotency_key
+                  "pi-start")))))
+        (await (js-call f :tick))
+        (let*
+          (
+            (ready
+              (await
+                (callOk
+                  f
+                  "O"
+                  "lifecycle.get"
+                  (js-object :lifecycle_id (nativeGet action "lifecycle_id")))))
+            (key (nativeGet ready "initial_session_key")))
+          (js-call (expect key) :toBeDefined)
+          (js-call (nativeGet (expect key) "not") :toBe nil)
+          (let
+            ((session (await (callOk f "O" "session.get" (js-object :session_key key)))))
+            (js-call (expect (nativeGet session "session_key")) :toBe key)))))
+    closeFixture)
+  (withCase
+    "T66.slot-absence.sqlite"
+    setup
+    (async
+      (f)
+      (await
+        (callOk
+          f
+          "O"
+          "instance.start"
+          (js-object
+            :profile_id
+            "oc-profile"
+            :expected_profile_revision
+            1
+            :idempotency_key
+            "same-slot-1")))
+      (await
+        (callOk
+          f
+          "O"
+          "instance.start"
+          (js-object
+            :profile_id
+            "oc-profile"
+            :expected_profile_revision
+            1
+            :idempotency_key
+            "same-slot-2")))
+      (await (js-call f :tick))
+      (js-call (expect (js-length (nativeGet (nativeGet f "opencode") "starts"))) :toBe 1))
+    closeFixture)
+  (withCase
+    "T65.instance-gate.sqlite"
+    setup
+    (async
+      (f)
+      (let
+        (
+          (started
+            (await
+              (callOk
+                f
+                "O"
+                "instance.start"
+                (js-object
+                  :profile_id
+                  "oc-profile"
+                  :expected_profile_revision
+                  1
+                  :idempotency_key
+                  "gate-start")))))
+        (await (js-call f :tick))
+        (let*
+          (
+            (life
+              (await
+                (callOk
+                  f
+                  "O"
+                  "lifecycle.get"
+                  (js-object :lifecycle_id (nativeGet started "lifecycle_id")))))
+            (instance-id (nativeGet life "instance_id"))
+            (instance
+              (await (callOk f "O" "instance.get" (js-object :instance_id instance-id)))))
+          (await
+            (callOk
+              f
+              "O"
+              "instance.stop"
+              (js-object
+                :instance_id
+                instance-id
+                :expected_revision
+                (nativeGet instance "revision")
+                :idempotency_key
+                "gate-stop")))
+          (let
+            (
+              (create
+                (await
+                  (js-call
+                    f
+                    :call
+                    (nativeGet f "O")
+                    "session.create"
+                    (js-object
+                      :instance_id
+                      instance-id
+                      :expected_instance_epoch
+                      (nativeGet instance "instance_epoch")
+                      :workspace_ref
+                      "ws-test"
+                      :idempotency_key
+                      "create-after-stop")))))
+            (js-call (expect (nativeGet create "ok")) :toBe false)
+            (js-call (expect (nativeGet create "effect_state")) :toBe "none")
+            (js-call (expect (js-length (nativeGet (nativeGet f "opencode") "creates"))) :toBe 0)))))
+    closeFixture)
+  (defasync readyInstance
+    (f tool key)
+    (let
+      (
+        (start
+          (await
+            (callOk
+              f
+              "O"
+              "instance.start"
+              (js-object
+                :profile_id
+                (if (= tool "pi") "pi-profile" "oc-profile")
+                :expected_profile_revision
+                1
+                :idempotency_key
+                key)))))
+      (await (js-call f :tick))
+      (let
+        (
+          (action
+            (await
+              (callOk
+                f
+                "O"
+                "lifecycle.get"
+                (js-object :lifecycle_id (nativeGet start "lifecycle_id"))))))
+        (js-call (expect (nativeGet action "state")) :toBe "ready")
+        (await
+          (callOk
+            f
+            "O"
+            "instance.get"
+            (js-object :instance_id (nativeGet action "instance_id")))))))
+  (withCase
+    "T51.empty-create.sqlite"
+    setup
+    (async
+      (f)
+      (let*
+        ((instance (await (readyInstance f "opencode" "empty-start")))
+          (args
+            (js-object
+              :instance_id
+              (nativeGet instance "instance_id")
+              :expected_instance_epoch
+              (nativeGet instance "instance_epoch")
+              :workspace_ref
+              "ws-test"
+              :title
+              "same title is not identity"
+              :idempotency_key
+              "empty-create"))
+          (accepted (await (callOk f "O" "session.create" args))))
+        (await (js-call f :tick))
+        (let*
+          (
+            (action
+              (await
+                (callOk
+                  f
+                  "O"
+                  "lifecycle.get"
+                  (js-object :lifecycle_id (nativeGet accepted "lifecycle_id")))))
+            (session
+              (await
+                (callOk
+                  f
+                  "O"
+                  "session.get"
+                  (js-object :session_key (nativeGet action "session_key")))))
+            (repeat (await (callOk f "O" "session.create" args))))
+          (js-call
+            (expect (nativeGet repeat "lifecycle_id"))
+            :toBe
+            (nativeGet accepted "lifecycle_id"))
+          (js-call
+            (expect (nativeGet session "instance_id"))
+            :toBe
+            (nativeGet instance "instance_id"))
+          (js-call (expect (nativeGet session "native_session_id")) :toBe "created-0")
+          (js-call (expect (js-length (nativeGet (nativeGet f "opencode") "creates"))) :toBe 1)
+          (js-call (expect (js-length (nativeGet (nativeGet f "opencode") "inputs"))) :toBe 0))))
+    closeFixture)
+  (withCase
+    "T52.start-unknown-slot.sqlite"
+    setup
+    (async
+      (f)
+      (let*
+        ((peer (nativeGet f "opencode"))
+          (behavior (nativeGet peer "behavior"))
+          (args
+            (js-object
+              :profile_id
+              "oc-profile"
+              :expected_profile_revision
+              1
+              :idempotency_key
+              "unknown-start")))
+        (put behavior :start "throw_after")
+        (put behavior :inspect "unknown")
+        (let ((first (await (callOk f "O" "instance.start" args))))
+          (await (js-call f :tick))
+          (let*
+            (
+              (action
+                (await
+                  (callOk
+                    f
+                    "O"
+                    "lifecycle.get"
+                    (js-object :lifecycle_id (nativeGet first "lifecycle_id")))))
+              (replay (await (callOk f "O" "instance.start" args)))
+              (another
+                (await
+                  (js-call
+                    f
+                    :call
+                    (nativeGet f "O")
+                    "instance.start"
+                    (Object/assign
+                      (js-object)
+                      args
+                      (js-object :idempotency_key "different-key"))))))
+            (js-call (expect (nativeGet action "state")) :toBe "unknown")
+            (js-call
+              (expect (nativeGet replay "lifecycle_id"))
+              :toBe
+              (nativeGet first "lifecycle_id"))
+            (js-call (expect (nativeGet another "ok")) :toBe false)
+            (js-call (expect (nativeGet (nativeGet another "error") "code")) :toBe "profile_conflict")
+            (await
+              (callOk
+                f
+                "O"
+                "lifecycle.reconcile"
+                (js-object
+                  :lifecycle_id
+                  (nativeGet first "lifecycle_id")
+                  :idempotency_key
+                  "unknown-reconcile")))
+            (await (js-call f :tick))
+            (js-call (expect (js-length (nativeGet peer "starts"))) :toBe 1)))))
+    closeFixture)
+  (withCase
+    "T66.manual-not-absence.sqlite"
+    setup
+    (async
+      (f)
+      (let* ((peer (nativeGet f "opencode")) (behavior (nativeGet peer "behavior")))
+        (put behavior :start "throw_after")
+        (put behavior :inspect "unknown")
+        (let
+          (
+            (first
+              (await
+                (callOk
+                  f
+                  "O"
+                  "instance.start"
+                  (js-object
+                    :profile_id
+                    "oc-profile"
+                    :expected_profile_revision
+                    1
+                    :idempotency_key
+                    "manual-slot-start")))))
+          (await (js-call f :tick))
+          (let
+            (
+              (unknown
+                (await
+                  (callOk
+                    f
+                    "O"
+                    "lifecycle.get"
+                    (js-object :lifecycle_id (nativeGet first "lifecycle_id"))))))
+            (await
+              (callOk
+                f
+                "O"
+                "lifecycle.resolve"
+                (js-object
+                  :lifecycle_id
+                  (nativeGet first "lifecycle_id")
+                  :expected_revision
+                  (nativeGet unknown "revision")
+                  :resolution
+                  "abandon_no_retry"
+                  :reason
+                  "keep native uncertainty"
+                  :idempotency_key
+                  "manual-slot-resolve"))))
+          (let
+            (
+              (denied
+                (await
+                  (js-call
+                    f
+                    :call
+                    (nativeGet f "O")
+                    "instance.start"
+                    (js-object
+                      :profile_id
+                      "oc-profile"
+                      :expected_profile_revision
+                      1
+                      :idempotency_key
+                      "not-an-exit")))))
+            (js-call (expect (nativeGet denied "ok")) :toBe false)
+            (js-call (expect (nativeGet (nativeGet denied "error") "code")) :toBe "profile_conflict"))
+          (js-call (expect (js-length (nativeGet peer "starts"))) :toBe 1)
+          (put behavior :inspect "absent")
+          (await
+            (callOk
+              f
+              "O"
+              "lifecycle.reconcile"
+              (js-object
+                :lifecycle_id
+                (nativeGet first "lifecycle_id")
+                :idempotency_key
+                "verified-absence")))
+          (await (js-call f :tick))
+          (put behavior :start "ready")
+          (put behavior :inspect "ready")
+          (let
+            (
+              (fresh
+                (await
+                  (callOk
+                    f
+                    "O"
+                    "instance.start"
+                    (js-object
+                      :profile_id
+                      "oc-profile"
+                      :expected_profile_revision
+                      1
+                      :idempotency_key
+                      "after-native-absence")))))
+            (await (js-call f :tick))
+            (js-call
+              (nativeGet (expect (nativeGet fresh "instance_id")) "not")
+              :toBe
+              (nativeGet first "instance_id"))
+            (js-call (expect (js-length (nativeGet peer "starts"))) :toBe 2)))))
+    closeFixture)
+  (withCase
+    "T64.historical-ready-current-stopped.sqlite"
+    setup
+    (async
+      (f)
+      (let*
+        (
+          (args
+            (js-object
+              :profile_id
+              "pi-profile"
+              :expected_profile_revision
+              1
+              :idempotency_key
+              "historical-start"))
+          (accepted (await (callOk f "O" "instance.start" args))))
+        (await (js-call f :tick))
+        (let*
+          (
+            (ready
+              (await
+                (callOk
+                  f
+                  "O"
+                  "lifecycle.get"
+                  (js-object :lifecycle_id (nativeGet accepted "lifecycle_id")))))
+            (key (nativeGet ready "initial_session_key"))
+            (instance
+              (await
+                (callOk
+                  f
+                  "O"
+                  "instance.get"
+                  (js-object :instance_id (nativeGet ready "instance_id")))))
+            (stop
+              (await
+                (callOk
+                  f
+                  "O"
+                  "instance.stop"
+                  (js-object
+                    :instance_id
+                    (nativeGet instance "instance_id")
+                    :expected_revision
+                    (nativeGet instance "revision")
+                    :idempotency_key
+                    "historical-stop")))))
+          (await (js-call f :tick))
+          (js-call (nativeGet f "clock") :advance 600001)
+          (let*
+            ((replayed (await (callOk f "O" "instance.start" args)))
+              (old
+                (await
+                  (callOk
+                    f
+                    "O"
+                    "lifecycle.get"
+                    (js-object :lifecycle_id (nativeGet accepted "lifecycle_id")))))
+              (current (await (callOk f "O" "session.get" (js-object :session_key key)))))
+            (js-call
+              (expect (nativeGet replayed "lifecycle_id"))
+              :toBe
+              (nativeGet accepted "lifecycle_id"))
+            (js-call (expect (nativeGet old "state")) :toBe "ready")
+            (js-call (expect (nativeGet (nativeGet old "current_instance") "state")) :toBe "stopped")
+            (js-call (expect (nativeGet current "session_key")) :toBe key)
+            (js-call (expect (js-length (nativeGet (nativeGet f "pi") "starts"))) :toBe 1)))))
+    closeFixture)
+  (withCase
+    "T65.stop-before-direct.sqlite"
+    setup
+    (async
+      (f)
+      (let*
+        ((instance (await (readyInstance f "opencode" "stop-direct-start")))
+          (create
+            (await
+              (callOk
+                f
+                "O"
+                "session.create"
+                (js-object
+                  :instance_id
+                  (nativeGet instance "instance_id")
+                  :expected_instance_epoch
+                  (nativeGet instance "instance_epoch")
+                  :workspace_ref
+                  "ws-test"
+                  :idempotency_key
+                  "gate-session")))))
+        (await (js-call f :tick))
+        (let*
+          (
+            (action
+              (await
+                (callOk
+                  f
+                  "O"
+                  "lifecycle.get"
+                  (js-object :lifecycle_id (nativeGet create "lifecycle_id")))))
+            (target
+              (await
+                (callOk
+                  f
+                  "S"
+                  "session.get"
+                  (js-object :session_key (nativeGet action "session_key")))))
+            (stop
+              (await
+                (callOk
+                  f
+                  "O"
+                  "instance.stop"
+                  (js-object
+                    :instance_id
+                    (nativeGet instance "instance_id")
+                    :expected_revision
+                    (nativeGet instance "revision")
+                    :idempotency_key
+                    "close-before-direct"))))
+            (denied
+              (await
+                (js-call
+                  f
+                  :call
+                  (nativeGet f "S")
+                  "session.send"
+                  (js-object
+                    :session_ref
+                    (nativeGet target "session_ref")
+                    :content
+                    (js-object :type "text" :text "must not cross stop")
+                    :idempotency_key
+                    "after-gate-close")))))
+          (js-call (expect (nativeGet denied "ok")) :toBe false)
+          (js-call (expect (nativeGet (nativeGet denied "error") "code")) :toBe "instance_not_ready")
+          (js-call (expect (nativeGet denied "effect_state")) :toBe "none")
+          (js-call (expect (js-length (nativeGet (nativeGet f "opencode") "inputs"))) :toBe 0))))
+    closeFixture)
+  (withCase
+    "T58.existing-stop-rejected.sqlite"
+    setup
+    (async
+      (f)
+      (let*
+        (
+          (instance
+            (await (callOk f "O" "instance.get" (js-object :instance_id "oc-existing"))))
+          (result
+            (await
+              (js-call
+                f
+                :call
+                (nativeGet f "O")
+                "instance.stop"
+                (js-object
+                  :instance_id
+                  "oc-existing"
+                  :expected_revision
+                  (nativeGet instance "revision")
+                  :idempotency_key
+                  "never-stop-borrowed")))))
+        (js-call (expect (nativeGet result "ok")) :toBe false)
+        (js-call (expect (nativeGet result "effect_state")) :toBe "none")
+        (js-call (expect (js-length (nativeGet (nativeGet f "opencode") "stops"))) :toBe 0)))
+    closeFixture))

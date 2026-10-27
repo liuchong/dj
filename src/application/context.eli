@@ -1,0 +1,115 @@
+(module dj.application.context
+  (import "../core/native.eli" nativeGet)
+  (import "../core/errors.eli" success failure)
+  (import "../core/limits.eli" limits)
+  (import "../core/types.eli" addSeconds)
+  (import "../policy/principals.eli" configuredPrincipal)
+  (import "../policy/authorize.eli" authorize)
+  (import "../policy/handles.eli" issueHandle resolveHandle)
+  (defun utcNow (context) (js-call (nativeGet (nativeGet context "ports") "clock") :utcNow))
+  (defun nextId (context prefix) (js-call (nativeGet (nativeGet context "ports") "ids") :next prefix))
+  (defun currentPrincipal
+    (context)
+    (configuredPrincipal
+      (nativeGet (nativeGet context "config") "principals")
+      (nativeGet (nativeGet context "principal") "principal_id")))
+  (defun can
+    (context action resource)
+    (let ((principal (currentPrincipal context)))
+      (nativeGet
+        (authorize principal action resource (nativeGet principal "authorization_revision"))
+        "allowed")))
+  (defun requirePermission
+    (context action resource)
+    (if (nativeGet context "requirePermission")
+      (js-call context :requirePermission action resource)
+      (if (can context action resource) (success nil) (failure "forbidden"))))
+  (defun inTransaction
+    (context mutate)
+    (let
+      (
+        (scoped
+          (Object/assign (js-object) (nativeGet context "store") (js-object :context context))))
+      (if (js-call (nativeGet context "store") :inTransaction)
+        (funcall mutate scoped)
+        (js-call
+          (nativeGet context "store")
+          :transaction
+          (js-object)
+          (lambda (tx) (funcall mutate scoped))))))
+  (defun must
+    (result)
+    (unless (= (nativeGet result "ok") t)
+      (let ((error (new globalThis.Error "domain transaction could not continue")))
+        (put error :domain_result result)
+        (throw error)))
+    (nativeGet result "data"))
+  (defun issueResourceHandle
+    (context kind key constraints ttl)
+    (inTransaction
+      context
+      (lambda
+        (tx)
+        (success
+          (issueHandle
+            context
+            kind
+            (currentPrincipal context)
+            key
+            constraints
+            (addSeconds (utcNow context) ttl))))))
+  (defun resolveResourceHandle
+    (context ref kind &optional current)
+    (resolveHandle context ref kind (currentPrincipal context) (utcNow context) current))
+  (defun nativeCallContext
+    (context &optional options)
+    (let*
+      ((clock (nativeGet (nativeGet context "ports") "clock"))
+        (signal
+          (or
+            (nativeGet options "abort_signal")
+            (nativeGet context "abort_signal")
+            (nativeGet (new globalThis.AbortController) "signal"))))
+      (js-object
+        :abort_signal
+        signal
+        :deadline
+        (nativeGet options "deadline" (+ (js-call clock :monoNow) 15000))
+        :max_frame_bytes
+        (nativeGet options "max_frame_bytes" (nativeGet limits "native_frame_max_bytes"))
+        :max_response_bytes
+        (nativeGet options "max_response_bytes" (nativeGet limits "native_response_max_bytes")))))
+  (defun agentPort
+    (context instance)
+    (let ((ports (nativeGet (nativeGet context "ports") "agent_ports")))
+      (or
+        (js-call ports :get (nativeGet instance "instance_id"))
+        (and (nativeGet instance "profile_id") (js-call ports :get (nativeGet instance "profile_id")))
+        ;; A tool-level injected port is an explicitly trusted host port,
+        ;; principally used by embedded hosts. It still receives exact IDs.
+        (js-call ports :get (nativeGet instance "tool" (nativeGet instance "tool_id"))))))
+  (defun safeFields
+    (record fields)
+    (let ((result (js-object)))
+      (js-call
+        fields
+        :forEach
+        (lambda
+          (field)
+          (when (object-has? record field) (put result field (nativeGet record field)))))
+      result))
+  (defun typedRef (kind id) (js-object :kind kind :id id))
+  (export
+    utcNow
+    nextId
+    currentPrincipal
+    can
+    requirePermission
+    inTransaction
+    must
+    issueResourceHandle
+    resolveResourceHandle
+    nativeCallContext
+    agentPort
+    safeFields
+    typedRef))

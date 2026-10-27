@@ -1,0 +1,150 @@
+(module dj.host.bun.io
+  (import "../../core/native.eli" nativeBitAnd nativeTypeOf nativeFetch nativeGet)
+  (import "node:fs/promises"
+    readFile
+    writeFile
+    open
+    mkdir
+    stat
+    lstat
+    rename
+    unlink
+    readdir)
+  (import "node:path" resolve dirname)
+  (import "node:os" homedir)
+  (import "node:crypto" randomUUID)
+  (import "./clock.eli" createClockPort)
+  (import "./ids.eli" nextHostId)
+  (import "./process.eli" createProcessPort)
+  (defasync readPrivate
+    (path)
+    (let ((info (await (lstat path))))
+      (unless
+        (and
+          (js-call info :isFile)
+          (not (js-call info :isSymbolicLink))
+          (= (nativeGet info "uid") (js-call globalThis.process :getuid))
+          (= (nativeBitAnd (nativeGet info "mode") 63) 0))
+        (throw
+          (new
+            globalThis.Error
+            "credential reference must identify an owner-private regular file")))
+      (await (readFile path "utf8"))))
+  (defasync writePrivate
+    (path content)
+    (let* ((temporary (str path ".write-" (randomUUID))) (handle nil) (created false))
+      (try
+        (await (mkdir (dirname path) (js-object :recursive t :mode 448)))
+        (setq handle (await (open temporary "wx" 384)) created t)
+        (await (js-call handle :writeFile content))
+        (await (js-call handle :sync))
+        (await (js-call handle :close))
+        (setq handle nil)
+        (await (rename temporary path))
+        (setq created false)
+        (let ((directory (await (open (dirname path) "r"))))
+          (try
+            (await (js-call directory :sync))
+            (finally (await (js-call directory :close)))))
+        t
+        (finally
+          (when handle (await (js-call handle :close)))
+          (when created (await (unlink temporary)))))))
+  (defun createHostPorts
+    (&optional options)
+    (let*
+      ((root (resolve (or (nativeGet options "root") (resolve (homedir) ".dj"))))
+        (clock (createClockPort)))
+      ;; Construction only assembles ports; it opens no DB, listener, or Agent.
+      (js-object
+        :clock
+        clock
+        :process
+        (createProcessPort clock)
+        :measurement
+        (js-object
+          :monoNow
+          (lambda () (performance/now))
+          :cpuNow
+          (lambda
+            ()
+            (let ((usage (js-call globalThis.process :cpuUsage)))
+              (+ (nativeGet usage "user") (nativeGet usage "system")))))
+        :http
+        (js-object :fetch (lambda (url init) (nativeFetch url init)))
+        :ids
+        (js-object :next nextHostId)
+        :credentials
+        (js-object
+          :persist
+          (async (ref value)
+            (let ((path (resolve root ref)))
+              (await (readPrivate path))
+              (await (writePrivate path (JSON/stringify value)))))
+          :resolve
+          (async
+            (ref)
+            (unless (and (= (nativeTypeOf ref) "string") (> (js-length ref) 0))
+              (throw (new globalThis.Error "credential reference missing")))
+            (let ((text (js-call (await (readPrivate (resolve root ref))) :trim)))
+              (when (= (js-length text) 0)
+                (throw (new globalThis.Error "credential file empty")))
+              (if (js-call text :startsWith "{") (JSON/parse text) text))))
+        :files
+        (js-object
+          :root
+          root
+          :resolve
+          (lambda (ref) (resolve root ref))
+          :readText
+          (lambda (path) (readFile path "utf8"))
+          :readBytes
+          (lambda (path) (readFile path))
+          :readPrivate
+          readPrivate
+          :writePrivate
+          writePrivate
+          :stat
+          stat
+          :lstat
+          lstat
+          :mkdir
+          mkdir
+          :readdir
+          readdir
+          :unlinkOwnedSocket
+          (async
+            (path)
+            (let ((info (await (lstat path))))
+              (unless
+                (and
+                  (js-call info :isSocket)
+                  (= (nativeGet info "uid") (js-call globalThis.process :getuid)))
+                (throw (new globalThis.Error "socket cleanup ownership mismatch")))
+              (await (unlink path)))))
+        :audit
+        (js-object
+          :record
+          (lambda
+            (event)
+            (let ((safe (js-object :at (js-call clock :utcNow))))
+              (js-call
+                (js-array
+                  "operation_id"
+                  "resource_kind"
+                  "resource_id"
+                  "principal_id"
+                  "code"
+                  "state")
+                :forEach
+                (lambda
+                  (key)
+                  (let ((value (nativeGet event key)))
+                    (when
+                      (and (= (nativeTypeOf value) "string") (<= (js-length value) 256))
+                      (put safe key value)))))
+              (js-call
+                (nativeGet globalThis.process "stderr")
+                :write
+                (str (JSON/stringify safe) "\n"))))))))
+  (export createHostPorts readPrivate writePrivate))

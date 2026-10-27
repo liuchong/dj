@@ -1,0 +1,509 @@
+(module dj.routing.matcher
+  (import "../core/native.eli" nativeNullish nativeTypeOf nativeGet)
+  (import "../core/errors.eli" success failure)
+  (import "../core/types.eli" stableJson utf8Bytes)
+  (import "../core/limits.eli" limits)
+  (import "../core/rules.eli" evaluatePredicate matchesSource)
+  (import "../application/context.eli" inTransaction utcNow must)
+  (import "../ingestion/visibility.eli" eventContentAvailable)
+  (import "../delivery/service.eli" planContribution)
+  (import "../delivery/read-scope.eli" withContributionReads)
+  (import "../delivery/planning-scope.eli" withEventPlans)
+  (import "../application/write-batch.eli" enqueueWrite)
+  (defconst versionCache (new globalThis.Map))
+  (defvar versionCacheBytes 0)
+  (defun compiledVersion
+    (row)
+    (let ((djReturn1Token (js-object)) (djReturn1Value nil))
+      (try
+        (let*
+          ((key (str (nativeGet row "subscription_id") ":" (nativeGet row "revision")))
+            (cached (js-call versionCache :get key)))
+          (when cached
+            (js-call versionCache :delete key)
+            (js-call versionCache :set key cached)
+            (progn (setq djReturn1Value (nativeGet cached "value")) (throw djReturn1Token)))
+          (let*
+            ((text (nativeGet row "payload"))
+              (bytes (utf8Bytes text))
+              (version (JSON/parse text)))
+            (while
+              (and
+                (> (nativeGet versionCache "size") 0)
+                (or
+                  (>=
+                    (nativeGet versionCache "size")
+                    (nativeGet limits "compiled_rule_cache_entries"))
+                  (>
+                    (+ versionCacheBytes bytes)
+                    (nativeGet limits "compiled_rule_cache_bytes"))))
+              (let*
+                ((oldest (nativeGet (js-call (js-call versionCache :keys) :next) "value"))
+                  (entry (js-call versionCache :get oldest)))
+                (setq versionCacheBytes (- versionCacheBytes (nativeGet entry "bytes")))
+                (js-call versionCache :delete oldest)))
+            (when (<= bytes (nativeGet limits "compiled_rule_cache_bytes"))
+              (js-call versionCache :set key (js-object :value version :bytes bytes))
+              (setq versionCacheBytes (+ versionCacheBytes bytes)))
+            version))
+        (catch djReturn1Error
+          (if (eq djReturn1Error djReturn1Token) djReturn1Value (throw djReturn1Error))))))
+  (defun candidateRows
+    (context work event maximum)
+    (let*
+      ((db (nativeGet (nativeGet context "store") "db"))
+        (address (nativeGet event "conversation"))
+        (after (or (nativeGet work "last_subscription_id") ""))
+        (revision (or (nativeGet work "last_revision") 0))
+        (thread-key (stableJson (nativeGet address "native_thread_id" nil)))
+        (sql
+          "SELECT i.subscription_id,i.revision,v.payload FROM subscription_sources i JOIN subscription_versions v ON v.subscription_id=i.subscription_id AND v.revision=i.revision WHERE i.connection_id=? AND i.native_chat_id=? AND i.event_kind=? AND i.thread_key=? AND (?=0 OR i.include_threads=1) AND v.state='active' AND v.start_seq<=? AND (v.cutover_seq IS NULL OR v.cutover_seq>=?) AND (i.subscription_id>? OR (i.subscription_id=? AND i.revision>?)) ORDER BY i.subscription_id,i.revision LIMIT ?")
+        (exact
+          (js-call
+            (js-call db :query sql)
+            :all
+            (nativeGet event "connection_id")
+            (nativeGet address "native_chat_id")
+            (nativeGet event "event_kind")
+            thread-key
+            0
+            (nativeGet event "ingress_seq")
+            (nativeGet event "ingress_seq")
+            after
+            after
+            revision
+            (1+ maximum)))
+        (parent
+          (if (nativeNullish (nativeGet address "native_thread_id"))
+            (js-array)
+            (js-call
+              (js-call db :query sql)
+              :all
+              (nativeGet event "connection_id")
+              (nativeGet address "native_chat_id")
+              (nativeGet event "event_kind")
+              "null"
+              1
+              (nativeGet event "ingress_seq")
+              (nativeGet event "ingress_seq")
+              after
+              after
+              revision
+              (1+ maximum))))
+        (rows (js-array))
+        (a 0)
+        (b 0)
+        (seen (new globalThis.Set)))
+      (while
+        (and
+          (< (js-length rows) (1+ maximum))
+          (or (< a (js-length exact)) (< b (js-length parent))))
+        (let*
+          ((one (aref exact a))
+            (two (aref parent b))
+            (choose-a
+              (or
+                (not two)
+                (and
+                  one
+                  (or
+                    (< (nativeGet one "subscription_id") (nativeGet two "subscription_id"))
+                    (and
+                      (= (nativeGet one "subscription_id") (nativeGet two "subscription_id"))
+                      (<= (nativeGet one "revision") (nativeGet two "revision")))))))
+            (row (if choose-a one two))
+            (key (str (nativeGet row "subscription_id") ":" (nativeGet row "revision"))))
+          (if choose-a (setq a (1+ a)) (setq b (1+ b)))
+          (unless (js-call seen :has key)
+            (js-call seen :add key)
+            (js-call rows :push row))))
+      rows))
+  (defun echoState
+    (context event)
+    (let ((db (nativeGet (nativeGet context "store") "db")))
+      (cond
+        (
+          (js-call
+            (js-call
+              db
+              :query
+              "SELECT 1 AS echo FROM echo_index WHERE connection_id=? AND native_message_id=?")
+            :get
+            (nativeGet event "connection_id")
+            (nativeGet event "native_message_id"))
+          "echo")
+        (
+          (js-call
+            (js-call
+              db
+              :query
+              "SELECT 1 AS held FROM echo_gates WHERE connection_id=? AND conversation_key=? LIMIT 1")
+            :get
+            (nativeGet event "connection_id")
+            (nativeGet event "conversation_key"))
+          "held")
+        (t "clear"))))
+  (defun publishMatchMetrics (context meter started cpu-ms position)
+    (let ((runtime (nativeGet context "runtime")))
+                        (when runtime
+                          (put
+                            runtime
+                            :max_match_batch_candidates
+                            (Math/max
+                              (nativeGet runtime "max_match_batch_candidates" 0)
+                              position))
+                          (unless (nativeGet runtime "routing_samples")
+                            (put runtime :routing_samples (js-array)))
+                          (let ((samples (nativeGet runtime "routing_samples")))
+                            (when
+                              (>=
+                                (js-length samples)
+                                (nativeGet limits "routing_sample_count"))
+                              (js-call samples :shift))
+                            (js-call samples :push (- (js-call meter :monoNow) started)))
+                          (unless (nativeNullish cpu-ms)
+                            (unless (nativeGet runtime "routing_cpu_samples")
+                              (put runtime :routing_cpu_samples (js-array)))
+                            (let ((samples (nativeGet runtime "routing_cpu_samples")))
+                              (when
+                                (>=
+                                  (js-length samples)
+                                  (nativeGet limits "routing_sample_count"))
+                                (js-call samples :shift))
+                              (js-call samples :push cpu-ms))))))
+  (defasync matchWithWriter
+    (context routing-checkpoint budget write &optional capacity-state)
+    (let ((djReturn2Token (js-object)) (djReturn2Value nil))
+      (try
+        (let*
+          ((repository (nativeGet context "repository"))
+            (event-id
+              (if (= (nativeTypeOf routing-checkpoint) "string")
+                routing-checkpoint
+                (nativeGet routing-checkpoint "event_id")))
+            (work (js-call repository :get "routing_work" event-id))
+            (event (js-call repository :get "events" event-id))
+            (maximum
+              (Math/min
+                (nativeGet limits "match_batch_candidates")
+                (nativeGet
+                  budget
+                  "max_candidates"
+                  (nativeGet limits "match_batch_default_candidates"))))
+            (connection nil)
+            (meter
+              (nativeGet (nativeGet context "ports") "measurement" (nativeGet (nativeGet context "ports") "clock")))
+            (started (js-call meter :monoNow)))
+          (unless (and work event)
+            (progn (setq djReturn2Value (failure "not_found")) (throw djReturn2Token)))
+          (when (= (nativeGet work "state") "done")
+            (progn (setq djReturn2Value (success work)) (throw djReturn2Token)))
+          (setq connection (js-call repository :get "connections" (nativeGet event "connection_id")))
+          (let*
+            ((echo (echoState context event))
+              (allowed-kinds (nativeGet connection "allowed_sender_kinds" (js-array "human"))))
+            (unless
+              (and
+                (= echo "clear")
+                (js-call allowed-kinds :includes (nativeGet (nativeGet event "sender") "kind")))
+              (progn
+                (setq
+                  djReturn2Value
+                  (funcall write
+                    (lambda
+                      (tx)
+                      (put work :state (if (= echo "held") "held" "done"))
+                      (put
+                        work
+                        :reason
+                        (cond ((= echo "held") "echo_gate")
+                          ((= echo "echo") "own_echo")
+                          (t "sender_not_allowed")))
+                      (must (js-call repository :replace "routing_work" work))
+                      (success work))))
+                (throw djReturn2Token))))
+          (let*
+            ((cpu-start (and (nativeGet meter "cpuNow") (js-call meter :cpuNow)))
+              (rows (candidateRows context work event maximum))
+              (prepared (js-array))
+              (memo (new globalThis.Map (nativeGet work "predicate_memo" (js-array))))
+              (characters 0)
+              (yielded false)
+              (index 0)
+              (cpu-ms nil)
+              (meter-budget
+                (js-object
+                  :visit
+                  (lambda
+                    (count)
+                    (when (> (+ characters count) (nativeGet limits "match_character_visits"))
+                      (let
+                        ((error (new globalThis.Error "routing turn budget exhausted")))
+                        (put error :code "routing_budget_exhausted")
+                        (throw error)))
+                    (setq characters (+ characters count))))))
+            (let ((djLoop1Break (js-object)))
+              (try
+                (while (< index (Math/min maximum (js-length rows)))
+                  (let*
+                    ((row (aref rows index))
+                      (version (compiledVersion row))
+                      (answer "false"))
+                    (try
+                      (setq
+                        answer
+                        (if
+                          (and
+                            (eventContentAvailable context event connection)
+                            (js-call
+                              (nativeGet version "resolved_sources")
+                              :some
+                              (lambda
+                                (source)
+                                (matchesSource
+                                  source
+                                  (nativeGet source "include_threads")
+                                  event))))
+                          (evaluatePredicate
+                            (nativeGet version "predicate")
+                            event
+                            memo
+                            meter-budget)
+                          "indeterminate"))
+                      (js-call
+                        prepared
+                        :push
+                        (js-object :version version :answer answer))
+                      (catch error
+                        (when (or (eq error djLoop1Break)) (throw error))
+                        (when (eq error djReturn2Token) (throw error))
+                        (if (= (nativeGet error "code") "routing_budget_exhausted")
+                          (setq yielded t)
+                          (throw error)))))
+                  (when yielded (throw djLoop1Break))
+                  (setq index (1+ index)))
+                (catch djLoop1Error
+                  (unless (eq djLoop1Error djLoop1Break) (throw djLoop1Error)))))
+            (unless (nativeNullish cpu-start)
+              (setq cpu-ms (/ (- (js-call meter :cpuNow) cpu-start) 1000)))
+            ;; Test/host I/O belongs outside the short synchronous transaction.
+            (when (nativeGet (nativeGet context "ports") "faults")
+              (await
+                (js-call
+                  (nativeGet (nativeGet context "ports") "faults")
+                  :hit
+                  "routing.before_checkpoint_commit"
+                  work)))
+            (let* ((subscription-ids
+                (js-call
+                  (js-call prepared :filter (lambda (plan) (= (nativeGet plan "answer") "true")))
+                  :map (lambda (plan) (nativeGet (nativeGet plan "version") "subscription_id"))))
+              (result (await (funcall write
+                    (lambda
+                (tx)
+                (withEventPlans context event (lambda (planning)
+                (withContributionReads context (lambda (read)
+                (let ((djReturn3Token (js-object)) (djReturn3Value nil))
+                  (try
+                    (let*
+                      ((current (js-call repository :get "routing_work" event-id))
+                        (db (nativeGet tx "db"))
+                        (position 0)
+                        (blocked false)
+                        (needs-unlock false)
+                        (decisions (js-array))
+                        (pending-contributions (js-array))
+                        (echo (echoState context event)))
+                      (unless
+                        (and
+                          (=
+                            (nativeGet current "last_subscription_id" nil)
+                            (nativeGet work "last_subscription_id" nil))
+                          (=
+                            (nativeGet current "last_revision" nil)
+                            (nativeGet work "last_revision" nil)))
+                        (progn
+                          (setq djReturn3Value (failure "revision_conflict"))
+                          (throw djReturn3Token)))
+                      (unless (= echo "clear")
+                        (put current :state (if (= echo "held") "held" "done"))
+                        (put current :reason (if (= echo "held") "echo_gate" "own_echo"))
+                        (js-call planning :finish (nativeGet current "state"))
+                        (must (js-call repository :replace "routing_work" current))
+                        (progn
+                          (setq djReturn3Value (success current))
+                          (throw djReturn3Token)))
+                      (let ((djLoop2Break (js-object)))
+                        (try
+                          (while (< position (js-length prepared))
+                            (let*
+                              ((plan (aref prepared position))
+                                (version (nativeGet plan "version"))
+                                (answer (nativeGet plan "answer"))
+                                (decision
+                                  (js-object
+                                    :event_id
+                                    event-id
+                                    :subscription_id
+                                    (nativeGet version "subscription_id")
+                                    :revision
+                                    (nativeGet version "revision")
+                                    :result
+                                    (cond ((= answer "true") "match")
+                                      ((= answer "false") "no_match")
+                                      (t "indeterminate"))
+                                    :reason_codes
+                                    (js-array
+                                      (if (= answer "indeterminate")
+                                        "source_incomplete"
+                                        "literal_predicate")))))
+                              (when (>= (js-length decisions) 128)
+                                (throw (new globalThis.TypeError "event decision buffer exhausted")))
+                              (js-call decisions :push decision)
+                              (when (= answer "true")
+                                (let
+                                  (
+                                    (planned
+                                      (planContribution tx event version decision read planning pending-contributions)))
+                                  (unless (nativeGet planned "ok")
+                                    (if
+                                      (=
+                                        (nativeGet (nativeGet planned "error") "code")
+                                        "limit_exceeded")
+                                      (setq blocked t)
+                                      (progn
+                                        (setq djReturn3Value planned)
+                                        (throw djReturn3Token))))))
+                              (when blocked (throw djLoop2Break))
+                              (put
+                                current
+                                :last_subscription_id
+                                (nativeGet version "subscription_id"))
+                              (put current :last_revision (nativeGet version "revision")))
+                            (setq position (1+ position)))
+                          (catch djLoop2Error
+                            (unless (eq djLoop2Error djLoop2Break) (throw djLoop2Error)))))
+                      (put current :predicate_memo (Array/from (js-call memo :entries)))
+                      (put
+                        current
+                        :state
+                        (cond (blocked "blocked")
+                          ((or yielded (< position (js-length rows))) "ready")
+                          (t "done")))
+                      (put current :reason (if blocked "delivery_capacity" nil))
+                      (setq needs-unlock (js-call planning :finish (nativeGet current "state")))
+                      ;; New deliveries must exist before the contribution FK is
+                      ;; checked; all rows still belong to this write item's savepoint.
+                      (js-call repository :insertManyIfAbsent "match_decisions" decisions)
+                      (js-call repository :insertManyIfAbsent "contributions" pending-contributions)
+                      (must (js-call repository :replace "routing_work" current))
+                      (when needs-unlock
+                        (js-call
+                          (js-call
+                            db
+                            :query
+                            "UPDATE deliveries SET state='ready',revision=revision+1,payload=json_set(payload,'$.state','ready','$.revision',revision+1,'$.blocked_reason',NULL) WHERE event_id=? AND origin='subscription_event' AND state='blocked' AND json_extract(payload,'$.blocked_reason')='routing_incomplete'")
+                          :run
+                          event-id))
+
+                      (success
+                        (js-object
+                          :event_id
+                          event-id
+                          :state
+                          (nativeGet current "state")
+                          :processed_candidates
+                          position
+                          :character_visits
+                          characters
+                          :complete
+                          (= (nativeGet current "state") "done"))))
+                    (catch djReturn3Error
+                      (if (eq djReturn3Error djReturn3Token)
+                        djReturn3Value
+                        (throw djReturn3Error)))))
+                ) t subscription-ids))
+                  (and (nativeNullish (nativeGet work "last_subscription_id"))
+                    (not yielded) (= (js-length prepared) (js-length rows))) t capacity-state))))))
+              (when (nativeGet result "ok")
+                (publishMatchMetrics context meter started cpu-ms
+                  (nativeGet (nativeGet result "data") "processed_candidates" 0)))
+              result)))
+        (catch djReturn2Error
+          (if (eq djReturn2Error djReturn2Token) djReturn2Value (throw djReturn2Error))))))
+  (defasync matchBatch (context routing-checkpoint &optional budget)
+    (await (matchWithWriter context routing-checkpoint budget
+      (lambda (mutate) (inTransaction context mutate)))))
+  (defasync matchTurn (context works &optional budget)
+    (let ((djTurnReturn (js-object)) (djTurnValue nil) (capacity-state nil))
+      (try
+        (unless (and (Array/isArray works) (<= (js-length works) 16))
+          (setq djTurnValue (failure "invalid_argument"))
+          (throw djTurnReturn))
+        (when (= (js-length works) 0)
+          (setq djTurnValue (success (js-array)))
+          (throw djTurnReturn))
+        (unless (and (nativeGet context "runtime")
+          (not (js-call (nativeGet context "store") :inTransaction)))
+          (setq djTurnValue (failure "invalid_transaction"))
+          (throw djTurnReturn))
+        ;; Admitted items in the synchronous enqueue loop are contiguous. The
+        ;; queue rejects at 64, so no suffix can carry this state into a later flush.
+        (setq capacity-state (Object/seal (js-object
+          :store (nativeGet context "store") :count nil :active t)))
+        (let ((slots (js-array)))
+          (js-call works :forEach (lambda (work)
+            (let ((slot (js-object :queued false :prepare_failed false)))
+              (put slot :ready (new globalThis.Promise (lambda (resolve reject)
+                (put slot :ready_resolve resolve))))
+              (put slot :execution (js-call
+                (matchWithWriter context work budget (lambda (mutate)
+                  (when (nativeGet slot "queued")
+                    (throw (new globalThis.TypeError "matching write was already prepared")))
+                  (put slot :queued t)
+                  (put slot :mutate mutate)
+                  (let ((waiting (new globalThis.Promise (lambda (resolve reject)
+                    (put slot :finish resolve)))))
+                    (js-call slot :ready_resolve)
+                    waiting)) capacity-state)
+                :then
+                (lambda (result)
+                  (unless (nativeGet slot "queued") (js-call slot :ready_resolve))
+                  result)
+                (lambda (error)
+                  (put slot :prepare_failed t)
+                  (js-call slot :ready_resolve)
+                  (failure "unavailable"))))
+              (js-call slots :push slot))))
+          (await (Promise/all (js-call slots :map (lambda (slot) (nativeGet slot "ready")))))
+          (if (js-call slots :some (lambda (slot) (nativeGet slot "prepare_failed")))
+            (progn
+              ;; No write has been enqueued: an unknown preparation failure cannot
+              ;; let later ingress overtake this group, or strand waiting Futures.
+              (js-call slots :forEach (lambda (slot)
+                (when (nativeGet slot "queued") (js-call slot :finish (failure "unavailable")))))
+              (await (Promise/all (js-call slots :map (lambda (slot) (nativeGet slot "execution")))))
+              (failure "unavailable"))
+            (progn
+              ;; This synchronous loop fixes write order independently of fault-await order.
+              (js-call slots :forEach (lambda (slot)
+                (when (nativeGet slot "queued")
+                  (js-call (js-call
+                    (enqueueWrite context (lambda ()
+                      (inTransaction context (nativeGet slot "mutate"))))
+                    :then (lambda (result) (js-call slot :finish result)))
+                    :catch (lambda (error) (js-call slot :finish (failure "storage_unavailable")))))))
+              (let* ((results (await (Promise/all (js-call slots :map
+                  (lambda (slot) (nativeGet slot "execution"))))))
+                (fatal (js-call results :find (lambda (result)
+                  (and (not (nativeGet result "ok"))
+                    (js-call (js-array "storage_unavailable" "capacity_exceeded" "unavailable")
+                      :includes (nativeGet (nativeGet result "error") "code")))))))
+                (or fatal (success results))))))
+        (catch error
+          (if (eq error djTurnReturn) djTurnValue (throw error)))
+        (finally
+          (when capacity-state
+            (put capacity-state :count nil)
+            (put capacity-state :active false))))))
+  (export matchBatch matchTurn candidateRows echoState))

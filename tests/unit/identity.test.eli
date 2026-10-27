@@ -1,0 +1,466 @@
+(module dj.tests.unit.identity
+  (import "../../src/core/native.eli" nativeGet nativeTypeOf)
+  (import "bun:test" expect)
+  (import "../support/case.eli" withUnitCase)
+  (import "../../src/core/types.eli" canonicalTargetKey stableSessionKey)
+  (import "../../src/policy/authorize.eli" authorize)
+  (import "../../src/policy/handles.eli" createHandleAuthority handleKinds)
+  (import "../../src/host/bun/ids.eli" entityUuidV7 nextHostId)
+  (import "../../src/host/bun/io.eli" createHostPorts)
+  (withUnitCase
+    "T02.same-title.unit"
+    (lambda
+      (unused)
+      (let
+        (
+          (one
+            (js-object
+              :tool
+              "opencode"
+              :native_namespace
+              "ns-a"
+              :native_session_id
+              "s1"
+              :display_name
+              "same"
+              :instance_epoch
+              "e1"))
+          (other
+            (js-object
+              :tool
+              "opencode"
+              :native_namespace
+              "ns-b"
+              :native_session_id
+              "s1"
+              :display_name
+              "same"
+              :instance_epoch
+              "e1")))
+        (js-call
+          (expect (= (canonicalTargetKey one) (canonicalTargetKey other)))
+          :toBe
+          false)
+        (js-call
+          (expect (stableSessionKey one))
+          :toBe
+          (stableSessionKey
+            (Object/assign
+              (js-object)
+              one
+              (js-object :display_name "renamed" :instance_epoch "e2")))))))
+  (withUnitCase
+    "T17.revocation.unit"
+    (lambda
+      (unused)
+      (let
+        (
+          (principal
+            (js-object
+              :principal_id
+              "sender"
+              :kind
+              "agent"
+              :authorization_revision
+              1
+              :grants
+              (js-array
+                (js-object :action "session.send" :resources (js-array "session-1"))))))
+        (js-call
+          (expect (nativeGet (authorize principal "session.send" "session-1" 1) "allowed"))
+          :toBe
+          t)
+        (js-call
+          (expect (nativeGet (authorize principal "session.read" "session-1" 1) "allowed"))
+          :toBe
+          false)
+        (js-call
+          (expect (nativeGet (authorize principal "session.send" "session-2" 1) "allowed"))
+          :toBe
+          false)
+        (js-call
+          (expect (nativeGet (authorize principal "session.send" "session-1" 2) "allowed"))
+          :toBe
+          false))))
+  (withUnitCase
+    "T33.handle-identity.unit"
+    (lambda
+      (unused)
+      (let*
+        (
+          (authority
+            (createHandleAuthority
+              (js-object
+                :now
+                "2026-01-01T00:00:00Z"
+                :random_id
+                (lambda () "random-test-ref"))))
+          (handle
+            (js-call
+              authority
+              :issue
+              "session"
+              "A"
+              "session-1"
+              (js-object :authorization_revision 1 :instance_epoch "e1")
+              "2026-01-01T00:01:00Z")))
+        (js-call
+          (expect
+            (nativeGet
+              (js-call
+                authority
+                :resolve
+                (nativeGet handle "ref")
+                "session"
+                "A"
+                1
+                "2026-01-01T00:00:01Z")
+              "ok"))
+          :toBe
+          t)
+        (js-call
+          (expect
+            (nativeGet
+              (js-call
+                authority
+                :resolve
+                (nativeGet handle "ref")
+                "conversation"
+                "A"
+                1
+                "2026-01-01T00:00:01Z")
+              "ok"))
+          :toBe
+          false)
+        (js-call
+          (expect
+            (nativeGet
+              (js-call
+                authority
+                :resolve
+                (nativeGet handle "ref")
+                "session"
+                "B"
+                1
+                "2026-01-01T00:00:01Z")
+              "ok"))
+          :toBe
+          false)
+        (js-call
+          (expect
+            (nativeGet
+              (js-call
+                authority
+                :resolve
+                (nativeGet handle "ref")
+                "session"
+                "A"
+                2
+                "2026-01-01T00:00:01Z")
+              "ok"))
+          :toBe
+          false)
+        (js-call
+          (expect
+            (nativeGet
+              (js-call
+                authority
+                :resolve
+                (nativeGet handle "ref")
+                "session"
+                "A"
+                1
+                "2026-01-01T00:01:00Z")
+              "ok"))
+          :toBe
+          false))))
+  (defun expectErrorName
+    (fn expected-name)
+    (let ((caught nil))
+      (try
+        (funcall fn)
+        (catch err (setq caught err)))
+      (js-call (expect (not (= caught nil))) :toBe t)
+      (js-call (expect (nativeGet caught "name")) :toBe expected-name)
+      (js-call (expect (nativeGet (nativeGet caught "constructor") "name")) :toBe expected-name)))
+  (withUnitCase
+    "T38.entity-ids.unit"
+    (lambda
+      (unused)
+      (let*
+        ((v4-zero "00000000-0000-4000-8000-000000000000")
+          (v4-max "ffffffff-ffff-4fff-bfff-ffffffffffff")
+          (v4-sample "01234567-89ab-4cde-8f01-23456789abcd")
+          (v4-alt "fedcba98-7654-4321-bfed-cba987654321")
+          (v7-pattern (new globalThis.RegExp "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"))
+          (v4-pattern (new globalThis.RegExp "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"))
+          (entity-prefixes
+            (js-array
+              "event"
+              "delivery"
+              "attempt"
+              "receipt"
+              "binding"
+              "reply_context_record"
+              "route"
+              "agent"
+              "subscription"))
+          (v4-prefixes
+            (js-array
+              "owner"
+              "launch"
+              "epoch"
+              "dispatch"
+              "outbound_dispatch"
+              "lifecycle_dispatch"
+              "preview"
+              "req"
+              "create"
+              "snapshot"
+              "catalog"
+              "outbound"
+              "part"
+              "lifecycle"
+              "instance"
+              "ingress_rejection"
+              "reply_context"
+              "message"
+              "cursor"
+              "unknown_custom"
+              "Event"
+              "event_extra")))
+        ;; 1. U1 fixed vectors, 0 / max 48-bit boundary, and all 4 RFC 9562 variants (8/9/a/b):
+        (js-call
+          (expect (entityUuidV7 0 v4-sample))
+          :toBe
+          "00000000-0000-7cde-8f01-23456789abcd")
+        (js-call
+          (expect (entityUuidV7 281474976710655 v4-alt))
+          :toBe
+          "ffffffff-ffff-7321-bfed-cba987654321")
+        (js-call
+          (expect (entityUuidV7 1792851600000 "11111111-2222-4333-8444-555555555555"))
+          :toBe
+          "01a16e48-6280-7333-8444-555555555555")
+        (js-call
+          (expect (entityUuidV7 1792851600000 "11111111-2222-4333-9444-555555555555"))
+          :toBe
+          "01a16e48-6280-7333-9444-555555555555")
+        (js-call
+          (expect (entityUuidV7 1792851600000 "11111111-2222-4333-a444-555555555555"))
+          :toBe
+          "01a16e48-6280-7333-a444-555555555555")
+        (js-call
+          (expect (entityUuidV7 1792851600000 "11111111-2222-4333-b444-555555555555"))
+          :toBe
+          "01a16e48-6280-7333-b444-555555555555")
+        ;; 2. Same-millisecond 74-bit tail fidelity & zero internal counter / cross-call state:
+        (let
+          ((first-call (entityUuidV7 1792851600000 v4-sample))
+            (second-call (entityUuidV7 1792851600000 v4-sample))
+            (same-ms-high (entityUuidV7 1792851600000 v4-max))
+            (same-ms-low (entityUuidV7 1792851600000 v4-zero)))
+          (js-call (expect first-call) :toBe second-call)
+          (js-call (expect (js-call v7-pattern :test first-call)) :toBe t)
+          (js-call (expect (js-call first-call :slice 15)) :toBe (js-call v4-sample :slice 15))
+          (js-call (expect (js-call same-ms-high :slice 0 15)) :toBe "01a16e48-6280-7")
+          (js-call (expect (js-call same-ms-low :slice 0 15)) :toBe "01a16e48-6280-7")
+          (js-call (expect (> same-ms-high same-ms-low)) :toBe t))
+        ;; 3. Cross-millisecond monotonic prefix & clock rollback preservation (no clamping):
+        (let
+          ((t1-max (entityUuidV7 1792851600000 v4-max))
+            (t2-min (entityUuidV7 1792851600001 v4-zero))
+            (regressed (entityUuidV7 1792851599999 v4-sample)))
+          (js-call (expect (< t1-max t2-min)) :toBe t)
+          (js-call (expect regressed) :toBe "01a16e48-627f-7cde-8f01-23456789abcd")
+          (js-call (expect (< regressed t1-max)) :toBe t))
+        ;; 4. Strict RangeError on invalid milliseconds (checked before randomUuid, no rounding/clamping):
+        (js-call
+          (js-array
+            -1
+            -0.0001
+            1.5
+            281474976710656
+            9007199254740991
+            9007199254740992
+            Number/NaN
+            Number/POSITIVE_INFINITY
+            Number/NEGATIVE_INFINITY
+            "1792851600000"
+            nil
+            t
+            false
+            (js-object)
+            (js-array 0))
+          :forEach
+          (lambda
+            (bad-ms)
+            (expectErrorName (lambda () (entityUuidV7 bad-ms v4-sample)) "RangeError")))
+        (expectErrorName (lambda () (entityUuidV7 -1 "not-a-valid-uuid")) "RangeError")
+        ;; 5. Strict TypeError on invalid randomUuid (lowercase standard UUIDv4 only):
+        (js-call
+          (js-array
+            nil
+            123
+            t
+            (js-object)
+            (js-array)
+            ""
+            "01234567-89ab-4cde-8f01-23456789abc"
+            "01234567-89ab-4cde-8f01-23456789abcde"
+            "01234567-89AB-4cde-8f01-23456789abcd"
+            "01234567-89ab-4cde-8F01-23456789abcd"
+            "01234567-89ab-7cde-8f01-23456789abcd"
+            "01234567-89ab-1cde-8f01-23456789abcd"
+            "01234567-89ab-0cde-8f01-23456789abcd"
+            "01234567-89ab-4cde-7f01-23456789abcd"
+            "01234567-89ab-4cde-cf01-23456789abcd"
+            "01234567-89ab-4cde-0f01-23456789abcd"
+            "01234567-89ab-4cde-ff01-23456789abcd"
+            "0123456789ab4cde8f0123456789abcd1234"
+            "01234567-89ab-4cde-8f01-23456789abcg")
+          :forEach
+          (lambda
+            (bad-uuid)
+            (expectErrorName (lambda () (entityUuidV7 1792851600000 bad-uuid)) "TypeError")))
+        ;; 6. U2 nextHostId & createHostPorts().ids.next exact 9-prefix whitelist vs v4 prefixes:
+        (let*
+          ((ports (createHostPorts))
+            (port-next (nativeGet (nativeGet ports "ids") "next")))
+          (js-call (expect port-next) :toBe nextHostId)
+          (js-call
+            entity-prefixes
+            :forEach
+            (lambda
+              (prefix)
+              (let*
+                ((before (Date/now))
+                  (id-one (nextHostId prefix))
+                  (id-two (funcall port-next prefix))
+                  (after (Date/now))
+                  (expected-head (str prefix "_"))
+                  (uuid-one (js-call id-one :slice (js-length expected-head)))
+                  (uuid-two (js-call id-two :slice (js-length expected-head)))
+                  (ms-one
+                    (Number/parseInt
+                      (str (js-call uuid-one :slice 0 8) (js-call uuid-one :slice 9 13))
+                      16))
+                  (ms-two
+                    (Number/parseInt
+                      (str (js-call uuid-two :slice 0 8) (js-call uuid-two :slice 9 13))
+                      16)))
+                (js-call (expect (js-call id-one :startsWith expected-head)) :toBe t)
+                (js-call (expect (js-call id-two :startsWith expected-head)) :toBe t)
+                (js-call (expect (js-call v7-pattern :test uuid-one)) :toBe t)
+                (js-call (expect (js-call v7-pattern :test uuid-two)) :toBe t)
+                (js-call (expect (not (= id-one id-two))) :toBe t)
+                (js-call (expect (>= ms-one before)) :toBe t)
+                (js-call (expect (<= ms-one after)) :toBe t)
+                (js-call (expect (>= ms-two before)) :toBe t)
+                (js-call (expect (<= ms-two after)) :toBe t))))
+          (js-call
+            v4-prefixes
+            :forEach
+            (lambda
+              (prefix)
+              (let*
+                ((id-one (nextHostId prefix))
+                  (id-two (funcall port-next prefix))
+                  (expected-head (str prefix "_"))
+                  (uuid-one (js-call id-one :slice (js-length expected-head)))
+                  (uuid-two (js-call id-two :slice (js-length expected-head))))
+                (js-call (expect (js-call id-one :startsWith expected-head)) :toBe t)
+                (js-call (expect (js-call id-two :startsWith expected-head)) :toBe t)
+                (js-call (expect (js-call v4-pattern :test uuid-one)) :toBe t)
+                (js-call (expect (js-call v4-pattern :test uuid-two)) :toBe t)
+                (js-call (expect (not (= id-one id-two))) :toBe t)))))
+        ;; 7. Host clock source error propagation on 9 entity prefixes while v4 prefixes do not read Date.now:
+        (let ((original-now (nativeGet globalThis.Date "now")))
+          (try
+            (put globalThis.Date :now (lambda () -1))
+            (js-call
+              entity-prefixes
+              :forEach
+              (lambda
+                (prefix)
+                (expectErrorName (lambda () (nextHostId prefix)) "RangeError")))
+            (let
+              ((owner-id (nextHostId "owner"))
+                (dispatch-id (nextHostId "dispatch")))
+              (js-call (expect (js-call v4-pattern :test (js-call owner-id :slice 6))) :toBe t)
+              (js-call (expect (js-call v4-pattern :test (js-call dispatch-id :slice 9))) :toBe t))
+            (put
+              globalThis.Date
+              :now
+              (lambda () (throw (new globalThis.Error "host clock failure"))))
+            (js-call
+              (expect (lambda () (nextHostId "event")))
+              :toThrow
+              "host clock failure")
+            (let ((launch-id (nextHostId "launch")))
+              (js-call (expect (js-call v4-pattern :test (js-call launch-id :slice 7))) :toBe t))
+            (finally (put globalThis.Date :now original-now))))
+        ;; 8. Default createHandleAuthority continues issuing UUIDv4 refs and enforcing principal/TTL:
+        (let ((authority (createHandleAuthority)))
+          (js-call
+            handleKinds
+            :forEach
+            (lambda
+              (kind)
+              (let*
+                ((issued
+                    (js-call
+                      authority
+                      :issue
+                      kind
+                      "principal-1"
+                      "resource-1"
+                      (js-object :authorization_revision 1)
+                      "2026-01-01T00:01:00Z"))
+                  (ref (nativeGet issued "ref"))
+                  (head (str kind "_"))
+                  (uuid (js-call ref :slice (js-length head))))
+                (js-call (expect (js-call ref :startsWith head)) :toBe t)
+                (js-call (expect (js-call v4-pattern :test uuid)) :toBe t)
+                (js-call
+                  (expect
+                    (nativeGet
+                      (js-call
+                        authority
+                        :resolve
+                        ref
+                        kind
+                        "principal-1"
+                        1
+                        "2026-01-01T00:00:30Z")
+                      "ok"))
+                  :toBe
+                  t)
+                (js-call
+                  (expect
+                    (nativeGet
+                      (js-call
+                        authority
+                        :resolve
+                        ref
+                        kind
+                        "principal-2"
+                        1
+                        "2026-01-01T00:00:30Z")
+                      "ok"))
+                  :toBe
+                  false)
+                (js-call
+                  (expect
+                    (nativeGet
+                      (js-call
+                        authority
+                        :resolve
+                        ref
+                        kind
+                        "principal-1"
+                        1
+                        "2026-01-01T00:01:00Z")
+                      "ok"))
+                  :toBe
+                  false)))))))))

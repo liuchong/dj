@@ -1,0 +1,350 @@
+(module dj.service.projections
+  (import "../core/native.eli" nativeNullish nativeGet)
+  (import "../core/errors.eli" success failure)
+  (import "../core/limits.eli" limits)
+  (import "../application/context.eli" can safeFields)
+  (import "../application/operations.eli" operationCatalog operationCatalogDigest)
+  (import "../policy/authorize.eli" operatorOnly)
+  (import "../catalog/records.eli" projectSession isSessionVisible)
+  (import "../catalog/service.eli" objectProjection)
+  (import "../registry/agents.eli" projectAgent)
+  (import "../subscriptions/service.eli" projectSubscription)
+  (import "../subscriptions/inbox.eli" projectInbox projectPull)
+  (import "../delivery/service.eli" deliveryAccess projectDelivery)
+  (import "../messaging/service.eli" projectOutbound projectConnection)
+  (import "../catalog/refresh.eli" projectRun catalogMetrics)
+  (import "../lifecycle/service.eli" projectLifecycle)
+  (defun visibleOperations
+    (principal)
+    (js-call
+      (Array/from (js-call operationCatalog :values))
+      :filter
+      (lambda
+        (descriptor)
+        (and
+          (or
+            (not (js-call operatorOnly :includes (nativeGet descriptor "operation")))
+            (= (nativeGet principal "kind") "operator"))
+          (or
+            (js-call
+              (js-array "service.status" "agent.whoami")
+              :includes
+              (nativeGet descriptor "operation"))
+            (js-call
+              (nativeGet principal "grants" (js-array))
+              :some
+              (lambda
+                (grant)
+                (and
+                  (or
+                    (= (nativeGet grant "action") "*")
+                    (= (nativeGet grant "action") (nativeGet descriptor "action")))
+                  (> (js-length (nativeGet grant "resources")) 0)))))))))
+  (defun resourceProjection
+    (context ref)
+    (let ((djReturn1Token (js-object)) (djReturn1Value nil))
+      (try
+        (let*
+          ((kind (nativeGet ref "kind"))
+            (id (nativeGet ref "id"))
+            (repository (nativeGet context "repository"))
+            (table
+              (nativeGet
+                (js-object
+                  :inbox "inbox_entries"
+                  :inbox_pull "inbox_pulls"
+                  :agent
+                  "agents"
+                  :subscription
+                  "subscriptions"
+                  :delivery
+                  "deliveries"
+                  :outbound
+                  "outbound"
+                  :catalog
+                  "catalog_runs"
+                  :lifecycle
+                  "lifecycle_actions"
+                  :session
+                  "sessions"
+                  :instance
+                  "instances")
+                kind))
+            (record (and table (js-call repository :get table id))))
+          (unless record
+            (progn (setq djReturn1Value (failure "forbidden")) (throw djReturn1Token)))
+          (cond
+            ((= kind "inbox") (projectInbox context record))
+            ((= kind "inbox_pull") (projectPull context record))
+            ((and (= kind "agent") (can context "agent.bind" record))
+              (success (projectAgent context record)))
+            ((and (= kind "subscription") (can context "subscription.manage" record))
+              (success (projectSubscription record)))
+            (
+              (and
+                (= kind "delivery")
+                (deliveryAccess context record "delivery.inspect"))
+              (success (projectDelivery context record)))
+            ((and (= kind "outbound") (can context "outbound.inspect" record))
+              (success (projectOutbound context record)))
+            (
+              (and
+                (= kind "catalog")
+                (js-call
+                  (nativeGet record "sources" (js-array))
+                  :every
+                  (lambda
+                    (source)
+                    (let
+                      (
+                        (instance
+                          (js-call
+                            repository
+                            :get
+                            "instances"
+                            (nativeGet source "instance_id"))))
+                      (and instance (can context "catalog.refresh" instance))))))
+              (success (projectRun record)))
+            ((and (= kind "lifecycle") (can context "lifecycle.inspect" record))
+              (success (projectLifecycle context record)))
+            (
+              (and
+                (= kind "session")
+                (can context "session.inspect" record)
+                (isSessionVisible context record))
+              (projectSession context record))
+            ((and (= kind "instance") (can context "instance.inspect" record))
+              (success (objectProjection "instance" record)))
+            (t (failure "forbidden"))))
+        (catch djReturn1Error
+          (if (eq djReturn1Error djReturn1Token) djReturn1Value (throw djReturn1Error))))))
+  (defun projectOperation
+    (base principal record)
+    (let*
+      (
+        (context
+          (Object/assign
+            (js-object)
+            base
+            (js-object :principal principal :operation (nativeGet record "operation"))))
+        (refs (js-array))
+        (primary nil))
+      (js-call
+        (nativeGet record "resource_refs")
+        :forEach
+        (lambda
+          (ref)
+          (let ((projected (resourceProjection context ref)))
+            (when (nativeGet projected "ok")
+              (js-call refs :push ref)
+              (unless primary (setq primary (nativeGet projected "data")))))))
+      (success
+        (js-object
+          :resource_refs
+          refs
+          :safe_result
+          (if primary
+            (success
+              primary
+              (js-object
+                :operation_id
+                (nativeGet record "operation_id")
+                :effect_state
+                "recorded"))
+            nil)))))
+  (defun percentile
+    (values fraction)
+    (let ((djReturn2Token (js-object)) (djReturn2Value nil))
+      (try
+        (unless (> (js-length values) 0)
+          (progn (setq djReturn2Value nil) (throw djReturn2Token)))
+        (let ((sorted (js-call (js-call values :slice) :sort (lambda (a b) (- a b)))))
+          (aref
+            sorted
+            (Math/min
+              (1- (js-length sorted))
+              (Math/max 0 (1- (Math/ceil (* fraction (js-length sorted))))))))
+        (catch djReturn2Error
+          (if (eq djReturn2Error djReturn2Token) djReturn2Value (throw djReturn2Error))))))
+  (defun nativePendingCount
+    (context)
+    (let ((db (nativeGet (nativeGet context "store") "db")))
+      (nativeGet
+        (js-call
+          (js-call
+            db
+            :query
+            "SELECT (SELECT COUNT(*) FROM deliveries WHERE state IN ('submitting','unknown'))+(SELECT COUNT(*) FROM outbound WHERE state IN ('submitting','unknown'))+(SELECT COUNT(*) FROM lifecycle_actions WHERE state IN ('submitting','unknown','starting')) AS n")
+          :get)
+        "n")))
+  (defun heldDeliveryCount
+    (context)
+    (nativeGet
+      (js-call
+        (js-call
+          (nativeGet (nativeGet context "store") "db")
+          :query
+          "SELECT COUNT(*) AS n FROM deliveries WHERE state IN ('ready','deferred','blocked')")
+        :get)
+      "n"))
+  (defun serviceStatus
+    (context)
+    (let*
+      ((repository (nativeGet context "repository"))
+        (runtime (nativeGet context "runtime"))
+        (principal (nativeGet context "principal"))
+        (operator (= (nativeGet principal "kind") "operator"))
+        (db (nativeGet (nativeGet context "store") "db"))
+        (sources (js-array))
+        (targets (js-array))
+        (projection
+          (js-object
+            :api_version
+            "1"
+            :build_id
+            (nativeGet (nativeGet context "ports") "build_id" "source-unverified")
+            :operation_catalog_digest
+            operationCatalogDigest
+            :service_id
+            (nativeGet (nativeGet (nativeGet context "config") "service") "service_id")
+            :state
+            (nativeGet runtime "state")
+            :visible_operations
+            (js-call
+              (visibleOperations principal)
+              :map
+              (lambda (descriptor) (nativeGet descriptor "operation")))
+            :ai_enabled
+            false
+            :model_requests
+            0
+            :embedding_requests
+            0
+            :limits
+            limits)))
+      (let ((after nil) (done false))
+        (while (not done)
+          (let ((options (js-object :limit 1000)) (rows nil))
+            (when after (put options :after_key after))
+            (setq rows (js-call repository :page "connections" options))
+            (js-call
+              rows
+              :forEach
+              (lambda
+                (connection)
+                (setq after (nativeGet connection "connection_id"))
+                (when
+                  (and
+                    (not (= (nativeGet connection "disabled") t))
+                    (can context "connection.inspect" connection))
+                  (js-call sources :push (projectConnection context connection)))))
+            (setq done (< (js-length rows) 1000)))))
+      (let ((after nil) (done false))
+        (while (and (not done) (< (js-length targets) 200))
+          (let ((options (js-object :limit 200)) (rows nil))
+            (when after (put options :after_key after))
+            (setq rows (js-call repository :page "agents" options))
+            (js-call
+              rows
+              :forEach
+              (lambda
+                (agent)
+                (setq after (nativeGet agent "agent_id"))
+                (when (and (< (js-length targets) 200) (can context "agent.bind" agent))
+                  (js-call targets :push (projectAgent context agent)))))
+            (setq done (< (js-length rows) 200)))))
+      (put projection :sources sources)
+      (put projection :targets targets)
+      (when operator
+        (let*
+          ((catalog (catalogMetrics context))
+            (lost
+              (nativeGet
+                (js-call
+                  (js-call
+                    db
+                    :query
+                    "SELECT COUNT(*) AS n FROM events e WHERE NOT EXISTS (SELECT 1 FROM routing_work w WHERE w.event_id=e.event_id)")
+                  :get)
+                "n"))
+            (routing
+              (js-object
+                :lost_routing_work
+                lost
+                :samples
+                (js-length (nativeGet runtime "routing_samples" (js-array)))
+                :max_candidates_observed
+                (nativeGet runtime "max_match_batch_candidates" 0)
+                :max_match_batch_candidates
+                (nativeGet runtime "max_match_batch_candidates" 0))))
+          (js-call
+            (js-array
+              (js-array
+                "bounded_candidate_cpu_p95_ms"
+                (nativeGet runtime "routing_cpu_samples" (js-array))
+                0.95)
+              (js-array
+                "batch_wall_p50_ms"
+                (nativeGet runtime "routing_samples" (js-array))
+                0.5)
+              (js-array
+                "batch_wall_p95_ms"
+                (nativeGet runtime "routing_samples" (js-array))
+                0.95)
+              (js-array
+                "batch_wall_p99_ms"
+                (nativeGet runtime "routing_samples" (js-array))
+                0.99))
+            :forEach
+            (lambda
+              (entry)
+              (let ((value (percentile (aref entry 1) (aref entry 2))))
+                (unless (nativeNullish value) (put routing (aref entry 0) value)))))
+          (put projection :routing_metrics routing)
+          (put
+            projection
+            :catalog_metrics
+            (js-object
+              :metadata_count
+              (nativeGet catalog "metadata_count")
+              :body_and_index_bytes
+              (nativeGet catalog "content_index_bytes")
+              :active_snapshots
+              (nativeGet catalog "active_snapshots")))
+          (put
+            projection
+            :catalog
+            (js-object
+              :metadata_count
+              (nativeGet catalog "metadata_count")
+              :content_index_bytes
+              (nativeGet catalog "content_index_bytes")))
+          (let*
+            ((store (nativeGet context "store"))
+              (storage
+                (Object/assign
+                  (js-object :sqlite_version (nativeGet store "sqlite_version"))
+                  (nativeGet store "capacity" (js-object)))))
+            (when (nativeGet store "last_checkpoint")
+              (put storage :checkpoint (nativeGet store "last_checkpoint")))
+            (put projection :storage_metrics storage))
+          (put projection :pending_native_work (nativePendingCount context))
+          (put projection :held_deliveries (heldDeliveryCount context))
+          (put
+            projection
+            :queues
+            (js-object
+              :queued
+              (heldDeliveryCount context)
+              :unknown
+              (nativePendingCount context))))
+        )
+(success projection)))
+  (export
+    visibleOperations
+    projectOperation
+    resourceProjection
+    serviceStatus
+    percentile
+    nativePendingCount
+    heldDeliveryCount))

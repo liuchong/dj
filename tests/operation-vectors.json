@@ -1,0 +1,775 @@
+{
+  "schema_version": 1,
+  "operations": [
+    {
+      "operation": "service.status",
+      "required_contract": "无",
+      "optional_contract": "无",
+      "key_contract": "—",
+      "output_contract": "api_version、build_id、operation_catalog_digest、visible_operations、限制/各源各目标/队列安全摘要",
+      "valid_arguments": {},
+      "exclusive_fields": []
+    },
+    {
+      "operation": "operation.get",
+      "required_contract": "operation_id XOR (operation,idempotency_key)",
+      "optional_contract": "无",
+      "key_contract": "lookup",
+      "output_contract": "本人 Operation/current safe_result/resource_refs；not_found 不证明原请求不会提交",
+      "valid_arguments": {
+        "operation_id": "opr_test"
+      },
+      "exclusive_fields": [
+        "operation_id",
+        "operation",
+        "idempotency_key"
+      ]
+    },
+    {
+      "operation": "connection.list",
+      "required_contract": "无",
+      "optional_contract": "filters、P",
+      "key_contract": "—",
+      "output_contract": "`Page<ConnectionProjection>`；filters.platform/state",
+      "valid_arguments": {},
+      "exclusive_fields": []
+    },
+    {
+      "operation": "connection.get",
+      "required_contract": "connection_id:Id",
+      "optional_contract": "无",
+      "key_contract": "—",
+      "output_contract": "ConnectionProjection（含授权过滤的 brand/identity/source_delivery/source_health，见 IM 接入）；不输出 credential 值",
+      "valid_arguments": {
+        "connection_id": "con_test"
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "connection.probe",
+      "required_contract": "connection_id:Id",
+      "optional_contract": "无",
+      "key_contract": "—",
+      "output_contract": "只读健康/能力/凭据状态摘要，不改配置或收件所有权",
+      "valid_arguments": {
+        "connection_id": "con_test"
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "conversation.list",
+      "required_contract": "connection_id:Id",
+      "optional_contract": "parent_ref:Ref、P",
+      "key_contract": "—",
+      "output_contract": "`Page<ConversationHandle>`；仅已授权来源/话题范围，不声称整个平台全量",
+      "valid_arguments": {
+        "connection_id": "con_test"
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "conversation.resolve",
+      "required_contract": "connection_id:Id、chat_id:string、thread_id:string/null",
+      "optional_contract": "无",
+      "key_contract": "—",
+      "output_contract": "精确 ConversationHandle；thread_id 必须明确，null 不代表未知",
+      "valid_arguments": {
+        "connection_id": "con_test",
+        "chat_id": "oc_test",
+        "thread_id": null
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "agent.whoami",
+      "required_contract": "无",
+      "optional_contract": "无",
+      "key_contract": "—",
+      "output_contract": "principal_id、bound_agent_id?、binding_state；来自认证绑定，不猜宿主",
+      "valid_arguments": {},
+      "exclusive_fields": []
+    },
+    {
+      "operation": "agent.discover",
+      "required_contract": "tool:string",
+      "optional_contract": "surface、instance_ref:Id、scope、P",
+      "key_contract": "—",
+      "output_contract": "`Page<Candidate>`；surface=desktop/cli/sdk；scope=history/live/desktop-open/managed",
+      "valid_arguments": {
+        "tool": "opencode"
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "agent.register",
+      "required_contract": "candidate_ref:Ref、display_name:string、binding_mode",
+      "optional_contract": "recipient_principal_id:Id",
+      "key_contract": "K",
+      "output_contract": "AgentTarget/BindingProjection；existing/managed；recipient 仅 operator 代登记时必填，普通 Agent 禁传",
+      "valid_arguments": {
+        "candidate_ref": "can_test",
+        "display_name": "test target",
+        "binding_mode": "existing",
+        "idempotency_key": "test-key"
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "agent.list",
+      "required_contract": "无",
+      "optional_contract": "filters、P",
+      "key_contract": "—",
+      "output_contract": "`Page<AgentTargetProjection>`；tool/surface/state/display_name_exact 精确过滤",
+      "valid_arguments": {},
+      "exclusive_fields": []
+    },
+    {
+      "operation": "agent.get",
+      "required_contract": "agent_id:Id",
+      "optional_contract": "无",
+      "key_contract": "—",
+      "output_contract": "AgentTargetProjection；不是工具父节点",
+      "valid_arguments": {
+        "agent_id": "agt_test"
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "agent.probe",
+      "required_contract": "agent_id:Id",
+      "optional_contract": "无",
+      "key_contract": "—",
+      "output_contract": "当前原生身份/状态/能力，不创建、唤醒或发送测试消息",
+      "valid_arguments": {
+        "agent_id": "agt_test"
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "agent.rebind",
+      "required_contract": "agent_id:Id、candidate_ref:Ref",
+      "optional_contract": "无",
+      "key_contract": "K/R",
+      "output_contract": "同 tool/namespace/native_session 的新 Binding；不能改到另一目标",
+      "valid_arguments": {
+        "agent_id": "agt_test",
+        "candidate_ref": "can_test",
+        "idempotency_key": "test-key",
+        "expected_revision": 1
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "agent.unregister",
+      "required_contract": "agent_id:Id",
+      "optional_contract": "无",
+      "key_contract": "K/R",
+      "output_contract": "closed/订阅暂停撤销摘要；不杀工具、不清 route/unknown、不取消 direct",
+      "valid_arguments": {
+        "agent_id": "agt_test",
+        "idempotency_key": "test-key",
+        "expected_revision": 1
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "subscription.preview",
+      "required_contract": "spec:SubscriptionSpec",
+      "optional_contract": "sample_event_ids:`Array<Id>`、subscription_id:Id、expected_revision",
+      "key_contract": "—",
+      "output_contract": "固定 normalized_spec/resolved_sources/target、warnings/issues；无阻断才发 preview_id；更新模式 ID/R 成对",
+      "valid_arguments": {
+        "spec": {
+          "agent_id": "agt_test",
+          "selector": {
+            "sources": [
+              {
+                "conversation_ref": "cvr_test",
+                "include_threads": false
+              }
+            ],
+            "event_kinds": [
+              "message.created"
+            ]
+          },
+          "predicate": {
+            "all": []
+          },
+          "context_policy": {
+            "mode": "current",
+            "max_events": 1,
+            "max_bytes": 16384
+          },
+          "delivery_policy": {
+            "busy": "queue",
+            "offline": "hold",
+            "ttl_seconds": 86400
+          },
+          "start": "now"
+        }
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "subscription.create",
+      "required_contract": "preview_id:Ref",
+      "optional_contract": "无",
+      "key_contract": "K",
+      "output_contract": "Subscription/start_seq/revision；不接受第二份 spec",
+      "valid_arguments": {
+        "preview_id": "prv_test",
+        "idempotency_key": "test-key"
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "subscription.list",
+      "required_contract": "无",
+      "optional_contract": "filters、P",
+      "key_contract": "—",
+      "output_contract": "`Page<SubscriptionProjection>`；filters.agent_id/state",
+      "valid_arguments": {},
+      "exclusive_fields": []
+    },
+    {
+      "operation": "subscription.get",
+      "required_contract": "subscription_id:Id",
+      "optional_contract": "无",
+      "key_contract": "—",
+      "output_contract": "当前 Subscription/解析范围及 revision",
+      "valid_arguments": {
+        "subscription_id": "sub_test"
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "subscription.update",
+      "required_contract": "subscription_id:Id、preview_id:Ref",
+      "optional_contract": "无",
+      "key_contract": "K/R",
+      "output_contract": "同对象/revision 的票据与新版本/cutover_seq；agent_id 不可变",
+      "valid_arguments": {
+        "preview_id": "prv_test",
+        "subscription_id": "sub_test",
+        "idempotency_key": "test-key",
+        "expected_revision": 1
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "subscription.pause",
+      "required_contract": "subscription_id:Id",
+      "optional_contract": "无",
+      "key_contract": "K/R",
+      "output_contract": "paused/revision/cutover_seq/已提交数量；不撤回已提交事实",
+      "valid_arguments": {
+        "subscription_id": "sub_test",
+        "idempotency_key": "test-key",
+        "expected_revision": 1
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "subscription.resume",
+      "required_contract": "subscription_id:Id",
+      "optional_contract": "无",
+      "key_contract": "K/R",
+      "output_contract": "active/新 start_seq；不复活旧贡献或补暂停期；stopping 拒绝",
+      "valid_arguments": {
+        "subscription_id": "sub_test",
+        "idempotency_key": "test-key",
+        "expected_revision": 1
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "subscription.delete",
+      "required_contract": "subscription_id:Id",
+      "optional_contract": "无",
+      "key_contract": "K/R",
+      "output_contract": "deleted/revision/cutover_seq；独立 direct 保留",
+      "valid_arguments": {
+        "subscription_id": "sub_test",
+        "idempotency_key": "test-key",
+        "expected_revision": 1
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "message.list",
+      "required_contract": "conversation_ref:Ref",
+      "optional_contract": "time_range:TimeRange、corpus、P",
+      "key_contract": "—",
+      "output_contract": "`Page<Event/MessageSnapshot>`；首期 local，native 明确 unsupported",
+      "valid_arguments": {
+        "conversation_ref": "cvr_test"
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "message.search",
+      "required_contract": "conversation_ref:Ref、query:string",
+      "optional_contract": "time_range:TimeRange、corpus、P",
+      "key_contract": "—",
+      "output_contract": "字面非空子串命中与可读引用，不解析为任务意图",
+      "valid_arguments": {
+        "conversation_ref": "cvr_test",
+        "query": "literal"
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "message.get",
+      "required_contract": "event_id:Id XOR message_ref:Ref",
+      "optional_contract": "offset_bytes、max_bytes",
+      "key_contract": "—",
+      "output_contract": "元数据/UTF-8 正文分页/附件引用，删除/过期不泄露",
+      "valid_arguments": {
+        "event_id": "evt_test"
+      },
+      "exclusive_fields": [
+        "event_id",
+        "message_ref"
+      ]
+    },
+    {
+      "operation": "message.send",
+      "required_contract": "destination_ref:Ref、content:TextContent",
+      "optional_contract": "无",
+      "key_contract": "K",
+      "output_contract": "Outbound/state/revision；固定精确 IM 地址；首期必须单条可表示",
+      "valid_arguments": {
+        "destination_ref": "cvr_test",
+        "content": {
+          "type": "text",
+          "text": "test message"
+        },
+        "idempotency_key": "test-key"
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "message.reply",
+      "required_contract": "reply_context_id:Ref、content:TextContent",
+      "optional_contract": "无",
+      "key_contract": "K",
+      "output_contract": "Outbound/state/revision；固定原账号/消息/话题，不能另带 destination",
+      "valid_arguments": {
+        "reply_context_id": "rpl_test",
+        "content": {
+          "type": "text",
+          "text": "test message"
+        },
+        "idempotency_key": "test-key"
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "outbound.get",
+      "required_contract": "outbound_id:Id",
+      "optional_contract": "无",
+      "key_contract": "—",
+      "output_contract": "Outbound/parts/安全原生回执，不等于 Agent 完成",
+      "valid_arguments": {
+        "outbound_id": "out_test"
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "outbound.reconcile",
+      "required_contract": "outbound_id:Id",
+      "optional_contract": "无",
+      "key_contract": "K",
+      "output_contract": "只核对原生事实，unknown 可能仍 unknown，不重发",
+      "valid_arguments": {
+        "outbound_id": "out_test",
+        "idempotency_key": "test-key"
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "outbound.retry",
+      "required_contract": "outbound_id:Id",
+      "optional_contract": "无",
+      "key_contract": "K/R",
+      "output_contract": "仅可证未送达且 retryable 的单位；不重发已接受内容",
+      "valid_arguments": {
+        "outbound_id": "out_test",
+        "idempotency_key": "test-key",
+        "expected_revision": 1
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "outbound.cancel",
+      "required_contract": "outbound_id:Id",
+      "optional_contract": "无",
+      "key_contract": "K/R",
+      "output_contract": "只取消提交点前；unknown/submitting 不擦除，已接受给限制",
+      "valid_arguments": {
+        "outbound_id": "out_test",
+        "idempotency_key": "test-key",
+        "expected_revision": 1
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "outbound.resolve",
+      "required_contract": "outbound_id:Id、resolution、reason:string",
+      "optional_contract": "无",
+      "key_contract": "K/R",
+      "output_contract": "operator-only；assume_received_no_retry/abandon_no_retry；manual 非原生接受证据",
+      "valid_arguments": {
+        "outbound_id": "out_test",
+        "resolution": "abandon_no_retry",
+        "reason": "explicit operator test",
+        "idempotency_key": "test-key",
+        "expected_revision": 1
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "delivery.list",
+      "required_contract": "无",
+      "optional_contract": "filters、P",
+      "key_contract": "—",
+      "output_contract": "`Page<DeliveryProjection>`；agent_id/event_id/state/origin/route_id/session_key/operation_id；按当前主体过滤",
+      "valid_arguments": {},
+      "exclusive_fields": []
+    },
+    {
+      "operation": "delivery.get",
+      "required_contract": "delivery_id:Id",
+      "optional_contract": "无",
+      "key_contract": "—",
+      "output_contract": "Delivery/贡献/安全回执/reply_context_id?；direct 可空 agent/event",
+      "valid_arguments": {
+        "delivery_id": "dlv_test"
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "delivery.reconcile",
+      "required_contract": "delivery_id:Id",
+      "optional_contract": "无",
+      "key_contract": "K",
+      "output_contract": "核对原目标/原 attempt，不以其他会话文本猜未送达",
+      "valid_arguments": {
+        "delivery_id": "dlv_test",
+        "idempotency_key": "test-key"
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "delivery.retry",
+      "required_contract": "delivery_id:Id",
+      "optional_contract": "无",
+      "key_contract": "K/R",
+      "output_contract": "仅 definite_not_sent 的安全重试，重检目标/当前发送授权",
+      "valid_arguments": {
+        "delivery_id": "dlv_test",
+        "idempotency_key": "test-key",
+        "expected_revision": 1
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "delivery.cancel",
+      "required_contract": "delivery_id:Id",
+      "optional_contract": "无",
+      "key_contract": "K/R",
+      "output_contract": "取消自有未提交输入；不越 origin/主体取消别人贡献",
+      "valid_arguments": {
+        "delivery_id": "dlv_test",
+        "idempotency_key": "test-key",
+        "expected_revision": 1
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "delivery.resolve",
+      "required_contract": "delivery_id:Id、resolution、reason:string",
+      "optional_contract": "无",
+      "key_contract": "K/R",
+      "output_contract": "operator-only 不重发结案；仍须 idle 才可推进后续队列",
+      "valid_arguments": {
+        "delivery_id": "dlv_test",
+        "resolution": "abandon_no_retry",
+        "reason": "explicit operator test",
+        "idempotency_key": "test-key",
+        "expected_revision": 1
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "tool.list",
+      "required_contract": "无",
+      "optional_contract": "filters、P",
+      "key_contract": "—",
+      "output_contract": "`Page<ToolDescriptor>`；filters.tools/adapter_state",
+      "valid_arguments": {},
+      "exclusive_fields": []
+    },
+    {
+      "operation": "tool.get",
+      "required_contract": "tool_id:Id",
+      "optional_contract": "无",
+      "key_contract": "—",
+      "output_contract": "安全工具描述/能力，不扫描任意进程",
+      "valid_arguments": {
+        "tool_id": "opencode"
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "profile.list",
+      "required_contract": "无",
+      "optional_contract": "tools:`Array<Id>`、P",
+      "key_contract": "—",
+      "output_contract": "`Page<LaunchProfileProjection>`；profile_id/revision/workspace_refs/动作，不含 argv/秘密",
+      "valid_arguments": {},
+      "exclusive_fields": []
+    },
+    {
+      "operation": "instance.list",
+      "required_contract": "无",
+      "optional_contract": "tools:`Array<Id>`、ownership、P",
+      "key_contract": "—",
+      "output_contract": "`Page<ToolInstanceProjection>`；ownership=existing/managed，实例状态与会话覆盖",
+      "valid_arguments": {},
+      "exclusive_fields": []
+    },
+    {
+      "operation": "instance.get",
+      "required_contract": "instance_id:Id",
+      "optional_contract": "无",
+      "key_contract": "—",
+      "output_contract": "当前 instance_epoch/revision/归属/状态，与历史 lifecycle 分开",
+      "valid_arguments": {
+        "instance_id": "ins_test"
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "catalog.refresh",
+      "required_contract": "无",
+      "optional_contract": "scope:SessionScope、include_content:boolean、continuation:Ref、budget:RefreshBudget",
+      "key_contract": "K",
+      "output_contract": "CatalogRun/catalog_run_id；include_content 缺省 false；外部只读，不启动工具",
+      "valid_arguments": {
+        "idempotency_key": "test-key"
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "catalog.get",
+      "required_contract": "catalog_run_id:Id",
+      "optional_contract": "无",
+      "key_contract": "—",
+      "output_contract": "run state/预算/覆盖/continuation，不隐式续扫",
+      "valid_arguments": {
+        "catalog_run_id": "cat_test"
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "session.list",
+      "required_contract": "无",
+      "optional_contract": "scope:SessionScope、sort、P",
+      "key_contract": "—",
+      "output_contract": "SessionPage；sort 默认 session_key_asc，可选 updated_at_desc 索引顺序",
+      "valid_arguments": {},
+      "exclusive_fields": []
+    },
+    {
+      "operation": "session.get",
+      "required_contract": "session_ref:Ref XOR session_key:Id",
+      "optional_contract": "无",
+      "key_contract": "—",
+      "output_contract": "SessionProjection/当前获准短期 session_ref，未登记也可用",
+      "valid_arguments": {
+        "session_ref": "ssr_test"
+      },
+      "exclusive_fields": [
+        "session_ref",
+        "session_key"
+      ]
+    },
+    {
+      "operation": "session.resolve",
+      "required_contract": "instance_id:Id、native_session_id:string",
+      "optional_contract": "无",
+      "key_contract": "—",
+      "output_contract": "精确 SessionProjection/session_ref；原生 ID 原样，不按标题选择",
+      "valid_arguments": {
+        "instance_id": "ins_test",
+        "native_session_id": "native_test"
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "session.probe",
+      "required_contract": "session_ref:Ref",
+      "optional_contract": "无",
+      "key_contract": "—",
+      "output_contract": "只读 receiver/epoch/checked_at/有效期/能力；不登记/输入/新建",
+      "valid_arguments": {
+        "session_ref": "ssr_test"
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "session.search",
+      "required_contract": "query:SessionQuery",
+      "optional_contract": "scope:SessionScope、sort、P",
+      "key_contract": "—",
+      "output_contract": "SessionPage/matched_fields；sort 仅 session_key_asc，组内扫描完才输出",
+      "valid_arguments": {
+        "query": {
+          "text": "literal",
+          "fields": [
+            "message.text"
+          ],
+          "mode": "literal"
+        }
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "session.message.list",
+      "required_contract": "session_ref:Ref",
+      "optional_contract": "time_range:TimeRange、corpus、P",
+      "key_contract": "—",
+      "output_contract": "MessagePage/session_message_ref；首期 indexed，不自动读完整原生历史",
+      "valid_arguments": {
+        "session_ref": "ssr_test"
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "session.message.get",
+      "required_contract": "session_message_ref:Ref",
+      "optional_contract": "offset_bytes、max_bytes",
+      "key_contract": "—",
+      "output_contract": "绑定正文版本的安全元数据/UTF-8 正文分页",
+      "valid_arguments": {
+        "session_message_ref": "smr_test"
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "session.message.search",
+      "required_contract": "query:SessionQuery",
+      "optional_contract": "scope:SessionScope、time_range:TimeRange、P",
+      "key_contract": "—",
+      "output_contract": "MessagePage/会话和消息引用；fields 仅 message.text、固定消息顺序",
+      "valid_arguments": {
+        "query": {
+          "text": "literal",
+          "fields": [
+            "message.text"
+          ],
+          "mode": "literal"
+        }
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "session.send",
+      "required_contract": "session_ref:Ref XOR agent_id:Id；content:TextContent",
+      "optional_contract": "delivery_policy:DeliveryPolicy",
+      "key_contract": "K",
+      "output_contract": "Delivery/delivery_id/route_id；无 Event/Subscription/登记前置，stopping 拒绝",
+      "valid_arguments": {
+        "session_ref": "ssr_test",
+        "content": {
+          "type": "text",
+          "text": "test message"
+        },
+        "idempotency_key": "test-key"
+      },
+      "exclusive_fields": [
+        "session_ref",
+        "agent_id"
+      ]
+    },
+    {
+      "operation": "instance.start",
+      "required_contract": "profile_id:Id、expected_profile_revision",
+      "optional_contract": "无",
+      "key_contract": "K",
+      "output_contract": "LifecycleAction/lifecycle_id/instance_id；获准 profile，单 slot、不自由传 argv/cwd",
+      "valid_arguments": {
+        "profile_id": "prof_test",
+        "expected_profile_revision": 1,
+        "idempotency_key": "test-key"
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "session.create",
+      "required_contract": "instance_id:Id、expected_instance_epoch、workspace_ref:Ref",
+      "optional_contract": "title:string",
+      "key_contract": "K",
+      "output_contract": "LifecycleAction；核验后 session_key/session_ref；title 非空≤256 UTF-8 字节；Pi 同 RPC unsupported",
+      "valid_arguments": {
+        "instance_id": "ins_test",
+        "workspace_ref": "ws_test",
+        "expected_instance_epoch": "epoch-test",
+        "idempotency_key": "test-key"
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "instance.stop",
+      "required_contract": "instance_id:Id",
+      "optional_contract": "无",
+      "key_contract": "K/R",
+      "output_contract": "LifecycleAction；仅 DJ-owned managed，先关 gate 再 drain，期限到不强杀",
+      "valid_arguments": {
+        "instance_id": "ins_test",
+        "idempotency_key": "test-key",
+        "expected_revision": 1
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "lifecycle.get",
+      "required_contract": "lifecycle_id:Id",
+      "optional_contract": "无",
+      "key_contract": "—",
+      "output_contract": "历史动作/稳定资源引用+当前实例状态；可重发当前获准短期 ref",
+      "valid_arguments": {
+        "lifecycle_id": "life_test"
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "lifecycle.reconcile",
+      "required_contract": "lifecycle_id:Id",
+      "optional_contract": "无",
+      "key_contract": "K",
+      "output_contract": "按 launch token/原生关联键加证据，不按标题猜或重建",
+      "valid_arguments": {
+        "lifecycle_id": "life_test",
+        "idempotency_key": "test-key"
+      },
+      "exclusive_fields": []
+    },
+    {
+      "operation": "lifecycle.resolve",
+      "required_contract": "lifecycle_id:Id、resolution、reason:string",
+      "optional_contract": "无",
+      "key_contract": "K/R",
+      "output_contract": "operator-only，resolution 仅 abandon_no_retry；不释放未证退出的 slot",
+      "valid_arguments": {
+        "lifecycle_id": "life_test",
+        "resolution": "abandon_no_retry",
+        "reason": "explicit operator test",
+        "idempotency_key": "test-key",
+        "expected_revision": 1
+      },
+      "exclusive_fields": []
+    }
+  ]
+}

@@ -1,0 +1,197 @@
+(module dj.tests.support.process
+  (import "../../src/core/native.eli" nativeFetch nativeSetTimeout nativeGet)
+  (import "node:fs/promises" mkdir readFile)
+  (import "node:path" resolve)
+  (import "node:crypto" randomUUID)
+  (import "./host.eli" runFixtureHost)
+  (defasync until
+    (description action timeout-ms)
+    (let ((deadline (+ (performance/now) timeout-ms)) (result nil))
+      (while (and (not result) (< (performance/now) deadline))
+        (setq result (await (funcall action)))
+        (unless result
+          (await
+            (new globalThis.Promise (lambda (done reject) (nativeSetTimeout done 10))))))
+      (unless result (throw (new globalThis.Error (str "deadline: " description))))
+      result))
+  (defasync spawnFixture
+    (&optional existing-root)
+    (let*
+      ((root (or existing-root (resolve ".local/tests" (str "p-" (js-call (randomUUID) :slice 0 8)))))
+        (socket (resolve root "run/dj.sock")))
+      (await (mkdir root (js-object :recursive t :mode 448)))
+      (let*
+        (
+          (child
+            (Bun/spawn
+              (js-array
+                (nativeGet globalThis.process "execPath")
+                "dist-tests/tests/support/host.mjs")
+              (js-object
+                :env
+                (Object/assign
+                  (js-object)
+                  (nativeGet globalThis.process "env")
+                  (js-object :DJ_TEST_HOST "1" :DJ_FIXTURE_ROOT root))
+                :stdin
+                "ignore"
+                :stdout
+                "pipe"
+                :stderr
+                "pipe")))
+          (diagnostics (js-object :stderr ""))
+          (reader (js-call (nativeGet child "stdout") :getReader))
+          (decoder (new globalThis.TextDecoder))
+          (text ""))
+        ;; Drain stderr immediately; bounded tail, never spill a profile/token.
+        (let ((drainErrors nil))
+          (setq
+            drainErrors
+            (async
+              ()
+              (let ((errors (js-call (nativeGet child "stderr") :getReader)) (finished false))
+                (while (not finished)
+                  (let ((part (await (js-call errors :read))))
+                    (setq finished (nativeGet part "done"))
+                    (unless finished
+                      (put
+                        diagnostics
+                        :stderr
+                        (js-call
+                          (str
+                            (nativeGet diagnostics "stderr")
+                            (js-call decoder :decode (nativeGet part "value")))
+                          :slice
+                          -4096))))))))
+          (drainErrors)
+          (let
+            (
+              (ready
+                (await
+                  (Promise/race
+                    (js-array
+                      (funcall
+                        (async
+                          ()
+                          (while (not (js-call text :includes "\n"))
+                            (let ((part (await (js-call reader :read))))
+                              (when (nativeGet part "done")
+                                (throw
+                                  (new globalThis.Error "fixture exited before ready")))
+                              (setq
+                                text
+                                (str text (js-call decoder :decode (nativeGet part "value"))))
+                              (when (> (js-length text) 1048576)
+                                (throw (new globalThis.Error "oversized fixture ready")))))
+                          (JSON/parse (aref (js-call text :split "\n") 0))))
+                      (new
+                        globalThis.Promise
+                        (lambda
+                          (accept reject)
+                          (nativeSetTimeout
+                            (lambda
+                              ()
+                              (funcall
+                                reject
+                                (new globalThis.Error "fixture ready timeout")))
+                            10000))))))))
+            (unless (= (nativeGet ready "type") "ready")
+              (throw (new globalThis.Error "invalid fixture readiness")))
+            (let
+              (
+                (credentials
+                  (JSON/parse
+                    (await (readFile (resolve root "fixture-credentials.json") "utf8")))))
+              (js-object
+                :root
+                root
+                :socket
+                socket
+                :child
+                child
+                :credentials
+                credentials
+                :diagnostics
+                diagnostics
+                :request
+                (async
+                  (actor operation args)
+                  (let
+                    (
+                      (response
+                        (await
+                          (nativeFetch
+                            "http://localhost/v1/operations"
+                            (js-object
+                              :unix
+                              socket
+                              :method
+                              "POST"
+                              :headers
+                              (js-object
+                                :content-type
+                                "application/json"
+                                :authorization
+                                (str "Bearer " (nativeGet credentials actor)))
+                              :body
+                              (JSON/stringify
+                                (js-object
+                                  :api_version
+                                  "1"
+                                  :operation
+                                  operation
+                                  :arguments
+                                  args)))))))
+                    (await (js-call response :json))))
+                :control
+                (async
+                  (command)
+                  (let
+                    (
+                      (response
+                        (await
+                          (nativeFetch
+                            "http://localhost/__fixture/control"
+                            (js-object
+                              :unix
+                              socket
+                              :method
+                              "POST"
+                              :headers
+                              (js-object
+                                :content-type
+                                "application/json"
+                                :authorization
+                                (str "Bearer " (nativeGet credentials "O")))
+                              :body
+                              (JSON/stringify command))))))
+                    (await (js-call response :json))))
+                :crash
+                (async () (js-call child :kill "SIGKILL") (await (nativeGet child "exited")))
+                :close
+                (async
+                  ()
+                  (when (= (nativeGet child "exitCode") nil)
+                    (try
+                      (await
+                        (nativeFetch
+                          "http://localhost/__fixture/control"
+                          (js-object
+                            :unix
+                            socket
+                            :method
+                            "POST"
+                            :headers
+                            (js-object
+                              :authorization
+                              (str "Bearer " (nativeGet credentials "O"))
+                              :content-type
+                              "application/json")
+                            :body
+                            (JSON/stringify (js-object :kind "stop")))))
+                      (catch failure nil))
+                    ;; Only the controlled fixture child is eligible for teardown kill.
+                    (when (= (nativeGet child "exitCode") nil) (js-call child :kill "SIGKILL")))
+                  (await (nativeGet child "exited"))))))))))
+  (defasync closeProcess (process) (when process (await (js-call process :close))))
+  (export until spawnFixture closeProcess))

@@ -1,0 +1,880 @@
+(module dj.registry.agents
+  (import "../core/native.eli" nativeNullish nativeGet)
+  (import "../core/types.eli"
+    stableSessionKey
+    canonicalTargetKey
+    nextRevision
+    addSeconds)
+  (import "../core/errors.eli" success failure invalidField)
+  (import "../application/context.eli"
+    utcNow
+    currentPrincipal
+    nextId
+    can
+    requirePermission
+    must
+    inTransaction
+    issueResourceHandle
+    resolveResourceHandle
+    nativeCallContext
+    agentPort
+    safeFields
+    typedRef)
+  (import "../policy/principals.eli" configuredPrincipal principalProjection)
+  (import "../policy/authorize.eli" targetAllowed)
+  (import "../catalog/records.eli"
+    normalizeSession
+    observedSession
+    putSession
+    writeSessionVersion
+    ensureRoute
+    attachBinding)
+  (import "../catalog/snapshots.eli" openSnapshot resumeSnapshot advanceSnapshot)
+  (defconst agentFields
+    (js-array
+      "agent_id"
+      "route_id"
+      "owner_principal_id"
+      "recipient_principal_id"
+      "tool"
+      "surface"
+      "display_name"
+      "native_namespace"
+      "native_session_id"
+      "canonical_target_key"
+      "binding_mode"
+      "state"
+      "revision"))
+  (defun projectAgent
+    (context record)
+    (let*
+      ((result (safeFields record agentFields))
+        (repository (nativeGet context "repository"))
+        (route (js-call repository :get "routes" (nativeGet record "route_id")))
+        (binding
+          (and
+            route
+            (nativeGet route "binding_id")
+            (js-call repository :get "bindings" (nativeGet route "binding_id")))))
+      (put
+        result
+        :binding
+        (if binding
+          (safeFields
+            binding
+            (js-array
+              "binding_id"
+              "route_id"
+              "adapter_id"
+              "adapter_version"
+              "instance_id"
+              "instance_epoch"
+              "verified_at"
+              "expires_at"
+              "runtime_state"
+              "capabilities"))
+          nil))
+      result))
+  (defun eligibleScope
+    (session scope)
+    (cond ((or (not scope) (= scope "history")) t)
+      ((= scope "live") (= (nativeGet session "live_receiver") t))
+      (t (js-call (nativeGet session "visibility" (js-array)) :includes scope))))
+  (defasync discoverAgent
+    (context args)
+    (let ((djReturn1Token (js-object)) (djReturn1Value nil))
+      (try
+        (let*
+          ((repository (nativeGet context "repository"))
+            (tool (nativeGet args "tool"))
+            (all
+              (js-call
+                repository
+                :page
+                "instances"
+                (js-object :filters (js-object :tool_id tool) :limit 1000)))
+            (instances
+              (js-call
+                all
+                :filter
+                (lambda
+                  (instance)
+                  (and
+                    (or
+                      (not (nativeGet args "instance_ref"))
+                      (= (nativeGet instance "instance_id") (nativeGet args "instance_ref")))
+                    (can context "agent.discover" instance)))))
+            (opened nil))
+          (when (= (js-length instances) 0)
+            (unless (can context "agent.discover" (js-object :tool tool :tool_id tool))
+              (progn (setq djReturn1Value (failure "forbidden")) (throw djReturn1Token)))
+            (unless (js-call repository :get "tools" tool)
+              (progn
+                (setq djReturn1Value (failure "unsupported"))
+                (throw djReturn1Token))))
+          (setq
+            opened
+            (if (nativeGet args "cursor")
+              (resumeSnapshot
+                context
+                (nativeGet args "cursor")
+                (js-object :tool tool)
+                args
+                "source_key_asc")
+              (openSnapshot context (js-object :tool tool) args "source_key_asc")))
+          (unless (nativeGet opened "ok")
+            (progn (setq djReturn1Value opened) (throw djReturn1Token)))
+          (let*
+            ((snapshot (nativeGet opened "data"))
+              (checkpoint
+                (or
+                  (nativeGet snapshot "source_checkpoint")
+                  (js-object
+                    :source_index
+                    0
+                    :native_cursor
+                    nil
+                    :pending
+                    (js-array)
+                    :source_ids
+                    (js-call
+                      instances
+                      :map
+                      (lambda (instance) (nativeGet instance "instance_id"))))))
+              (source-index (nativeGet checkpoint "source_index"))
+              (items (js-array))
+              (keys (js-array))
+              (sources (js-array))
+              (budget (nativeGet args "limit" 50))
+              (reads 0)
+              (coverage t))
+            (let
+              (
+                (frozen
+                  (js-call
+                    (nativeGet checkpoint "source_ids")
+                    :map
+                    (lambda
+                      (id)
+                      (js-call
+                        instances
+                        :find
+                        (lambda (instance) (= (nativeGet instance "instance_id") id)))))))
+              (unless
+                (js-call
+                  frozen
+                  :every
+                  (lambda (instance) (not (nativeNullish instance))))
+                (progn
+                  (setq djReturn1Value (failure "stale_reference"))
+                  (throw djReturn1Token)))
+              (setq instances frozen))
+            (while
+              (and
+                (< source-index (js-length instances))
+                (< (js-length items) budget)
+                (< reads 4))
+              (let*
+                ((instance (aref instances source-index))
+                  (port (agentPort context instance))
+                  (pending (nativeGet checkpoint "pending" (js-array))))
+                (when (= (js-length pending) 0)
+                  (setq reads (1+ reads))
+                  (if (and port (nativeGet port "discover"))
+                    (try
+                      (let
+                        (
+                          (page
+                            (await
+                              (js-call
+                                port
+                                :discover
+                                (nativeGet args "scope" "live")
+                                (js-object
+                                  :cursor
+                                  (nativeGet checkpoint "native_cursor" nil)
+                                  :limit
+                                  100
+                                  :instance_id
+                                  (nativeGet instance "instance_id"))
+                                (nativeCallContext context)))))
+                        (setq pending (js-call (nativeGet page "items" (js-array)) :slice))
+                        (put checkpoint :native_cursor (nativeGet page "next_cursor" nil))
+                        (put checkpoint :source_complete (= (nativeGet page "complete") t))
+                        (unless (= (nativeGet page "complete") t) (setq coverage false)))
+                      (catch error
+                        (when (eq error djReturn1Token) (throw error))
+                        (setq coverage false)
+                        (put checkpoint :source_complete t)
+                        (put checkpoint :native_cursor nil)))
+                    (progn
+                      (setq coverage false)
+                      (put checkpoint :source_complete t)
+                      (put checkpoint :native_cursor nil))))
+                (while (and (> (js-length pending) 0) (< (js-length items) budget))
+                  (let*
+                    ((native (js-call pending :shift))
+                      (session (normalizeSession context native instance))
+                      (observed (observedSession session (utcNow context)))
+                      (surface
+                        (nativeGet native "surface" (if (= tool "opencode") "sdk" "cli"))))
+                    (when
+                      (and
+                        (eligibleScope observed (nativeGet args "scope"))
+                        (or (not (nativeGet args "surface")) (= surface (nativeGet args "surface")))
+                        (can context "agent.discover" session))
+                      (let*
+                        (
+                          (handle
+                            (must
+                              (issueResourceHandle
+                                context
+                                "candidate"
+                                (nativeGet session "session_key")
+                                (js-object
+                                  :instance_epoch
+                                  (nativeGet instance "instance_epoch")
+                                  :target
+                                  session
+                                  :instance_id
+                                  (nativeGet instance "instance_id")
+                                  :surface
+                                  surface)
+                                300)))
+                          (candidate
+                            (js-object
+                              :candidate_ref
+                              (nativeGet handle "ref")
+                              :tool
+                              tool
+                              :surface
+                              surface
+                              :native_namespace
+                              (nativeGet session "native_namespace")
+                              :native_session_id
+                              (nativeGet session "native_session_id")
+                              :scope
+                              (nativeGet args "scope" "history")
+                              :live_receiver
+                              (nativeGet observed "live_receiver")
+                              :runtime_state
+                              (nativeGet observed "runtime_state")
+                              :instance_id
+                              (nativeGet instance "instance_id")
+                              :instance_epoch
+                              (nativeGet instance "instance_epoch")
+                              :capabilities
+                              (nativeGet
+                                native
+                                "capabilities"
+                                (nativeGet port "capabilities" (js-object)))
+                              :expires_at
+                              (nativeGet handle "expires_at")
+                              :target_summary
+                              observed)))
+                        (js-call items :push candidate)
+                        (js-call
+                          keys
+                          :push
+                          (js-object :resource_key (nativeGet session "session_key")))))))
+                (put checkpoint :pending pending)
+                (js-call
+                  sources
+                  :push
+                  (js-object
+                    :source_id
+                    (nativeGet instance "instance_id")
+                    :tool
+                    tool
+                    :coverage
+                    (if coverage "covered" "partial")))
+                (when
+                  (and (= (js-length pending) 0) (not (nativeGet checkpoint "native_cursor")))
+                  (setq source-index (1+ source-index))
+                  (put checkpoint :source_index source-index))
+                (when (and (= (js-length pending) 0) (nativeGet checkpoint "native_cursor"))
+                  ;; Bound a control-plane turn even when the native source pages.
+                  (setq reads 4))))
+            (advanceSnapshot
+              context
+              snapshot
+              (js-object
+                :items
+                items
+                :result_keys
+                keys
+                :sources
+                sources
+                :source_checkpoint
+                checkpoint
+                :complete
+                (>= source-index (js-length instances))
+                :coverage_complete
+                coverage))))
+        (catch djReturn1Error
+          (if (eq djReturn1Error djReturn1Token) djReturn1Value (throw djReturn1Error))))))
+  (defun candidateFor
+    (context ref)
+    (let ((djReturn2Token (js-object)) (djReturn2Value nil))
+      (try
+        (let ((resolved (resolveResourceHandle context ref "candidate")))
+          (unless (nativeGet resolved "ok")
+            (progn (setq djReturn2Value resolved) (throw djReturn2Token)))
+          (let*
+            ((handle (nativeGet resolved "data"))
+              (instance
+                (js-call
+                  (nativeGet context "repository")
+                  :get
+                  "instances"
+                  (nativeGet handle "instance_id"))))
+            (unless
+              (and
+                instance
+                (= (nativeGet instance "instance_epoch") (nativeGet handle "instance_epoch")))
+              (progn
+                (setq djReturn2Value (failure "stale_reference"))
+                (throw djReturn2Token)))
+            (success
+              (js-object :handle handle :target (nativeGet handle "target") :instance instance))))
+        (catch djReturn2Error
+          (if (eq djReturn2Error djReturn2Token) djReturn2Value (throw djReturn2Error))))))
+  (defasync verifyCandidate
+    (context candidate)
+    (let ((djReturn3Token (js-object)) (djReturn3Value nil))
+      (try
+        (let*
+          ((target (nativeGet candidate "target"))
+            (instance (nativeGet candidate "instance"))
+            (port (agentPort context instance)))
+          (unless (and port (nativeGet port "probe"))
+            (progn (setq djReturn3Value (failure "unsupported")) (throw djReturn3Token)))
+          (try
+            (let
+              (
+                (probe
+                  (await
+                    (js-call port :probe target target (nativeCallContext context)))))
+              (unless
+                (and
+                  (not (= (nativeGet probe "ok") false))
+                  (= (nativeGet probe "live_receiver") t)
+                  (= (nativeGet probe "native_session_id") (nativeGet target "native_session_id"))
+                  (= (nativeGet probe "native_namespace") (nativeGet target "native_namespace"))
+                  (= (nativeGet probe "instance_epoch") (nativeGet instance "instance_epoch")))
+                (progn
+                  (setq djReturn3Value (failure "target_offline"))
+                  (throw djReturn3Token)))
+              (when (= (nativeGet probe "runtime_state") "incompatible")
+                (progn
+                  (setq djReturn3Value (failure "incompatible"))
+                  (throw djReturn3Token)))
+              (success probe))
+            (catch error
+              (when (eq error djReturn3Token) (throw error))
+              (failure "unavailable"))))
+        (catch djReturn3Error
+          (if (eq djReturn3Error djReturn3Token) djReturn3Value (throw djReturn3Error))))))
+  (defasync registerAgent
+    (context args)
+    (let ((djReturn4Token (js-object)) (djReturn4Value nil))
+      (try
+        (let*
+          ((candidate-result (candidateFor context (nativeGet args "candidate_ref")))
+            (repository (nativeGet context "repository"))
+            (principal (currentPrincipal context)))
+          (unless (nativeGet candidate-result "ok")
+            (progn (setq djReturn4Value candidate-result) (throw djReturn4Token)))
+          (let*
+            ((candidate (nativeGet candidate-result "data"))
+              (target (nativeGet candidate "target"))
+              (instance (nativeGet candidate "instance"))
+              (recipient-id
+                (if (= (nativeGet principal "kind") "operator")
+                  (nativeGet args "recipient_principal_id")
+                  (nativeGet principal "principal_id")))
+              (recipient
+                (configuredPrincipal
+                  (nativeGet (nativeGet context "config") "principals")
+                  recipient-id))
+              (permission (requirePermission context "agent.bind" target)))
+            (unless (nativeGet permission "ok")
+              (progn (setq djReturn4Value permission) (throw djReturn4Token)))
+            (when
+              (and
+                (not (= (nativeGet principal "kind") "operator"))
+                (object-has? args :recipient_principal_id))
+              (progn (setq djReturn4Value (failure "forbidden")) (throw djReturn4Token)))
+            (when (and (= (nativeGet principal "kind") "operator") (not recipient-id))
+              (progn
+                (setq
+                  djReturn4Value
+                  (invalidField
+                    "/recipient_principal_id"
+                    "an independently configured recipient principal"))
+                (throw djReturn4Token)))
+            (unless
+              (and
+                recipient
+                (not (= (nativeGet recipient "disabled") t))
+                (targetAllowed recipient target))
+              (progn
+                (setq djReturn4Value (failure "target_unbound"))
+                (throw djReturn4Token)))
+            (unless (= (nativeGet args "binding_mode") (nativeGet instance "ownership"))
+              (progn (setq djReturn4Value (failure "forbidden")) (throw djReturn4Token)))
+            (let ((verified (await (verifyCandidate context candidate))))
+              (unless (nativeGet verified "ok")
+                (progn (setq djReturn4Value verified) (throw djReturn4Token)))
+              (js-call
+                context
+                :accept
+                (lambda
+                  (tx operation-id)
+                  (let ((djReturn5Token (js-object)) (djReturn5Value nil))
+                    (try
+                      (let
+                        (
+                          (current-instance
+                            (js-call
+                              repository
+                              :get
+                              "instances"
+                              (nativeGet instance "instance_id"))))
+                        (unless
+                          (and
+                            (=
+                              (nativeGet current-instance "instance_epoch")
+                              (nativeGet instance "instance_epoch"))
+                            (targetAllowed
+                              (configuredPrincipal
+                                (nativeGet (nativeGet context "config") "principals")
+                                recipient-id)
+                              target))
+                          (progn
+                            (setq djReturn5Value (failure "stale_reference"))
+                            (throw djReturn5Token)))
+                        (let*
+                          ((db (nativeGet tx "db"))
+                            (native-key (canonicalTargetKey target))
+                            (existing-row
+                              (js-call
+                                (js-call
+                                  db
+                                  :query
+                                  "SELECT payload FROM agents WHERE canonical_target_key=? AND state='registered'")
+                                :get
+                                native-key)))
+                          (when existing-row
+                            (let ((existing (JSON/parse (nativeGet existing-row "payload"))))
+                              (if
+                                (and
+                                  (=
+                                    (nativeGet existing "recipient_principal_id")
+                                    recipient-id)
+                                  (=
+                                    (nativeGet existing "owner_principal_id")
+                                    (nativeGet principal "principal_id")))
+                                (progn
+                                  (setq
+                                    djReturn5Value
+                                    (success (projectAgent context existing)))
+                                  (throw djReturn5Token))
+                                (progn
+                                  (setq djReturn5Value (failure "forbidden"))
+                                  (throw djReturn5Token)))))
+                          (when
+                            (js-call
+                              (js-call
+                                db
+                                :query
+                                "SELECT agent_id FROM agents WHERE recipient_principal_id=? AND state='registered'")
+                              :get
+                              recipient-id)
+                            (progn
+                              (setq djReturn5Value (failure "target_unbound"))
+                              (throw djReturn5Token)))
+                          (let*
+                            (
+                              (session
+                                (must
+                                  (putSession
+                                    context
+                                    (nativeGet verified "data")
+                                    current-instance)))
+                              (route (ensureRoute context session))
+                              (binding
+                                (attachBinding
+                                  context
+                                  route
+                                  session
+                                  current-instance
+                                  (nativeGet verified "data")))
+                              (record
+                                (js-object
+                                  :agent_id
+                                  (nextId context "agent")
+                                  :route_id
+                                  (nativeGet route "route_id")
+                                  :owner_principal_id
+                                  (nativeGet principal "principal_id")
+                                  :recipient_principal_id
+                                  recipient-id
+                                  :tool
+                                  (nativeGet target "tool")
+                                  :surface
+                                  (nativeGet (nativeGet candidate "handle") "surface")
+                                  :display_name
+                                  (nativeGet args "display_name")
+                                  :native_namespace
+                                  (nativeGet target "native_namespace")
+                                  :native_session_id
+                                  (nativeGet target "native_session_id")
+                                  :canonical_target_key
+                                  native-key
+                                  :binding_mode
+                                  (nativeGet args "binding_mode")
+                                  :state
+                                  "registered"
+                                  :revision
+                                  1)))
+                            (js-call repository :insert "agents" record)
+                            (must (writeSessionVersion context session))
+                            (success (projectAgent context record)))))
+                      (catch djReturn5Error
+                        (if (eq djReturn5Error djReturn5Token)
+                          djReturn5Value
+                          (throw djReturn5Error))))))
+                (lambda (data) (js-array (typedRef "agent" (nativeGet data "agent_id"))))))))
+        (catch djReturn4Error
+          (if (eq djReturn4Error djReturn4Token) djReturn4Value (throw djReturn4Error))))))
+  (defasync rebindAgent
+    (context args)
+    (let ((djReturn6Token (js-object)) (djReturn6Value nil))
+      (try
+        (let*
+          ((repository (nativeGet context "repository"))
+            (agent (js-call repository :get "agents" (nativeGet args "agent_id")))
+            (candidate-result (candidateFor context (nativeGet args "candidate_ref"))))
+          (unless (and agent (can context "agent.bind" agent))
+            (progn (setq djReturn6Value (failure "forbidden")) (throw djReturn6Token)))
+          (unless (nativeGet candidate-result "ok")
+            (progn (setq djReturn6Value candidate-result) (throw djReturn6Token)))
+          (let*
+            ((candidate (nativeGet candidate-result "data"))
+              (target (nativeGet candidate "target"))
+              (permission (requirePermission context "agent.bind" agent)))
+            (unless (nativeGet permission "ok")
+              (progn (setq djReturn6Value permission) (throw djReturn6Token)))
+            (unless (= (canonicalTargetKey target) (nativeGet agent "canonical_target_key"))
+              (progn
+                (setq djReturn6Value (failure "stale_reference"))
+                (throw djReturn6Token)))
+            (let ((verified (await (verifyCandidate context candidate))))
+              (unless (nativeGet verified "ok")
+                (progn (setq djReturn6Value verified) (throw djReturn6Token)))
+              (js-call
+                context
+                :accept
+                (lambda
+                  (tx operation-id)
+                  (let ((djReturn7Token (js-object)) (djReturn7Value nil))
+                    (try
+                      (let*
+                        (
+                          (current
+                            (js-call repository :get "agents" (nativeGet agent "agent_id")))
+                          (instance
+                            (js-call
+                              repository
+                              :get
+                              "instances"
+                              (nativeGet (nativeGet candidate "instance") "instance_id")))
+                          (recipient
+                            (configuredPrincipal
+                              (nativeGet (nativeGet context "config") "principals")
+                              (nativeGet current "recipient_principal_id"))))
+                        (unless
+                          (and
+                            (= (nativeGet current "revision") (nativeGet args "expected_revision"))
+                            (= (nativeGet current "state") "registered"))
+                          (progn
+                            (setq djReturn7Value (failure "revision_conflict"))
+                            (throw djReturn7Token)))
+                        (unless
+                          (and
+                            recipient
+                            (targetAllowed recipient target)
+                            (=
+                              (nativeGet instance "instance_epoch")
+                              (nativeGet (nativeGet candidate "instance") "instance_epoch")))
+                          (progn
+                            (setq djReturn7Value (failure "stale_reference"))
+                            (throw djReturn7Token)))
+                        (let*
+                          (
+                            (session
+                              (must (putSession context (nativeGet verified "data") instance)))
+                            (route (ensureRoute context session)))
+                          (attachBinding
+                            context
+                            route
+                            session
+                            instance
+                            (nativeGet verified "data"))
+                          (put current :revision (nextRevision (nativeGet current "revision")))
+                          (must
+                            (js-call
+                              repository
+                              :replace
+                              "agents"
+                              current
+                              (nativeGet args "expected_revision")))
+                          (success (projectAgent context current))))
+                      (catch djReturn7Error
+                        (if (eq djReturn7Error djReturn7Token)
+                          djReturn7Value
+                          (throw djReturn7Error))))))
+                (js-array (typedRef "agent" (nativeGet agent "agent_id")))))))
+        (catch djReturn6Error
+          (if (eq djReturn6Error djReturn6Token) djReturn6Value (throw djReturn6Error))))))
+  (defun unregisterAgent
+    (context args)
+    (let ((djReturn8Token (js-object)) (djReturn8Value nil))
+      (try
+        (let*
+          ((repository (nativeGet context "repository"))
+            (agent (js-call repository :get "agents" (nativeGet args "agent_id"))))
+          (unless agent
+            (progn (setq djReturn8Value (failure "not_found")) (throw djReturn8Token)))
+          (let ((permission (requirePermission context "agent.bind" agent)))
+            (unless (nativeGet permission "ok")
+              (progn (setq djReturn8Value permission) (throw djReturn8Token))))
+          (js-call
+            context
+            :accept
+            (lambda
+              (tx operation-id)
+              (let ((djReturn9Token (js-object)) (djReturn9Value nil))
+                (try
+                  (let*
+                    ((current (js-call repository :get "agents" (nativeGet agent "agent_id")))
+                      (db (nativeGet tx "db"))
+                      (sequence (js-call repository :currentSequence "ingress")))
+                    (unless (= (nativeGet current "revision") (nativeGet args "expected_revision"))
+                      (progn
+                        (setq djReturn9Value (failure "revision_conflict"))
+                        (throw djReturn9Token)))
+                    (when
+                      (js-call
+                        (js-call
+                          db
+                          :query
+                          "SELECT subscription_id FROM subscriptions WHERE agent_id=? AND revision>=9007199254740991 LIMIT 1")
+                        :get
+                        (nativeGet agent "agent_id"))
+                      (progn
+                        (setq djReturn9Value (failure "limit_exceeded"))
+                        (throw djReturn9Token)))
+                    (js-call
+                      (js-call
+                        db
+                        :query
+                        "UPDATE contributions SET state='revoked',payload=json_set(payload,'$.state','revoked') WHERE subscription_id IN (SELECT subscription_id FROM subscriptions WHERE agent_id=?) AND state IN ('active','effective') AND delivery_id IN (SELECT delivery_id FROM deliveries WHERE state IN ('ready','deferred','blocked'))")
+                      :run
+                      (nativeGet agent "agent_id"))
+                    (js-call
+                      (js-call
+                        db
+                        :query
+                        "UPDATE subscription_versions SET cutover_seq=?,payload=json_set(payload,'$.cutover_seq',?) WHERE subscription_id IN (SELECT subscription_id FROM subscriptions WHERE agent_id=?) AND cutover_seq IS NULL")
+                      :run
+                      sequence
+                      sequence
+                      (nativeGet agent "agent_id"))
+                    (js-call
+                      (js-call
+                        db
+                        :query
+                        "UPDATE subscriptions SET state='paused',revision=revision+1,payload=json_set(payload,'$.state','paused','$.revision',revision+1,'$.cutover_seq',?) WHERE agent_id=? AND state='active'")
+                      :run
+                      sequence
+                      (nativeGet agent "agent_id"))
+                    (put current :state "closed")
+                    (put current :revision (nextRevision (nativeGet current "revision")))
+                    (must
+                      (js-call
+                        repository
+                        :replace
+                        "agents"
+                        current
+                        (nativeGet args "expected_revision")))
+                    (let*
+                      (
+                        (route
+                          (js-call repository :get "routes" (nativeGet current "route_id")))
+                        (session
+                          (js-call repository :get "sessions" (nativeGet route "session_key"))))
+                      (when session (must (writeSessionVersion context session))))
+                    ;; Routes, bindings, direct deliveries and unknown barriers survive.
+                    (success (projectAgent context current)))
+                  (catch djReturn9Error
+                    (if (eq djReturn9Error djReturn9Token)
+                      djReturn9Value
+                      (throw djReturn9Error))))))
+            (js-array (typedRef "agent" (nativeGet agent "agent_id")))))
+        (catch djReturn8Error
+          (if (eq djReturn8Error djReturn8Token) djReturn8Value (throw djReturn8Error))))))
+  (defun listAgents
+    (context args)
+    (let ((djReturn10Token (js-object)) (djReturn10Value nil))
+      (try
+        (let*
+          ((filters (nativeGet args "filters" (js-object)))
+            (repository (nativeGet context "repository"))
+            (opened
+              (if (nativeGet args "cursor")
+                (resumeSnapshot context (nativeGet args "cursor") filters args "agent_id_asc")
+                (openSnapshot context filters args "agent_id_asc"))))
+          (unless (nativeGet opened "ok")
+            (progn (setq djReturn10Value opened) (throw djReturn10Token)))
+          (let*
+            ((snapshot (nativeGet opened "data"))
+              (options (js-object :limit 1000 :sort "agent_id"))
+              (items (js-array))
+              (keys (js-array))
+              (last-key (nativeGet snapshot "last_scan_key"))
+              (index 0)
+              (rows nil))
+            (when last-key (put options :after_key last-key))
+            (setq rows (js-call repository :page "agents" options))
+            (while
+              (and
+                (< index (js-length rows))
+                (< (js-length items) (nativeGet args "limit" 50)))
+              (let ((agent (aref rows index)))
+                (setq last-key (nativeGet agent "agent_id"))
+                (when
+                  (and
+                    (can context "agent.bind" agent)
+                    (js-call
+                      (Object/keys filters)
+                      :every
+                      (lambda
+                        (field)
+                        (=
+                          (nativeGet filters field)
+                          (nativeGet
+                            agent
+                            (if (= field "display_name_exact") "display_name" field))))))
+                  (js-call items :push (projectAgent context agent))
+                  (js-call keys :push (js-object :resource_key (nativeGet agent "agent_id")))))
+              (setq index (1+ index)))
+            (advanceSnapshot
+              context
+              snapshot
+              (js-object
+                :items
+                items
+                :result_keys
+                keys
+                :next_scan_key
+                last-key
+                :complete
+                (and (= index (js-length rows)) (< (js-length rows) 1000))
+                :coverage_complete
+                t))))
+        (catch djReturn10Error
+          (if (eq djReturn10Error djReturn10Token)
+            djReturn10Value
+            (throw djReturn10Error))))))
+  (defasync probeAgent
+    (context agent)
+    (let ((djReturn11Token (js-object)) (djReturn11Value nil))
+      (try
+        (let*
+          ((repository (nativeGet context "repository"))
+            (route (js-call repository :get "routes" (nativeGet agent "route_id")))
+            (session (js-call repository :get "sessions" (nativeGet route "session_key")))
+            (instance (js-call repository :get "instances" (nativeGet session "instance_id")))
+            (verified
+              (await
+                (verifyCandidate context (js-object :target session :instance instance)))))
+          (unless (nativeGet verified "ok")
+            (progn (setq djReturn11Value verified) (throw djReturn11Token)))
+          (inTransaction
+            context
+            (lambda
+              (tx)
+              (let
+                (
+                  (current-session
+                    (must (putSession context (nativeGet verified "data") instance))))
+                (attachBinding
+                  context
+                  route
+                  current-session
+                  instance
+                  (nativeGet verified "data"))
+                (success
+                  (Object/assign
+                    (projectAgent context agent)
+                    (js-object
+                      :runtime_state
+                      (nativeGet (nativeGet verified "data") "runtime_state")
+                      :live_receiver
+                      t)))))))
+        (catch djReturn11Error
+          (if (eq djReturn11Error djReturn11Token)
+            djReturn11Value
+            (throw djReturn11Error))))))
+  (defasync handleOperation
+    (context operation args)
+    (let ((djReturn12Token (js-object)) (djReturn12Value nil))
+      (try
+        (cond
+          ((= operation "agent.whoami")
+            (let*
+              ((principal (currentPrincipal context))
+                (projection (principalProjection principal))
+                (db (nativeGet (nativeGet context "store") "db"))
+                (bound
+                  (js-call
+                    (js-call
+                      db
+                      :query
+                      "SELECT agent_id FROM agents WHERE recipient_principal_id=? AND state='registered'")
+                    :get
+                    (nativeGet principal "principal_id"))))
+              (put projection :bound_agent_id (if bound (nativeGet bound "agent_id") nil))
+              (put projection :binding_state (if bound "bound" "unbound"))
+              (success projection)))
+          ((= operation "agent.discover") (await (discoverAgent context args)))
+          ((= operation "agent.register") (await (registerAgent context args)))
+          ((= operation "agent.rebind") (await (rebindAgent context args)))
+          ((= operation "agent.unregister") (unregisterAgent context args))
+          ((= operation "agent.list") (listAgents context args))
+          ((or (= operation "agent.get") (= operation "agent.probe"))
+            (let
+              (
+                (record
+                  (js-call (nativeGet context "repository") :get "agents" (nativeGet args "agent_id"))))
+              (unless (and record (can context "agent.bind" record))
+                (progn
+                  (setq djReturn12Value (failure "forbidden"))
+                  (throw djReturn12Token)))
+              (if (= operation "agent.probe")
+                (await (probeAgent context record))
+                (success (projectAgent context record)))))
+          (t (failure "invalid_argument")))
+        (catch djReturn12Error
+          (if (eq djReturn12Error djReturn12Token)
+            djReturn12Value
+            (throw djReturn12Error))))))
+  (export
+    discoverAgent
+    registerAgent
+    rebindAgent
+    unregisterAgent
+    projectAgent
+    handleOperation))

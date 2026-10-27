@@ -1,0 +1,296 @@
+{
+  "schema_version": 1,
+  "service": {
+    "service_id": "dj-local",
+    "socket": "run/dj.sock"
+  },
+  "storage": {
+    "database": "state/dj.sqlite",
+    "journal_mode": "WAL",
+    "synchronous": "FULL",
+    "foreign_keys": true,
+    "busy_timeout": 1000
+  },
+  "principals": [
+    {
+      "principal_id": "operator",
+      "kind": "operator",
+      "authorization_revision": 1,
+      "credential_ref": "secrets/operator.token",
+      "grants": [
+        {
+          "action": "*",
+          "resources": [
+            "*"
+          ]
+        }
+      ]
+    },
+    {
+      "principal_id": "recipient-codex",
+      "kind": "agent",
+      "authorization_revision": 1,
+      "credential_ref": "secrets/recipient-codex.token",
+      "target_constraint": {
+        "tool": "codex",
+        "native_namespace": "codex-local",
+        "native_session_id": "replace-codex-thread-id"
+      },
+      "grants": [
+        {
+          "action": "agent.discover",
+          "resources": [
+            {
+              "tool": "codex",
+              "instance_id": "codex-desktop"
+            }
+          ]
+        },
+        {
+          "action": "agent.bind",
+          "resources": [
+            "*"
+          ]
+        },
+        {
+          "action": "subscription.manage",
+          "resources": [
+            "self"
+          ]
+        },
+        {
+          "action": "connection.inspect",
+          "resources": [
+            "lark-user",
+            "telegram-bot"
+          ]
+        },
+        {
+          "action": "conversation.discover",
+          "resources": [
+            "lark-user",
+            "telegram-bot"
+          ]
+        },
+        {
+          "action": "message.read",
+          "resources": [
+            {
+              "connection_id": "lark-user",
+              "native_chat_id": "replace-lark-chat-id"
+            },
+            {
+              "connection_id": "telegram-bot",
+              "native_chat_id": "replace-telegram-chat-id"
+            }
+          ]
+        },
+        {
+          "action": "message.search",
+          "resources": [
+            {
+              "connection_id": "lark-user",
+              "native_chat_id": "replace-lark-chat-id"
+            },
+            {
+              "connection_id": "telegram-bot",
+              "native_chat_id": "replace-telegram-chat-id"
+            }
+          ]
+        },
+        {
+          "action": "message.reply",
+          "resources": [
+            {
+              "connection_id": "lark-user",
+              "native_chat_id": "replace-lark-chat-id"
+            },
+            {
+              "connection_id": "telegram-bot",
+              "native_chat_id": "replace-telegram-chat-id"
+            }
+          ]
+        },
+        {
+          "action": "operation.inspect",
+          "resources": [
+            "self"
+          ]
+        },
+        {
+          "action": "delivery.inspect",
+          "resources": [
+            "self"
+          ]
+        },
+        {
+          "action": "delivery.manage",
+          "resources": [
+            "self"
+          ]
+        },
+        {
+          "action": "outbound.inspect",
+          "resources": [
+            "self"
+          ]
+        },
+        {
+          "action": "outbound.manage",
+          "resources": [
+            "self"
+          ]
+        },
+        {
+          "action": "subscription.consume",
+          "resources": [
+            "self"
+          ]
+        }
+      ]
+    },
+    {
+      "principal_id": "recipient-cursor",
+      "kind": "agent",
+      "authorization_revision": 1,
+      "credential_ref": "secrets/recipient-cursor.token",
+      "target_constraint": {
+        "tool": "cursor",
+        "native_namespace": "cursor-window",
+        "native_session_id": "replace-cursor-thread-id"
+      },
+      "grants": [
+        {
+          "action": "agent.discover",
+          "resources": [
+            {
+              "tool": "cursor",
+              "instance_id": "cursor-desktop"
+            }
+          ]
+        },
+        {
+          "action": "agent.bind",
+          "resources": [
+            "*"
+          ]
+        },
+        {
+          "action": "subscription.manage",
+          "resources": [
+            "self"
+          ]
+        },
+        {
+          "action": "connection.inspect",
+          "resources": [
+            "lark-user",
+            "telegram-bot"
+          ]
+        },
+        {
+          "action": "conversation.discover",
+          "resources": [
+            "lark-user",
+            "telegram-bot"
+          ]
+        },
+        {
+          "action": "message.read",
+          "resources": [
+            {
+              "connection_id": "lark-user",
+              "native_chat_id": "replace-lark-chat-id"
+            },
+            {
+              "connection_id": "telegram-bot",
+              "native_chat_id": "replace-telegram-chat-id"
+            }
+          ]
+        },
+        {
+          "action": "message.reply",
+          "resources": [
+            {
+              "connection_id": "lark-user",
+              "native_chat_id": "replace-lark-chat-id"
+            },
+            {
+              "connection_id": "telegram-bot",
+              "native_chat_id": "replace-telegram-chat-id"
+            }
+          ]
+        },
+        {
+          "action": "operation.inspect",
+          "resources": [
+            "self"
+          ]
+        },
+        {
+          "action": "delivery.inspect",
+          "resources": [
+            "self"
+          ]
+        },
+        {
+          "action": "outbound.inspect",
+          "resources": [
+            "self"
+          ]
+        },
+        {
+          "action": "outbound.manage",
+          "resources": [
+            "self"
+          ]
+        },
+        {
+          "action": "subscription.consume",
+          "resources": [
+            "self"
+          ]
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "connection_id": "lark-main",
+      "platform": "lark",
+      "brand": "lark",
+      "identity": "bot",
+      "source_delivery": "events",
+      "source_mode": "direct",
+      "watches": [
+        {
+          "chat_id": "replace-lark-chat-id",
+          "thread_id": null
+        },
+        {
+          "chat_id": "replace-lark-chat-id",
+          "thread_id": "replace-lark-thread-id"
+        }
+      ],
+      "credential_ref": "secrets/lark-app.json",
+      "event_scope": "configured",
+      "event_app_id": "cli_example",
+      "event_subject_id": "ou_example"
+    },
+    {
+      "connection_id": "telegram-bot",
+      "platform": "telegram",
+      "identity": "bot",
+      "credential_ref": "secrets/telegram-bot.token",
+      "allowed_chats": [
+        "replace-telegram-chat-id"
+      ]
+    }
+  ],
+  "agent_endpoints": [],
+  "managed_profiles": [],
+  "client_profiles": [
+    "client-codex.json",
+    "client-cursor.json"
+  ]
+}

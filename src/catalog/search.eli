@@ -1,0 +1,571 @@
+(module dj.catalog.search
+  (import "../core/native.eli" nativeBitAnd nativeNullish nativeGet)
+  (import "../core/types.eli" utf8Bytes sliceUtf8 hashValue)
+  (import "../core/errors.eli" success failure)
+  (import "../core/limits.eli" limits)
+  (import "../application/context.eli" utcNow can must)
+  (import "./records.eli" readVersion projectSession)
+  (import "./service.eli"
+    sourceRecords
+    matchesSessionScope
+    sessionRows
+    checkpointFor
+    projectMessage)
+  (import "./snapshots.eli" openSnapshot resumeSnapshot advanceSnapshot)
+  (defun textDocumentId
+    (field key version)
+    (str "text_" (hashValue (js-array field key version))))
+  (defun scanLiteral
+    (text needle offset budget)
+    (let ((djReturn1Token (js-object)) (djReturn1Value nil))
+      (try
+        (let*
+          ((bytes (Buffer/from text "utf8"))
+            (size (js-length bytes))
+            (overlap (utf8Bytes needle))
+            (start (Math/max 0 (- offset overlap))))
+          (while (and (> start 0) (= (nativeBitAnd (aref bytes start) 192) 128))
+            (setq start (1- start)))
+          (when (<= budget (- offset start))
+            (progn
+              (setq
+                djReturn1Value
+                (js-object
+                  :complete
+                  false
+                  :next_offset
+                  offset
+                  :consumed_bytes
+                  0
+                  :hit
+                  nil))
+              (throw djReturn1Token)))
+          (let*
+            ((part (sliceUtf8 text start (Math/min 65536 budget)))
+              (chunk (nativeGet part "text"))
+              (index (js-call chunk :indexOf needle)))
+            (unless (nativeGet part "ok")
+              (progn
+                (setq
+                  djReturn1Value
+                  (js-object
+                    :complete
+                    false
+                    :next_offset
+                    offset
+                    :consumed_bytes
+                    0
+                    :hit
+                    nil))
+                (throw djReturn1Token)))
+            (js-object
+              :complete
+              (or (>= index 0) (nativeGet part "complete"))
+              :next_offset
+              (nativeGet part "next_offset_bytes")
+              :consumed_bytes
+              (- (nativeGet part "next_offset_bytes") start)
+              :hit
+              (if (>= index 0) (+ start (utf8Bytes (js-call chunk :slice 0 index))) nil))))
+        (catch djReturn1Error
+          (if (eq djReturn1Error djReturn1Token) djReturn1Value (throw djReturn1Error))))))
+  (defun indexedCandidate
+    (context metadata needle)
+    (let ((djReturn2Token (js-object)) (djReturn2Value nil))
+      (try
+        (unless
+          (and
+            (>= (js-length (Array/from needle)) 3)
+            (not (js-call needle :includes "\u0000")))
+          (progn (setq djReturn2Value t) (throw djReturn2Token)))
+        (let*
+          ((db (nativeGet (nativeGet context "store") "db"))
+            (id
+              (textDocumentId
+                "message.text"
+                (nativeGet metadata "message_key")
+                (nativeGet metadata "content_version")))
+            (document
+              (js-call
+                (js-call
+                  db
+                  :query
+                  "SELECT rowid AS id FROM text_documents WHERE document_id=?")
+                :get
+                id)))
+          ;; No complete index entry proves nothing about a literal. Exact scanning
+          ;; remains available and has the same record/byte limits.
+          (unless document (progn (setq djReturn2Value t) (throw djReturn2Token)))
+          (not
+            (nativeNullish
+              (js-call
+                (js-call
+                  db
+                  :query
+                  "SELECT rowid FROM text_index WHERE rowid=? AND text_index MATCH ? LIMIT 1")
+                :get
+                (nativeGet document "id")
+                (str "\"" (js-call needle :replaceAll "\"" "\"\"") "\"")))))
+        (catch djReturn2Error
+          (if (eq djReturn2Error djReturn2Token) djReturn2Value (throw djReturn2Error))))))
+  (defun messageRows
+    (context session-key sequence after)
+    (js-call
+      (js-call
+        (js-call
+          (nativeGet (nativeGet context "store") "db")
+          :query
+          "SELECT v.payload FROM session_messages m JOIN catalog_versions v ON v.resource_key=m.message_key AND v.resource_kind='session_message' WHERE m.session_key=? AND m.message_key>? AND m.tombstone=0 AND v.tombstone=0 AND v.valid_from<=? AND (v.valid_to IS NULL OR v.valid_to>?) AND NOT EXISTS (SELECT 1 FROM catalog_body_barriers b WHERE b.session_key=m.session_key AND m.catalog_seq<=b.cutoff_seq AND NOT EXISTS (SELECT 1 FROM catalog_seen_messages x WHERE x.scan_id=b.scan_id AND x.session_key=b.session_key AND x.message_key=m.message_key)) ORDER BY m.message_key LIMIT 33")
+        :all
+        session-key
+        after
+        sequence
+        sequence)
+      :map
+      (lambda (row) (JSON/parse (nativeGet row "payload")))))
+  (defun snippet
+    (context descriptor session sequence)
+    (let*
+      ((field (nativeGet descriptor "field"))
+        (text
+          (if (= field "message.text")
+            (nativeGet
+              (readVersion
+                context
+                "session_message"
+                (nativeGet descriptor "message_key")
+                sequence
+                (nativeGet descriptor "content_version"))
+              "text"
+              "")
+            (nativeGet session field "")))
+        (offset (nativeGet descriptor "offset_bytes"))
+        (part (sliceUtf8 text offset 256)))
+      (js-object
+        :field
+        field
+        :text
+        (nativeGet part "text" "")
+        :offset_bytes
+        offset
+        :end_offset_bytes
+        (nativeGet part "next_offset_bytes" offset)
+        :truncated
+        (not (= (nativeGet part "complete") t)))))
+  (defun newGroup
+    (record)
+    (js-object
+      :session_key
+      (nativeGet record "session_key")
+      :stage
+      "metadata"
+      :field_index
+      0
+      :scan_offset_bytes
+      0
+      :matched_fields
+      (js-array)
+      :snippet_refs
+      (js-array)
+      :last_message_key
+      ""
+      :current_message_key
+      nil))
+  (defun metadataField
+    (record field)
+    (cond ((= field "native_session_id") (nativeGet record "native_session_id" ""))
+      ((= field "workspace_label") (nativeGet record "workspace_label" ""))
+      (t (nativeGet record field ""))))
+  (defun searchLiteral
+    (context operation args)
+    (let ((djReturn3Token (js-object)) (djReturn3Value nil))
+      (try
+        (let*
+          ((message-mode (= operation "session.message.search"))
+            (query (nativeGet args "query"))
+            (needle (nativeGet query "text"))
+            (fields (nativeGet query "fields"))
+            (scope (nativeGet args "scope" (js-object)))
+            (content (js-call fields :includes "message.text"))
+            (coverage (sourceRecords context scope "session.search" content))
+            (opened nil))
+          (unless (nativeGet coverage "ok")
+            (progn (setq djReturn3Value coverage) (throw djReturn3Token)))
+          (setq
+            opened
+            (if (nativeGet args "cursor")
+              (resumeSnapshot context (nativeGet args "cursor") scope args "session_key_asc")
+              (openSnapshot context scope args "session_key_asc")))
+          (unless (nativeGet opened "ok")
+            (progn (setq djReturn3Value opened) (throw djReturn3Token)))
+          (let*
+            ((snapshot (nativeGet opened "data"))
+              (last-key (nativeGet snapshot "last_scan_key"))
+              (pending (nativeGet snapshot "pending_group"))
+              (group-record nil)
+              (items (js-array))
+              (keys (js-array))
+              (records 0)
+              (bytes 0)
+              (finished false)
+              (stale false)
+              (rows (sessionRows context snapshot scope 1001 last-key))
+              (row-index 0))
+            (let ((djLoop1Break (js-object)) (djLoop1Continue (js-object)))
+              (try
+                (while
+                  (and
+                    (not finished)
+                    (< records (nativeGet limits "search_scan_records"))
+                    (< bytes (nativeGet limits "search_scan_bytes"))
+                    (< (js-length items) (nativeGet args "limit" 50)))
+                  (try
+                    (unless group-record
+                      (if pending
+                        (progn
+                          (setq
+                            group-record
+                            (readVersion
+                              context
+                              "session"
+                              (nativeGet pending "session_key")
+                              (nativeGet snapshot "catalog_seq")))
+                          (setq records (1+ records))
+                          (while
+                            (and
+                              (< row-index (js-length rows))
+                              (<=
+                                (nativeGet (aref rows row-index) "session_key")
+                                (nativeGet pending "session_key")))
+                            (setq row-index (1+ row-index))))
+                        (progn
+                          (when (>= row-index (js-length rows))
+                            (setq finished (not (nativeGet rows "has_more")))
+                            (throw djLoop1Break))
+                          (setq
+                            group-record
+                            (aref rows row-index)
+                            row-index
+                            (1+ row-index)
+                            records
+                            (1+ records))))
+                      (unless group-record
+                        (progn
+                          (setq djReturn3Value (failure "stale_reference"))
+                          (throw djReturn3Token)))
+                      (unless
+                        (matchesSessionScope
+                          context
+                          group-record
+                          scope
+                          "session.search")
+                        (setq
+                          last-key
+                          (nativeGet group-record "session_key")
+                          group-record
+                          nil
+                          pending
+                          nil)
+                        (throw djLoop1Continue))
+                      (when
+                        (and content (not (can context "session.read" group-record)))
+                        ;; Body permissions also guard hit counts and the fact of a hit.
+                        (if message-mode
+                          (progn
+                            (setq
+                              last-key
+                              (nativeGet group-record "session_key")
+                              group-record
+                              nil
+                              pending
+                              nil)
+                            (throw djLoop1Continue))
+                          (when (= (js-length fields) 1)
+                            (setq
+                              last-key
+                              (nativeGet group-record "session_key")
+                              group-record
+                              nil
+                              pending
+                              nil)
+                            (throw djLoop1Continue))))
+                      (unless pending (setq pending (newGroup group-record))))
+                    (when (= (nativeGet pending "stage") "metadata")
+                      (let ((djLoop2Break (js-object)))
+                        (try
+                          (while
+                            (and
+                              (< (nativeGet pending "field_index") (js-length fields))
+                              (< bytes (nativeGet limits "search_scan_bytes")))
+                            (let ((field (aref fields (nativeGet pending "field_index"))))
+                              (if (= field "message.text")
+                                (put
+                                  pending
+                                  :field_index
+                                  (1+ (nativeGet pending "field_index")))
+                                (let
+                                  (
+                                    (scan
+                                      (scanLiteral
+                                        (metadataField group-record field)
+                                        needle
+                                        (nativeGet pending "scan_offset_bytes")
+                                        (- (nativeGet limits "search_scan_bytes") bytes))))
+                                  (setq bytes (+ bytes (nativeGet scan "consumed_bytes")))
+                                  (put
+                                    pending
+                                    :scan_offset_bytes
+                                    (nativeGet scan "next_offset"))
+                                  (unless (nativeNullish (nativeGet scan "hit"))
+                                    (js-call (nativeGet pending "matched_fields") :push field)
+                                    (js-call
+                                      (nativeGet pending "snippet_refs")
+                                      :push
+                                      (js-object
+                                        :field
+                                        field
+                                        :offset_bytes
+                                        (nativeGet scan "hit"))))
+                                  (if (nativeGet scan "complete")
+                                    (progn
+                                      (put
+                                        pending
+                                        :field_index
+                                        (1+ (nativeGet pending "field_index")))
+                                      (put pending :scan_offset_bytes 0))
+                                    (throw djLoop2Break)))))
+                            (when (>= (nativeGet pending "field_index") (js-length fields))
+                              (put
+                                pending
+                                :stage
+                                (if
+                                  (and
+                                    content
+                                    (can context "session.read" group-record))
+                                  "messages"
+                                  "done"))))
+                          (catch djLoop2Error
+                            (unless (eq djLoop2Error djLoop2Break) (throw djLoop2Error)))))
+
+
+                      ;; A scalar that cannot fit the remaining budget resumes next time.
+                      )
+(when
+                        (and
+                          (= (nativeGet pending "stage") "messages")
+                          (< bytes (nativeGet limits "search_scan_bytes")))
+                        (let*
+                          (
+                            (messages
+                              (messageRows
+                                context
+                                (nativeGet group-record "session_key")
+                                (nativeGet snapshot "catalog_seq")
+                                (nativeGet pending "last_message_key")))
+                            (message-index 0)
+                            (stopped false))
+                          (let ((djLoop3Break (js-object)))
+                            (try
+                              (while
+                                (and
+                                  (< message-index (Math/min 32 (js-length messages)))
+                                  (< records (nativeGet limits "search_scan_records"))
+                                  (< bytes (nativeGet limits "search_scan_bytes"))
+                                  (< (js-length items) (nativeGet args "limit" 50)))
+                                (let*
+                                  ((metadata (aref messages message-index))
+                                    (range (nativeGet args "time_range"))
+                                    (eligible
+                                      (and
+                                        (>
+                                          (Date/parse (nativeGet metadata "expires_at"))
+                                          (Date/parse (utcNow context)))
+                                        (or
+                                          (not range)
+                                          (and
+                                            (nativeGet metadata "created_at")
+                                            (>=
+                                              (Date/parse (nativeGet metadata "created_at"))
+                                              (Date/parse (nativeGet range "from")))
+                                            (<
+                                              (Date/parse (nativeGet metadata "created_at"))
+                                              (Date/parse (nativeGet range "to"))))))))
+                                  (setq records (1+ records))
+                                  (when
+                                    (and
+                                      eligible
+                                      (indexedCandidate context metadata needle))
+                                    (let*
+                                      (
+                                        (message
+                                          (readVersion
+                                            context
+                                            "session_message"
+                                            (nativeGet metadata "message_key")
+                                            (nativeGet snapshot "catalog_seq")
+                                            (nativeGet metadata "content_version")))
+                                        (scan
+                                          (and
+                                            message
+                                            (scanLiteral
+                                              (nativeGet message "text" "")
+                                              needle
+                                              (nativeGet pending "scan_offset_bytes")
+                                              (- (nativeGet limits "search_scan_bytes") bytes)))))
+                                      (unless message
+                                        (progn
+                                          (setq
+                                            djReturn3Value
+                                            (failure "stale_reference"))
+                                          (throw djReturn3Token)))
+                                      (setq bytes (+ bytes (nativeGet scan "consumed_bytes")))
+                                      (put
+                                        pending
+                                        :scan_offset_bytes
+                                        (nativeGet scan "next_offset"))
+                                      (unless (nativeNullish (nativeGet scan "hit"))
+                                        (let
+                                          (
+                                            (description
+                                              (js-object
+                                                :field
+                                                "message.text"
+                                                :message_key
+                                                (nativeGet metadata "message_key")
+                                                :content_version
+                                                (nativeGet metadata "content_version")
+                                                :offset_bytes
+                                                (nativeGet scan "hit"))))
+                                          (if message-mode
+                                            (let
+                                              (
+                                                (projection
+                                                  (must
+                                                    (projectMessage
+                                                      context
+                                                      metadata
+                                                      (nativeGet snapshot "catalog_seq")))))
+                                              (put
+                                                projection
+                                                :matched_fields
+                                                (js-array "message.text"))
+                                              (put
+                                                projection
+                                                :snippets
+                                                (js-array
+                                                  (snippet
+                                                    context
+                                                    description
+                                                    group-record
+                                                    (nativeGet snapshot "catalog_seq"))))
+                                              (js-call items :push projection)
+                                              (js-call
+                                                keys
+                                                :push
+                                                (js-object
+                                                  :resource_key
+                                                  (nativeGet metadata "message_key")
+                                                  :content_version
+                                                  (nativeGet metadata "content_version"))))
+                                            (unless
+                                              (js-call
+                                                (nativeGet pending "matched_fields")
+                                                :includes
+                                                "message.text")
+                                              (js-call
+                                                (nativeGet pending "matched_fields")
+                                                :push
+                                                "message.text")
+                                              (js-call
+                                                (nativeGet pending "snippet_refs")
+                                                :push
+                                                description)))))
+                                      (unless (nativeGet scan "complete")
+                                        (setq stopped t)
+                                        (throw djLoop3Break))))
+                                  (put
+                                    pending
+                                    :last_message_key
+                                    (nativeGet metadata "message_key"))
+                                  (put pending :scan_offset_bytes 0)
+                                  (setq message-index (1+ message-index))))
+                              (catch djLoop3Error
+                                (unless (eq djLoop3Error djLoop3Break)
+                                  (throw djLoop3Error)))))
+                          (when
+                            (and (not stopped) (= message-index (js-length messages)))
+                            (put pending :stage "done"))))
+(when (= (nativeGet pending "stage") "done")
+                        (when
+                          (and
+                            (not message-mode)
+                            (> (js-length (nativeGet pending "matched_fields")) 0))
+                          (let
+                            ((projection (must (projectSession context group-record))))
+                            (put
+                              projection
+                              :matched_fields
+                              (nativeGet pending "matched_fields"))
+                            (put
+                              projection
+                              :snippets
+                              (js-call
+                                (nativeGet pending "snippet_refs")
+                                :map
+                                (lambda
+                                  (description)
+                                  (snippet
+                                    context
+                                    description
+                                    group-record
+                                    (nativeGet snapshot "catalog_seq")))))
+                            (when (nativeGet projection "stale") (setq stale t))
+                            (js-call items :push projection)
+                            (js-call
+                              keys
+                              :push
+                              (js-object :resource_key (nativeGet group-record "session_key")))))
+                        (setq
+                          last-key
+                          (nativeGet group-record "session_key")
+                          pending
+                          nil
+                          group-record
+                          nil))
+(when
+                        (and pending (< (- (nativeGet limits "search_scan_bytes") bytes) 4096))
+                        (throw djLoop1Break))
+
+                    (catch djLoop1Error
+                      (unless (eq djLoop1Error djLoop1Continue) (throw djLoop1Error)))))
+                (catch djLoop1Error
+                  (unless (eq djLoop1Error djLoop1Break) (throw djLoop1Error)))))
+(advanceSnapshot
+                      context
+                      snapshot
+                      (js-object
+                        :items
+                        items
+                        :result_keys
+                        keys
+                        :next_scan_key
+                        last-key
+                        :pending_group
+                        pending
+                        :complete
+                        (and finished (not pending))
+                        :sources
+                        (nativeGet (nativeGet coverage "data") "sources")
+                        :coverage_complete
+                        (and (nativeGet (nativeGet coverage "data") "coverage_complete") (not stale))
+                        :stale
+                        stale))))
+        (catch djReturn3Error
+          (if (eq djReturn3Error djReturn3Token) djReturn3Value (throw djReturn3Error))))))
+  (defasync handleOperation
+    (context operation args)
+    (if
+      (js-call (js-array "session.search" "session.message.search") :includes operation)
+      (searchLiteral context operation args)
+      (failure "invalid_argument")))
+  (export searchLiteral scanLiteral textDocumentId handleOperation))

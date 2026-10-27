@@ -1,0 +1,617 @@
+(module dj.service.core
+  (import "../core/native.eli" nativeGet)
+  (import "../core/errors.eli" success failure)
+  (import "node:path" resolve)
+  (import "../core/types.eli" hashValue)
+  (import "../application/context.eli" must nextId inTransaction)
+  (import "../application/execute.eli" executeOperation)
+  (import "../application/operations.eli" operationCatalog)
+  (import "../policy/principals.eli" authenticate)
+  (import "../policy/handles.eli" createHandleAuthority)
+  (import "../policy/registry.eli" reconcilePrincipals)
+  (import "../storage/sqlite.eli" openStore)
+  (import "../storage/repository.eli" createRepository)
+  (import "../registry/agents.eli" :as Registry)
+  (import "../subscriptions/service.eli" :as Subscriptions)
+  (import "../catalog/service.eli" :as Catalog)
+  (import "../catalog/search.eli" :as Search)
+  (import "../catalog/refresh.eli" :as Refresh)
+  (import "../lifecycle/service.eli" :as Lifecycle)
+  (import "../delivery/service.eli" :as Delivery)
+  (import "../messaging/service.eli" :as Messaging)
+  (import "../adapters/im/lark.eli" createLarkPort createReadLimiter)
+  (import "../adapters/im/lark-events.eli" createLarkEventPort)
+  (import "../adapters/im/telegram.eli" createTelegramPort)
+  (import "../adapters/agent/opencode-http.eli" createOpenCodePort)
+  (import "../adapters/agent/desktop.eli" createDesktopPort)
+  (import "../adapters/agent/pi-native.eli" createPiNativePort)
+  (import "../adapters/agent/antigravity.eli" createAntigravityPort)
+  (import "../adapters/agent/claude-inbox.eli" createClaudeInboxPort)
+  (import "./config.eli" prepareConfig)
+  (import "./ownership.eli" acquireOwner ownerGuard setOwnerState releaseOwner)
+  (import "./recovery.eli" seedConfiguration recoverState)
+  (import "./projections.eli" projectOperation serviceStatus visibleOperations)
+  (import "./runtime.eli" :as Runtime)
+  (defconst drainMutations
+    (js-array
+      "delivery.cancel"
+      "delivery.resolve"
+      "delivery.reconcile"
+      "outbound.cancel"
+      "outbound.resolve"
+      "outbound.reconcile"
+      "lifecycle.resolve"
+      "lifecycle.reconcile"
+      "subscription.pause"
+      "subscription.ack"
+      "subscription.delete"
+      "agent.unregister"
+      "instance.stop"))
+  (defun createCore
+    (host config)
+    ;; Construction has no filesystem, listener, subprocess or scheduling side
+    ;; effect. Only start acquires state and only tick runs configured work.
+    (let* ((ports (Object/assign (js-object) host))
+        (runtime
+          (js-object
+            :state
+            "new"
+            :active_store_ops
+            0
+            :jobs
+            (new globalThis.Map)
+            :cursors
+            (new globalThis.Map)
+            :routing_busy
+            (new globalThis.Set)
+            :catalog_sources
+            (new globalThis.Set)
+            :intake_abort
+            (new globalThis.AbortController)
+            :storage_blocked
+            false))
+        (base
+          (js-object
+            :config
+            config
+            :ports
+            ports
+            :runtime
+            runtime
+            :owner_token
+            nil
+            :store
+            nil
+            :repository
+            nil))
+        (core (js-object))
+        (start-promise nil)
+        (owner-acquired false)
+        (store-closed false)
+        (stop-promise nil)
+        (store-sealing false)
+        (store-call
+          (async
+            (work)
+            (if store-sealing
+              (failure "unavailable")
+              (progn
+                (put runtime :active_store_ops (1+ (nativeGet runtime "active_store_ops")))
+                (try
+                  (await (funcall work))
+                  (finally
+                    (put runtime :active_store_ops
+                      (- (nativeGet runtime "active_store_ops") 1))))))))
+        (static-fingerprint nil))
+(let ((configurationShape nil) (admission nil) (contextFor nil) (assemblePorts nil) (installHandlers nil) (startCore nil) (execute nil) (reloadConfig nil) (stopCore nil))
+
+      (progn
+
+        (put
+          ports
+          :agent_ports
+          (new
+            globalThis.Map
+            (if (nativeGet host "agent_ports")
+              (js-call (nativeGet host "agent_ports") :entries)
+              (js-array))))
+        (put
+          ports
+          :im_ports
+          (new
+            globalThis.Map
+            (if (nativeGet host "im_ports") (js-call (nativeGet host "im_ports") :entries) (js-array))))
+        (put runtime :lark_limiter (createReadLimiter (nativeGet ports "clock")))
+
+
+
+
+
+    )
+(setq configurationShape (lambda
+            (configuration)
+            (let ((copy (Object/assign (js-object) configuration)))
+              (Reflect/deleteProperty copy "principals")
+              (Reflect/deleteProperty copy "client_profiles")
+              (hashValue copy))))
+(setq admission (lambda
+            (descriptor &optional startup)
+            (let ((djReturn1Token (js-object)) (djReturn1Value nil))
+              (try
+                (let ((owned (ownerGuard base)))
+                  (unless (nativeGet owned "ok")
+                    (progn (setq djReturn1Value owned) (throw djReturn1Token))))
+                (let ((operation (nativeGet descriptor "operation")))
+                  (when
+                    (and
+                      (= (nativeGet runtime "state") "ready")
+                      (not (js-call drainMutations :includes operation)))
+                    (let ((capacity (js-call (nativeGet base "store") :admissionStatus)))
+                      (unless (nativeGet capacity "ok")
+                        (put runtime :storage_blocked t)
+                        (progn (setq djReturn1Value capacity) (throw djReturn1Token)))))
+                  (if
+                    (or
+                      (and
+                        (= (nativeGet runtime "state") "ready")
+                        (not (nativeGet runtime "storage_blocked")))
+                      (and
+                        (js-call
+                          (js-array "ready" "draining")
+                          :includes
+                          (nativeGet runtime "state"))
+                        (js-call drainMutations :includes operation))
+                      (and
+                        startup
+                        (= (nativeGet runtime "state") "recovering")
+                        (= operation "instance.start")))
+                    (success nil)
+                    (failure "unavailable")))
+                (catch djReturn1Error
+                  (if (eq djReturn1Error djReturn1Token)
+                    djReturn1Value
+                    (throw djReturn1Error)))))))
+(setq contextFor (lambda
+            (principal)
+            (Object/assign
+              (js-object)
+              base
+              (js-object
+                :principal
+                principal
+                :admissionGuard
+                (lambda (descriptor) (admission descriptor false))))))
+(setq assemblePorts (lambda
+            ()
+            (let* ((repository (nativeGet base "repository")) (agent-ports (nativeGet ports "agent_ports")) (im-ports (nativeGet ports "im_ports")) (endpoints
+                  (js-call
+                    (nativeGet config "agent_endpoints")
+                    :map
+                    (lambda
+                      (endpoint)
+                      (let ((instance
+                            (js-call
+                              repository
+                              :get
+                              "instances"
+                              (nativeGet endpoint "instance_id"))))
+                        (Object/assign
+                          (js-object)
+                          endpoint
+                          (js-object :instance_epoch (nativeGet instance "instance_epoch"))))))))
+              ;; Production Agent ports connect to existing receivers only.
+              ;; Process-owning protocol adapters are not assembled here.
+              (unless (js-call agent-ports :has "opencode")
+                (let ((selected (js-call endpoints :filter
+                                  (lambda (endpoint) (= (nativeGet endpoint "tool") "opencode")))))
+                  (when (> (js-length selected) 0)
+                    (js-call agent-ports :set "opencode"
+                      (createOpenCodePort (js-object :endpoints selected :profiles (js-array) :existing_only t) ports)))))
+              (unless (js-call agent-ports :has "pi")
+                (let ((selected (js-call endpoints :filter
+                                  (lambda (endpoint) (= (nativeGet endpoint "tool") "pi")))))
+                  (when (> (js-length selected) 0)
+                    (js-call agent-ports :set "pi"
+                      (createPiNativePort (js-object :endpoints selected) ports)))))
+              (js-call (js-array "claude" "antigravity") :forEach
+                (lambda (tool)
+                  (let ((selected (js-call endpoints :filter (lambda (endpoint) (= (nativeGet endpoint "tool") tool)))))
+                    (when (and (not (js-call agent-ports :has tool)) (> (js-length selected) 0))
+                      (js-call agent-ports :set tool
+                        (if (= tool "claude") (createClaudeInboxPort (js-object :endpoints selected) ports)
+                          (createAntigravityPort (js-object :endpoints selected) ports)))))))
+              (js-call (js-array "codex" "cursor") :forEach
+                (lambda (tool)
+                  (let ((selected (js-call endpoints :filter
+                                   (lambda (endpoint) (= (nativeGet endpoint "tool") tool)))))
+                    (when (and (not (js-call agent-ports :has tool)) (> (js-length selected) 0))
+                      (js-call agent-ports :set tool
+                        (createDesktopPort tool (js-object :endpoints selected) ports))))))
+              (js-call
+                (nativeGet config "connections")
+                :forEach
+                (lambda
+                  (connection)
+                  (unless (js-call im-ports :has (nativeGet connection "connection_id"))
+                    (js-call
+                      im-ports
+                      :set
+                      (nativeGet connection "connection_id")
+                      (if (= (nativeGet connection "platform") "lark")
+                        (if (= (nativeGet connection "source_delivery") "events") (createLarkEventPort connection ports) (createLarkPort connection ports))
+                        (createTelegramPort connection ports)))))))))
+(setq installHandlers (lambda
+            ()
+            (let ((handlers (new globalThis.Map)))
+              (js-call
+                (js-array
+                  (js-array "registry" Registry)
+                  (js-array "subscriptions" Subscriptions)
+                  (js-array "catalog" Catalog)
+                  (js-array "search" Search)
+                  (js-array "refresh" Refresh)
+                  (js-array "lifecycle" Lifecycle)
+                  (js-array "delivery" Delivery)
+                  (js-array "connections" Messaging)
+                  (js-array "im_catalog" Messaging)
+                  (js-array "messaging" Messaging))
+                :forEach
+                (lambda
+                  (entry)
+                  (js-call
+                    handlers
+                    :set
+                    (aref entry 0)
+                    (lambda
+                      (context operation args)
+                      (js-call (aref entry 1) :handleOperation context operation args)))))
+              (js-call
+                handlers
+                :set
+                "service"
+                (lambda (context operation args) (serviceStatus context)))
+              (put base :handlers handlers)
+              (put
+                base
+                :projectOperation
+                (lambda (principal record) (projectOperation base principal record))))))
+(setq startCore (async
+            ()
+            (let ((djReturn2Token (js-object)) (djReturn2Value nil))
+              (try
+                (put runtime :state "starting")
+                (try
+                  (put runtime :startup_stage "prepare_config")
+(let ((prepared (await (prepareConfig config ports))))
+                    (unless (nativeGet prepared "ok")
+                      (put runtime :state "failed")
+                      (progn (setq djReturn2Value prepared) (throw djReturn2Token))))
+                  (setq static-fingerprint (configurationShape config))
+                  (put runtime :startup_stage "open_store")
+(let ((opened (openStore (nativeGet config "storage"))))
+                    (unless (nativeGet opened "ok")
+                      (put runtime :state "failed")
+                      (progn (setq djReturn2Value opened) (throw djReturn2Token)))
+                    (put base :store (nativeGet opened "data"))
+                    (put base :repository (createRepository (nativeGet base "store"))))
+                  (put base :owner_token (nextId base "owner"))
+                  (put runtime :startup_stage "acquire_owner")
+(let ((ownership (await (acquireOwner base))))
+                    (unless (nativeGet ownership "ok")
+                      (js-call (nativeGet base "store") :close)
+                      (setq store-closed t)
+                      (put runtime :state "failed")
+                      (progn (setq djReturn2Value ownership) (throw djReturn2Token))))
+                  (setq owner-acquired t)
+                  (put runtime :state "recovering")
+                  (let* ((store (nativeGet base "store")) (transaction (nativeGet store "transaction")))
+                    ;; Every later writer rechecks the owner inside the same SQLite
+                    ;; transaction, including work resumed after an asynchronous call.
+                    (put
+                      store
+                      :transaction
+                      (lambda
+                        (expected mutate)
+                        (funcall
+                          transaction
+                          expected
+                          (lambda
+                            (tx)
+                            (let ((djReturn3Token (js-object)) (djReturn3Value nil))
+                              (try
+                                (let ((owned (ownerGuard base)))
+                                  (unless (nativeGet owned "ok")
+                                    (progn
+                                      (setq djReturn3Value owned)
+                                      (throw djReturn3Token)))
+                                  (funcall mutate tx))
+                                (catch djReturn3Error
+                                  (if (eq djReturn3Error djReturn3Token)
+                                    djReturn3Value
+                                    (throw djReturn3Error))))))))))
+                  (put
+                    base
+                    :handles
+                    (createHandleAuthority
+                      (js-object :records (nativeGet (nativeGet base "repository") "handleRecords"))))
+                  (put runtime :startup_stage "seed_configuration")
+(must (seedConfiguration base))
+                  (assemblePorts)
+                  (installHandlers)
+                  (let ((unique (new globalThis.Set)))
+                    (js-call
+                      (nativeGet ports "agent_ports")
+                      :forEach
+                      (lambda (port) (js-call unique :add port)))
+                    (js-call
+                      unique
+                      :forEach
+                      (lambda
+                        (port)
+                        (when (nativeGet port "initialize") (js-call port :initialize base)))))
+                  (put runtime :startup_stage "recover_state")
+(must (await (recoverState base)))
+                  (js-call
+                    (nativeGet ports "im_ports")
+                    :forEach
+                    (lambda
+                      (port)
+                      (when (nativeGet port "initialize") (js-call port :initialize base))))
+                  ;; Client launch is separate from messaging; no argv-based Agent auto-start.
+                  (put runtime :startup_stage "publish_ready")
+(must (setOwnerState base "ready"))
+                  (put runtime :state "ready")
+                  (success
+                    (js-object
+                      :state
+                      "ready"
+                      :service_id
+                      (nativeGet (nativeGet config "service") "service_id")))
+                  (catch unavailable
+                    (when (eq unavailable djReturn2Token) (throw unavailable))
+                    (put runtime :state "failed")
+                    ;; No lifecycle scheduler has run during start. Do not close
+                    ;; injected Agent ports that may belong to the embedding host.
+                    (when (and owner-acquired (not store-closed))
+                      (try
+                        (releaseOwner base)
+                        (catch ignored
+                          (when (eq ignored djReturn2Token) (throw ignored))
+                          nil)))
+                    (when (and (nativeGet base "store") (not store-closed))
+                      (js-call (nativeGet base "store") :close)
+                      (setq store-closed t))
+                    (or (nativeGet unavailable "domain_result") (failure "unavailable"))))
+                (catch djReturn2Error
+                  (if (eq djReturn2Error djReturn2Token)
+                    djReturn2Value
+                    (throw djReturn2Error)))))))
+(setq execute (async
+          (principal operation args)
+          (let ((djReturn4Token (js-object)) (djReturn4Value nil))
+            (try
+              (unless
+                (and
+                  (not store-closed)
+                  owner-acquired
+                  (js-call (js-array "ready" "draining") :includes (nativeGet runtime "state")))
+                (progn
+                  (setq djReturn4Value (failure "unavailable"))
+                  (throw djReturn4Token)))
+              (let ((owned (ownerGuard base)))
+                (unless (nativeGet owned "ok")
+                  (put runtime :state "owner_lost")
+                  (progn (setq djReturn4Value owned) (throw djReturn4Token))))
+              (await (executeOperation (contextFor principal) operation args))
+              (catch djReturn4Error
+                (if (eq djReturn4Error djReturn4Token)
+                  djReturn4Value
+                  (throw djReturn4Error)))))))
+(setq reloadConfig (async
+          (candidate)
+          (let ((djReturn5Token (js-object)) (djReturn5Value nil))
+            (try
+              (unless
+                (and
+                  owner-acquired
+                  (not store-closed)
+                  (js-call (js-array "ready" "draining") :includes (nativeGet runtime "state")))
+                (progn
+                  (setq djReturn5Value (failure "unavailable"))
+                  (throw djReturn5Token)))
+              (try
+                ;; Only policy/client-profile replacement is supported in place.
+                ;; Endpoints, storage, IM identities and process profiles retain their
+                ;; existing ownership and gates until a separately managed restart.
+                (let ((root (nativeGet candidate "config_root" (nativeGet config "config_root"))))
+                  (unless
+                    (and
+                      (= (resolve root) (nativeGet config "config_root"))
+                      (=
+                        (nativeGet (nativeGet candidate "service") "service_id")
+                        (nativeGet (nativeGet config "service") "service_id"))
+                      (=
+                        (resolve
+                          root
+                          (nativeGet (nativeGet candidate "service") "socket" "run/dj.sock"))
+                        (nativeGet (nativeGet config "service") "socket"))
+                      (=
+                        (resolve
+                          root
+                          (nativeGet (nativeGet candidate "storage") "database" "state/dj.sqlite"))
+                        (nativeGet (nativeGet config "storage") "database")))
+                    (progn
+                      (setq djReturn5Value (failure "incompatible"))
+                      (throw djReturn5Token))))
+                (let ((prepared (await (prepareConfig candidate ports))))
+                  (unless (nativeGet prepared "ok")
+                    (progn (setq djReturn5Value prepared) (throw djReturn5Token))))
+                (unless (= (configurationShape candidate) static-fingerprint)
+                  (progn
+                    (setq djReturn5Value (failure "incompatible"))
+                    (throw djReturn5Token)))
+                (let ((recorded
+                      (inTransaction
+                        base
+                        (lambda
+                          (tx)
+                          (must (ownerGuard base))
+                          (reconcilePrincipals base (nativeGet candidate "principals"))))))
+                  (unless (nativeGet recorded "ok")
+                    (progn (setq djReturn5Value recorded) (throw djReturn5Token)))
+                  (put config :principals (nativeGet candidate "principals"))
+                  (put config :client_profiles (nativeGet candidate "client_profiles"))
+                  (success
+                    (js-object
+                      :state
+                      "reloaded"
+                      :principals
+                      (js-length (nativeGet config "principals")))))
+                (catch invalid
+                  (when (eq invalid djReturn5Token) (throw invalid))
+                  (or (nativeGet invalid "domain_result") (failure "invalid_argument"))))
+
+              (catch djReturn5Error
+                (if (eq djReturn5Error djReturn5Token)
+                  djReturn5Value
+                  (throw djReturn5Error)))))))
+(setq stopCore (async
+                    (reason deadline)
+                    (let ((djReturn6Token (js-object)) (djReturn6Value nil))
+                      (try
+                        (when (or store-closed (not owner-acquired))
+                          (put runtime :state "stopped")
+                          (progn
+                            (setq djReturn6Value (success (js-object :state "stopped")))
+                            (throw djReturn6Token)))
+                        (let ((result (await (Runtime/drain base reason deadline))))
+                          (unless
+                            (and
+                              (nativeGet result "ok")
+                              (= (nativeGet (nativeGet result "data") "state") "stopped"))
+                            (progn (setq djReturn6Value result) (throw djReturn6Token)))
+                          ;; Drain can yield in native I/O. Seal only a fresh quiescent state.
+                          (when (or (> (nativeGet runtime "active_store_ops") 0)
+                            (> (nativeGet (nativeGet runtime "jobs") "size") 0)
+                            (> (nativeGet (nativeGet result "data") "pending_native_work" 0) 0))
+                            (setq djReturn6Value (success
+                              (Object/assign (js-object) (nativeGet result "data")
+                                (js-object :state "draining"))))
+                            (throw djReturn6Token))
+                          (setq store-sealing t)
+                          (try
+                          (let ((unique (new globalThis.Set)) (iterator nil) (done false))
+                            (js-call
+                              (nativeGet ports "im_ports")
+                              :forEach
+                              (lambda (port) (js-call unique :add port)))
+                            (js-call
+                              (nativeGet ports "agent_ports")
+                              :forEach
+                              (lambda (port) (js-call unique :add port)))
+                            (setq iterator (js-call unique :values))
+                            (while (not done)
+                              (let ((next (js-call iterator :next)))
+                                (setq done (nativeGet next "done"))
+                                (unless done
+                                  (let ((port (nativeGet next "value")))
+                                    (when (nativeGet port "close")
+                                      (let ((closed (await (js-call port :close))))
+                                        (when (= (nativeGet closed "state") "draining")
+                                          (progn
+                                            (setq
+                                              djReturn6Value
+                                              (success
+                                                (js-object
+                                                  :state
+                                                  "draining"
+                                                  :deadline_reached
+                                                  t)))
+                                            (throw djReturn6Token)))))))))
+                            (must (releaseOwner base))
+                            (setq owner-acquired false)
+                            (js-call (nativeGet base "store") :close)
+                            (setq store-closed t)
+                            (put runtime :state "stopped")
+                            result)
+                            (finally
+                              (unless store-closed (setq store-sealing false)))))
+                        (catch djReturn6Error
+                          (if (eq djReturn6Error djReturn6Token)
+                            djReturn6Value
+                            (throw djReturn6Error)))))))
+(Object/assign
+                  core
+                  (js-object
+                    :start
+                    (lambda
+                      ()
+                      (unless start-promise (setq start-promise
+ (js-call (startCore) :then
+  (lambda (result)
+   (unless (nativeGet result "ok")
+    (try
+     (js-call (nativeGet ports "audit") :record
+      (js-object :code "service_start_failed" :state (nativeGet runtime "startup_stage" "unknown")))
+     (catch diagnostic-unavailable nil)))
+   result))))
+                      start-promise)
+                    :execute
+                    (lambda (principal operation args)
+                      (funcall store-call (lambda () (funcall execute principal operation args))))
+                    :reloadConfig
+                    (lambda (candidate)
+                      (funcall store-call (lambda () (funcall reloadConfig candidate))))
+                    :authenticate
+                    (lambda
+                      (credential)
+                      (authenticate credential (nativeGet config "principals" (js-array))))
+                    :describeOperations
+                    (lambda (principal) (visibleOperations principal))
+                    :transportState
+                    (lambda () (nativeGet runtime "state"))
+                    :tick
+                    (lambda
+                      ()
+                      (funcall store-call
+                        (lambda ()
+                          (if (and owner-acquired (not store-closed))
+                            (Runtime/tick base)
+                            (Promise/resolve (failure "unavailable"))))))
+                    :ingest
+                    (lambda
+                      (event)
+                      (funcall store-call
+                      (async
+                        ()
+                      (let ((djReturn7Token (js-object)) (djReturn7Value nil))
+                        (try
+                          (unless
+                            (and
+                              owner-acquired
+                              (not store-closed)
+                              (= (nativeGet runtime "state") "ready")
+                              (not (nativeGet runtime "storage_blocked")))
+                            (progn
+                              (setq djReturn7Value (failure "unavailable"))
+                              (throw djReturn7Token)))
+                          (await
+                            (Runtime/commitIngress
+                              base
+                              event
+                              (nativeGet event "source_cursor" nil)))
+                          (catch djReturn7Error
+                            (if (eq djReturn7Error djReturn7Token)
+                              djReturn7Value
+                              (throw djReturn7Error))))))))
+                    :stop
+                    (lambda
+                      (reason deadline)
+                      (unless stop-promise
+                        (setq stop-promise (js-call
+                          (stopCore reason deadline)
+                          :finally
+                          (lambda () (setq stop-promise nil)))))
+                      stop-promise)))
+core)))
+  (export createCore drainMutations))

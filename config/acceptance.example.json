@@ -1,0 +1,214 @@
+{
+  "schema_version": 1,
+  "authorized_test_resources": false,
+  "dj_client_profile": "clients/operator.json",
+  "no_im_client_profile": "clients/no-im.json",
+  "sources": {
+    "lark": {
+      "authorized": false,
+      "connection_id": "replace-authorized-connection",
+      "chat_id": "replace-authorized-chat",
+      "thread_id": "replace-authorized-topic"
+    },
+    "telegram": {
+      "authorized": false,
+      "connection_id": "replace-authorized-connection",
+      "chat_id": "replace-authorized-chat",
+      "thread_id": "replace-authorized-topic"
+    }
+  },
+  "targets": {
+    "opencode": {
+      "authorized": false,
+      "allow_model_work": false,
+      "session_key": "replace-stable-session-key",
+      "native_session_id": "replace-native-id"
+    },
+    "pi": {
+      "authorized": false,
+      "allow_model_work": false,
+      "session_key": "replace-stable-session-key",
+      "native_session_id": "replace-native-id"
+    }
+  },
+  "controls": {
+    "opencode_instance_id": "replace-existing-instance",
+    "owned_instance_id": "replace-dedicated-managed-instance",
+    "pi_profile_id": "replace-dedicated-resume-profile",
+    "workspace_ref": "replace-authorized-workspace",
+    "allow_service_stop": false
+  },
+  "drivers": {
+    "busy-target": {
+      "authorized": false,
+      "kind": "test-controller",
+      "safe_to_terminate": true,
+      "entry_ref": "controllers/authorized-controller.mjs",
+      "entry_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "argv": [
+        "REPLACE_WITH_TEST_BUN_EXECUTABLE",
+        "controllers/authorized-controller.mjs"
+      ]
+    },
+    "release-target": {
+      "authorized": false,
+      "kind": "test-controller",
+      "safe_to_terminate": true,
+      "entry_ref": "controllers/authorized-controller.mjs",
+      "entry_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "argv": [
+        "REPLACE_WITH_TEST_BUN_EXECUTABLE",
+        "controllers/authorized-controller.mjs"
+      ]
+    },
+    "stimulus-lark": {
+      "authorized": false,
+      "kind": "test-controller",
+      "safe_to_terminate": true,
+      "entry_ref": "controllers/tools/lark-acceptance-controller.mjs",
+      "entry_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "argv": [
+        "REPLACE_WITH_TEST_BUN_EXECUTABLE",
+        "controllers/tools/lark-acceptance-controller.mjs",
+        "lark-acceptance.binding.json"
+      ]
+    },
+    "stimulus-telegram": {
+      "authorized": false,
+      "kind": "test-controller",
+      "safe_to_terminate": true,
+      "entry_ref": "controllers/authorized-controller.mjs",
+      "entry_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "argv": [
+        "REPLACE_WITH_TEST_BUN_EXECUTABLE",
+        "controllers/authorized-controller.mjs"
+      ]
+    },
+    "observe-reply-lark": {
+      "authorized": false,
+      "kind": "test-controller",
+      "safe_to_terminate": true,
+      "entry_ref": "controllers/tools/lark-acceptance-controller.mjs",
+      "entry_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "argv": [
+        "REPLACE_WITH_TEST_BUN_EXECUTABLE",
+        "controllers/tools/lark-acceptance-controller.mjs",
+        "lark-acceptance.binding.json"
+      ]
+    },
+    "observe-reply-telegram": {
+      "authorized": false,
+      "kind": "test-controller",
+      "safe_to_terminate": true,
+      "entry_ref": "controllers/authorized-controller.mjs",
+      "entry_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "argv": [
+        "REPLACE_WITH_TEST_BUN_EXECUTABLE",
+        "controllers/authorized-controller.mjs"
+      ]
+    },
+    "observe-native-start": {
+      "authorized": false,
+      "kind": "test-controller",
+      "safe_to_terminate": true,
+      "entry_ref": "controllers/tools/native-observer-controller.mjs",
+      "entry_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "argv": [
+        "REPLACE_WITH_TEST_BUN_EXECUTABLE",
+        "controllers/tools/native-observer-controller.mjs",
+        "native-observer.binding.json"
+      ]
+    },
+    "observe-empty-opencode": {
+      "authorized": false,
+      "kind": "test-controller",
+      "safe_to_terminate": true,
+      "entry_ref": "controllers/tools/opencode-observer-controller.mjs",
+      "entry_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "argv": [
+        "REPLACE_WITH_TEST_BUN_EXECUTABLE",
+        "controllers/tools/opencode-observer-controller.mjs",
+        "opencode-observer.binding.json"
+      ]
+    },
+    "observe-direct-input": {
+      "authorized": false,
+      "kind": "test-controller",
+      "safe_to_terminate": true,
+      "entry_ref": "controllers/tools/native-observer-controller.mjs",
+      "entry_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "argv": [
+        "REPLACE_WITH_TEST_BUN_EXECUTABLE",
+        "controllers/tools/native-observer-controller.mjs",
+        "native-observer.binding.json"
+      ]
+    },
+    "stop-dj-with-active-target": {
+      "authorized": false,
+      "kind": "test-controller",
+      "safe_to_terminate": true,
+      "entry_ref": "controllers/authorized-controller.mjs",
+      "entry_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "argv": [
+        "REPLACE_WITH_TEST_BUN_EXECUTABLE",
+        "controllers/authorized-controller.mjs"
+      ]
+    },
+    "observe-skill-adoption": {
+      "authorized": false,
+      "kind": "test-controller",
+      "safe_to_terminate": true,
+      "entry_ref": "controllers/authorized-controller.mjs",
+      "entry_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "argv": [
+        "REPLACE_WITH_TEST_BUN_EXECUTABLE",
+        "controllers/authorized-controller.mjs"
+      ]
+    },
+    "observe-reply-key-recovery": {
+      "authorized": false,
+      "kind": "test-controller",
+      "safe_to_terminate": true,
+      "entry_ref": "controllers/authorized-controller.mjs",
+      "entry_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "argv": [
+        "REPLACE_WITH_TEST_BUN_EXECUTABLE",
+        "controllers/authorized-controller.mjs"
+      ]
+    },
+    "create-and-wire-recipient": {
+      "authorized": false,
+      "kind": "test-controller",
+      "safe_to_terminate": true,
+      "entry_ref": "controllers/authorized-controller.mjs",
+      "entry_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "argv": [
+        "REPLACE_WITH_TEST_BUN_EXECUTABLE",
+        "controllers/authorized-controller.mjs"
+      ]
+    },
+    "run-without-reply": {
+      "authorized": false,
+      "kind": "test-controller",
+      "safe_to_terminate": true,
+      "entry_ref": "controllers/authorized-controller.mjs",
+      "entry_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "argv": [
+        "REPLACE_WITH_TEST_BUN_EXECUTABLE",
+        "controllers/authorized-controller.mjs"
+      ]
+    },
+    "measure-owned-deployment": {
+      "authorized": false,
+      "kind": "test-controller",
+      "safe_to_terminate": true,
+      "entry_ref": "controllers/tools/resource-controller.mjs",
+      "entry_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "argv": [
+        "REPLACE_WITH_TEST_BUN_EXECUTABLE",
+        "controllers/tools/resource-controller.mjs",
+        "resources.binding.json"
+      ]
+    }
+  }
+}

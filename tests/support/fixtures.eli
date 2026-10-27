@@ -1,0 +1,771 @@
+(module dj.tests.support.fixtures
+  (import "../../src/core/native.eli" nativeGet nativeTypeOf nativeNullish)
+  (import "node:fs/promises" mkdir rm readFile writeFile appendFile)
+  (import "node:path" resolve)
+  (import "node:crypto" randomUUID randomBytes createHash)
+  (import "../../src/library.eli" createCore)
+  (import "../../src/host/bun/io.eli" createHostPorts)
+  (import "./faults.eli" createFaults)
+  (defun successful
+    (value)
+    (unless (= (nativeGet value "ok") t)
+      (throw
+        (new
+          globalThis.Error
+          (str
+            "Expected success; code="
+            (nativeGet (nativeGet value "error" (js-object)) "code" "missing")
+            "; type=" (nativeTypeOf value)
+            "; keys=" (JSON/stringify (if (nativeNullish value) (js-array) (Object/keys value)))))))
+    (nativeGet value "data"))
+  (defun principal
+    (id kind grants)
+    (js-object :principal_id id :kind kind :authorization_revision 1 :grants grants))
+  (defun grant (action &rest resources) (js-object :action action :resources resources))
+  (defun createClock
+    ()
+    (let ((utc-ms (Date/parse "2026-01-01T00:00:00.000Z")) (mono-ms 0))
+      (js-object
+        :utcNow
+        (lambda () (js-call (new globalThis.Date utc-ms) :toISOString))
+        :monoNow
+        (lambda () mono-ms)
+        :advance
+        (lambda
+          (milliseconds)
+          (setq utc-ms (+ utc-ms milliseconds) mono-ms (+ mono-ms milliseconds)))
+        :setUtc
+        (lambda (value) (setq utc-ms (Date/parse value))))))
+  (defun nativeSession
+    (tool namespace id instance epoch title)
+    (js-object
+      :tool
+      tool
+      :native_namespace
+      namespace
+      :native_session_id
+      id
+      :instance_id
+      instance
+      :instance_epoch
+      epoch
+      :title
+      title
+      :workspace_ref
+      "ws-test"
+      :workspace_label
+      "isolated"
+      :visibility
+      (js-array "live" "managed")
+      :runtime_state
+      "idle"
+      :live_receiver
+      t
+      :updated_at
+      "2026-01-01T00:00:00.000Z"))
+  (defun createAgentPeer
+    (tool sessions)
+    (let
+      ((inputs (js-array))
+        (creates (js-array))
+        (starts (js-array))
+        (stops (js-array))
+        (messages (new globalThis.Map))
+        (observations (js-array))
+        (launches (new globalThis.Map))
+        (behavior
+          (js-object :submit "accepted" :start "ready" :stop "stopped" :inspect "ready")))
+      (js-object
+        :tool
+        tool
+        :sessions
+        sessions
+        :inputs
+        inputs
+        :creates
+        creates
+        :starts
+        starts
+        :stops
+        stops
+        :messages
+        messages
+        :observations
+        observations
+        :behavior
+        behavior
+        :capabilities
+        (js-object
+          :native_idempotency
+          "unknown"
+          :lookup_send
+          "unsupported"
+          :session_create
+          (if (= tool "pi") "unsupported" "supported"))
+        :discover
+        (async
+          (scope page context)
+          (js-object :items sessions :next_cursor nil :complete t))
+        :listSessions
+        (async
+          (scope cursor budget context)
+          (js-object :items sessions :next_cursor nil :complete t :coverage "covered"))
+        :readMessages
+        (async
+          (session cursor budget context)
+          (js-object
+            :items
+            (or (js-call messages :get (nativeGet session "native_session_id")) (js-array))
+            :next_cursor
+            nil
+            :complete
+            t))
+        :probe
+        (async
+          (target binding context)
+          (let
+            (
+              (item
+                (js-call
+                  sessions
+                  :find
+                  (lambda
+                    (x)
+                    (= (nativeGet x "native_session_id") (nativeGet target "native_session_id"))))))
+            (if item
+              (Object/assign (js-object :ok t) item)
+              (js-object :ok false :state "offline" :definite_not_sent t))))
+        :submit
+        (async
+          (binding envelope mode key context)
+          (js-call
+            inputs
+            :push
+            (js-object :binding binding :envelope envelope :mode mode :key key))
+          (cond
+            ((= (nativeGet behavior "submit") "throw")
+              (throw (new globalThis.Error "controlled transport loss")))
+            ((= (nativeGet behavior "submit") "definite_not_sent")
+              (js-object :state "failed" :definite_not_sent t :retryable t))
+            (t
+              (js-object
+                :state
+                "accepted"
+                :kind
+                "accepted"
+                :evidence_level
+                "native_protocol"
+                :native_ref
+                (str "native-input-" (js-length inputs))))))
+        :observe
+        (async
+          (binding ref cursor budget context)
+          (js-object
+            :items
+            (js-call observations :splice 0)
+            :next_cursor
+            nil
+            :complete
+            t))
+        :lookup
+        (async
+          (binding key ref context)
+          (js-object :status "unsupported" :state "unknown"))
+        :start
+        (async
+          (profile token context)
+          (js-call starts :push (js-object :profile profile :launch_token token))
+          (when (aref sessions 0)
+            (Object/assign (aref sessions 0)
+              (js-object :instance_id (nativeGet profile "instance_id")
+                :instance_epoch (nativeGet profile "instance_epoch"))))
+          (js-call launches :set token (nativeGet profile "profile_id"))
+          (when (= (nativeGet behavior "start") "throw_after")
+            (throw (new globalThis.Error "lost native start response")))
+          (js-object
+            :state
+            "ready"
+            :ownership
+            "managed"
+            :launch_token
+            token
+            :native_instance_id
+            (str tool "-test-instance")
+            :initial_session
+            (aref sessions 0)))
+        :create
+        (async
+          (instance workspace key context)
+          (if (= tool "pi")
+            (js-object :ok false :error (js-object :code "unsupported"))
+            (let
+              (
+                (session
+                  (nativeSession
+                    tool
+                    "ns-opencode"
+                    (str "created-" (js-length creates))
+                    (nativeGet instance "instance_id")
+                    (nativeGet instance "instance_epoch")
+                    "empty")))
+              (js-call creates :push session)
+              (js-call sessions :push session)
+              (when (= (nativeGet behavior "create") "throw_after")
+                (throw (new globalThis.Error "lost native create response")))
+              (js-object :state "ready" :session session))))
+        :inspectInstance
+        (async
+          (instance token context)
+          (cond
+            ((= (nativeGet behavior "inspect") "unknown")
+              (js-object :state "unknown" :absence_verified false))
+            ((= (nativeGet behavior "inspect") "absent")
+              (js-object
+                :state
+                "stopped"
+                :absence_verified
+                t
+                :evidence_level
+                "native_protocol"))
+            ((js-call launches :has token)
+              (js-object
+                :state
+                "ready"
+                :launch_token
+                token
+                :ownership
+                "managed"
+                :initial_session
+                (aref sessions 0)
+                :absence_verified
+                false
+                :evidence_level
+                "native_protocol"))
+            (t (js-object :state "unknown" :absence_verified false))))
+        :lookupCreate
+        (async
+          (instance key ref context)
+          (js-object :status "unsupported" :state "unknown"))
+        :stop
+        (async
+          (instance budget context)
+          (js-call stops :push instance)
+          (if (= (nativeGet behavior "stop") "stopped")
+            (js-object :state "stopped" :absence_verified t)
+            (js-object :state "draining" :absence_verified false :deadline_reached t))))))
+  (defun createImPeer
+    (id)
+    (let
+      ((sent (js-array))
+        (incoming (js-array))
+        (acks (js-array))
+        (behavior (js-object :send "accepted")))
+      (js-object
+        :id
+        id
+        :sent
+        sent
+        :incoming
+        incoming
+        :acks
+        acks
+        :behavior
+        behavior
+        :capabilities
+        (js-object
+          :receive_events
+          "supported"
+          :send
+          "supported"
+          :reply_thread
+          "supported"
+          :ack_control
+          (= id "telegram")
+          :replay
+          (if (= id "telegram") "bounded" "bounded_history"))
+        :receive
+        (async
+          (connection cursor budget context)
+          (js-object
+            :items
+            (js-call incoming :splice 0)
+            :cursor
+            cursor
+            :gap_status
+            "possible"))
+        :ack
+        (async (receipt context) (js-call acks :push receipt) (js-object :ok t))
+        :resolveConversation
+        (async
+          (address context application)
+          (js-object
+            :ok
+            t
+            :address
+            address
+            :evidence_level
+            "native_protocol"
+            :coverage
+            "controlled_peer"))
+        :send
+        (async
+          (outbound key context)
+          (js-call sent :push (js-object :outbound outbound :key key))
+          (when (= (nativeGet behavior "send") "throw")
+            (throw (new globalThis.Error "controlled reply loss")))
+          (js-object
+            :state
+            "accepted"
+            :native_message_id
+            (str id "-reply-" (js-length sent))
+            :evidence_level
+            "native_protocol"))
+        :lookup
+        (async (outbound context) (js-object :state "unknown" :status "unsupported")))))
+  (defasync createFixture
+    (case-id worker-id &optional options)
+    (let*
+      (
+        (directory
+          (or
+            (nativeGet options "root")
+            (resolve ".local/tests" (str case-id "-" worker-id "-" (randomUUID)))))
+        (clock (createClock))
+        (faults (createFaults))
+        (oc-sessions
+          (js-array
+            (nativeSession "opencode" "ns-opencode" "s1" "oc-existing" "epoch-1" "same")
+            (nativeSession "opencode" "ns-opencode" "s2" "oc-existing" "epoch-1" "same")))
+        (pi-sessions
+          (js-array (nativeSession "pi" "ns-pi" "s1" "pi-managed" "epoch-1" "same")))
+        (opencode (createAgentPeer "opencode" oc-sessions))
+        (pi (createAgentPeer "pi" pi-sessions))
+        (lark (createImPeer "lark"))
+        (telegram (createImPeer "telegram"))
+        (operator (principal "O" "operator" (js-array (grant "*" "*"))))
+        (sender
+          (principal
+            "S"
+            "agent"
+            (js-array
+              (grant "session.send" "*")
+              (grant "session.list" "*")
+              (grant "session.inspect" "*")
+              (grant "session.read" "*")
+              (grant "session.search" "*")
+              (grant "catalog.refresh" "*")
+              (grant "operation.inspect" "self")
+              (grant "delivery.inspect" "self")
+              (grant "delivery.manage" "self"))))
+        (recipient
+          (principal
+            "A"
+            "agent"
+            (js-array
+              (grant "agent.discover" "*")
+              (grant "agent.bind" "*")
+              (grant "subscription.manage" "self")
+              (grant "connection.inspect" "*")
+              (grant "conversation.discover" "*")
+              (grant "message.read" "*")
+              (grant "message.search" "*")
+              (grant "message.reply" "*")
+              (grant "operation.inspect" "self")
+              (grant "delivery.inspect" "self")
+              (grant "outbound.inspect" "self")
+              (grant "outbound.manage" "self"))))
+        (recipient-b
+          (principal "B" "agent" (JSON/parse (JSON/stringify (nativeGet recipient "grants")))))
+        (stranger (principal "X" "agent" (js-array)))
+        (credentials (js-object))
+        (config
+          (js-object
+            :schema_version
+            1
+            :config_root
+            directory
+            :service
+            (js-object :service_id (str "dj-test-" case-id) :socket "run/dj.sock")
+            :storage
+            (js-object
+              :database
+              "state/dj.sqlite"
+              :journal_mode
+              "WAL"
+              :synchronous
+              "FULL"
+              :foreign_keys
+              t
+              :busy_timeout
+              0)
+            :principals
+            (js-array operator sender recipient recipient-b stranger)
+            :connections
+            (js-array
+              (js-object
+                :connection_id
+                "lark"
+                :platform
+                "lark"
+                :brand
+                "lark"
+                :identity
+                "user"
+                :source_delivery
+                "poll"
+                :user_identity
+                (js-object :app_id "cli_test" :open_id "ou_user")
+                :credential_ref
+                "test:lark"
+                :watches
+                (js-array
+                  (js-object :chat_id "c1")
+                  (js-object :chat_id "c1" :thread_id "t1")))
+              (js-object
+                :connection_id
+                "telegram"
+                :platform
+                "telegram"
+                :identity
+                "bot"
+                :credential_ref
+                "test:telegram"
+                :allowed_chats
+                (js-array "c1")))
+            :agent_endpoints
+            (js-array
+              (js-object
+                :tool
+                "opencode"
+                :instance_id
+                "oc-existing"
+                :native_namespace
+                "ns-opencode"
+                :ownership
+                "existing"
+                :endpoint_ref
+                "test:opencode"
+                :workspace_refs
+                (js-array "ws-test")))
+            :managed_profiles
+            (js-array
+              (js-object
+                :profile_id
+                "pi-profile"
+                :tool
+                "pi"
+                :revision
+                1
+                :auto_start
+                false
+                :workspace_refs
+                (js-array "ws-test")
+                :argv
+                (js-array "owned-test-peer"))
+              (js-object
+                :profile_id
+                "oc-profile"
+                :tool
+                "opencode"
+                :revision
+                1
+                :auto_start
+                false
+                :workspace_refs
+                (js-array "ws-test")
+                :argv
+                (js-array "owned-test-peer")))
+            :client_profiles
+            (js-array)))
+        (host (createHostPorts (js-object :root directory)))
+        (ports
+          (Object/assign
+            (js-object)
+            host
+            (js-object
+              :clock
+              clock
+              :faults
+              faults
+              :agent_ports
+              (new
+                globalThis.Map
+                (js-array (js-array "opencode" opencode) (js-array "pi" pi)))
+              :im_ports
+              (new
+                globalThis.Map
+                (js-array (js-array "lark" lark) (js-array "telegram" telegram)))))))
+      (put
+        recipient
+        :target_constraint
+        (js-object
+          :tool
+          "opencode"
+          :native_namespace
+          "ns-opencode"
+          :native_session_id
+          "s1"))
+      (put
+        recipient-b
+        :target_constraint
+        (js-object :tool "pi" :native_namespace "ns-pi" :native_session_id "s1"))
+      (await (mkdir (resolve directory "state") (js-object :recursive t :mode 448)))
+      (await (mkdir (resolve directory "run") (js-object :recursive t :mode 448)))
+      (when (nativeGet options "configure") (funcall (nativeGet options "configure") config ports))
+      (when (nativeGet options "root")
+        (try
+          (Object/assign credentials (JSON/parse
+            (await (readFile (resolve directory "fixture-credentials.json") "utf8"))))
+          (catch missing
+            (unless (= (nativeGet missing "code") "ENOENT") (throw missing)))))
+      (js-call
+        (nativeGet config "principals")
+        :forEach
+        (lambda
+          (actor)
+          (let ((token (or (nativeGet credentials (nativeGet actor "principal_id"))
+            (js-call (randomBytes 32) :toString "hex"))))
+            (put credentials (nativeGet actor "principal_id") token)
+            (put
+              actor
+              :credential_sha256
+              (js-call (js-call (createHash "sha256") :update token) :digest "hex")))))
+      (await
+        (writeFile
+          (resolve directory "fixture-credentials.json")
+          (JSON/stringify credentials)
+          (js-object :mode 384)))
+      (when (nativeGet options "external_journal")
+        (let
+          ((submit (nativeGet opencode "submit"))
+            (journal (resolve directory "native-inputs.ndjson")))
+          (put
+            opencode
+            :submit
+            (async
+              (binding envelope mode key context)
+              (let
+                ((receipt (await (funcall submit binding envelope mode key context))))
+                (await
+                  (appendFile
+                    journal
+                    (str
+                      (JSON/stringify
+                        (js-object :key key :native_ref (nativeGet receipt "native_ref")))
+                      "\n")
+                    (js-object :mode 384)))
+                receipt)))))
+      (let ((core (createCore ports config)))
+        (successful (await (js-call core :start)))
+        (js-object
+          :root
+          directory
+          :core
+          core
+          :ports
+          ports
+          :config
+          config
+          :clock
+          clock
+          :faults
+          faults
+          :opencode
+          opencode
+          :pi
+          pi
+          :lark
+          lark
+          :telegram
+          telegram
+          :O
+          operator
+          :S
+          sender
+          :A
+          recipient
+          :B
+          recipient-b
+          :X
+          stranger
+          :credentials
+          credentials
+          :call
+          (async
+            (actor operation args)
+            (await (js-call core :execute actor operation args)))
+          :tick
+          (async () (await (js-call core :tick)))
+          :ingest
+          (async (event) (await (js-call core :ingest event)))
+          :restart
+          (async
+            ()
+            (await
+              (js-call core :stop "fixture_restart" (+ (js-call clock :monoNow) 1000)))
+            (when (nativeGet options "before_restart")
+              (funcall (nativeGet options "before_restart") config ports))
+            (setq core (createCore ports config))
+            (successful (await (js-call core :start))))
+          :close
+          (async
+            ()
+            (await
+              (js-call core :stop "test_cleanup" (+ (js-call clock :monoNow) 1000))))))))
+  (defasync closeFixture (fixture) (when fixture (await (js-call fixture :close))))
+  (defasync callOk
+    (fixture actor operation args)
+    (successful (await (js-call fixture :call (nativeGet fixture actor) operation args))))
+  (defun createdEvent
+    (connection message-id text &optional thread)
+    (js-object
+      :connection_id
+      connection
+      :source_key
+      (str message-id ":created")
+      :native_message_id
+      message-id
+      :event_kind
+      "message.created"
+      :source_revision
+      "1"
+      :conversation
+      (js-object
+        :connection_id
+        connection
+        :native_chat_id
+        "c1"
+        :native_thread_id
+        (or thread nil)
+        :thread_kind
+        (if thread "thread" "main"))
+      :sender
+      (js-object :id "human-1" :kind "human")
+      :content
+      (js-object :kind "text" :text text :truncated false)
+      :attachments
+      (js-array)
+      :source_time
+      "2026-01-01T00:00:00.000Z"))
+  (defasync indexSessions
+    (f)
+    (await
+      (callOk
+        f
+        "O"
+        "catalog.refresh"
+        (js-object :include_content t :idempotency_key (str "refresh-" (randomUUID)))))
+    (await (js-call f :tick))
+    (nativeGet (await (callOk f "O" "session.list" (js-object))) "items"))
+  (defasync getSession
+    (f native-id &optional actor)
+    (let ((items (await (indexSessions f))))
+      (let
+        (
+          (session
+            (js-call
+              items
+              :find
+              (lambda
+                (candidate)
+                (and
+                  (= (nativeGet candidate "tool") "opencode")
+                  (= (nativeGet candidate "native_session_id") native-id))))))
+        (await
+          (callOk
+            f
+            (or actor "S")
+            "session.get"
+            (js-object :session_key (nativeGet session "session_key")))))))
+  (defasync bindRecipient
+    (f)
+    (let*
+      (
+        (candidates
+          (nativeGet
+            (await
+              (callOk f "O" "agent.discover" (js-object :tool "opencode" :scope "live")))
+            "items"))
+        (candidate
+          (js-call candidates :find (lambda (x) (= (nativeGet x "native_session_id") "s1")))))
+      (await
+        (callOk
+          f
+          "O"
+          "agent.register"
+          (js-object
+            :candidate_ref
+            (nativeGet candidate "candidate_ref")
+            :display_name
+            "same"
+            :binding_mode
+            "existing"
+            :recipient_principal_id
+            "A"
+            :idempotency_key
+            (str "register-" (randomUUID)))))))
+  (defasync subscribe
+    (f agent connection &optional ttl actor)
+    (let*
+      (
+        (source
+          (await
+            (callOk
+              f
+              (or actor "A")
+              "conversation.resolve"
+              (js-object :connection_id connection :chat_id "c1" :thread_id nil))))
+        (preview
+          (await
+            (callOk
+              f
+              (or actor "A")
+              "subscription.preview"
+              (js-object
+                :spec
+                (js-object
+                  :agent_id
+                  (nativeGet agent "agent_id")
+                  :selector
+                  (js-object
+                    :sources
+                    (js-array
+                      (js-object
+                        :conversation_ref
+                        (nativeGet source "conversation_ref")
+                        :include_threads
+                        false))
+                    :event_kinds
+                    (js-array "message.created"))
+                  :predicate
+                  (js-object :all (js-array))
+                  :context_policy
+                  (js-object :mode "current" :max_events 1 :max_bytes 16384)
+                  :delivery_policy
+                  (js-object :busy "queue" :offline "hold" :ttl_seconds (or ttl 86400))
+                  :start
+                  "now"))))))
+      (await
+        (callOk
+          f
+          (or actor "A")
+          "subscription.create"
+          (js-object
+            :preview_id
+            (nativeGet preview "preview_id")
+            :idempotency_key
+            (str "subscribe-" (randomUUID)))))))
+  (export
+    createFixture
+    closeFixture
+    callOk
+    successful
+    createdEvent
+    createClock
+    createAgentPeer
+    createImPeer
+    grant
+    indexSessions
+    getSession
+    bindRecipient
+    subscribe))

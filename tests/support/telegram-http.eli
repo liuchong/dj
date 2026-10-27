@@ -1,0 +1,249 @@
+(module dj.tests.support.telegram-http
+  (import "../../src/core/native.eli" NativeNumber nativeGet)
+  (import "node:crypto" randomBytes)
+  (import "./fixtures.eli" createFixture)
+  (import "../../src/adapters/im/telegram.eli" createTelegramPort)
+  (defun nativeMessage
+    (id text &optional thread)
+    (Object/assign
+      (js-object
+        :message_id
+        id
+        :date
+        1767225601
+        :chat
+        (js-object :id -10041 :type "supergroup" :title "fixture chat" :is_forum t)
+        :from
+        (js-object :id 4242 :is_bot false :first_name "fixture human")
+        :text
+        text)
+      (if thread (js-object :message_thread_id thread :is_topic_message t) (js-object))))
+  (defun createTelegramHttp
+    ()
+    (let*
+      ((token (str "000000:" (js-call (randomBytes 20) :toString "hex")))
+        (calls (js-array))
+        (updates (js-array))
+        (accepted (js-array))
+        (state
+          (js-object
+            :webhook
+            ""
+            :send_error
+            "none"
+            :message_seq
+            500
+            :ingress_error
+            "none"
+            :last_confirmed_offset
+            0)))
+      (js-object
+        :calls
+        calls
+        :updates
+        updates
+        :accepted
+        accepted
+        :state
+        state
+        :credentials
+        (js-object
+          :resolve
+          (async
+            (ref)
+            (unless (= ref "test:telegram")
+              (throw (new globalThis.Error "unexpected Telegram credential reference")))
+            token))
+        :http
+        (js-object
+          :fetch
+          (async
+            (input options)
+            (let*
+              ((url (new globalThis.URL (str input)))
+                (prefix (str "/bot" token "/"))
+                (path (nativeGet url "pathname"))
+                (method (js-call path :slice (js-length prefix)))
+                (body
+                  (if (nativeGet options "body") (JSON/parse (nativeGet options "body")) (js-object))))
+              (unless
+                (and
+                  (= (nativeGet url "origin") "https://api.telegram.org")
+                  (js-call path :startsWith prefix))
+                (throw
+                  (new
+                    globalThis.Error
+                    "unexpected external HTTP request in protocol fixture")))
+              (js-call
+                (nativeGet url "searchParams")
+                :forEach
+                (lambda
+                  (value key)
+                  (put
+                    body
+                    key
+                    (if (js-call (js-array "offset" "limit" "timeout") :includes key)
+                      (NativeNumber value)
+                      value))))
+              ;; Record no URL/token, only the native method and test payload.
+              (js-call calls :push (js-object :method method :body body))
+              (cond
+                ((= method "getMe")
+                  (Response/json
+                    (js-object
+                      :ok
+                      t
+                      :result
+                      (js-object
+                        :id
+                        123456
+                        :is_bot
+                        t
+                        :first_name
+                        "fixture bot"
+                        :username
+                        "fixture_bot"))))
+                ((= method "getWebhookInfo")
+                  (Response/json
+                    (js-object
+                      :ok
+                      t
+                      :result
+                      (js-object
+                        :url
+                        (nativeGet state "webhook")
+                        :pending_update_count
+                        (js-length updates)))))
+                ((= method "getChat")
+                  (Response/json
+                    (js-object
+                      :ok
+                      t
+                      :result
+                      (js-object
+                        :id
+                        -10041
+                        :type
+                        "supergroup"
+                        :title
+                        "fixture chat"
+                        :is_forum
+                        t))))
+                ((= method "getUpdates")
+                  (let ((offset (NativeNumber (nativeGet body "offset" 0))))
+                    (when (< offset 0)
+                      (throw
+                        (new globalThis.Error "negative offset would discard updates")))
+                    (put
+                      state
+                      :last_confirmed_offset
+                      (Math/max offset (nativeGet state "last_confirmed_offset")))
+                    (cond
+                      ((= (nativeGet state "ingress_error") "conflict")
+                        (Response/json
+                          (js-object
+                            :ok
+                            false
+                            :error_code
+                            409
+                            :description
+                            "Conflict: another getUpdates consumer")
+                          (js-object :status 409)))
+                      ((= (nativeGet state "ingress_error") "unauthorized")
+                        (Response/json
+                          (js-object
+                            :ok
+                            false
+                            :error_code
+                            401
+                            :description
+                            "Unauthorized")
+                          (js-object :status 401)))
+                      (t
+                        (Response/json
+                          (js-object
+                            :ok
+                            t
+                            :result
+                            (js-call
+                              updates
+                              :filter
+                              (lambda (u) (>= (nativeGet u "update_id") offset)))))))))
+                ((= method "sendMessage")
+                  (cond
+                    ((= (nativeGet state "send_error") "rate-limited")
+                      (Response/json
+                        (js-object
+                          :ok
+                          false
+                          :error_code
+                          429
+                          :description
+                          "Too Many Requests"
+                          :parameters
+                          (js-object :retry_after 1))
+                        (js-object :status 429)))
+                    (t
+                      (put state :message_seq (1+ (nativeGet state "message_seq")))
+                      (js-call
+                        accepted
+                        :push
+                        (js-object :message_id (nativeGet state "message_seq") :body body))
+                      (when (= (nativeGet state "send_error") "response-loss")
+                        (throw
+                          (new globalThis.Error "controlled native send response lost")))
+                      (Response/json
+                        (js-object
+                          :ok
+                          t
+                          :result
+                          (nativeMessage
+                            (nativeGet state "message_seq")
+                            (nativeGet body "text")
+                            (nativeGet body "message_thread_id")))))))
+                (t
+                  (throw
+                    (new
+                      globalThis.Error
+                      "unexpected Telegram method; takeover is forbidden"))))))))))
+  (defasync telegramFixture
+    ()
+    (let ((script (createTelegramHttp)))
+      (let ((install nil))
+        (setq
+          install
+          (lambda
+            (config ports)
+            (let
+              (
+                (connection
+                  (js-call
+                    (nativeGet config "connections")
+                    :find
+                    (lambda (c) (= (nativeGet c "connection_id") "telegram")))))
+              (put connection :allowed_chats (js-array "-10041"))
+              (js-call
+                (nativeGet ports "im_ports")
+                :set
+                "telegram"
+                (createTelegramPort
+                  connection
+                  (Object/assign
+                    (js-object)
+                    ports
+                    (js-object
+                      :credentials
+                      (nativeGet script "credentials")
+                      :http
+                      (nativeGet script "http"))))))))
+        (let
+          (
+            (f
+              (await
+                (createFixture
+                  "telegram-native"
+                  "one"
+                  (js-object :configure install :before_restart install)))))
+          (put f :telegram_http script)
+          f))))
+  (export createTelegramHttp nativeMessage telegramFixture))

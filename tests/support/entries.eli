@@ -1,0 +1,295 @@
+(module dj.tests.support.entries
+  (import "../../src/core/native.eli" nativeClearTimeout nativeSetTimeout nativeGet)
+  (import "node:fs/promises" mkdir writeFile)
+  (import "node:path" resolve)
+  (import "node:crypto" randomUUID)
+  (defasync writeClientProfile
+    (p actor)
+    (let*
+      ((directory (resolve (nativeGet p "root") "clients"))
+        (secret-directory (resolve (nativeGet p "root") "secrets"))
+        (credential (resolve secret-directory (str actor ".token")))
+        (profile (resolve directory (str actor "-" (randomUUID) ".json"))))
+      (await (mkdir directory (js-object :recursive t :mode 448)))
+      (await (mkdir secret-directory (js-object :recursive t :mode 448)))
+      (await
+        (writeFile credential (nativeGet (nativeGet p "credentials") actor) (js-object :mode 384)))
+      (await
+        (writeFile
+          profile
+          (JSON/stringify
+            (js-object
+              :schema_version
+              1
+              :default_endpoint
+              "local"
+              :endpoints
+              (js-array
+                (js-object
+                  :endpoint_id
+                  "local"
+                  :socket_ref
+                  "../run/dj.sock"
+                  :credential_ref
+                  (str "../secrets/" actor ".token")))))
+          (js-object :mode 384)))
+      profile))
+  (defasync callCli
+    (p actor operation args)
+    (let*
+      ((profile (await (writeClientProfile p actor)))
+        (words
+          (if (= operation "service.status")
+            (js-array "status")
+            (js-call operation :split ".")))
+        (argv
+          (js-call
+            (js-array (nativeGet globalThis.process "execPath") "dist/src/interfaces/cli.mjs")
+            :concat
+            words
+            (js-array "--json" "--input" "-")))
+        (child
+          (Bun/spawn
+            argv
+            (js-object
+              :env
+              (Object/assign
+                (js-object)
+                (nativeGet globalThis.process "env")
+                (js-object :DJ_CLIENT_PROFILE profile))
+              :stdin
+              (new globalThis.Blob (js-array (JSON/stringify args)))
+              :stdout
+              "pipe"
+              :stderr
+              "pipe")))
+        (output
+          (await
+            (Promise/all
+              (js-array
+                (js-call (new globalThis.Response (nativeGet child "stdout")) :text)
+                (js-call (new globalThis.Response (nativeGet child "stderr")) :text)
+                (nativeGet child "exited"))))))
+      (let ((stream (if (= (aref output 2) 0) (aref output 0) (aref output 1))))
+        (js-object
+          :exit_code
+          (aref output 2)
+          :stdout
+          (aref output 0)
+          :stderr
+          (aref output 1)
+          :envelope
+          (JSON/parse (js-call stream :trim))))))
+  (defasync createMcpClient
+    (p actor &optional entry working-directory)
+    (let*
+      ((profile (await (writeClientProfile p actor)))
+        (child
+          (Bun/spawn
+            (js-array
+              (nativeGet globalThis.process "execPath")
+              (or entry "dist/src/interfaces/mcp.mjs"))
+            (js-object
+              :cwd
+              working-directory
+              :env
+              (Object/assign
+                (js-object)
+                (nativeGet globalThis.process "env")
+                (js-object :DJ_CLIENT_PROFILE profile))
+              :stdin
+              "pipe"
+              :stdout
+              "pipe"
+              :stderr
+              "pipe")))
+        (pending (new globalThis.Map))
+        (sequence 0)
+        (fatal nil)
+        (client (js-object :child child :messages (js-array))))
+      (let ((rejectAll nil) (readProtocol nil) (drainErrors nil))
+        (setq
+          rejectAll
+          (lambda
+            (failure)
+            (setq fatal failure)
+            (js-call
+              pending
+              :forEach
+              (lambda (waiter id) (js-call waiter :reject failure)))
+            (js-call pending :clear)))
+        (setq
+          readProtocol
+          (async
+            ()
+            (let
+              ((reader (js-call (nativeGet child "stdout") :getReader))
+                (decoder (new globalThis.TextDecoder))
+                (buffer "")
+                (finished false))
+              (try
+                (while (not finished)
+                  (let ((part (await (js-call reader :read))))
+                    (setq finished (nativeGet part "done"))
+                    (unless finished
+                      (setq
+                        buffer
+                        (str
+                          buffer
+                          (js-call
+                            decoder
+                            :decode
+                            (nativeGet part "value")
+                            (js-object :stream t))))
+                      (when (> (js-length buffer) 1048576)
+                        (throw (new globalThis.Error "oversized MCP protocol output")))
+                      (while (js-call buffer :includes "\n")
+                        (let*
+                          ((end (js-call buffer :indexOf "\n"))
+                            (line (js-call buffer :slice 0 end)))
+                          (setq buffer (js-call buffer :slice (1+ end)))
+                          (when (> (js-length line) 0)
+                            (let* ((message (JSON/parse line)) (id (nativeGet message "id")))
+                              (js-call (nativeGet client "messages") :push message)
+                              (when (not (undefined? id))
+                                (let ((waiter (js-call pending :get id)))
+                                  (when (undefined? waiter)
+                                    (throw
+                                      (new globalThis.Error "unmatched MCP response")))
+                                  (js-call pending :delete id)
+                                  (if (nativeGet message "error")
+                                    (js-call
+                                      waiter
+                                      :reject
+                                      (new globalThis.Error "MCP protocol error"))
+                                    (js-call waiter :resolve (nativeGet message "result"))))))))))))
+                (rejectAll (new globalThis.Error "MCP EOF"))
+                (catch failure (rejectAll failure))))))
+        (setq
+          drainErrors
+          (async
+            ()
+            (let ((reader (js-call (nativeGet child "stderr") :getReader)) (finished false))
+              (while (not finished)
+                (let ((part (await (js-call reader :read))))
+                  (setq finished (nativeGet part "done")))))))
+        (readProtocol)
+        (drainErrors)
+        (put
+          client
+          :notify
+          (lambda
+            (method params)
+            (js-call
+              (nativeGet child "stdin")
+              :write
+              (str
+                (JSON/stringify
+                  (js-object :jsonrpc "2.0" :method method :params params))
+                "\n"))))
+        (put
+          client
+          :request
+          (lambda
+            (method params)
+            (when fatal (throw fatal))
+            (setq sequence (1+ sequence))
+            (let ((id sequence))
+              (new
+                globalThis.Promise
+                (lambda
+                  (accept reject)
+                  (let
+                    (
+                      (timer
+                        (nativeSetTimeout
+                          (lambda
+                            ()
+                            (js-call pending :delete id)
+                            (funcall
+                              reject
+                              (new globalThis.Error "MCP request timeout")))
+                          10000)))
+                    (js-call
+                      pending
+                      :set
+                      id
+                      (js-object
+                        :resolve
+                        (lambda
+                          (result)
+                          (nativeClearTimeout timer)
+                          (funcall accept result))
+                        :reject
+                        (lambda
+                          (failure)
+                          (nativeClearTimeout timer)
+                          (funcall reject failure))))
+                    (js-call
+                      (nativeGet child "stdin")
+                      :write
+                      (str
+                        (JSON/stringify
+                          (js-object
+                            :jsonrpc
+                            "2.0"
+                            :id
+                            id
+                            :method
+                            method
+                            :params
+                            params))
+                        "\n"))))))))
+          (put
+            client
+            :call
+            (async
+              (operation args)
+              (let
+                (
+                  (result
+                    (await
+                      (js-call
+                        client
+                        :request
+                        "tools/call"
+                        (js-object
+                          :name
+                          (str "dj_" (js-call operation :replaceAll "." "_"))
+                          :arguments
+                          args)))))
+                (unless (nativeGet result "structuredContent")
+                  (throw (new globalThis.Error "missing structured business result")))
+                (nativeGet result "structuredContent"))))
+          (put
+            client
+            :close
+            (async
+              ()
+              (js-call (nativeGet child "stdin") :end)
+              (let
+                (
+                  (timer
+                    (nativeSetTimeout
+                      (lambda
+                        ()
+                        (when (= (nativeGet child "exitCode") nil)
+                          (js-call child :kill "SIGKILL")))
+                      1000)))
+                (await (nativeGet child "exited"))
+                (nativeClearTimeout timer))))
+          (await
+            (js-call
+              client
+              :request
+              "initialize"
+              (js-object
+                :protocolVersion
+                "2026-07-28"
+                :capabilities
+                (js-object)
+                :clientInfo
+                (js-object :name "dj-test-client" :version "1"))))
+          (js-call client :notify "notifications/initialized" (js-object))
+          client)))
+  (export writeClientProfile callCli createMcpClient))

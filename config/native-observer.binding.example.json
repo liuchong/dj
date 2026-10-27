@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "authorized": false,
+  "opencode_binding_ref": "opencode-observer.binding.json",
+  "pi_binding_ref": "pi-observer.binding.json"
+}

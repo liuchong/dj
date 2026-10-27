@@ -1,0 +1,1301 @@
+{
+  "schema_version": 1,
+  "source_commit": "b1c7741365545d5a048079d64f863524cf7117e2",
+  "package": "eliscript@0.1.0",
+  "method": "read-only-source-and-artifact-digests",
+  "compiler_executed": false,
+  "functional_validation": "not_run",
+  "matching_source_count": 80,
+  "source_count": 84,
+  "matching_artifact_count": 145,
+  "artifact_count": 145,
+  "source_identity": "f740c21498d76d1b88f6f26220435a93106fe77e07e9f0c52cb76343d3e0f54e",
+  "artifact_metadata_sha256": "7b16d539d691e8044c51fc4f7c5b4ac481bfc85fb4d0101c592d1ccb8223f6bf",
+  "source_files": [
+    {
+      "path": "bootstrap/backends/async.eli",
+      "expected": "8b2d7ddcc4e778aeb0f0c7d7c527545b7ab0ddd2470aca561b29e15637400d1b",
+      "actual": "8b2d7ddcc4e778aeb0f0c7d7c527545b7ab0ddd2470aca561b29e15637400d1b",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/backends/binary.eli",
+      "expected": "56c582411e209b5db33634f22b364d8d8405da2d85eded43208ddc8e117fd725",
+      "actual": "56c582411e209b5db33634f22b364d8d8405da2d85eded43208ddc8e117fd725",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/backends/capabilities.eli",
+      "expected": "286b68dc94ce939efc9a7e69cc4dcab91f41042a4434c2faade3b75bd7ed274d",
+      "actual": "286b68dc94ce939efc9a7e69cc4dcab91f41042a4434c2faade3b75bd7ed274d",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/backends/elf.eli",
+      "expected": "b5d4673bb989ad0bad1bc41084a07d56db4b939698f4bae0c12145eeade05eed",
+      "actual": "b5d4673bb989ad0bad1bc41084a07d56db4b939698f4bae0c12145eeade05eed",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/backends/managed.eli",
+      "expected": "78e02a098f43b05e0b15da730db84e28fcd5f852c476ddabf06c3a13cb0be6bf",
+      "actual": "78e02a098f43b05e0b15da730db84e28fcd5f852c476ddabf06c3a13cb0be6bf",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/backends/memory.eli",
+      "expected": "03742090d8f05eb15df6b950b40e1cacb7faaad819fb7db04cf45874990f672e",
+      "actual": "03742090d8f05eb15df6b950b40e1cacb7faaad819fb7db04cf45874990f672e",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/backends/native.eli",
+      "expected": "8c546f240de55e834d7d10ad6402a44f681dfc25b2de854f0a64b6911d7ad603",
+      "actual": "8c546f240de55e834d7d10ad6402a44f681dfc25b2de854f0a64b6911d7ad603",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/backends/numeric.eli",
+      "expected": "27c3b87f61d9f13d925c2f093f2fd91345c0a5d2c1f8d8758fb623e2c28e14a8",
+      "actual": "27c3b87f61d9f13d925c2f093f2fd91345c0a5d2c1f8d8758fb623e2c28e14a8",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/backends/optimize.eli",
+      "expected": "3f69c206c213549891368c0efacc7111776db514324598b57377b4ff118cb0b1",
+      "actual": "3f69c206c213549891368c0efacc7111776db514324598b57377b4ff118cb0b1",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/backends/regexp.eli",
+      "expected": "972af8400790c91523ac1dfec3b2a8d54659c8be4ac871e9e4c697dd91088344",
+      "actual": "972af8400790c91523ac1dfec3b2a8d54659c8be4ac871e9e4c697dd91088344",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/backends/sha256.eli",
+      "expected": "e0dbea672c4aba1359f2be5d17516f0073d5ed9ca5f749e7d241e6165e493337",
+      "actual": "e0dbea672c4aba1359f2be5d17516f0073d5ed9ca5f749e7d241e6165e493337",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/backends/wasm.eli",
+      "expected": "1d73a3ce61b9c9d09f59fd972b6d91cdab88f63559306d145906a86a295f28d7",
+      "actual": "1d73a3ce61b9c9d09f59fd972b6d91cdab88f63559306d145906a86a295f28d7",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/compiler/analyzer.eli",
+      "expected": "21fd73c0b7b3cd1d90e98f4a106411f95ea5fd15784fad13ad00e1337dbe51d8",
+      "actual": "21fd73c0b7b3cd1d90e98f4a106411f95ea5fd15784fad13ad00e1337dbe51d8",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/compiler/compiler.eli",
+      "expected": "e58e059fef7ecbdd0012b478c5aede4386c0c961f0e6078c95d712852f506061",
+      "actual": "e58e059fef7ecbdd0012b478c5aede4386c0c961f0e6078c95d712852f506061",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/compiler/emitter.eli",
+      "expected": "07d28fa947d18b194f66f57288d8af8049bc91530f45e247a98ff80791eca0e0",
+      "actual": "07d28fa947d18b194f66f57288d8af8049bc91530f45e247a98ff80791eca0e0",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/compiler/expander.eli",
+      "expected": "bcc47fc059d4a8deb58841a63dfc61d300d60298dc340a10d1de0cbe7ef9183d",
+      "actual": "bcc47fc059d4a8deb58841a63dfc61d300d60298dc340a10d1de0cbe7ef9183d",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/compiler/formatter.eli",
+      "expected": "233edcb12f78824bd92610a6df19490a8e598a0b48fcbfa3978ebbb20e35c81a",
+      "actual": "233edcb12f78824bd92610a6df19490a8e598a0b48fcbfa3978ebbb20e35c81a",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/compiler/ir.eli",
+      "expected": "33200998a057aea58792994bd9ff989163df46023e8d907b52244071abe51e06",
+      "actual": "33200998a057aea58792994bd9ff989163df46023e8d907b52244071abe51e06",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/compiler/lower.eli",
+      "expected": "ac450ea9ec670b71142b5238612300a3c7e719fb5cf820a90ebf1b26e3f56451",
+      "actual": "ac450ea9ec670b71142b5238612300a3c7e719fb5cf820a90ebf1b26e3f56451",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/compiler/project.eli",
+      "expected": "4e6c31857cb131f690c5ae77b3511c8ddeb3c7bb4fce85def440ab399e94a509",
+      "actual": "4e6c31857cb131f690c5ae77b3511c8ddeb3c7bb4fce85def440ab399e94a509",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/compiler/reader.eli",
+      "expected": "9a0f2503f88f7d6f4ff2ad4f0ed6fbe035fb0044d4be1f48c7c411728950474c",
+      "actual": "9a0f2503f88f7d6f4ff2ad4f0ed6fbe035fb0044d4be1f48c7c411728950474c",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/compiler/source-map.eli",
+      "expected": "a9c74a85c9b0541ba5c21bd5fc1819d72fea2901c6e96f5b9e6b7e38c7336c6e",
+      "actual": "a9c74a85c9b0541ba5c21bd5fc1819d72fea2901c6e96f5b9e6b7e38c7336c6e",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/compiler/symbol.eli",
+      "expected": "62c3507c4d1450e80ab392276f7a2809f190bf248dd7dbedb8d94c1f7e725936",
+      "actual": "62c3507c4d1450e80ab392276f7a2809f190bf248dd7dbedb8d94c1f7e725936",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/compiler/syntax.eli",
+      "expected": "a6a47a6076ef117967b6bb84297733793f7d5c161584054e21fc1a4375c64d92",
+      "actual": "a6a47a6076ef117967b6bb84297733793f7d5c161584054e21fc1a4375c64d92",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/compiler/transient-analysis.eli",
+      "expected": "0cb1760d97ac14981e1f1402e7782a02ce8802241ee3e7a5985fedba9ffcc2e6",
+      "actual": "0cb1760d97ac14981e1f1402e7782a02ce8802241ee3e7a5985fedba9ffcc2e6",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/host/compiler-session.eli",
+      "expected": "275688d0aaafb07833c5a082fa8f83589b1d122f28a70e137dd940e4ca71310b",
+      "actual": "275688d0aaafb07833c5a082fa8f83589b1d122f28a70e137dd940e4ca71310b",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/host/compiler-tools.eli",
+      "expected": "aa188eba6f85692477bcccba1602cf1f19640c1181bf6da8764531f2b877b2a0",
+      "actual": "aa188eba6f85692477bcccba1602cf1f19640c1181bf6da8764531f2b877b2a0",
+      "matches": true
+    },
+    {
+      "path": "runtime/math.eli",
+      "expected": "4961a6fbc89699b0508a9904506d94dec641a945b7ff56abdeb5b80b9f827888",
+      "actual": "4961a6fbc89699b0508a9904506d94dec641a945b7ff56abdeb5b80b9f827888",
+      "matches": true
+    },
+    {
+      "path": "runtime/unicode-case-data.eli",
+      "expected": "6972ed0e897ca08ee3d21600d88f0f72a7163952c4f5a30257e94c9a86293a9c",
+      "actual": null,
+      "matches": false
+    },
+    {
+      "path": "runtime/unicode-case.eli",
+      "expected": "07be72f11d6fd05527d2c5321cda2d9f131a485dfe4ffef5009d93b0bdecd298",
+      "actual": "07be72f11d6fd05527d2c5321cda2d9f131a485dfe4ffef5009d93b0bdecd298",
+      "matches": true
+    },
+    {
+      "path": "stdlib/bit.eli",
+      "expected": "1c55a30da116dd05ace386a1de32d46151e07da11aa6c1b0678db945a7347504",
+      "actual": "1c55a30da116dd05ace386a1de32d46151e07da11aa6c1b0678db945a7347504",
+      "matches": true
+    },
+    {
+      "path": "stdlib/persistent-list.eli",
+      "expected": "16a2d707bdb5cc2326b247829d2336a56749a0a10dd698dd26eafe2c84df3f12",
+      "actual": "16a2d707bdb5cc2326b247829d2336a56749a0a10dd698dd26eafe2c84df3f12",
+      "matches": true
+    },
+    {
+      "path": "stdlib/persistent-vector.eli",
+      "expected": "4cfd36606fa378fe36289a9e1f7ffe822e0196449d384f984ad148d6752ae87d",
+      "actual": "4cfd36606fa378fe36289a9e1f7ffe822e0196449d384f984ad148d6752ae87d",
+      "matches": true
+    },
+    {
+      "path": "stdlib/persistent-map.eli",
+      "expected": "87c5b18d5a97368274ccbc74fbdcf6ed37b76e1e0ef9052750729207b460f87c",
+      "actual": "87c5b18d5a97368274ccbc74fbdcf6ed37b76e1e0ef9052750729207b460f87c",
+      "matches": true
+    },
+    {
+      "path": "stdlib/persistent-set.eli",
+      "expected": "dba2fab0108009811f150227b2db2dbcef1a37e391a8804b906994163dafc767",
+      "actual": "dba2fab0108009811f150227b2db2dbcef1a37e391a8804b906994163dafc767",
+      "matches": true
+    },
+    {
+      "path": "stdlib/value.eli",
+      "expected": "6ac2d4d52457d7e65ac8bb2ccbfbf4e6c17903337812abf99a4a11787fa43e64",
+      "actual": "6ac2d4d52457d7e65ac8bb2ccbfbf4e6c17903337812abf99a4a11787fa43e64",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-queue-state.eli",
+      "expected": "db428b6e69cfd57c2d0394b44f4b9beaefcf5ab56bc38a2c6bbdc02035d10170",
+      "actual": "db428b6e69cfd57c2d0394b44f4b9beaefcf5ab56bc38a2c6bbdc02035d10170",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-vector-view-state.eli",
+      "expected": "9d03d6ba571be10c472717c5de02c7f290dc5b5c54141225bd23fe9e97a45291",
+      "actual": "9d03d6ba571be10c472717c5de02c7f290dc5b5c54141225bd23fe9e97a45291",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-transient-state.eli",
+      "expected": "6cac1fb1b15eb0216a212aa8fc811dbbf736647bde710022acc6f1199746c976",
+      "actual": "6cac1fb1b15eb0216a212aa8fc811dbbf736647bde710022acc6f1199746c976",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-sorted-state.eli",
+      "expected": "a6bcb3cfd6fed90e775442a93d3717eb9b79ad4e5fa8e2520eab15c78a7223ab",
+      "actual": "a6bcb3cfd6fed90e775442a93d3717eb9b79ad4e5fa8e2520eab15c78a7223ab",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-value-state.eli",
+      "expected": "7bb9381a0f09b869dd953ea5cc594ebfb477be7824af299a8c260fe25d7fb3a0",
+      "actual": "7bb9381a0f09b869dd953ea5cc594ebfb477be7824af299a8c260fe25d7fb3a0",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-protocol-error.eli",
+      "expected": "47afdf520865e6ce760569a7c9bb4977adf3e8cfd94397a2c3448c2eb7c33e6d",
+      "actual": "47afdf520865e6ce760569a7c9bb4977adf3e8cfd94397a2c3448c2eb7c33e6d",
+      "matches": true
+    },
+    {
+      "path": "stdlib/core/protocol.eli",
+      "expected": "b010704d1afdd2518148da2c421d29016b65cf8408cb7a7fe7ce6c2d4b014537",
+      "actual": "b010704d1afdd2518148da2c421d29016b65cf8408cb7a7fe7ce6c2d4b014537",
+      "matches": true
+    },
+    {
+      "path": "stdlib/core/text.eli",
+      "expected": "8e7b46005bb37981899d8bcfb995832eebd360e2af60f34808a49ba8845471f6",
+      "actual": "8e7b46005bb37981899d8bcfb995832eebd360e2af60f34808a49ba8845471f6",
+      "matches": true
+    },
+    {
+      "path": "stdlib/core/object.eli",
+      "expected": "47d3155539f5d784cc469e967354d4818a7241d079cf3571f7cc59fae14a9a69",
+      "actual": "47d3155539f5d784cc469e967354d4818a7241d079cf3571f7cc59fae14a9a69",
+      "matches": true
+    },
+    {
+      "path": "stdlib/core/set.eli",
+      "expected": "5f8f6427c21a7a616cd4118658d0abffe7a64d3f5067910c91762b0918f653b6",
+      "actual": "5f8f6427c21a7a616cd4118658d0abffe7a64d3f5067910c91762b0918f653b6",
+      "matches": true
+    },
+    {
+      "path": "stdlib/core/data.eli",
+      "expected": "03a1658ae1c78cba463dd3b47920edd33a45327f21a6a809dd15ecd65d778886",
+      "actual": "03a1658ae1c78cba463dd3b47920edd33a45327f21a6a809dd15ecd65d778886",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-literal-protocols.eli",
+      "expected": "8f852d5984c9d5e784f8f1df2b3a2a258557dba996e9a6ad32c43cf37e6b0ae3",
+      "actual": "8de6c8e91237b8402a7868f017475588a1c6a1d601af911584d9b3d9d7ca1ad8",
+      "matches": false
+    },
+    {
+      "path": "stdlib/managed-literals.eli",
+      "expected": "ebd9cc70c35fb5967a5eb7e9bed6c268cb03bb52d22997d57f319b457cf3bb05",
+      "actual": "ebd9cc70c35fb5967a5eb7e9bed6c268cb03bb52d22997d57f319b457cf3bb05",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-runtime-list.eli",
+      "expected": "8d796825a368486fb7996d06fb9acbae1eafa510fc49fe4ba3e4e02ea5eb7050",
+      "actual": "8d796825a368486fb7996d06fb9acbae1eafa510fc49fe4ba3e4e02ea5eb7050",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-runtime-vector.eli",
+      "expected": "7503d8b24842a3279dae7e67a544c8278be7f55bb8b5e48f826a585631599a2c",
+      "actual": "7503d8b24842a3279dae7e67a544c8278be7f55bb8b5e48f826a585631599a2c",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-runtime-map.eli",
+      "expected": "2de6bc8be91d97aa959a7aaa0d2db716ab7cffe7c22783ac2af0050702787d2a",
+      "actual": "2de6bc8be91d97aa959a7aaa0d2db716ab7cffe7c22783ac2af0050702787d2a",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-runtime-set.eli",
+      "expected": "c1fa28e1e0a668ac0adafc0abba4c9c2149beb89d20f0e40fe836bc9d0ca28ea",
+      "actual": "c1fa28e1e0a668ac0adafc0abba4c9c2149beb89d20f0e40fe836bc9d0ca28ea",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-runtime-queue.eli",
+      "expected": "7b4230949f205d1575c057d68e77cceee917e73fbf382df962d28dad52580cf1",
+      "actual": "7b4230949f205d1575c057d68e77cceee917e73fbf382df962d28dad52580cf1",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-runtime-identifier.eli",
+      "expected": "4b24d59a02bc96a378718f2391b020aa743286764a8a86828cfc67320219150f",
+      "actual": "4b24d59a02bc96a378718f2391b020aa743286764a8a86828cfc67320219150f",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-runtime-record.eli",
+      "expected": "5b0066220363ac2cefb3a4ca6e2b1f99fa02e7e18d949948e307124a46833b0e",
+      "actual": "5b0066220363ac2cefb3a4ca6e2b1f99fa02e7e18d949948e307124a46833b0e",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-runtime-value.eli",
+      "expected": "8f82c3e72213901080e76abf240da8315343fc00b831d7482e61fd58e048eecc",
+      "actual": "8f82c3e72213901080e76abf240da8315343fc00b831d7482e61fd58e048eecc",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-runtime-metadata.eli",
+      "expected": "71bea84599fe184f53e2fb5a35ebb6b6a5aa3b7645e12ef7cfcee6dae9c650ff",
+      "actual": "71bea84599fe184f53e2fb5a35ebb6b6a5aa3b7645e12ef7cfcee6dae9c650ff",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-runtime-collection.eli",
+      "expected": "229ad2d0cf4c7c153fefde40469c87d5642debc687271e9cf0c4dad457b22c12",
+      "actual": "229ad2d0cf4c7c153fefde40469c87d5642debc687271e9cf0c4dad457b22c12",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-runtime-transient.eli",
+      "expected": "de719a918ef24fba1badc4e21c8b8c66aff494d73654ce81fd0ff95fd8c70a46",
+      "actual": "de719a918ef24fba1badc4e21c8b8c66aff494d73654ce81fd0ff95fd8c70a46",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-runtime-protocol.eli",
+      "expected": "c8cab60f98935e92ebd02990d051ed0df4b11d2f78cd51162c81d871217515a4",
+      "actual": "c8cab60f98935e92ebd02990d051ed0df4b11d2f78cd51162c81d871217515a4",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-runtime-type.eli",
+      "expected": "d9ed2a75fd4ed31ad1d5eefa347fd3a31a1ffb184530582ed865983304dd0dd3",
+      "actual": "d9ed2a75fd4ed31ad1d5eefa347fd3a31a1ffb184530582ed865983304dd0dd3",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-runtime-order.eli",
+      "expected": "50474921bee03d61b32e17d6f768ae6477700834405ac29e571cd6d989457cef",
+      "actual": "2bbf412ffae0592a72fa88d5761a95ee55b99a6c2ef4f5469d973afb43f31103",
+      "matches": false
+    },
+    {
+      "path": "stdlib/managed-runtime-sorted.eli",
+      "expected": "d52975beadfb14c08b5ad457927e3b6a174b490888bc99cc731a84d81ad4f2ae",
+      "actual": "d52975beadfb14c08b5ad457927e3b6a174b490888bc99cc731a84d81ad4f2ae",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-runtime-regex.eli",
+      "expected": "3c244cf462567674572707b8d58ea5edabbdb28eba342fcd0c0726f7c2d0e415",
+      "actual": "3c244cf462567674572707b8d58ea5edabbdb28eba342fcd0c0726f7c2d0e415",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-runtime-transducer.eli",
+      "expected": "2b9ec6fc3d3ad3744e259ef33d3a833805c29d05e21bfa32f277022102637984",
+      "actual": "2b9ec6fc3d3ad3744e259ef33d3a833805c29d05e21bfa32f277022102637984",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-runtime-lazy-sequence.eli",
+      "expected": "fea4f05ac889f95ea9550b9e2bbce94f52d752054d81cf622434092a7367b890",
+      "actual": "fea4f05ac889f95ea9550b9e2bbce94f52d752054d81cf622434092a7367b890",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-runtime-truth.eli",
+      "expected": "a8297bfd85d9cda01c64be7b17cde9399460a36479e36cb0848335b0c15ac6e0",
+      "actual": "a8297bfd85d9cda01c64be7b17cde9399460a36479e36cb0848335b0c15ac6e0",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-runtime-text.eli",
+      "expected": "a8ab96a4054a90d607b1bfe9b6212b558591d82be2e51cca325eb0cdbb2ead3b",
+      "actual": "a8ab96a4054a90d607b1bfe9b6212b558591d82be2e51cca325eb0cdbb2ead3b",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-runtime-object.eli",
+      "expected": "438a594c907361bc2af5111a8640082babf6344cecd8ad7b3f43e42774f1d97c",
+      "actual": "438a594c907361bc2af5111a8640082babf6344cecd8ad7b3f43e42774f1d97c",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-runtime-sequence.eli",
+      "expected": "1777c0d0f8b2ccc66cc8612835649b94f408a829b208662c283183a07b07693c",
+      "actual": "90cec3221010ceedd5f12e15fe634587b79f5e49e38e3138bac3046e25b4493f",
+      "matches": false
+    },
+    {
+      "path": "stdlib/managed-runtime-set-algebra.eli",
+      "expected": "7106748d4cf2caefa3c959b238e80316406fefca70d6941607b5529d123f799e",
+      "actual": "7106748d4cf2caefa3c959b238e80316406fefca70d6941607b5529d123f799e",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-runtime-collection-internals.eli",
+      "expected": "d75d6ff568f27b2d9514305113c3893978357ba06c388e6718d068f5775e28ab",
+      "actual": "d75d6ff568f27b2d9514305113c3893978357ba06c388e6718d068f5775e28ab",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-runtime-metadata-internals.eli",
+      "expected": "d96030f1e6a945d36afe1e41ddbed4798a24dc29f94efc6fd41e562a9a98405b",
+      "actual": "d96030f1e6a945d36afe1e41ddbed4798a24dc29f94efc6fd41e562a9a98405b",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-runtime-persistent-kind.eli",
+      "expected": "a0c367fd2362bfd739b613509922c32f0213338b8ab6b3bccd211a558ca43df2",
+      "actual": "a0c367fd2362bfd739b613509922c32f0213338b8ab6b3bccd211a558ca43df2",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-runtime-data.eli",
+      "expected": "91cb712420a2300bbbff3a28cb0dffa5d5e6a2efa5c5bb585eda499750451608",
+      "actual": "91cb712420a2300bbbff3a28cb0dffa5d5e6a2efa5c5bb585eda499750451608",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-runtime-data-text.eli",
+      "expected": "4d2acd039968b80703fefa430dd6cacf663b24ba3511f3b5a83ad10ece913dcd",
+      "actual": "4d2acd039968b80703fefa430dd6cacf663b24ba3511f3b5a83ad10ece913dcd",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-runtime-value-internals.eli",
+      "expected": "72a0773bfebc9a6cbbb8dffe0eb94bc44797cfccc115f303cb17d0cd44459f15",
+      "actual": "72a0773bfebc9a6cbbb8dffe0eb94bc44797cfccc115f303cb17d0cd44459f15",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-runtime-literals.eli",
+      "expected": "9ebb6fc1bddf6fe1d77d4d5761a8f4d1ca434ab842cd5d840cbb248b51c15fc8",
+      "actual": "9ebb6fc1bddf6fe1d77d4d5761a8f4d1ca434ab842cd5d840cbb248b51c15fc8",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-wire-markdown.eli",
+      "expected": "05b2fdfa0d013a8d086a8f88641637c58e58656fe1a20e4ffbe6c07018e9ccb4",
+      "actual": "05b2fdfa0d013a8d086a8f88641637c58e58656fe1a20e4ffbe6c07018e9ccb4",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-wire-schema.eli",
+      "expected": "34f218230b457524da5c61e33173bcc36485dffd188cf89dad3528a321fc8820",
+      "actual": "34f218230b457524da5c61e33173bcc36485dffd188cf89dad3528a321fc8820",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-wire-http-rpc.eli",
+      "expected": "b1034dea0dd6008b9ff42ba746d5eb0ac041f92090aac82ea975745bd49402a1",
+      "actual": "b1034dea0dd6008b9ff42ba746d5eb0ac041f92090aac82ea975745bd49402a1",
+      "matches": true
+    },
+    {
+      "path": "stdlib/managed-testing-value.eli",
+      "expected": "9c9c0eb39d5b9566edf87b7b5cbcc5503cd76a1ca1625c619772f905bc5b7088",
+      "actual": "9c9c0eb39d5b9566edf87b7b5cbcc5503cd76a1ca1625c619772f905bc5b7088",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/runtime/memory.eli",
+      "expected": "150490469fed52397cb012338e15f2860ee6110293a77498bc5a940cd87091e4",
+      "actual": "150490469fed52397cb012338e15f2860ee6110293a77498bc5a940cd87091e4",
+      "matches": true
+    }
+  ],
+  "artifact_files": [
+    {
+      "path": "backends/async.mjs",
+      "sha256": "653bca9d302f6f677c089f874d85dcd63afa72227fd1ff9a20070d95b65458c0",
+      "matches": true
+    },
+    {
+      "path": "backends/async.mjs.map",
+      "sha256": "69d270e1e8458f0ac59a388caf8e9f3de327480df88de70e95fbd5c334a22dab",
+      "matches": true
+    },
+    {
+      "path": "backends/async.mjs.macro-origins.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "matches": true
+    },
+    {
+      "path": "backends/binary.mjs",
+      "sha256": "3e01802ab77f2917c3e029838805eec53efe6e63bfb57fe6927f98a6e1b4a41c",
+      "matches": true
+    },
+    {
+      "path": "backends/binary.mjs.map",
+      "sha256": "89e6f4b7d49a7940438a6abaec3e675b9939f56184f41a310533d4f6e5d68283",
+      "matches": true
+    },
+    {
+      "path": "backends/binary.mjs.macro-origins.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "matches": true
+    },
+    {
+      "path": "backends/capabilities.mjs",
+      "sha256": "6c93fdf0e4fa8484345c44c891485f0978a9daf29c2b74cad47eb8c4ce09789b",
+      "matches": true
+    },
+    {
+      "path": "backends/capabilities.mjs.map",
+      "sha256": "75fec52d16aac2655f01f756cc201f91a61e57cb5036fad9f739ad472a84961d",
+      "matches": true
+    },
+    {
+      "path": "backends/capabilities.mjs.macro-origins.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "matches": true
+    },
+    {
+      "path": "backends/elf.mjs",
+      "sha256": "5f10dd4ed27d4c9f74bbada35b429c0158856934c52b4664dced6fa56e18f942",
+      "matches": true
+    },
+    {
+      "path": "backends/elf.mjs.map",
+      "sha256": "d21662a3cd2758206b22d0dddb6086b1a79a9e1608787bab258a81a1878f30cd",
+      "matches": true
+    },
+    {
+      "path": "backends/elf.mjs.macro-origins.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "matches": true
+    },
+    {
+      "path": "backends/managed.mjs",
+      "sha256": "998240148d37ce944f6d2ecd439776f5acf3770a446fe16b15c81492fdf722c9",
+      "matches": true
+    },
+    {
+      "path": "backends/managed.mjs.map",
+      "sha256": "fb3787f53f1641c12e1499d63e655cdf575d5269113eb1abb1ce979f763d14b4",
+      "matches": true
+    },
+    {
+      "path": "backends/managed.mjs.macro-origins.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "matches": true
+    },
+    {
+      "path": "backends/memory.mjs",
+      "sha256": "6cff2afd3391a49f8e40c8b1436fbcf4da077f77c5eddf9d0bb65adf58e5b940",
+      "matches": true
+    },
+    {
+      "path": "backends/memory.mjs.map",
+      "sha256": "8c4ec0837138086baa2d5fb2237724cbd69cc0a1289fb2820d71137497fc30d8",
+      "matches": true
+    },
+    {
+      "path": "backends/memory.mjs.macro-origins.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "matches": true
+    },
+    {
+      "path": "backends/native.mjs",
+      "sha256": "3d11a9c88f705c13e3ac146adf65e583269f91dc3015d08b96c05c4b6b3834c0",
+      "matches": true
+    },
+    {
+      "path": "backends/native.mjs.map",
+      "sha256": "cdea069a9e271fe4af1ee40b6c888194831f90ca1896b97694ed01b07c126d32",
+      "matches": true
+    },
+    {
+      "path": "backends/native.mjs.macro-origins.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "matches": true
+    },
+    {
+      "path": "backends/numeric.mjs",
+      "sha256": "5fb4803038e504e9bed8956e24f1478cd5641952686914a438edf8076d55b9d4",
+      "matches": true
+    },
+    {
+      "path": "backends/numeric.mjs.map",
+      "sha256": "f1f6fc3ae515e784b87259d28fd513b8cd2f400f6f4f046c2751653b51e80415",
+      "matches": true
+    },
+    {
+      "path": "backends/numeric.mjs.macro-origins.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "matches": true
+    },
+    {
+      "path": "backends/optimize.mjs",
+      "sha256": "15b2f7b0900bb7efd7bc164b32a138facc4750126276cd724d461fa0f1278fc2",
+      "matches": true
+    },
+    {
+      "path": "backends/optimize.mjs.map",
+      "sha256": "92ad53165c48cd2d7da700cae398ef16bc2d9d64243a250a427ed0e2dbdec5bb",
+      "matches": true
+    },
+    {
+      "path": "backends/optimize.mjs.macro-origins.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "matches": true
+    },
+    {
+      "path": "backends/regexp.mjs",
+      "sha256": "f3771aa5f6dd005bd984513fbf3be4d840692ce3d1327d3eff95ed28016d57b4",
+      "matches": true
+    },
+    {
+      "path": "backends/regexp.mjs.map",
+      "sha256": "167004c41a25391135003f3cd42882e525fcbd0b0d954c877d7d2a65f908f23b",
+      "matches": true
+    },
+    {
+      "path": "backends/regexp.mjs.macro-origins.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "matches": true
+    },
+    {
+      "path": "backends/sha256.mjs",
+      "sha256": "1b5f932da07932d9c99d596a3797edc1e0077f6306409c1177f73d71e84fd914",
+      "matches": true
+    },
+    {
+      "path": "backends/sha256.mjs.map",
+      "sha256": "1956b1a9d8b733686e79feb2b48eec59115259f3230bda392ccf88f55c1f43e2",
+      "matches": true
+    },
+    {
+      "path": "backends/sha256.mjs.macro-origins.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "matches": true
+    },
+    {
+      "path": "backends/wasm.mjs",
+      "sha256": "1bd23e7e3bc1e763a62b25c229d1af40672188b3138d1d4c2cf910295eaf0114",
+      "matches": true
+    },
+    {
+      "path": "backends/wasm.mjs.map",
+      "sha256": "aab49bdce9b7957a5886e15d85015631b81e6fe1adacc9dd1ef2139b24fdeabd",
+      "matches": true
+    },
+    {
+      "path": "backends/wasm.mjs.macro-origins.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/analyzer.mjs",
+      "sha256": "a22821007e6a53c484540746a56dcfafd88c718e10a3a2aa0a9141631496ef5d",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/analyzer.mjs.map",
+      "sha256": "d9224420f32b14e2da4252440e453e20ace1e01e024fca5b3c0e5a88ad395572",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/analyzer.mjs.macro-origins.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/compiler.mjs",
+      "sha256": "0b09c3f5ec7f3d6d15da3dd97a8ba261914580c20ef3534db2e1bb83fbfd4a53",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/compiler.mjs.map",
+      "sha256": "d68b5177ec59e3be8747a461de7b5d12bcddf25ada15e65d5dbabffa666d9c24",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/compiler.mjs.macro-origins.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/emitter.mjs",
+      "sha256": "adc3a72cca45689e65759be15e39c923e0eb459a44d13367286c2e71cfcd33ed",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/emitter.mjs.map",
+      "sha256": "0f9834f213af95a37c5ceca9c921175d600b18e5fad43ca2337f27f04dc67b37",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/emitter.mjs.macro-origins.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/expander.mjs",
+      "sha256": "b2acc69fd61e66c5a8cd093428a611861104e1c6546b2587cf4837b955849b57",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/expander.mjs.map",
+      "sha256": "196304a65237d15d9ac8dd0158cb96dc0f304c606b83510b75bcb7a134466737",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/expander.mjs.macro-origins.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/formatter.mjs",
+      "sha256": "957c186328d21c388fce8620739db415598b0e797685cee4bf0890ca0e142e5f",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/formatter.mjs.map",
+      "sha256": "a9624eae488f42878a93bacf08ec0f4bda5e3d311f613be44ebb2754f834a4c8",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/formatter.mjs.macro-origins.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/ir.mjs",
+      "sha256": "bbcf97fbeb499ca8de445bfdbaace0eab979d6e31d54f28a90bdf509a801b8f8",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/ir.mjs.map",
+      "sha256": "f949f0686ef2e16c2a28a36df0ee3b6f9799671ff6b6c38d5d66167b5e4897d7",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/ir.mjs.macro-origins.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/lower.mjs",
+      "sha256": "ef92dedb84043d8db89a508b8c68219472a08f5521c1b1e0abf76d17915babf4",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/lower.mjs.map",
+      "sha256": "41fe15af052f94dfa9757b8a7d43c682434dcceda36f1e2b7dabf7293a4bd297",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/lower.mjs.macro-origins.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/project.mjs",
+      "sha256": "f1cc843d500bee2a1ca061c60ab6a9678672a90d2f9f6c29b9ca575c1657914c",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/project.mjs.map",
+      "sha256": "61066daf84c8ce712a85788e0c60fc81a3fc0fa8aba554fbe73739926c8ecb01",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/project.mjs.macro-origins.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/reader.mjs",
+      "sha256": "3cd13b6a65c3de89373b4c7313d868c62bb14c8b64d7aad2b70d22bed38edafb",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/reader.mjs.map",
+      "sha256": "6d9f9d1aa148fb4f3993e723fb19ef698e60fb23f30a673de03f12cc5df6fea9",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/reader.mjs.macro-origins.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/source-map.mjs",
+      "sha256": "1882eae341fb3a42f128160767123b2ffc23aad0b312fe0797710c6a258a5a6a",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/source-map.mjs.map",
+      "sha256": "49d74a194c6d772a5667833e82a4c7de6c2d4b568b889962c9a44ad675c9a81b",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/source-map.mjs.macro-origins.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/symbol.mjs",
+      "sha256": "df44a34f6547c02119109627da86aa0e124f1194e89cec775a567120551ec52f",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/symbol.mjs.map",
+      "sha256": "e3addb4b88d13a66ee88dd469116cc275b7eae2142cb85d6ff1be374d3bd1774",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/symbol.mjs.macro-origins.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/syntax.mjs",
+      "sha256": "d6984392ae0ba962cf6fa22daa0886a13a579c933c7740d8ac94d3eb91ef07e8",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/syntax.mjs.map",
+      "sha256": "f45726d77a3cc3d64ccf8b359d6ec719017a727733f939f5f31119b1a989f10a",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/syntax.mjs.macro-origins.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/transient-analysis.mjs",
+      "sha256": "b72dc7662dd7ac37a0aa64e69f2b571cc04d16bd50224e7fcae8cfc6f4fd50ec",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/transient-analysis.mjs.map",
+      "sha256": "46a509026633a3e4ec22ecb6367764014712ac658dee07c39e9a2a387502f38b",
+      "matches": true
+    },
+    {
+      "path": "bootstrap/transient-analysis.mjs.macro-origins.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "matches": true
+    },
+    {
+      "path": "host/compiler-session.mjs",
+      "sha256": "b57a4e0e1e4e338399fe5f8d23ab51296d25d34191404067a0485f9ff236868d",
+      "matches": true
+    },
+    {
+      "path": "host/compiler-session.mjs.map",
+      "sha256": "ab6457c095088d6d93c044b4a8fce9050ed6e553638c86942bd3a1e69c7f598e",
+      "matches": true
+    },
+    {
+      "path": "host/compiler-session.mjs.macro-origins.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "matches": true
+    },
+    {
+      "path": "host/compiler-tools.mjs",
+      "sha256": "858a57fcf4cd7eb1ac463ca67afd3ecf08c07f17485dc4f837932d89dcea11a5",
+      "matches": true
+    },
+    {
+      "path": "host/compiler-tools.mjs.map",
+      "sha256": "47fe38f36ee3bbea631da2e14f5f9ecd224b5c4b865d5093bc8afa1a8347ab16",
+      "matches": true
+    },
+    {
+      "path": "host/compiler-tools.mjs.macro-origins.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "matches": true
+    },
+    {
+      "path": "runtime/math.mjs",
+      "sha256": "c40a3e63d584b963b1c0c86b080e5cdacdc676ca0160d8ad45dd218b6829fc33",
+      "matches": true
+    },
+    {
+      "path": "runtime/math.mjs.map",
+      "sha256": "3d5e7bd1a5886806a81e0683661f3db968837cf4db511d29697009991a9189a7",
+      "matches": true
+    },
+    {
+      "path": "runtime/math.mjs.macro-origins.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "matches": true
+    },
+    {
+      "path": "runtime/unicode-case-data.mjs",
+      "sha256": "0be9970f6844661df3086cf49a41e37038bf8c847976f62e6206f36ec9306fcb",
+      "matches": true
+    },
+    {
+      "path": "runtime/unicode-case-data.mjs.map",
+      "sha256": "db34b63d952c76e90c789678513a3a2af548ac30b5ac857565b3d51f52f0cc1d",
+      "matches": true
+    },
+    {
+      "path": "runtime/unicode-case-data.mjs.macro-origins.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "matches": true
+    },
+    {
+      "path": "runtime/unicode-case.mjs",
+      "sha256": "67633d6aec488ec742c1c0475b8ebd1d1fe4dca706d5652fd6a5ba8fa7352ea5",
+      "matches": true
+    },
+    {
+      "path": "runtime/unicode-case.mjs.map",
+      "sha256": "12cb4c0575737dc5002d9c86ba4bb439a9435142fc5d4d686ca990b4bfdae640",
+      "matches": true
+    },
+    {
+      "path": "runtime/unicode-case.mjs.macro-origins.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "matches": true
+    },
+    {
+      "path": "package.json",
+      "sha256": "29adcf2334dba429e28af844f417e25a15cc77859636db490f9d901a688b4d04",
+      "matches": true
+    },
+    {
+      "path": "runtime.eli",
+      "sha256": "8386bb77853996c286b68e3ee970113473f676a718921b54e7ef607055e8bd86",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/stdlib/bit.eli",
+      "sha256": "7e053898dc9e5e5e7f2fff3ac17421563e44e3474c9521292e0daeedfc80825c",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/stdlib/persistent-list.eli",
+      "sha256": "192c860e81292669ba31e35a523ff674bddf38d09f3b5666ffced7c3ae415cfa",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/stdlib/persistent-vector.eli",
+      "sha256": "200a8d8d4673b01e0e3ae6ad57afa469c53f83644fe34d23e15bd440fcb8de9c",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/stdlib/persistent-map.eli",
+      "sha256": "089a77fb3e909cdae70cfb27a0e3ef9a56f9618d88a61ade83f649ee7c7dd7d5",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/stdlib/persistent-set.eli",
+      "sha256": "854d8cc9561bdfc973483d779a4fe2632ed09b2f964a2980edf8634c388ef5d8",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/stdlib/value.eli",
+      "sha256": "bb2616efda941ef7030f6ef5c7835b8fca44ce1b9034698b319e22683e34a2bd",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/stdlib/managed-queue-state.eli",
+      "sha256": "f9d6baf4f3a26819941133798f0dd6eb78127d0d544c7152774229ae6bbde2ed",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/stdlib/managed-vector-view-state.eli",
+      "sha256": "5a0d04da8515f287ab581ec25356355eca7ff59887ae0800b2316994eebfc7eb",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/stdlib/managed-transient-state.eli",
+      "sha256": "f6575d388653dcef6f2fbf78980e38c47601f74f6f229c70bd8baa3a2c0c23b5",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/stdlib/managed-sorted-state.eli",
+      "sha256": "9e868edc628892a4699eb9d7031c909c67af94b4eeb948049d868fc07a7c46e5",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/stdlib/managed-value-state.eli",
+      "sha256": "e93fef7c510e995ad9ccf424490f1cb353eda48f39a25b5a30b34a01fcc3936e",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/runtime/core/protocol-error.eli",
+      "sha256": "f4fe3fe24e8eab99bb0909fefef53ec8773c577f8435b09075e870f156d5c405",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/stdlib/core/protocol.eli",
+      "sha256": "16b9c9628c15c307ddaa49064dc2396a301b7cbecf2763987eeaa47f3f6776aa",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/stdlib/core/text.eli",
+      "sha256": "4939e33fc595cc213790552a9d63e90e4db4c334072a24216a8bad16ec5b24cf",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/stdlib/core/object.eli",
+      "sha256": "38407d2eda173e30ccbabd930f17541cf2cf1fbdf86e675e2b6302b7f2d72da0",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/stdlib/core/set.eli",
+      "sha256": "5afd3d1398277005c09d5438d39043f95f2b39631089205bf5c4a2feae9cbcbf",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/stdlib/core/data.eli",
+      "sha256": "0f9ba1199a20cf0f19f937f084227fc6c56ee7cf09f9097865472253ed5e38a2",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/stdlib/managed-literal-protocols.eli",
+      "sha256": "1f9d734a6de6837d7bca1f7e20de28c2dc196674f518e8e874ab33add9ce30ee",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/stdlib/managed-literals.eli",
+      "sha256": "9fe7ea1d0d1931fb170b71f64c7accf97fa734198edddb30cbc78a2304aba1a1",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/runtime/core/list.eli",
+      "sha256": "c3cd48e705f8b9f48c19e74c9d9d0b50bdd8d5faf864eda52289f5db04ca7426",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/runtime/core/vector.eli",
+      "sha256": "29e91eedc19e8535b3e88b363a6a3561d0de1da732a552e2e9068b954ebdcc69",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/runtime/core/map.eli",
+      "sha256": "b3ec142000d35dc45a1d96e1d001240f0f81731c8e8b1f8e586cacae17a5c8c1",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/runtime/core/set.eli",
+      "sha256": "0f76626e0f2a856ca09c72c55e699cb5f800e5f8548c8d88c71e4350bc6a7526",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/runtime/core/queue.eli",
+      "sha256": "1ae7376a77407d7cd077245900c549f78f5161aa381fe14180b1a50840f7870d",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/runtime/core/identifier.eli",
+      "sha256": "9da84cdd7e099aba5a0c9cdbf7fa861b37005818f7d3b5fe03f407e0ada9519f",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/runtime/core/record.eli",
+      "sha256": "8e5035d4280d1ae137fc9830dc44a6f5f2c9213603be71fb787310cd3352e705",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/runtime/core/value.eli",
+      "sha256": "41b1d5997234e9c01c8bdda7324bb8e3024b38d61b4e0db6b4a608b1f28ff7bf",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/runtime/core/metadata.eli",
+      "sha256": "cbc7c2dacf8e63cf8923136bf12fda52901b3366f19ac08b6b895fd33eaab522",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/runtime/core/collection.eli",
+      "sha256": "74ba1f13c5f390dfce5d8b36a04b9f7540a97fdd1438ff72a5fe66dd26eb0211",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/runtime/core/transient.eli",
+      "sha256": "5eb0c5f8ba0d93d3a204b401c1ff4827d31254e03762456ff09eb6a73a483ca1",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/runtime/core/protocol.eli",
+      "sha256": "8622069f54812590fd026106757e27f31d91cda33fe718920d5cc4fc56514977",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/runtime/core/type.eli",
+      "sha256": "d3d39d03afed3669ea9d58f5d60ec2b82aa4942fc7cf622b6c7da6aed37c76aa",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/runtime/core/order.eli",
+      "sha256": "7b552a6b143c0c5b5f058b4772cda8b6eedb528abafba45b79f55bd0f07eeb72",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/runtime/core/sorted.eli",
+      "sha256": "a4546e54ed33f601e02df5e4377eceb94dddcebc9ecefdfeb7fefc7a6f78e58b",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/runtime/core/regex.eli",
+      "sha256": "620c7747460ddd4b69860e85e36ee8ae6c996ee722f17e7c98ce0f265778b2b9",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/runtime/core/transducer.eli",
+      "sha256": "338cfdf54837874c25f3660cd601c13f47874e8439b6004a2a6b48a36ddf957d",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/runtime/core/lazy-sequence.eli",
+      "sha256": "445fa18094d97501d3d05cb9a264240f292bc2c8da0e4f7867082354c449b18c",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/runtime/core/truth.eli",
+      "sha256": "c3c23a0dc5451a18962624bb9663ba1286cf831a19489a5c6a40e561cbbafd74",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/runtime/core/text.eli",
+      "sha256": "bbe24d59811e722b5acc75858e4b41631acd5303687b7a41a85e341766dec504",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/runtime/core/object.eli",
+      "sha256": "c950adba2d952de2585a7dec2cddad53c5f22f1bd5c6f9911128c8dc4852655e",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/runtime/core/sequence.eli",
+      "sha256": "51908cc6c6e4a6143bf971d78a5ba817c6f32f7e5f0cf33d8b794115be5eb50a",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/runtime/core/set-algebra.eli",
+      "sha256": "5e2cec03e1d80dcbebe53b14a6d78b163fd0fc02eaff03b0af7d23f67b5bb72b",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/runtime/core/collection-internals.eli",
+      "sha256": "0702310126efa7b4fad026de50b87c2dfa777e0b780c5db7c73f7460a2eb8aca",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/runtime/core/metadata-internals.eli",
+      "sha256": "6fe945781d56e999bab909488e65f4bcc4c97016845a10f9f728a2fc3f29a835",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/runtime/core/persistent-kind.eli",
+      "sha256": "ad41552cbf243563a3a7071ce24c2affb235237ff3f7f0159089838c064a9914",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/runtime/core/data.eli",
+      "sha256": "bca40bf5ca85f36b2b5510685133ddb062cfb3af13412060ee8ea18cd958e3a4",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/runtime/core/data-text.eli",
+      "sha256": "2c6edfb45534407b303f86f04ba26b24c0be84cc7433ca53cb521ee203eb9646",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/runtime/core/value-internals.eli",
+      "sha256": "cad7a3780d5c2ccbae4245fa54d062e065b51a4e6534eb3506da991b1c12a7cb",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/runtime/literals.eli",
+      "sha256": "b3b17993ae6ae16b30c5732fb5a7a9aeda052ba7eabe39ce4a18e1d9a0abbb5f",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/runtime/wire/markdown.eli",
+      "sha256": "7b47f4c8cf83405e6b2c28df687d48bfe029b3abc65aab0235d06cdb2fc93b20",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/runtime/wire/schema.eli",
+      "sha256": "6a7d34a757ce7b96b380fedb490dfc7da7da11244e7671e9f9f3833bf4d091fc",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/runtime/wire/http-rpc.eli",
+      "sha256": "8d170e385b8a4c3fdaf635131cf49b891871a2a804de08a68652f8fd25d66b42",
+      "matches": true
+    },
+    {
+      "path": "literal-sources/runtime/testing/value.eli",
+      "sha256": "0e383a5bc71f096af7ad32ef81cc1fe6458620ddc02fa6ca9e8c7826303d67ab",
+      "matches": true
+    }
+  ],
+  "source_binding_diagnosis": [
+    {
+      "path": "runtime/unicode-case-data.eli",
+      "declared_artifact_source_sha256_utf16le": "6972ed0e897ca08ee3d21600d88f0f72a7163952c4f5a30257e94c9a86293a9c",
+      "package_maintained_source_sha256_utf16le": "6972ed0e897ca08ee3d21600d88f0f72a7163952c4f5a30257e94c9a86293a9c",
+      "classification": "packaged-source-matches-artifact-missing-from-fixed-checkout",
+      "source_recovery": "copy-digest-bound-supplemental-source-to-isolated-toolchain-only"
+    },
+    {
+      "path": "stdlib/managed-literal-protocols.eli",
+      "declared_artifact_source_sha256_utf16le": "8f852d5984c9d5e784f8f1df2b3a2a258557dba996e9a6ad32c43cf37e6b0ae3",
+      "package_maintained_source_sha256_utf16le": "8de6c8e91237b8402a7868f017475588a1c6a1d601af911584d9b3d9d7ca1ad8",
+      "fixed_source_sha256_utf16le": "8de6c8e91237b8402a7868f017475588a1c6a1d601af911584d9b3d9d7ca1ad8",
+      "package_maintained_source_matches_fixed_source": true,
+      "classification": "packaged-maintained-source-matches-fixed-checkout-but-frozen-artifact-literal-is-stale",
+      "required_action": "rebuild-fixed-source-artifact-in-S3; do-not-edit-shared-language-checkout"
+    },
+    {
+      "path": "stdlib/managed-runtime-order.eli",
+      "declared_artifact_source_sha256_utf16le": "50474921bee03d61b32e17d6f768ae6477700834405ac29e571cd6d989457cef",
+      "package_maintained_source_sha256_utf16le": "2bbf412ffae0592a72fa88d5761a95ee55b99a6c2ef4f5469d973afb43f31103",
+      "fixed_source_sha256_utf16le": "2bbf412ffae0592a72fa88d5761a95ee55b99a6c2ef4f5469d973afb43f31103",
+      "package_maintained_source_matches_fixed_source": true,
+      "classification": "packaged-maintained-source-matches-fixed-checkout-but-frozen-artifact-literal-is-stale",
+      "required_action": "rebuild-fixed-source-artifact-in-S3; do-not-edit-shared-language-checkout"
+    },
+    {
+      "path": "stdlib/managed-runtime-sequence.eli",
+      "declared_artifact_source_sha256_utf16le": "1777c0d0f8b2ccc66cc8612835649b94f408a829b208662c283183a07b07693c",
+      "package_maintained_source_sha256_utf16le": "90cec3221010ceedd5f12e15fe634587b79f5e49e38e3138bac3046e25b4493f",
+      "fixed_source_sha256_utf16le": "90cec3221010ceedd5f12e15fe634587b79f5e49e38e3138bac3046e25b4493f",
+      "package_maintained_source_matches_fixed_source": true,
+      "classification": "packaged-maintained-source-matches-fixed-checkout-but-frozen-artifact-literal-is-stale",
+      "required_action": "rebuild-fixed-source-artifact-in-S3; do-not-edit-shared-language-checkout"
+    }
+  ],
+  "upstream_reading": {
+    "repository": "https://github.com/liuchong/eliscript",
+    "commit": "b1c7741365545d5a048079d64f863524cf7117e2",
+    "updated_checkout": false,
+    "executed_compiler": false,
+    "evidence_paths": [
+      "tools/backends/compiler-build.eli",
+      "tools/backends/eliscript/release-cli.eli"
+    ]
+  },
+  "prepared_source_closure": {
+    "record": "config/compiler-source-inputs.json",
+    "source_inputs_sha256": "f03fdefa2b5c31b7321c97a5fce2c6e7bc0a7aca46f801cd8d68ac85f0a270b5",
+    "files": 489,
+    "upstream_modified": false,
+    "prepared_only": true,
+    "functional_validation": "not_run"
+  }
+}

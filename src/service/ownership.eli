@@ -1,0 +1,156 @@
+(module dj.service.ownership
+  (import "../core/native.eli" nativeGet)
+  (import "../core/errors.eli" success failure)
+  (import "../application/context.eli" inTransaction utcNow)
+  (defun readOwner
+    (context)
+    (let
+      (
+        (row
+          (js-call
+            (js-call
+              (nativeGet (nativeGet context "store") "db")
+              :query
+              "SELECT payload FROM service_lease LIMIT 1")
+            :get)))
+      (when row (JSON/parse (nativeGet row "payload")))))
+  (defun ownerGuard
+    (context)
+    (let ((owner (readOwner context)))
+      (if
+        (and
+          owner
+          (= (nativeGet owner "owner_token") (nativeGet context "owner_token"))
+          (not (= (nativeGet owner "state") "stopped")))
+        (success owner)
+        (failure "owner_conflict"))))
+  (defasync acquireOwner
+    (context)
+    (let ((djReturn1Token (js-object)) (djReturn1Value nil))
+      (try
+        (let*
+          ((previous (readOwner context))
+            (process (nativeGet (nativeGet context "ports") "process"))
+            (absence false)
+            (identity (js-call process :currentIdentity)))
+          (when previous
+            (let ((observed (await (js-call process :inspectServiceOwner previous))))
+              (setq
+                absence
+                (and
+                  (= (nativeGet observed "absence_verified") t)
+                  (= (nativeGet observed "evidence_level") "native_protocol"))))
+            (unless absence
+              (progn
+                (setq djReturn1Value (failure "owner_conflict"))
+                (throw djReturn1Token))))
+          (inTransaction
+            context
+            (lambda
+              (tx)
+              (let ((djReturn2Token (js-object)) (djReturn2Value nil))
+                (try
+                  (let ((current (readOwner context)))
+                    (unless
+                      (if previous
+                        (and
+                          current
+                          (= (nativeGet current "owner_token") (nativeGet previous "owner_token")))
+                        (not current))
+                      (progn
+                        (setq djReturn2Value (failure "owner_conflict"))
+                        (throw djReturn2Token)))
+                    (when current
+                      (js-call
+                        (js-call
+                          (nativeGet tx "db")
+                          :query
+                          "DELETE FROM service_lease WHERE owner_token=?")
+                        :run
+                        (nativeGet current "owner_token")))
+                    (let
+                      (
+                        (record
+                          (js-object
+                            :service_id
+                            (nativeGet (nativeGet (nativeGet context "config") "service") "service_id")
+                            :owner_token
+                            (nativeGet context "owner_token")
+                            :pid
+                            (nativeGet identity "pid")
+                            :process_birth
+                            (nativeGet identity "process_birth")
+                            :state
+                            "recovering"
+                            :acquired_at
+                            (utcNow context))))
+                      (js-call
+                        (js-call
+                          (nativeGet tx "db")
+                          :query
+                          "INSERT INTO service_lease(service_id,owner_token,pid,process_birth,state,payload) VALUES (?,?,?,?,?,?)")
+                        :run
+                        (nativeGet record "service_id")
+                        (nativeGet record "owner_token")
+                        (nativeGet record "pid")
+                        (nativeGet record "process_birth")
+                        (nativeGet record "state")
+                        (JSON/stringify record))
+                      (success record)))
+                  (catch djReturn2Error
+                    (if (eq djReturn2Error djReturn2Token)
+                      djReturn2Value
+                      (throw djReturn2Error))))))))
+        (catch djReturn1Error
+          (if (eq djReturn1Error djReturn1Token) djReturn1Value (throw djReturn1Error))))))
+  (defun setOwnerState
+    (context state)
+    (inTransaction
+      context
+      (lambda
+        (tx)
+        (let ((djReturn3Token (js-object)) (djReturn3Value nil))
+          (try
+            (let ((guard (ownerGuard context)))
+              (unless (nativeGet guard "ok")
+                (progn (setq djReturn3Value guard) (throw djReturn3Token)))
+              (let ((record (nativeGet guard "data")))
+                (put record :state state)
+                (js-call
+                  (js-call
+                    (nativeGet tx "db")
+                    :query
+                    "UPDATE service_lease SET state=?,payload=? WHERE owner_token=?")
+                  :run
+                  state
+                  (JSON/stringify record)
+                  (nativeGet context "owner_token"))
+                (success record)))
+            (catch djReturn3Error
+              (if (eq djReturn3Error djReturn3Token)
+                djReturn3Value
+                (throw djReturn3Error))))))))
+  (defun releaseOwner
+    (context)
+    (inTransaction
+      context
+      (lambda
+        (tx)
+        (let ((djReturn4Token (js-object)) (djReturn4Value nil))
+          (try
+            (let ((guard (ownerGuard context)))
+              (unless (nativeGet guard "ok")
+                (progn (setq djReturn4Value guard) (throw djReturn4Token)))
+              (js-call
+                (js-call
+                  (nativeGet tx "db")
+                  :query
+                  "DELETE FROM service_lease WHERE owner_token=?")
+                :run
+                (nativeGet context "owner_token"))
+              (success nil))
+            (catch djReturn4Error
+              (if (eq djReturn4Error djReturn4Token)
+                djReturn4Value
+                (throw djReturn4Error))))))))
+  (export acquireOwner ownerGuard readOwner setOwnerState releaseOwner))

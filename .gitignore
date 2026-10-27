@@ -1,0 +1,11 @@
+/node_modules/
+/dist/
+/dist-tests/
+/dist-tools/
+/.local/
+/.env
+/.env.*
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+.DS_Store

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>dev.dispatch-junction.local</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>REPLACE_WITH_BUN_EXECUTABLE</string>
+    <string>REPLACE_WITH_BUNDLE_DIRECTORY/dist/src/service/main.mjs</string>
+    <string>--config</string><string>REPLACE_WITH_PRIVATE_CONFIG_DIRECTORY/service.json</string>
+  </array>
+  <key>RunAtLoad</key><false/>
+  <key>KeepAlive</key><false/>
+  <key>ProcessType</key><string>Background</string>
+</dict>
+</plist>

@@ -1,0 +1,1140 @@
+(module dj.delivery.scheduler
+  (import "../core/native.eli" nativeNullish nativeGet)
+  (import "../core/errors.eli" success failure)
+  (import "../core/types.eli"
+    addSeconds
+    nextRevision
+    encodeSeq
+    hashValue
+    utf8Bytes
+    sliceUtf8)
+  (import "../core/limits.eli" limits)
+  (import "../core/instructions.eli" composeInstructions)
+  (import "../core/states.eli" mapNativeReceipt)
+  (import "../application/context.eli"
+    utcNow
+    nextId
+    inTransaction
+    must
+    agentPort
+    nativeCallContext
+    safeFields)
+  (import "../application/write-batch.eli" enqueueWrite)
+  (import "../policy/principals.eli" configuredPrincipal)
+  (import "../policy/authorize.eli" authorize)
+  (import "../policy/handles.eli" issueHandle)
+  (import "../catalog/records.eli" attachBinding)
+  (import "../lifecycle/gates.eli" assertGate)
+  (import "./envelope.eli" encodeAgentInput)
+  (import "./snapshot.eli" packEnvelope)
+  (import "./service.eli" isContributionEffective projectDelivery)
+  (import "./read-scope.eli" withContributionReads)
+  (defconst queuedStates (js-array "ready" "deferred" "blocked"))
+  (defun attemptBinding (context attempt)
+    (if (nativeGet attempt "binding_id")
+      (js-call (nativeGet context "repository") :get "bindings" (nativeGet attempt "binding_id"))
+      (nativeGet attempt "binding")))
+  (defun selectHead
+    (context route-id)
+    (let
+      (
+        (row
+          (js-call
+            (js-call
+              (nativeGet (nativeGet context "store") "db")
+              :query
+              "SELECT payload FROM deliveries WHERE route_id=? AND state IN ('ready','deferred','blocked','submitting','unknown') ORDER BY delivery_seq LIMIT 1")
+            :get
+            route-id)))
+      (when row (JSON/parse (nativeGet row "payload")))))
+  (defun ownsClaim
+    (context claim)
+    (let
+      ((current (js-call (nativeGet context "repository") :get "claims" (nativeGet claim "route_id"))))
+      (and
+        current
+        (= (nativeGet current "claim_owner") (nativeGet context "owner_token"))
+        (= (nativeGet current "claim_owner") (nativeGet claim "claim_owner"))
+        (= (encodeSeq (nativeGet current "claim_epoch")) (encodeSeq (nativeGet claim "claim_epoch"))))))
+  (defun releaseClaim
+    (context claim)
+    ;; A stale continuation cannot release a newer worker's claim.
+    (when (ownsClaim context claim)
+      (let*
+        ((repository (nativeGet context "repository"))
+          (route (js-call repository :get "routes" (nativeGet claim "route_id"))))
+        (js-call repository :delete "claims" (nativeGet claim "route_id"))
+        (when (= (nativeGet route "claim_owner") (nativeGet claim "claim_owner"))
+          (put route :claim_owner nil)
+          (must (js-call repository :replaceProgress "routes" route))))))
+  (defun serviceOpen (context) (= (nativeGet (nativeGet context "runtime") "state" "ready") "ready"))
+  (defun claimRoute
+    (context route-id)
+    (let ((djReturn1Token (js-object)) (djReturn1Value nil))
+      (try
+        (unless (and (nativeGet context "owner_token") (serviceOpen context))
+          (progn (setq djReturn1Value (failure "unavailable")) (throw djReturn1Token)))
+        (inTransaction
+          context
+          (lambda
+            (tx)
+            (let ((djReturn2Token (js-object)) (djReturn2Value nil))
+              (try
+                (let*
+                  ((repository (nativeGet context "repository"))
+                    (route (js-call repository :get "routes" route-id))
+                    (head (and route (js-call (js-call (nativeGet tx "db") :query
+                      "SELECT delivery_id,state FROM deliveries INDEXED BY deliveries_route_head WHERE route_id=? AND state IN ('ready','deferred','blocked','submitting','unknown') ORDER BY delivery_seq LIMIT 1")
+                      :get route-id))))
+                  (unless route
+                    (progn
+                      (setq djReturn2Value (failure "not_found"))
+                      (throw djReturn2Token)))
+                  (when
+                    (or
+                      (nativeGet route "unknown_delivery_id")
+                      (js-call repository :get "claims" route-id))
+                    (progn
+                      (setq djReturn2Value (failure "delivery_unknown"))
+                      (throw djReturn2Token)))
+                  (unless (and head (js-call queuedStates :includes (nativeGet head "state")))
+                    (progn (setq djReturn2Value (success nil)) (throw djReturn2Token)))
+                  (let*
+                    (
+                      (row
+                        (js-call
+                          (js-call
+                            (nativeGet tx "db")
+                            :query
+                            "UPDATE routes SET claim_epoch=claim_epoch+1,claim_owner=?,payload=json_set(payload,'$.claim_epoch',CAST(claim_epoch+1 AS TEXT),'$.claim_owner',?) WHERE route_id=? AND claim_epoch<9223372036854775807 RETURNING CAST(claim_epoch AS TEXT) AS value")
+                          :get
+                          (nativeGet context "owner_token")
+                          (nativeGet context "owner_token")
+                          route-id))
+                      (epoch (and row (encodeSeq (nativeGet row "value")))))
+                    (unless epoch
+                      (progn
+                        (setq djReturn2Value (failure "limit_exceeded"))
+                        (throw djReturn2Token)))
+                    (put route :claim_epoch epoch)
+                    (put route :claim_owner (nativeGet context "owner_token"))
+                    (let
+                      (
+                        (claim
+                          (js-object
+                            :route_id
+                            route-id
+                            :claim_owner
+                            (nativeGet context "owner_token")
+                            :claim_epoch
+                            epoch
+                            :delivery_id
+                            (nativeGet head "delivery_id")
+                            :claimed_at
+                            (utcNow context))))
+                      (js-call repository :insert "claims" claim)
+                      (success claim))))
+                (catch djReturn2Error
+                  (if (eq djReturn2Error djReturn2Token)
+                    djReturn2Value
+                    (throw djReturn2Error)))))))
+        (catch djReturn1Error
+          (if (eq djReturn1Error djReturn1Token) djReturn1Value (throw djReturn1Error))))))
+  (defun holdDelivery
+    (context record claim state reason)
+    (put record :state state)
+    (put record :blocked_reason reason)
+    (put record :revision (nextRevision (nativeGet record "revision")))
+    (must (js-call (nativeGet context "repository") :replaceProgress "deliveries" record))
+    (releaseClaim context claim)
+    (success
+      (js-object
+        :submitted
+        false
+        :delivery_id
+        (nativeGet record "delivery_id")
+        :state
+        state
+        :reason
+        reason)))
+  (defun principalAllows
+    (context principal-id action resource)
+    (let
+      (
+        (principal
+          (configuredPrincipal (nativeGet (nativeGet context "config") "principals") principal-id)))
+      (nativeGet
+        (authorize principal action resource (nativeGet principal "authorization_revision"))
+        "allowed")))
+  (defun effectiveContributions
+    (context record event agent &optional route known-read)
+    (let ((work (lambda (read)
+    (let*
+      ((repository (nativeGet context "repository"))
+        (rows
+          (js-call
+            (js-call
+              (nativeGet (nativeGet context "store") "db")
+              :query
+              "SELECT c.payload,c.subscription_id AS contribution_subscription_id,s.subscription_id AS current_subscription_id,s.owner_principal_id AS current_owner_principal_id,s.state AS current_state,s.revision AS current_revision FROM contributions c LEFT JOIN subscriptions s ON s.subscription_id=c.subscription_id WHERE c.delivery_id=? ORDER BY c.subscription_id,c.revision")
+            :iterate
+            (nativeGet record "delivery_id")))
+        (effective (js-array))
+        (matched-bytes 0)
+        (done false))
+      (try
+        (while (not done)
+          (let ((next (js-call rows :next)))
+            (setq done (nativeGet next "done"))
+            (unless done
+              (let* ((row (nativeGet next "value"))
+                (item (JSON/parse (nativeGet row "payload")))
+                (subscription (unless (nativeNullish (nativeGet row "current_subscription_id"))
+                  (Object/freeze (js-object
+                    :subscription_id (nativeGet row "current_subscription_id")
+                    :owner_principal_id (nativeGet row "current_owner_principal_id")
+                    :state (nativeGet row "current_state")
+                    :revision (nativeGet row "current_revision")))))
+                (item-read (lambda (table key)
+                  (if (and (= table "subscriptions")
+                    (= key (nativeGet row "contribution_subscription_id")))
+                    subscription
+                    (funcall read table key)))))
+                (if (isContributionEffective context item event agent item-read route)
+                  (progn
+                    (setq
+                      matched-bytes
+                      (+
+                        matched-bytes
+                        (utf8Bytes
+                          (JSON/stringify
+                            (js-object
+                              :subscription_id
+                              (nativeGet item "subscription_id")
+                              :subscription_revision
+                              (nativeGet item "revision")
+                              :result
+                              "match")))))
+                    ;; This is a lower bound on the final encoded frame. Never
+                    ;; submit a prefix of the effective contribution set.
+                    (when (> matched-bytes (nativeGet limits "native_frame_max_bytes"))
+                      (put effective :overflow t)
+                      (setq done t))
+                    (unless done (js-call effective :push item)))
+                  (when
+                    (js-call
+                      (js-array "active" "effective")
+                      :includes
+                      (nativeGet item "state"))
+                    (put
+                      item
+                      :state
+                      (if
+                        (<=
+                          (Date/parse (nativeGet item "expires_at"))
+                          (Date/parse (utcNow context)))
+                        "expired"
+                        "revoked"))
+                    (must (js-call repository :replace "contributions" item))))))))
+        (finally (when (nativeGet rows "return") (js-call rows :return))))
+      effective))))
+      (if known-read
+        (funcall work known-read)
+        (withContributionReads context work t))))
+  (defun replyContext
+    (context record event recipient &optional read)
+    (let ((djReturn3Token (js-object)) (djReturn3Value nil))
+      (try
+        (let*
+          ((repository (nativeGet context "repository"))
+            (address (nativeGet event "conversation"))
+            (connection
+              (if read
+                (funcall read "connections" (nativeGet event "connection_id"))
+                (js-call repository :get "connections" (nativeGet event "connection_id"))))
+            (port
+              (js-call
+                (nativeGet (nativeGet context "ports") "im_ports")
+                :get
+                (nativeGet event "connection_id")))
+            (threaded (not (nativeNullish (nativeGet address "native_thread_id"))))
+            (capabilities (nativeGet port "capabilities")))
+          (unless
+            (and
+              recipient
+              port
+              (nativeGet event "native_message_id")
+              (principalAllows
+                context
+                (nativeGet recipient "principal_id")
+                "message.reply"
+                address)
+              (not (= (nativeGet capabilities "send") "unsupported"))
+              (or (not threaded) (= (nativeGet capabilities "reply_thread") "supported")))
+            (progn (setq djReturn3Value nil) (throw djReturn3Token)))
+          (let*
+            ((expiry (addSeconds (utcNow context) (nativeGet limits "reply_ttl_seconds")))
+              (id (nextId context "reply_context_record")))
+            (when (> (Date/parse expiry) (Date/parse (nativeGet event "body_expires_at")))
+              (setq expiry (nativeGet event "body_expires_at")))
+            (let*
+              (
+                (handle
+                  (issueHandle
+                    context
+                    "reply_context"
+                    recipient
+                    id
+                    (Object/assign (js-object :identity_revision
+                      (nativeGet connection "identity_revision" (nativeGet connection "revision")))
+                      (if (nativeGet record "inbox_id")
+                        (js-object :inbox_id (nativeGet record "inbox_id") :inbox_claim_ref (nativeGet record "inbox_claim_ref"))
+                        (js-object)))
+                    expiry))
+                (reply
+                  (js-object
+                    :reply_context_id
+                    id
+                    :public_ref
+                    (nativeGet handle "ref")
+                    :delivery_id
+                    (nativeGet record "delivery_id")
+                    :event_id
+                    (nativeGet event "event_id")
+                    :recipient_principal_id
+                    (nativeGet recipient "principal_id")
+                    :destination
+                    (Object/assign (js-object) address)
+                    :native_reply_to
+                    (nativeGet event "native_message_id")
+                    :identity_revision
+                    (nativeGet connection "identity_revision" (nativeGet connection "revision"))
+                    :allowed_actions
+                    (js-array "reply")
+                    :expires_at
+                    expiry)))
+              (when (nativeGet record "inbox_id")
+                (put reply :inbox_id (nativeGet record "inbox_id"))
+                (put reply :inbox_claim_ref (nativeGet record "inbox_claim_ref")))
+              (js-call repository :insert (if (nativeGet record "inbox_id") "inbox_reply_contexts" "reply_contexts") reply)
+              reply)))
+        (catch djReturn3Error
+          (if (eq djReturn3Error djReturn3Token) djReturn3Value (throw djReturn3Error))))))
+  (defun freezeEnvelope
+    (context record event contributions &optional known-agent read)
+    (if (= (nativeGet record "origin") "direct")
+      (let
+        (
+          (sender
+            (configuredPrincipal
+              (nativeGet (nativeGet context "config") "principals")
+              (nativeGet record "principal_id"))))
+        (js-object
+          :schema_version
+          1
+          :kind
+          "external_message"
+          :origin
+          "direct"
+          :delivery_id
+          (nativeGet record "delivery_id")
+          :event_id
+          nil
+          :source
+          (js-object :kind "api")
+          :sender
+          (js-object
+            :principal_id
+            (nativeGet record "principal_id")
+            :principal_kind
+            (nativeGet sender "kind"))
+          :content
+          (nativeGet record "content")
+          :attachments
+          (js-array)
+          :reply_context_id
+          nil
+          :allowed_actions
+          (js-array)))
+      (let*
+        ((budget (nativeGet limits "text_bytes"))
+          (matches (js-array))
+          (text (nativeGet (nativeGet event "content") "text")))
+        (js-call
+          contributions
+          :forEach
+          (lambda
+            (item)
+            (setq budget (Math/min budget (nativeGet (nativeGet item "context_policy") "max_bytes")))
+            (js-call
+              matches
+              :push
+              (js-object
+                :subscription_id
+                (nativeGet item "subscription_id")
+                :subscription_revision
+                (nativeGet item "revision")
+                :result
+                "match"))))
+        (let*
+          ((body (nativeGet (sliceUtf8 text 0 budget) "text"))
+            (agent (or known-agent
+              (js-call (nativeGet context "repository") :get "agents" (nativeGet record "agent_id"))))
+            (recipient
+              (configuredPrincipal
+                (nativeGet (nativeGet context "config") "principals")
+                (nativeGet agent "recipient_principal_id")))
+            (reply (replyContext context record event recipient read))
+            (content
+              (js-object
+                :type
+                "text"
+                :text
+                body
+                :truncated
+                (or
+                  (< (utf8Bytes body) (utf8Bytes text))
+                  (= (nativeGet (nativeGet event "content") "truncated") t))
+                :original_bytes
+                (nativeGet (nativeGet event "content") "original_bytes" (utf8Bytes text)))))
+          (when (nativeGet content "truncated")
+            (let
+              (
+                (handle
+                  (issueHandle
+                    context
+                    "message"
+                    recipient
+                    (nativeGet event "event_id")
+                    (js-object :identity_revision (nativeGet event "identity_revision"))
+                    (if
+                      (<
+                        (Date/parse (nativeGet event "body_expires_at"))
+                        (Date/parse
+                          (addSeconds (utcNow context) (nativeGet limits "handle_ttl_seconds"))))
+                      (nativeGet event "body_expires_at")
+                      (addSeconds (utcNow context) (nativeGet limits "handle_ttl_seconds"))))))
+              (put content :message_ref (nativeGet handle "ref"))))
+          (let* ((envelope (js-object
+            :schema_version
+            1
+            :kind
+            "external_message"
+            :origin
+            "subscription_event"
+            :delivery_id
+            (nativeGet record "delivery_id")
+            :event_id
+            (nativeGet event "event_id")
+            :source
+            (Object/assign
+              (js-object :kind "im" :native_message_id (nativeGet event "native_message_id"))
+              (nativeGet event "conversation"))
+            :sender
+            (nativeGet event "sender")
+            :matched
+            matches
+            :content
+            content
+            :attachments
+            (nativeGet event "attachments" (js-array))
+            :reply_context_id
+            (if reply (nativeGet reply "public_ref") nil)
+            :allowed_actions
+            (if reply (js-array "reply") (js-array))))
+                 (instructions (composeInstructions contributions event body)))
+            (when (> (js-length instructions) 0) (put envelope :instructions instructions))
+            (when (nativeGet record "inbox_id") (put envelope :inbox_id (nativeGet record "inbox_id")))
+            (when (nativeGet instructions "overflow") (put envelope :instruction_overflow t))
+            envelope)))))
+  (defun exactObservation
+    (session observation)
+    (and
+      (= (nativeGet observation "runtime_state") "idle")
+      (= (nativeGet observation "live_receiver") t)
+      (js-call
+        (js-array "native_session_id" "native_namespace" "instance_epoch")
+        :every
+        (lambda (field) (= (nativeGet observation field) (nativeGet session field))))))
+  (defun beginSubmission
+    (context delivery-id claim &optional observation)
+    (inTransaction
+      context
+      (lambda
+        (tx)
+        (withContributionReads context (lambda (read)
+        (let ((djReturn4Token (js-object)) (djReturn4Value nil))
+          (try
+            (let*
+              ((repository (nativeGet context "repository"))
+                (record (js-call repository :get "deliveries" delivery-id))
+                (route
+                  (and record (js-call repository :get "routes" (nativeGet record "route_id"))))
+                (session
+                  (and
+                    route
+                    (funcall read "sessions" (nativeGet route "session_key"))))
+                (instance
+                  (and
+                    session
+                    (js-call repository :get "instances" (nativeGet session "instance_id"))))
+                (head (and route (js-call (js-call (nativeGet tx "db") :query
+                  "SELECT delivery_id FROM deliveries INDEXED BY deliveries_route_head WHERE route_id=? AND state IN ('ready','deferred','blocked','submitting','unknown') ORDER BY delivery_seq LIMIT 1")
+                  :get (nativeGet route "route_id"))))
+                (event nil)
+                (agent nil)
+                (contributions (js-array)))
+              (unless
+                (and
+                  record
+                  route
+                  session
+                  instance
+                  (ownsClaim context claim)
+                  (= delivery-id (nativeGet claim "delivery_id"))
+                  (= delivery-id (nativeGet head "delivery_id"))
+                  (js-call queuedStates :includes (nativeGet record "state"))
+                  (not (nativeGet route "unknown_delivery_id")))
+                (progn
+                  (setq djReturn4Value (failure "revision_conflict"))
+                  (throw djReturn4Token)))
+              (unless (serviceOpen context)
+                (progn
+                  (setq
+                    djReturn4Value
+                    (holdDelivery context record claim "deferred" "service_draining"))
+                  (throw djReturn4Token)))
+              (unless
+                (nativeGet
+                  (assertGate
+                    tx
+                    (nativeGet session "instance_id")
+                    (nativeGet session "instance_epoch")
+                    "open")
+                  "ok")
+                (progn
+                  (setq
+                    djReturn4Value
+                    (holdDelivery context record claim "deferred" "instance_stopping"))
+                  (throw djReturn4Token)))
+              (if (= (nativeGet record "origin") "direct")
+                (progn
+                  (when
+                    (<=
+                      (Date/parse (nativeGet record "expires_at"))
+                      (Date/parse (utcNow context)))
+                    (progn
+                      (setq
+                        djReturn4Value
+                        (holdDelivery context record claim "expired" "ttl_expired"))
+                      (throw djReturn4Token)))
+                  (unless
+                    (principalAllows
+                      context
+                      (nativeGet record "principal_id")
+                      "session.send"
+                      session)
+                    (progn
+                      (setq
+                        djReturn4Value
+                        (holdDelivery context record claim "blocked" "forbidden"))
+                      (throw djReturn4Token))))
+                (progn
+                  (unless
+                    (=
+                      (nativeGet
+                        (js-call (js-call (nativeGet tx "db") :query
+                          "SELECT state FROM routing_work WHERE event_id=?")
+                          :get (nativeGet record "event_id"))
+                        "state")
+                      "done")
+                    (progn
+                      (setq
+                        djReturn4Value
+                        (holdDelivery
+                          context
+                          record
+                          claim
+                          "blocked"
+                          "routing_incomplete"))
+                      (throw djReturn4Token)))
+                  (setq event (js-call repository :get "events" (nativeGet record "event_id")))
+                  (setq agent (funcall read "agents" (nativeGet record "agent_id")))
+                  (setq
+                    contributions
+                    (effectiveContributions
+                      context
+                      record
+                      event
+                      agent
+                      route
+                      read))
+                  (when (nativeGet contributions "overflow")
+                    (progn
+                      (setq
+                        djReturn4Value
+                        (holdDelivery context record claim "blocked" "limit_exceeded"))
+                      (throw djReturn4Token)))
+                  (unless (> (js-length contributions) 0)
+                    (progn
+                      (setq
+                        djReturn4Value
+                        (holdDelivery
+                          context
+                          record
+                          claim
+                          "expired"
+                          "no_effective_contributions"))
+                      (throw djReturn4Token)))))
+              (unless (exactObservation session observation)
+                (progn
+                  (setq
+                    djReturn4Value
+                    (holdDelivery
+                      context
+                      record
+                      claim
+                      "deferred"
+                      (cond
+                        ((= (nativeGet observation "runtime_state") "waiting_permission")
+                          "permission_pending")
+                        (
+                          (=
+                            (nativeGet observation "runtime_state" (nativeGet observation "state"))
+                            "offline")
+                          "target_offline")
+                        (t "target_busy"))))
+                  (throw djReturn4Token)))
+              (let*
+                ((port (agentPort context instance))
+                  (capabilities (nativeGet port "capabilities")))
+                (when (= (nativeGet capabilities "start_idle") "unsupported")
+                  (progn
+                    (setq
+                      djReturn4Value
+                      (holdDelivery context record claim "blocked" "unsupported"))
+                    (throw djReturn4Token)))
+                (let*
+                  ((binding (attachBinding context route session instance observation))
+                    (envelope (freezeEnvelope context record event contributions agent read))
+                    (frame
+                      (encodeAgentInput
+                        (nativeGet session "tool")
+                        envelope
+                        (nativeGet record "dispatch_key"))))
+                  (when
+                    (or (nativeGet envelope "instruction_overflow") (>
+                      (nativeGet frame "frame_bytes")
+                      (nativeGet
+                        capabilities
+                        "max_input_frame_bytes"
+                        (nativeGet limits "native_frame_max_bytes"))))
+                    ;; These handles have not left the transaction. Remove them before
+                    ;; committing the blocked record, so no ReplyContext starts early.
+                    (when (nativeGet envelope "reply_context_id")
+                      (let
+                        (
+                          (handle
+                            (js-call
+                              (nativeGet repository "handleRecords")
+                              :get
+                              (nativeGet envelope "reply_context_id"))))
+                        (js-call
+                          repository
+                          :delete
+                          "reply_contexts"
+                          (nativeGet handle "resource_key"))
+                        (js-call
+                          (nativeGet repository "handleRecords")
+                          :delete
+                          (nativeGet envelope "reply_context_id"))))
+                    (when (nativeGet (nativeGet envelope "content") "message_ref")
+                      (js-call
+                        (nativeGet repository "handleRecords")
+                        :delete
+                        (nativeGet (nativeGet envelope "content") "message_ref")))
+                    (progn
+                      (setq
+                        djReturn4Value
+                        (holdDelivery context record claim "blocked" "limit_exceeded"))
+                      (throw djReturn4Token)))
+                  (let
+                    (
+                      (attempt
+                        (js-object
+                          :attempt_id
+                          (nextId context "attempt")
+                          :delivery_id
+                          delivery-id
+                          :outbound_id
+                          nil
+                          :lifecycle_id
+                          nil
+                          :dispatch_key
+                          (nativeGet record "dispatch_key")
+                          :state
+                          "submitting"
+                          :definite_not_sent
+                          false
+                          :binding_id
+                          (nativeGet binding "binding_id")
+                          :claim_epoch
+                          (nativeGet claim "claim_epoch")
+                          :started_at
+                          (utcNow context)
+                          :envelope_snapshot
+                          (packEnvelope envelope))))
+                    (js-call repository :insert "attempts" attempt)
+                    (put record :state "submitting")
+                    (put record :attempt_id (nativeGet attempt "attempt_id"))
+                    (put record :binding_id (nativeGet binding "binding_id"))
+                    (put record :submitted_at (utcNow context))
+                    (put record :reply_context_id (nativeGet envelope "reply_context_id"))
+                    (put record :allowed_actions (nativeGet envelope "allowed_actions"))
+                    (put
+                      record
+                      :frozen_contributions
+                      (js-call
+                        contributions
+                        :map
+                        (lambda
+                          (item)
+                          (str (nativeGet item "subscription_id") ":" (nativeGet item "revision")))))
+                    (put record :revision (nextRevision (nativeGet record "revision")))
+                    (must (js-call repository :replaceProgress "deliveries" record))
+                    (success
+                      (js-object
+                        :submitted
+                        t
+                        :attempt_id
+                        (nativeGet attempt "attempt_id")
+                        :delivery_id
+                        delivery-id
+                        :binding
+                        binding
+                        :envelope
+                        envelope
+                        :dispatch_key
+                        (nativeGet record "dispatch_key")))))))
+            (catch djReturn4Error
+              (if (eq djReturn4Error djReturn4Token)
+                djReturn4Value
+                (throw djReturn4Error))))))
+          t))))
+  (defun observationFact
+    (tool observation)
+    (let
+      (
+        (fact
+          (safeFields
+            observation
+            (js-array
+              "kind"
+              "state"
+              "evidence_level"
+              "native_ref"
+              "native_receipt_key"
+              "dispatch_key"
+              "definite_not_sent"
+              "retryable"
+              "disposition"
+              "type"
+              "command"
+              "success"
+              "status"))))
+      (unless (nativeGet fact "kind") (Object/assign fact (mapNativeReceipt tool observation)))
+      (when
+        (and
+          (= (nativeGet fact "state") "accepted")
+          (= (nativeGet fact "evidence_level") "native_protocol"))
+        (put fact :kind "accepted"))
+      (unless
+        (js-call
+          (js-array
+            "accepted"
+            "handled"
+            "started"
+            "ended"
+            "settled"
+            "turn_finished"
+            "agent_settled"
+            "held"
+            "rejected"
+            "unknown"
+            "native_observation")
+          :includes
+          (nativeGet fact "kind"))
+        (put fact :kind "unknown"))
+      fact))
+  (defun recordReceipt
+    (context attempt-id observation)
+    (inTransaction
+      context
+      (lambda
+        (tx)
+        (let ((djReturn5Token (js-object)) (djReturn5Value nil))
+          (try
+            (let*
+              ((repository (nativeGet context "repository"))
+                (attempt (js-call repository :get "attempts" attempt-id))
+                (record
+                  (and
+                    attempt
+                    (js-call repository :get "deliveries" (nativeGet attempt "delivery_id"))))
+                (binding (attemptBinding context attempt))
+                (route
+                  (and record (js-call repository :get "routes" (nativeGet record "route_id"))))
+                (old-unknown (nativeGet route "unknown_delivery_id" nil))
+                (old-owner (nativeGet route "claim_owner" nil))
+                (fact (observationFact (nativeGet binding "tool") observation)))
+              (unless (and attempt record route (= (nativeGet record "attempt_id") attempt-id))
+                (progn
+                  (setq djReturn5Value (failure "stale_reference"))
+                  (throw djReturn5Token)))
+              (when
+                (or
+                  (and
+                    (nativeGet fact "dispatch_key")
+                    (not (= (nativeGet fact "dispatch_key") (nativeGet attempt "dispatch_key"))))
+                  (and
+                    (nativeGet record "native_ref")
+                    (nativeGet fact "native_ref")
+                    (not (= (nativeGet record "native_ref") (nativeGet fact "native_ref")))))
+                (progn
+                  (setq djReturn5Value (failure "stale_reference"))
+                  (throw djReturn5Token)))
+              (let*
+                ((receipt-key (or (nativeGet fact "native_receipt_key") (hashValue fact)))
+                  (existing
+                    (js-call
+                      (js-call
+                        (nativeGet tx "db")
+                        :query
+                        "SELECT 1 AS found FROM receipts WHERE attempt_id=? AND native_receipt_key=?")
+                      :get
+                      attempt-id
+                      receipt-key)))
+                (unless existing
+                  (js-call
+                    repository
+                    :insert
+                    "receipts"
+                    (Object/assign
+                      (js-object)
+                      fact
+                      (js-object
+                        :receipt_id
+                        (nextId context "receipt")
+                        :attempt_id
+                        attempt-id
+                        :native_receipt_key
+                        receipt-key
+                        :evidence_level
+                        (nativeGet fact "evidence_level" "none")
+                        :observed_at
+                        (utcNow context))))))
+              (let*
+                ((native (= (nativeGet fact "evidence_level") "native_protocol"))
+                  (kind (nativeGet fact "kind"))
+                  (current (nativeGet record "state")))
+                (cond
+                  (
+                    (and
+                      native
+                      (= kind "accepted")
+                      (js-call (js-array "submitting" "unknown") :includes current))
+                    (put record :state "accepted")
+                    (put record :evidence_level "native_protocol")
+                    (put
+                      record
+                      :native_ref
+                      (nativeGet fact "native_ref" (nativeGet record "native_ref" nil)))
+                    (put attempt :state "accepted")
+                    (put record :accepted_at (utcNow context)))
+                  (
+                    (and
+                      (= (nativeGet fact "definite_not_sent") t)
+                      (js-call (js-array "submitting" "unknown") :includes current))
+                    (put record :state "failed")
+                    (put record :definite_not_sent t)
+                    (put record :retryable (= (nativeGet fact "retryable") t))
+                    (put
+                      record
+                      :evidence_level
+                      (if native "native_protocol" "service_record"))
+                    (put attempt :state "failed")
+                    (put attempt :definite_not_sent t))
+                  ((= current "submitting")
+                    (put record :state "unknown")
+                    (put attempt :state "unknown")
+                    (put record :evidence_level (nativeGet fact "evidence_level" "none"))))
+                ;; These independent facts never claim that an answer is correct or
+                ;; that a turn-end authorizes the next input without another probe.
+                (when
+                  (and
+                    native
+                    (js-call
+                      (js-array
+                        "handled"
+                        "started"
+                        "ended"
+                        "settled"
+                        "turn_finished"
+                        "agent_settled"
+                        "held")
+                      :includes
+                      kind))
+                  (put
+                    record
+                    kind
+                    (js-object
+                      :observed_at
+                      (utcNow context)
+                      :evidence_level
+                      "native_protocol")))
+                (when
+                  (and
+                    native
+                    (js-call (js-array "settled" "agent_settled") :includes kind))
+                  (put record :native_drained t))
+                (if (= (nativeGet record "state") "unknown")
+                  (put route :unknown_delivery_id (nativeGet record "delivery_id"))
+                  (when (= (nativeGet route "unknown_delivery_id") (nativeGet record "delivery_id"))
+                    (put route :unknown_delivery_id nil)))
+                (put record :revision (nextRevision (nativeGet record "revision")))
+                (must (js-call repository :replaceProgress "deliveries" record))
+                (must (js-call repository :replaceProgress "attempts" attempt))
+                (let ((claim (js-call repository :get "claims" (nativeGet route "route_id"))))
+                  (when
+                    (and
+                      claim
+                      (= (nativeGet claim "claim_owner") (nativeGet context "owner_token"))
+                      (=
+                        (encodeSeq (nativeGet claim "claim_epoch"))
+                        (encodeSeq (nativeGet attempt "claim_epoch"))))
+                    ;; The claim and route were loaded in this synchronous write.
+                    ;; Do not reread/replace the route through releaseClaim.
+                    (js-call repository :delete "claims" (nativeGet route "route_id"))
+                    (when (= (nativeGet route "claim_owner") (nativeGet claim "claim_owner"))
+                      (put route :claim_owner nil))))
+                (when (or
+                  (not (= old-unknown (nativeGet route "unknown_delivery_id" nil)))
+                  (not (= old-owner (nativeGet route "claim_owner" nil))))
+                  (must (js-call repository :replaceProgress "routes" route)))
+                (success (projectDelivery context record))))
+            (catch djReturn5Error
+              (if (eq djReturn5Error djReturn5Token)
+                djReturn5Value
+                (throw djReturn5Error))))))))
+  (defasync hitFault
+    (context point data)
+    (when (nativeGet (nativeGet context "ports") "faults")
+      (await (js-call (nativeGet (nativeGet context "ports") "faults") :hit point data))))
+  (defasync dispatchRoute
+    (context route-id)
+    (let ((djReturn6Token (js-object)) (djReturn6Value nil))
+      (try
+        (let* ((claimed (await (enqueueWrite context (lambda () (claimRoute context route-id)))))
+          (claim (nativeGet claimed "data")))
+          (unless (and (nativeGet claimed "ok") claim)
+            (progn (setq djReturn6Value claimed) (throw djReturn6Token)))
+          (let*
+            ((repository (nativeGet context "repository"))
+              (route (js-call repository :get "routes" route-id))
+              (session (js-call repository :get "sessions" (nativeGet route "session_key")))
+              (instance
+                (js-call repository :get "instances" (nativeGet session "instance_id")))
+              (port (agentPort context instance))
+              (observation (js-object :runtime_state "unknown")))
+            (try
+              (when port
+                (try
+                  (setq
+                    observation
+                    (await
+                      (js-call port :probe session session (nativeCallContext context))))
+                  (catch unavailable
+                    (when (eq unavailable djReturn6Token) (throw unavailable))
+                    nil)))
+              (let*
+                (
+                  (prepared
+                    (await (enqueueWrite context (lambda ()
+                      (beginSubmission context (nativeGet claim "delivery_id") claim observation)))))
+                  (frozen (nativeGet prepared "data")))
+                (unless (and (nativeGet prepared "ok") (nativeGet frozen "submitted"))
+                  (progn (setq djReturn6Value prepared) (throw djReturn6Token)))
+                (let ((receipt nil))
+                  (try
+                    (await
+                      (hitFault context "delivery.after_submitting_before_write" frozen))
+                    (setq
+                      receipt
+                      (await
+                        (js-call
+                          port
+                          :submit
+                          (nativeGet frozen "binding")
+                          (nativeGet frozen "envelope")
+                          "start_idle"
+                          (nativeGet frozen "dispatch_key")
+                          (nativeCallContext context))))
+                    (await
+                      (hitFault
+                        context
+                        "delivery.after_native_accept_before_receipt"
+                        frozen))
+                    (catch uncertain
+                      (when (eq uncertain djReturn6Token) (throw uncertain))
+                      (setq
+                        receipt
+                        (js-object
+                          :state
+                          "unknown"
+                          :kind
+                          "unknown"
+                          :evidence_level
+                          "none"))))
+                  (await (enqueueWrite context (lambda ()
+                    (recordReceipt context (nativeGet frozen "attempt_id") receipt))))))
+              (finally
+                (when (ownsClaim context claim)
+                  (inTransaction
+                    context
+                    (lambda (tx) (releaseClaim context claim) (success nil))))))))
+        (catch djReturn6Error
+          (if (eq djReturn6Error djReturn6Token) djReturn6Value (throw djReturn6Error))))))
+  (defasync reconcileDelivery
+    (context delivery-id)
+    (let ((djReturn7Token (js-object)) (djReturn7Value nil))
+      (try
+        (let*
+          ((repository (nativeGet context "repository"))
+            (record (js-call repository :get "deliveries" delivery-id))
+            (attempt
+              (and record (js-call repository :get "attempts" (nativeGet record "attempt_id"))))
+            (binding (attemptBinding context attempt))
+            (instance
+              (and
+                binding
+                (js-call repository :get "instances" (nativeGet binding "instance_id"))))
+            (port (and instance (agentPort context instance))))
+          (unless (and record attempt binding)
+            (progn (setq djReturn7Value (failure "not_found")) (throw djReturn7Token)))
+          (unless
+            (js-call (js-array "unknown" "accepted") :includes (nativeGet record "state"))
+            (progn
+              (setq djReturn7Value (success (projectDelivery context record)))
+              (throw djReturn7Token)))
+          ;; No new probe binding is substituted for the original attempted input.
+          (let
+            (
+              (observation
+                (js-object :kind "unknown" :state "unknown" :evidence_level "none")))
+            (when
+              (and
+                port
+                (= (nativeGet instance "instance_epoch") (nativeGet binding "instance_epoch")))
+              (try
+                (setq
+                  observation
+                  (await
+                    (js-call
+                      port
+                      :lookup
+                      binding
+                      (nativeGet attempt "dispatch_key")
+                      (nativeGet record "native_ref" nil)
+                      (nativeCallContext context))))
+                (catch unavailable
+                  (when (eq unavailable djReturn7Token) (throw unavailable))
+                  nil)))
+            (await (enqueueWrite context (lambda ()
+              (let ((result (recordReceipt context (nativeGet attempt "attempt_id") observation)))
+                (when (nativeGet result "ok")
+                  (let ((current (js-call repository :get "deliveries" delivery-id)))
+                    (put current :reconcile_requested false)
+                    (must (js-call repository :replaceProgress "deliveries" current))))
+                result))))))
+        (catch djReturn7Error
+          (if (eq djReturn7Error djReturn7Token) djReturn7Value (throw djReturn7Error))))))
+  (defun observationAttempt (context attempt-id)
+    (let* ((db (nativeGet (nativeGet context "store") "db"))
+      (row (js-call (js-call db :query
+        "SELECT attempt_id,json_extract(payload,'$.binding_id') AS binding_id,payload->'$.binding' AS legacy_binding,payload->'$.observation_cursor' AS observation_cursor_json FROM attempts WHERE attempt_id=?") :get attempt-id)))
+      (when row
+        (js-object :attempt_id (nativeGet row "attempt_id")
+          :binding_id (nativeGet row "binding_id")
+          :binding (and (nativeGet row "legacy_binding") (JSON/parse (nativeGet row "legacy_binding")))
+          :observation_cursor (if (nativeNullish (nativeGet row "observation_cursor_json")) nil
+            (JSON/parse (nativeGet row "observation_cursor_json")))))))
+  (defasync observeDelivery
+    (context delivery-id budget)
+    (let ((djReturn8Token (js-object)) (djReturn8Value nil))
+      (try
+        (let*
+          ((repository (nativeGet context "repository"))
+            (record (js-call repository :get "deliveries" delivery-id)))
+          (unless (= (nativeGet record "state") "accepted")
+            (setq djReturn8Value (success nil))
+            (throw djReturn8Token))
+          (let* (
+            (attempt
+              (observationAttempt context (nativeGet record "attempt_id")))
+            (binding (attemptBinding context attempt))
+            (instance
+              (and
+                binding
+                (js-call repository :get "instances" (nativeGet binding "instance_id"))))
+            (port (and instance (agentPort context instance))))
+          (unless
+            (and
+              port
+              (= (nativeGet record "state") "accepted")
+              (= (nativeGet instance "instance_epoch") (nativeGet binding "instance_epoch")))
+            (progn (setq djReturn8Value (success nil)) (throw djReturn8Token)))
+          (try
+            (let
+              (
+                (page
+                  (await
+                    (js-call
+                      port
+                      :observe
+                      binding
+                      (nativeGet record "native_ref")
+                      (nativeGet attempt "observation_cursor" nil)
+                      budget
+                      (nativeCallContext context)))))
+              (js-call
+                (nativeGet page "items" (js-array))
+                :forEach
+                (lambda
+                  (fact)
+                  (must (recordReceipt context (nativeGet attempt "attempt_id") fact))))
+              (let ((next-cursor (nativeGet page "next_cursor" nil))
+                (previous-cursor (nativeGet attempt "observation_cursor" nil)))
+                (unless (= next-cursor previous-cursor)
+                  (must (inTransaction context (lambda (tx)
+                    (let ((current (js-call repository :get "attempts" (nativeGet attempt "attempt_id"))))
+                      (if (= (nativeGet current "observation_cursor" nil) previous-cursor)
+                        (progn
+                          (put current :observation_cursor next-cursor)
+                          (js-call repository :replaceProgress "attempts" current))
+                        (failure "stale_reference")))))))
+                (success (js-object :observed (js-length (nativeGet page "items" (js-array)))))))
+            (catch unavailable
+              (when (eq unavailable djReturn8Token) (throw unavailable))
+              (failure "unavailable")))))
+        (catch djReturn8Error
+          (if (eq djReturn8Error djReturn8Token) djReturn8Value (throw djReturn8Error))))))
+  (export
+    freezeEnvelope
+    claimRoute
+    beginSubmission
+    recordReceipt
+    dispatchRoute
+    reconcileDelivery
+    observeDelivery
+    selectHead
+    releaseClaim))

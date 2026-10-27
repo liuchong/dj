@@ -1,0 +1,53 @@
+(module dj.delivery.read-scope
+  (import "../core/native.eli" nativeGet nativeTypeOf nativeNullish)
+  ;; These tables are read-only in matching and submission contribution checks.
+  ;; Mutable routes, decisions, grants and time-dependent answers never enter it.
+  (defconst readableTables (js-array "agents" "subscriptions" "connections" "sessions"))
+  (defun withContributionReads (context work &optional subscription-state-only subscription-ids)
+    (let ((store (nativeGet context "store"))
+      (repository (nativeGet context "repository"))
+      (records (new globalThis.Map))
+      (active t))
+      (unless (or (nativeNullish subscription-state-only)
+        (= (nativeTypeOf subscription-state-only) "boolean"))
+        (throw (new globalThis.TypeError "subscription state mode must be boolean")))
+      (unless (or (nativeNullish subscription-ids) (= subscription-state-only t))
+        (throw (new globalThis.TypeError "subscription preload requires state-only mode")))
+      (unless (and (js-call store :inTransaction)
+        (= (nativeTypeOf work) "function")
+        (not (= (nativeGet (nativeGet work "constructor") "name") "AsyncFunction")))
+        (throw (new globalThis.TypeError "contribution reads require synchronous transaction work")))
+      (try
+        (unless (nativeNullish subscription-ids)
+          (let ((loaded (js-call repository :getSubscriptionStates subscription-ids)))
+            ;; The batch reader validates all IDs before SQL. Cache absent keys
+            ;; too, so each requested state belongs to this transaction snapshot.
+            (js-call subscription-ids :forEach
+              (lambda (id) (js-call records :set (str "subscriptions:" id) nil)))
+            (js-call loaded :forEach (lambda (record)
+              (Object/freeze record)
+              (js-call records :set
+                (str "subscriptions:" (nativeGet record "subscription_id")) record)))))
+        (let* ((read (lambda (table key)
+          (unless (and active (js-call store :inTransaction)
+            (js-call readableTables :includes table))
+            (throw (new globalThis.TypeError "contribution read scope is closed or unsupported")))
+          (let* ((cacheable (= (nativeTypeOf key) "string"))
+            (cache-key (and cacheable (str table ":" key))))
+            (if (and cacheable (js-call records :has cache-key))
+              (js-call records :get cache-key)
+              (let ((record (if (and subscription-state-only (= table "subscriptions"))
+                (js-call repository :getSubscriptionState key)
+                (js-call repository :get table key))))
+                (when record (Object/freeze record))
+                (when (and cacheable (< (nativeGet records "size") 256))
+                  (js-call records :set cache-key record))
+                record)))))
+          (result (funcall work read)))
+          (when (= (nativeTypeOf (nativeGet result "then")) "function")
+            (throw (new globalThis.TypeError "contribution read scope cannot return a Future")))
+          result)
+        (finally
+          (setq active false)
+          (js-call records :clear)))))
+  (export withContributionReads))

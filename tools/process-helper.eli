@@ -1,0 +1,18 @@
+(module dj.tools.process-helper
+  (import "../src/core/native.eli" nativeGet)
+  (import "./build-inputs.eli" sha256)
+  (import "node:fs/promises" mkdir readFile)
+  (defasync buildProcessHelper ()
+    (unless (and (= (nativeGet globalThis.process "platform") "darwin")
+                 (= (nativeGet globalThis.process "arch") "arm64"))
+      (throw (new globalThis.Error "Native process metadata helper requires macOS arm64")))
+    (await (mkdir "dist/native" (js-object :recursive t)))
+    (let* ((path "dist/native/dj-process-info")
+           (child (Bun/spawn
+             (js-array "cc" "-std=c11" "-O2" "-Wall" "-Wextra" "-Werror" "-arch" "arm64"
+               "src/host/darwin/process-info.c" "-o" path)
+             (js-object :stdin "ignore" :stdout "inherit" :stderr "inherit"))))
+      (unless (= (await (nativeGet child "exited")) 0)
+        (throw (new globalThis.Error "Native process metadata helper build failed")))
+      (js-object :path path :sha256 (sha256 (await (readFile path))))))
+  (export buildProcessHelper))

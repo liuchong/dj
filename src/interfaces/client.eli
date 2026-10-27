@@ -1,0 +1,315 @@
+(module dj.interfaces.client
+  (import "../core/native.eli"
+    nativeBitAnd
+    nativeTypeOf
+    nativeClearTimeout
+    nativeFetch
+    nativeSetTimeout nativeGet)
+  (import "node:path" resolve dirname)
+  (import "node:os" homedir)
+  (import "node:fs/promises" lstat)
+  (import "ajv/dist/2020.js" :default Ajv2020)
+  (import "../core/errors.eli" success failure)
+  (import "../core/types.eli" utf8Bytes isObject)
+  (import "../core/limits.eli" limits)
+  (import "../host/bun/io.eli" readPrivate)
+  (import "../adapters/im/telegram.eli" readJson)
+  (import "../application/operations.eli" operationCatalog operationCatalogDigest)
+  (defconst clientSchema
+    (js-object
+      :type
+      "object"
+      :additionalProperties
+      false
+      :required
+      (js-array "schema_version" "default_endpoint" "endpoints")
+      :properties
+      (js-object
+        :schema_version
+        (js-object :const 1)
+        :default_endpoint
+        (js-object :type "string" :minLength 1)
+        :expected_operation_catalog_digest
+        (js-object :type "string" :pattern "^[a-f0-9]{64}$")
+        :endpoints
+        (js-object
+          :type
+          "array"
+          :minItems
+          1
+          :maxItems
+          100
+          :items
+          (js-object
+            :type
+            "object"
+            :additionalProperties
+            false
+            :required
+            (js-array "endpoint_id" "socket_ref" "credential_ref")
+            :properties
+            (js-object
+              :endpoint_id
+              (js-object :type "string" :minLength 1)
+              :socket_ref
+              (js-object :type "string" :minLength 1)
+              :credential_ref
+              (js-object :type "string" :minLength 1)))))))
+  (defconst validateProfile
+    (js-call
+      (new
+        Ajv2020
+        (js-object
+          :strict
+          t
+          :allErrors
+          t
+          :coerceTypes
+          false
+          :removeAdditional
+          false
+          :useDefaults
+          false))
+      :compile
+      clientSchema))
+  (defconst handshakes (new globalThis.WeakMap))
+  (defasync loadClientProfile
+    (&optional reference)
+    (let ((djReturn1Token (js-object)) (djReturn1Value nil))
+      (try
+        (try
+          (let*
+            (
+              (path
+                (resolve
+                  (or
+                    reference
+                    (nativeGet (nativeGet globalThis.process "env") "DJ_CLIENT_PROFILE")
+                    (resolve (homedir) ".dj/client.json"))))
+              (text (await (readPrivate path))))
+            (when (> (utf8Bytes text) (nativeGet limits "request_bytes"))
+              (progn
+                (setq djReturn1Value (failure "limit_exceeded"))
+                (throw djReturn1Token)))
+            (let ((profile (JSON/parse text)))
+              (unless (funcall validateProfile profile)
+                (progn
+                  (setq djReturn1Value (failure "invalid_argument"))
+                  (throw djReturn1Token)))
+              (js-call
+                (nativeGet profile "endpoints")
+                :forEach
+                (lambda
+                  (endpoint)
+                  (put
+                    endpoint
+                    :socket_ref
+                    (resolve (dirname path) (nativeGet endpoint "socket_ref")))
+                  (put
+                    endpoint
+                    :credential_ref
+                    (resolve (dirname path) (nativeGet endpoint "credential_ref")))))
+              (success profile)))
+          (catch unavailable
+            (when (eq unavailable djReturn1Token) (throw unavailable))
+            (failure "unauthenticated")))
+        (catch djReturn1Error
+          (if (eq djReturn1Error djReturn1Token) djReturn1Value (throw djReturn1Error))))))
+  (defasync transportCall
+    (endpoint operation args timeout &optional options)
+    (let ((djReturn2Token (js-object)) (djReturn2Value nil))
+      (try
+        (let*
+          ((controller (new globalThis.AbortController))
+            (timer nil)
+            (attempted false)
+            (parent (nativeGet options "abort_signal"))
+            (abort (lambda () (js-call controller :abort)))
+            (mutation
+              (=
+                (nativeGet (js-call operationCatalog :get operation) "idempotency")
+                "required")))
+          (try
+            (let*
+              ((socket (resolve (nativeGet endpoint "socket_ref")))
+                (info (await (lstat socket)))
+                (parent-info (await (lstat (dirname socket))))
+                (token
+                  (js-call
+                    (await (readPrivate (resolve (nativeGet endpoint "credential_ref"))))
+                    :trim))
+                (body
+                  (JSON/stringify
+                    (js-object :api_version "1" :operation operation :arguments args))))
+              (unless
+                (and
+                  (js-call info :isSocket)
+                  (not (js-call info :isSymbolicLink))
+                  (= (nativeGet info "uid") (js-call globalThis.process :getuid))
+                  (js-call parent-info :isDirectory)
+                  (not (js-call parent-info :isSymbolicLink))
+                  (= (nativeGet parent-info "uid") (js-call globalThis.process :getuid))
+                  (= (nativeBitAnd (nativeGet parent-info "mode") 63) 0))
+                (progn
+                  (setq djReturn2Value (failure "unavailable"))
+                  (throw djReturn2Token)))
+              (when (> (utf8Bytes body) (nativeGet limits "request_bytes"))
+                (progn
+                  (setq djReturn2Value (failure "limit_exceeded"))
+                  (throw djReturn2Token)))
+              (unless (and (> (js-length token) 0) (<= (js-length token) 4096))
+                (progn
+                  (setq djReturn2Value (failure "unauthenticated"))
+                  (throw djReturn2Token)))
+              (when (= (nativeGet parent "aborted") t)
+                (progn
+                  (setq djReturn2Value (failure "unavailable"))
+                  (throw djReturn2Token)))
+              (when parent
+                (js-call parent :addEventListener "abort" abort (js-object :once t)))
+              (setq timer (nativeSetTimeout abort (* timeout 1000)))
+              (setq attempted t)
+              (let*
+                (
+                  (response
+                    (await
+                      (nativeFetch
+                        "http://localhost/v1/operations"
+                        (js-object
+                          :unix
+                          socket
+                          :method
+                          "POST"
+                          :signal
+                          (nativeGet controller "signal")
+                          :redirect
+                          "error"
+                          :headers
+                          (js-object
+                            :content-type
+                            "application/json"
+                            :authorization
+                            (str "Bearer " token)
+                            :x-dj-operation-catalog-digest
+                            operationCatalogDigest)
+                          :body
+                          body))))
+                  (digest
+                    (js-call
+                      (nativeGet response "headers")
+                      :get
+                      "x-dj-operation-catalog-digest"))
+                  (wire (await (readJson response (nativeGet limits "api_response_bytes")))))
+                (unless
+                  (and
+                    (= digest operationCatalogDigest)
+                    (isObject wire)
+                    (= (nativeTypeOf (nativeGet wire "ok")) "boolean")
+                    (object-has? wire :effect_state)
+                    (object-has? wire :evidence_level))
+                  (progn
+                    (setq
+                      djReturn2Value
+                      (failure
+                        "incompatible"
+                        (js-object :effect_state (if mutation "unknown" "none"))))
+                    (throw djReturn2Token)))
+                wire))
+            (catch unavailable
+              (when (eq unavailable djReturn2Token) (throw unavailable))
+              (failure
+                "unavailable"
+                (js-object
+                  :effect_state
+                  (if (and attempted mutation) "unknown" "none")
+                  :warnings
+                  (if (and attempted mutation)
+                    (js-array "inspect_original_operation_before_retry")
+                    (js-array)))))
+            (finally
+              (when timer (nativeClearTimeout timer))
+              (when parent (js-call parent :removeEventListener "abort" abort)))))
+        (catch djReturn2Error
+          (if (eq djReturn2Error djReturn2Token) djReturn2Value (throw djReturn2Error))))))
+  (defasync callService
+    (profile operation args &optional timeout-seconds endpoint-id options)
+    (let ((djReturn3Token (js-object)) (djReturn3Value nil))
+      (try
+        (let ((timeout (or timeout-seconds 30)))
+          (unless (and (Number/isSafeInteger timeout) (>= timeout 1) (<= timeout 300))
+            (progn
+              (setq djReturn3Value (failure "invalid_argument"))
+              (throw djReturn3Token)))
+          (when
+            (and
+              (isObject profile)
+              (nativeGet profile "expected_operation_catalog_digest")
+              (not
+                (=
+                  (nativeGet profile "expected_operation_catalog_digest")
+                  operationCatalogDigest)))
+            (progn
+              (setq djReturn3Value (failure "incompatible"))
+              (throw djReturn3Token)))
+          (when (or (not profile) (= (nativeTypeOf profile) "string"))
+            (let ((loaded (await (loadClientProfile profile))))
+              (unless (nativeGet loaded "ok")
+                (progn (setq djReturn3Value loaded) (throw djReturn3Token)))
+              (setq profile (nativeGet loaded "data"))))
+          (unless (funcall validateProfile profile)
+            (progn
+              (setq djReturn3Value (failure "invalid_argument"))
+              (throw djReturn3Token)))
+          (when
+            (and
+              (nativeGet profile "expected_operation_catalog_digest")
+              (not
+                (=
+                  (nativeGet profile "expected_operation_catalog_digest")
+                  operationCatalogDigest)))
+            (progn
+              (setq djReturn3Value (failure "incompatible"))
+              (throw djReturn3Token)))
+          (let*
+            ((id (or endpoint-id (nativeGet profile "default_endpoint")))
+              (selected
+                (js-call
+                  (nativeGet profile "endpoints")
+                  :filter
+                  (lambda (endpoint) (= (nativeGet endpoint "endpoint_id") id)))))
+            (unless (= (js-length selected) 1)
+              (progn
+                (setq djReturn3Value (failure "invalid_argument"))
+                (throw djReturn3Token)))
+            (let*
+              ((endpoint (aref selected 0)) (known (js-call handshakes :get profile)))
+              (unless (= known id)
+                (let
+                  (
+                    (status
+                      (await
+                        (transportCall
+                          endpoint
+                          "service.status"
+                          (js-object)
+                          timeout
+                          options))))
+                  (unless (nativeGet status "ok")
+                    (progn (setq djReturn3Value status) (throw djReturn3Token)))
+                  (unless
+                    (and
+                      (= (nativeGet (nativeGet status "data") "api_version") "1")
+                      (=
+                        (nativeGet (nativeGet status "data") "operation_catalog_digest")
+                        operationCatalogDigest)
+                      (= (nativeTypeOf (nativeGet (nativeGet status "data") "build_id")) "string"))
+                    (progn
+                      (setq djReturn3Value (failure "incompatible"))
+                      (throw djReturn3Token)))
+                  (js-call handshakes :set profile id)))
+              ;; Server checks the compiled digest before every mutation too, so a
+              ;; replacement service cannot receive incompatible business input.
+              (await (transportCall endpoint operation args timeout options)))))
+        (catch djReturn3Error
+          (if (eq djReturn3Error djReturn3Token) djReturn3Value (throw djReturn3Error))))))
+  (export callService loadClientProfile transportCall clientSchema))

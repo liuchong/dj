@@ -1,0 +1,682 @@
+(module dj.service.config
+  (import "../core/native.eli" NativeNumber nativeBitAnd nativeGet)
+  (import "ajv/dist/2020.js" :default Ajv2020)
+  (import "node:path" resolve dirname relative isAbsolute)
+  (import "node:os" homedir)
+  (import "../core/errors.eli" success failure invalidField)
+  (import "../core/types.eli" isObject hashValue utf8Bytes)
+  (import "../core/limits.eli" limits)
+  (import "../policy/principals.eli" credentialDigest)
+  (import "../adapters/agent/cursor-native.eli" cursorNativeUrl)
+  (defconst id
+    (js-object :type "string" :minLength 1 :maxLength 1024 :pattern "^[^\\u0000]+$"))
+  (defconst revision
+    (js-object :type "integer" :minimum 1 :maximum (nativeGet NativeNumber "MAX_SAFE_INTEGER")))
+  (defun obj
+    (properties &optional required)
+    (js-object
+      :type
+      "object"
+      :properties
+      properties
+      :additionalProperties
+      false
+      :required
+      (or required (js-array))))
+  (defun arr
+    (item &optional maximum minimum)
+    (js-object
+      :type
+      "array"
+      :items
+      item
+      :maxItems
+      (or maximum 1000)
+      :minItems
+      (or minimum 0)))
+  (defun enumOf (&rest values) (js-object :enum values))
+  (defconst nullableId (js-object :anyOf (js-array id (js-object :type "null"))))
+  (defconst strings (Object/assign (arr id 100 1) (js-object :uniqueItems t)))
+  (defconst constraint
+    (obj
+      (js-object
+        :tool
+        id
+        :native_namespace
+        id
+        :native_session_id
+        id
+        :instance_id
+        id
+        :workspace_ref
+        id
+        :session_key
+        id
+        :connection_id
+        id
+        :native_chat_id
+        id
+        :native_thread_id
+        nullableId)))
+  (defconst grantSchema
+    (obj
+      (js-object
+        :action
+        id
+        :resources
+        (arr (js-object :anyOf (js-array id constraint)) 256 1))
+      (js-array "action" "resources")))
+  (defconst principalSchema
+    (obj
+      (js-object
+        :principal_id
+        id
+        :kind
+        (enumOf "operator" "agent" "service")
+        :authorization_revision
+        revision
+        :credential_ref
+        id
+        :credential_sha256
+        (js-object :type "string" :pattern "^[a-f0-9]{64}$")
+        :disabled
+        (js-object :type "boolean")
+        :grants
+        (arr grantSchema 256)
+        :target_constraint
+        constraint)
+      (js-array "principal_id" "kind" "authorization_revision" "grants")))
+  (defconst watchSchema
+    (obj
+      (js-object
+        :chat_id
+        id
+        :thread_id
+        nullableId
+        :poll_interval_seconds
+        (js-object :type "integer" :minimum 1 :maximum 300))
+      (js-array "chat_id")))
+  (defconst connectionSchema
+    (obj
+      (js-object
+        :connection_id
+        id
+        :platform
+        (enumOf "lark" "telegram")
+        :brand
+        (enumOf "lark" "feishu")
+        :identity
+        (enumOf "user" "bot")
+        :source_delivery
+        (enumOf "poll" "events")
+        :source_mode
+        (enumOf "direct" "existing_source")
+        :tenant_ref
+        id
+        :account_ref
+        id
+        :display_name
+        id
+        :event_app_id id
+        :event_subject_id id
+        :event_scope (enumOf "configured" "all_authorized")
+        :user_identity
+        (obj (js-object :app_id id :open_id id) (js-array "app_id" "open_id"))
+        :credential_ref
+        id
+        :revision
+        revision
+        :identity_revision
+        revision
+        :watches
+        (arr watchSchema 100)
+        :allowed_chats
+        (arr (js-object :anyOf (js-array id watchSchema)) 100)
+        :allowed_sender_kinds
+        (Object/assign
+          (arr (enumOf "human" "bot" "agent" "unknown") 4 1)
+          (js-object :uniqueItems t)))
+      (js-array "connection_id" "platform" "identity")))
+  (defconst endpointSchema
+    (obj
+      (js-object
+        :tool
+        (enumOf "opencode" "pi" "codex" "cursor" "claude" "antigravity")
+        :instance_id
+        id
+        :native_namespace
+        id
+        :instance_epoch
+        id
+        :ownership
+        (enumOf "existing")
+        :endpoint_ref
+        id
+        :base_url
+        id
+        :socket_path
+        id
+        :registry_path id
+        :history_log id
+        :native_session_id id
+        :process_binding
+        (obj (js-object :pid (js-object :type "integer" :minimum 1)
+          :process_birth id :process_helper_ref id :certificate_sha256 id)
+          (js-array "pid" "process_birth" "process_helper_ref"))
+        :snapshot_max_bytes
+        (js-object :type "integer" :minimum 1048576 :maximum 16777216)
+        :manifest_path
+        id
+        :control_manifest_path
+        id
+        :history_database
+        id
+        :native_api
+        (obj (js-object :inspector_url id
+          :process_id (js-object :type "integer" :minimum 1)
+          :process_origin (js-object :type "number" :minimum 0)
+          :workspace_id id :manage_inspector (js-object :type "boolean")
+          :process_birth id :process_helper_ref id)
+          (js-array "inspector_url" "process_id" "process_origin" "workspace_id"))
+        :window_id
+        (js-object :type "integer" :minimum 1)
+        :directory
+        id
+        :workspace_ref
+        id
+        :workspace_refs
+        strings
+        :credential_ref
+        id
+        :display_name
+        id)
+      (js-array "tool" "instance_id" "native_namespace" "ownership" "endpoint_ref")))
+  (defconst managedEndpointSchema
+    (obj
+      (js-object
+        :endpoint_ref
+        id
+        :base_url
+        id
+        :native_namespace
+        id
+        :directory
+        id
+        :workspace_ref
+        id
+        :credential_ref
+        id)
+      (js-array "endpoint_ref" "base_url" "directory" "workspace_ref")))
+  (defconst profileSchema
+    (obj
+      (js-object
+        :profile_id
+        id
+        :tool
+        (enumOf "opencode" "pi" "codex" "cursor")
+        :revision
+        revision
+        :display_name
+        id
+        :native_namespace
+        id
+        :auth_method
+        (enumOf "cursor_login")
+        :argv
+        (arr id 128 1)
+        :cwd
+        id
+        :env
+        (js-object :type "object" :additionalProperties (js-object :type "string"))
+        :workspace_refs
+        strings
+        :auto_start
+        (js-object :type "boolean")
+        :launch_principal_id
+        id
+        :endpoint_ref
+        id
+        :endpoint
+        managedEndpointSchema)
+      (js-array "profile_id" "tool" "revision" "argv" "workspace_refs")))
+  (defconst serviceConfigSchema
+    (obj
+      (js-object
+        :schema_version
+        (js-object :const 1)
+        :config_root
+        id
+        :service
+        (obj (js-object :service_id id :socket id) (js-array "service_id"))
+        :storage
+        (obj
+          (js-object
+            :database
+            id
+            :journal_mode
+            (js-object :const "WAL")
+            :synchronous
+            (js-object :const "FULL")
+            :foreign_keys
+            (js-object :const t)
+            :busy_timeout
+            (js-object :type "integer" :minimum 0 :maximum 1000)))
+        :principals
+        (arr principalSchema 4096)
+        :connections
+        (arr connectionSchema 1000)
+        :agent_endpoints
+        (arr endpointSchema 256)
+        :managed_profiles
+        ;; Legacy argv launch profiles are not a production transport.
+        (Object/assign (arr profileSchema 256) (js-object :maxItems 0))
+        :client_profiles
+        (arr id 256))
+      (js-array "schema_version" "service" "principals")))
+  (defconst ajv
+    (new
+      Ajv2020
+      (js-object
+        :strict
+        t
+        :allErrors
+        t
+        :allowUnionTypes
+        t
+        :coerceTypes
+        false
+        :removeAdditional
+        false
+        :useDefaults
+        false)))
+  (defconst validateConfig (js-call ajv :compile serviceConfigSchema))
+  (defun validateStructure
+    (config)
+    (let ((djReturn1Token (js-object)) (djReturn1Value nil))
+      (try
+        (unless (funcall validateConfig config)
+          (progn
+            (setq
+              djReturn1Value
+              (failure
+                "invalid_argument"
+                (js-object
+                  :field_errors
+                  (js-call
+                    (js-call
+                      (nativeGet validateConfig "errors")
+                      :slice
+                      0
+                      (nativeGet limits "field_errors"))
+                    :map
+                    (lambda
+                      (error)
+                      (js-object
+                        :pointer
+                        (nativeGet error "instancePath")
+                        :code
+                        (nativeGet error "keyword")
+                        :expected
+                        "service configuration schema"
+                        :received_type
+                        "invalid"))))))
+            (throw djReturn1Token)))
+        (let ((seen (new globalThis.Set)))
+          (js-call
+            (js-array "principals" "connections" "agent_endpoints" "managed_profiles")
+            :forEach
+            (lambda
+              (field)
+              (let
+                (
+                  (key
+                    (nativeGet
+                      (js-object
+                        :principals
+                        "principal_id"
+                        :connections
+                        "connection_id"
+                        :agent_endpoints
+                        "instance_id"
+                        :managed_profiles
+                        "profile_id")
+                      field)))
+                (js-call
+                  (nativeGet config field (js-array))
+                  :forEach
+                  (lambda
+                    (record)
+                    (let ((identity (str field ":" (nativeGet record key))))
+                      (when (js-call seen :has identity)
+                        (throw
+                          (new globalThis.TypeError "duplicate configured identity")))
+                      (js-call seen :add identity)))))))
+          (js-call
+            (nativeGet config "agent_endpoints" (js-array))
+            :forEach
+            (lambda (endpoint)
+              (let ((tool (nativeGet endpoint "tool")))
+                (when (js-call (js-array "claude" "antigravity") :includes tool)
+                  (unless (and (nativeGet endpoint "directory") (nativeGet endpoint "workspace_ref")
+                               (nativeGet endpoint "process_binding")
+                               (not (nativeGet endpoint "manifest_path")) (not (nativeGet endpoint "native_api"))
+                               (not (nativeGet endpoint "control_manifest_path"))
+                               (if (= tool "antigravity")
+                                 (and (nativeGet endpoint "base_url") (nativeGet endpoint "credential_ref")
+                                      (nativeGet (nativeGet endpoint "process_binding") "certificate_sha256")
+                                      (not (nativeGet endpoint "socket_path")) (not (nativeGet endpoint "registry_path")))
+                                 (and (nativeGet endpoint "socket_path") (nativeGet endpoint "registry_path")
+                                      (nativeGet endpoint "native_session_id") (not (nativeGet endpoint "base_url")))))
+                    (throw (new globalThis.TypeError "Native endpoint requires an exact existing process, receiver and workspace"))))
+                (when (= tool "pi")
+                  (unless (and (nativeGet endpoint "manifest_path") (nativeGet endpoint "directory")
+                               (nativeGet endpoint "workspace_ref")
+                               (not (nativeGet endpoint "base_url")) (not (nativeGet endpoint "socket_path"))
+                               (not (nativeGet endpoint "native_api")) (not (nativeGet endpoint "control_manifest_path")))
+                    (throw (new globalThis.TypeError "Pi requires an existing private receiver manifest and exact workspace"))))
+                (when (and (nativeGet endpoint "control_manifest_path")
+                           (or (not (= tool "cursor")) (not (nativeGet endpoint "directory"))))
+                  (throw (new globalThis.TypeError "Cursor creation requires an exact workspace directory")))
+                (when (nativeGet endpoint "native_api")
+                  (unless (and (= tool "cursor") (nativeGet endpoint "directory")
+                               (not (nativeGet endpoint "manifest_path"))
+                               (not (nativeGet endpoint "control_manifest_path")))
+                    (throw (new globalThis.TypeError "Native Cursor API requires an exclusive existing endpoint")))
+                  (cursorNativeUrl (nativeGet (nativeGet endpoint "native_api") "inspector_url"))
+                  (when (= (nativeGet (nativeGet endpoint "native_api") "manage_inspector") t)
+                    (unless (and (nativeGet (nativeGet endpoint "native_api") "process_birth")
+                                 (nativeGet (nativeGet endpoint "native_api") "process_helper_ref")
+                                 (= (nativeGet (new globalThis.URL
+                                   (nativeGet (nativeGet endpoint "native_api") "inspector_url")) "port") "9229"))
+                      (throw (new globalThis.TypeError "Managed Inspector requires exact process metadata and helper")))))
+                (when (js-call (js-array "codex" "cursor") :includes tool)
+                  (unless (and (nativeGet endpoint "workspace_ref")
+                               (if (= tool "codex")
+                                 (and (nativeGet endpoint "history_database") (nativeGet endpoint "socket_path")
+                                      (nativeGet endpoint "directory"))
+                                 (and (nativeGet endpoint "window_id")
+                                      (or (nativeGet endpoint "native_api")
+                                          (and (nativeGet endpoint "history_database") (nativeGet endpoint "manifest_path"))))))
+                    (throw (new globalThis.TypeError
+                      "Desktop endpoints require exact native transport, history and workspace configuration")))))))
+          (js-call (nativeGet config "managed_profiles" (js-array)) :forEach
+            (lambda (profile)
+              (when (js-call (js-array "codex" "cursor") :includes (nativeGet profile "tool"))
+                (unless (and (or (not (nativeGet profile "auth_method")) (= (nativeGet profile "tool") "cursor"))
+                             (nativeGet profile "cwd") (nativeGet profile "native_namespace")
+                             (> (js-length (nativeGet profile "workspace_refs")) 0)
+                             (not (js-call (nativeGet config "agent_endpoints" (js-array)) :some
+                               (lambda (endpoint) (= (nativeGet endpoint "tool") (nativeGet profile "tool"))))))
+                  (throw (new globalThis.TypeError
+                    "CLI profiles require cwd, namespace and workspace; desktop and CLI surfaces cannot share a tool port"))))))
+          (js-call
+            (nativeGet config "connections" (js-array))
+            :forEach
+            (lambda
+              (connection)
+              (when (= (nativeGet connection "source_delivery") "events")
+                (unless (and (nativeGet connection "credential_ref") (nativeGet connection "event_app_id") (nativeGet connection "event_subject_id"))
+                  (throw (new globalThis.TypeError "event source requires explicit application credentials and subject identity"))))
+              (if (= (nativeGet connection "platform") "lark")
+                (unless
+                  (and
+                    (js-call (js-array "lark" "feishu") :includes (nativeGet connection "brand"))
+                    (nativeGet connection "credential_ref")
+                    (or (= (nativeGet connection "identity") "bot") (nativeGet connection "user_identity"))
+                    (Array/isArray (nativeGet connection "watches")))
+                  (throw
+                    (new
+                      globalThis.TypeError
+                      "Lark requires explicit watches and application credentials and explicit user OAuth identity when applicable")))
+                (unless
+                  (and
+                    (= (nativeGet connection "identity") "bot")
+                    (nativeGet connection "credential_ref")
+                    (Array/isArray (nativeGet connection "allowed_chats")))
+                  (throw
+                    (new
+                      globalThis.TypeError
+                      "Telegram requires a bot credential reference and approved chats"))))))
+          (js-call
+            (nativeGet config "managed_profiles" (js-array))
+            :forEach
+            (lambda
+              (profile)
+              (when
+                (and
+                  (= (nativeGet profile "auto_start") t)
+                  (not (nativeGet profile "launch_principal_id")))
+                (throw
+                  (new
+                    globalThis.TypeError
+                    "auto-start requires an explicitly configured launch principal"))))))
+        (success config)
+        (catch djReturn1Error
+          (if (eq djReturn1Error djReturn1Token) djReturn1Value (throw djReturn1Error))))))
+  (defasync ensurePrivateDirectory
+    (host directory)
+    (let ((files (nativeGet host "files")))
+      (await (js-call files :mkdir directory (js-object :recursive t :mode 448)))
+      (let ((info (await (js-call files :lstat directory))))
+        (unless
+          (and
+            (js-call info :isDirectory)
+            (not (js-call info :isSymbolicLink))
+            (= (nativeGet info "uid") (js-call globalThis.process :getuid))
+            (= (nativeBitAnd (nativeGet info "mode") 63) 0))
+          (throw
+            (new
+              globalThis.Error
+              "DJ state directories must be owner-private real directories"))))))
+  (defasync ensurePrivateDescendant
+    (host root directory)
+    (let ((path (relative root directory)))
+      (when (or (isAbsolute path) (= path "..") (js-call path :startsWith "../"))
+        (throw
+          (new
+            globalThis.Error
+            "DJ database and socket must be inside the configured private root")))
+      (await (ensurePrivateDirectory host root))
+      (let ((cursor root))
+        (js-call
+          (js-call path :split "/")
+          :forEach
+          (lambda
+            (part)
+            (when (> (js-length part) 0) (setq cursor (resolve cursor part)))))
+        ;; Check every descendant, rather than accepting a symlinked parent.
+        (let ((parts (js-call path :split "/")) (index 0))
+          (setq cursor root)
+          (while (< index (js-length parts))
+            (when (> (js-length (aref parts index)) 0)
+              (setq cursor (resolve cursor (aref parts index)))
+              (await (ensurePrivateDirectory host cursor)))
+            (setq index (1+ index)))))))
+  (defasync prepareConfig
+    (config host &optional root)
+    (let ((djReturn2Token (js-object)) (djReturn2Value nil))
+      (try
+        (try
+          (let ((checked (validateStructure config)))
+            (unless (nativeGet checked "ok")
+              (progn (setq djReturn2Value checked) (throw djReturn2Token))))
+          (let*
+            (
+              (base
+                (resolve (or root (nativeGet config "config_root") (resolve (homedir) ".dj"))))
+              (service (nativeGet config "service"))
+              (storage (or (nativeGet config "storage") (js-object))))
+            (put config :config_root base)
+            (put service :socket (resolve base (nativeGet service "socket" "run/dj.sock")))
+            (put
+              storage
+              :database
+              (resolve base (nativeGet storage "database" "state/dj.sqlite")))
+            (put storage :journal_mode "WAL")
+            (put storage :synchronous "FULL")
+            (put storage :foreign_keys t)
+            (unless (object-has? storage :busy_timeout)
+              (put storage :busy_timeout 1000))
+            (put config :storage storage)
+            (js-call
+              (js-array
+                "connections"
+                "agent_endpoints"
+                "managed_profiles"
+                "client_profiles")
+              :forEach
+              (lambda
+                (field)
+                (unless (object-has? config field) (put config field (js-array)))))
+            (await
+              (ensurePrivateDescendant host base (dirname (nativeGet storage "database"))))
+            (await (ensurePrivateDescendant host base (dirname (nativeGet service "socket"))))
+            (js-call
+              (nativeGet config "connections")
+              :forEach
+              (lambda
+                (connection)
+                (unless (object-has? connection :revision) (put connection :revision 1))
+                (unless (object-has? connection :identity_revision)
+                  (put connection :identity_revision (nativeGet connection "revision")))
+                (unless (object-has? connection :source_mode)
+                  (put connection :source_mode "direct"))
+                (unless (object-has? connection :source_delivery)
+                  (put connection :source_delivery "poll"))
+                (unless (object-has? connection :allowed_sender_kinds)
+                  (put connection :allowed_sender_kinds (js-array "human")))))
+            (js-call
+              (nativeGet config "agent_endpoints")
+              :forEach
+              (lambda
+                (endpoint)
+                (js-call (js-array "socket_path" "manifest_path" "control_manifest_path" "history_database" "registry_path" "history_log" "credential_ref") :forEach
+                  (lambda (field)
+                    (when (nativeGet endpoint field)
+                      (put endpoint field (resolve base (nativeGet endpoint field))))))
+                (when (nativeGet endpoint "process_binding")
+                  (put (nativeGet endpoint "process_binding") :process_helper_ref
+                    (resolve base (nativeGet (nativeGet endpoint "process_binding") "process_helper_ref"))))
+                (when (nativeGet (nativeGet endpoint "native_api") "process_helper_ref")
+                  (put (nativeGet endpoint "native_api") :process_helper_ref
+                    (resolve base (nativeGet (nativeGet endpoint "native_api") "process_helper_ref"))))
+                (when (nativeGet endpoint "directory")
+                  (put endpoint :directory (resolve base (nativeGet endpoint "directory"))))
+                (when (nativeGet endpoint "base_url")
+                  (let ((url (new globalThis.URL (nativeGet endpoint "base_url"))))
+                    (unless
+                      (and
+                        (js-call
+                          (js-array "http:" "https:")
+                          :includes
+                          (nativeGet url "protocol"))
+                        (js-call (js-array "localhost" "127.0.0.1" "[::1]") :includes (nativeGet url "hostname"))
+                        (= (nativeGet url "username") "")
+                        (= (nativeGet url "password") ""))
+                      (throw
+                        (new
+                          globalThis.TypeError
+                          "endpoint URL must use an explicit credential reference")))))
+                (unless (object-has? endpoint :workspace_refs)
+                  (put
+                    endpoint
+                    :workspace_refs
+                    (if (nativeGet endpoint "workspace_ref")
+                      (js-array (nativeGet endpoint "workspace_ref"))
+                      (js-array))))))
+              (js-call
+                (nativeGet config "managed_profiles")
+                :forEach
+                (lambda
+                  (profile)
+                  (unless (object-has? profile :auto_start)
+                    (put profile :auto_start false))
+                  (when (nativeGet profile "cwd")
+                    (put profile :cwd (resolve base (nativeGet profile "cwd"))))
+                  (when (nativeGet profile "endpoint")
+                    (put
+                      (nativeGet profile "endpoint")
+                      :directory
+                      (resolve base (nativeGet (nativeGet profile "endpoint") "directory")))
+                    (when
+                      (and
+                        (not (nativeGet profile "native_namespace"))
+                        (nativeGet (nativeGet profile "endpoint") "native_namespace"))
+                      (put
+                        profile
+                        :native_namespace
+                        (nativeGet (nativeGet profile "endpoint") "native_namespace"))))))
+              (let ((index 0) (principals (nativeGet config "principals")))
+                (while (< index (js-length principals))
+                  (let ((principal (aref principals index)))
+                    (when (nativeGet principal "credential_ref")
+                      (let
+                        (
+                          (credential
+                            (js-call
+                              (await
+                                (js-call
+                                  (nativeGet host "files")
+                                  :readPrivate
+                                  (resolve base (nativeGet principal "credential_ref"))))
+                              :trim)))
+                        (unless
+                          (and
+                            (> (js-length credential) 0)
+                            (<= (utf8Bytes credential) 4096))
+                          (throw
+                            (new globalThis.Error "principal credential is unavailable")))
+                        (put principal :credential_sha256 (credentialDigest credential))))
+                    (unless
+                      (or
+                        (= (nativeGet principal "disabled") t)
+                        (nativeGet principal "credential_sha256"))
+                      (throw
+                        (new
+                          globalThis.Error
+                          "an enabled principal requires a protected credential"))))
+                  (setq index (1+ index))))
+              (success config)
+            )(catch invalid
+              (when (eq invalid djReturn2Token) (throw invalid))
+              (failure
+                "invalid_argument"
+                (js-object
+                  :details
+                  (js-object :reason "invalid_or_unavailable_private_configuration")))))
+        (catch djReturn2Error
+          (if (eq djReturn2Error djReturn2Token) djReturn2Value (throw djReturn2Error))))))
+  (defasync loadConfig
+    (config-ref host)
+    (let ((djReturn3Token (js-object)) (djReturn3Value nil))
+      (try
+        (let*
+          ((path (resolve (or config-ref (resolve (homedir) ".dj/service.json"))))
+            (root (dirname path)))
+          (try
+            (let ((text (await (js-call (nativeGet host "files") :readPrivate path))))
+              (when (> (utf8Bytes text) (nativeGet limits "native_response_max_bytes"))
+                (progn
+                  (setq djReturn3Value (failure "limit_exceeded"))
+                  (throw djReturn3Token)))
+              (let*
+                ((config (JSON/parse text))
+                  (base
+                    (if (nativeGet config "config_root")
+                      (resolve root (nativeGet config "config_root"))
+                      root)))
+                (await (prepareConfig config host base))))
+            (catch unavailable
+              (when (eq unavailable djReturn3Token) (throw unavailable))
+              (failure
+                "invalid_argument"
+                (js-object :details (js-object :reason "configuration_unavailable"))))))
+        (catch djReturn3Error
+          (if (eq djReturn3Error djReturn3Token) djReturn3Value (throw djReturn3Error))))))
+  (export
+    loadConfig
+    prepareConfig
+    validateStructure
+    ensurePrivateDirectory
+    ensurePrivateDescendant
+    serviceConfigSchema))

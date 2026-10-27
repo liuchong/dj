@@ -1,0 +1,990 @@
+(module
+  dj.tests.unit.pi-observer
+  (import "../../src/core/native.eli" nativeGet)
+  (import "../../src/core/types.eli" stableSessionKey)
+  (import "../../tools/pi-observer.eli" validatePiObserverRequest validatePiObserverBinding observePiLog)
+  (import "../../tools/native-observer-controller.eli" executeNativeObservation readPiSnapshot)
+  (import "../support/direct-control.eli" runDirectControl)
+  (import
+    "../support/pi-observer.eli"
+    piTestRequest
+    piTestBinding
+    piTestHeader
+    piTestEnvelope
+    piTestUser
+    piTestAssistant
+    piTestNoise
+    piTestSnapshot
+    nativeTestBinding)
+  (import "../support/case.eli" withUnitCase)
+  (import "node:path" resolve)
+  (import "bun:test" expect)
+  (defasync
+    poReject
+    (thunk)
+    (let* ((failed false)) (try (await (funcall thunk)) (catch failure (setq failed t))) failed))
+  (withUnitCase
+    "T38.pi-observer.unit"
+    (async
+      (unused)
+      (let* ((r (piTestRequest "observe-native-start")) (b (piTestBinding))
+             (u (piTestUser "user-multiple" nil "subscription_event"))
+             (before (piTestAssistant "invalid-before" "missing-parent"))
+             (first (piTestAssistant "z-first-assistant" "user-multiple"))
+             (second (piTestAssistant "a-second-assistant" "user-multiple"))
+             (after (piTestAssistant "invalid-after" "missing-parent"))
+             (response (observePiLog r b (piTestSnapshot (js-array u before first second after)))))
+        (js-call (expect (nativeGet (nativeGet response "data") "native_event_id")) :toBe "z-first-assistant"))
+      (let* ((r (piTestRequest "observe-direct-input")) (b (piTestBinding))
+             (u (piTestUser "user-many-blocks" nil "direct")))
+        (put (nativeGet u "message") :content
+          (Array/from (js-object :length 8193) (lambda (unused index)
+            (js-object :type "text" :text (if (= index 0) (JSON/stringify (piTestEnvelope "direct")) "")))))
+        (js-call (expect (nativeGet (observePiLog r b (piTestSnapshot (js-array u))) "ok")) :toBe t))
+      (let*
+        ((b (validatePiObserverBinding (piTestBinding)))
+          (r (validatePiObserverRequest (piTestRequest "observe-direct-input"))))
+        (js-call (expect (Object/isFrozen b)) :toBe t)
+        (js-call (expect (Object/isFrozen (nativeGet b "targets"))) :toBe t)
+        (js-call (expect (Object/isFrozen (aref (nativeGet b "targets") 0))) :toBe t)
+        (js-call (expect (Object/isFrozen (nativeGet r "parameters"))) :toBe t))
+      (let*
+        ((b (piTestBinding)))
+        (put b :authorized false)
+        (js-call (expect (lambda () (validatePiObserverBinding b))) :toThrow))
+      (let*
+        ((b (piTestBinding)))
+        (put b :schema_version 2)
+        (js-call (expect (lambda () (validatePiObserverBinding b))) :toThrow))
+      (let*
+        ((b (piTestBinding)))
+        (put b :targets (js-array))
+        (js-call (expect (lambda () (validatePiObserverBinding b))) :toThrow))
+      (let*
+        ((b (piTestBinding)))
+        (put b :targets (new globalThis.Array 17))
+        (js-call (expect (lambda () (validatePiObserverBinding b))) :toThrow))
+      (let*
+        ((b (piTestBinding)))
+        (put b :targets (js-array (aref (nativeGet b "targets") 0) (aref (nativeGet b "targets") 0)))
+        (js-call (expect (lambda () (validatePiObserverBinding b))) :toThrow))
+      (let*
+        ((b (piTestBinding)))
+        (put (aref (nativeGet b "targets") 0) :cwd "relative")
+        (js-call (expect (lambda () (validatePiObserverBinding b))) :toThrow))
+      (let*
+        ((b (piTestBinding)))
+        (put (aref (nativeGet b "targets") 0) :log_path "relative.jsonl")
+        (js-call (expect (lambda () (validatePiObserverBinding b))) :toThrow))
+      (let*
+        ((b (piTestBinding)))
+        (put (aref (nativeGet b "targets") 0) :log_path (resolve "file.txt"))
+        (js-call (expect (lambda () (validatePiObserverBinding b))) :toThrow))
+      (let*
+        ((b (piTestBinding)))
+        (put (aref (nativeGet b "targets") 0) :native_session_id "bad id")
+        (js-call (expect (lambda () (validatePiObserverBinding b))) :toThrow))
+      (let*
+        ((b (piTestBinding))
+          (targets
+            (Array/from
+              (js-object :length 16)
+              (lambda
+                (unused i)
+                (js-object
+                  :native_session_id
+                  (str "sess_" i)
+                  :cwd
+                  (resolve "pi-work")
+                  :log_path
+                  (resolve (str "pi_" i ".jsonl")))))))
+        (put b :targets targets)
+        (js-call (expect (nativeGet (nativeGet (validatePiObserverBinding b) "targets") "length")) :toBe 16)
+        (js-call
+          targets
+          :push
+          (js-object :native_session_id "sess_16" :cwd (resolve "pi-work") :log_path (resolve "pi_16.jsonl")))
+        (js-call (expect (lambda () (validatePiObserverBinding b))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-direct-input")))
+        (put r :schema_version 2)
+        (js-call (expect (lambda () (validatePiObserverRequest r))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-direct-input")))
+        (put r :operation "other")
+        (js-call (expect (lambda () (validatePiObserverRequest r))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-direct-input")))
+        (put (nativeGet r "parameters") :tool "opencode")
+        (js-call (expect (lambda () (validatePiObserverRequest r))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-direct-input")))
+        (put (nativeGet r "parameters") :run_id "wrong")
+        (js-call (expect (lambda () (validatePiObserverRequest r))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-direct-input")))
+        (put (nativeGet r "parameters") :delivery_id "")
+        (js-call (expect (lambda () (validatePiObserverRequest r))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-direct-input")))
+        (put (nativeGet r "parameters") :native_session_id "bad id")
+        (js-call (expect (lambda () (validatePiObserverRequest r))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-direct-input")))
+        (put r :parameters (js-array))
+        (js-call (expect (lambda () (validatePiObserverRequest r))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "direct"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a))
+          (response (observePiLog r b (piTestSnapshot rows)))
+          (data (nativeGet response "data")))
+        (js-call (expect (nativeGet response "ok")) :toBe t)
+        (js-call (expect (nativeGet response "request_id")) :toBe "req-po")
+        (js-call (expect (nativeGet data "native_session_id")) :toBe "pi-session")
+        (js-call (expect (nativeGet data "native_message_id")) :toBe "user-1")
+        (js-call (expect (nativeGet data "native_event_id")) :toBe "user-1")
+        (js-call (expect (nativeGet data "observed_delivery_id")) :toBe "delivery-po")
+        (js-call (expect (nativeGet data "observation_source")) :toBe "pi_session_jsonl_v3")
+        (js-call (expect (nativeGet data "session_format_version")) :toBe 3)
+        (js-call (expect (nativeGet data "history_coverage")) :toBe "bounded_tail")
+        (js-call (expect (nativeGet data "instance_identity_source")) :toBe "authorized_session_log_binding")
+        (js-call (expect (js-call (JSON/stringify response) :includes "body-hidden")) :toBe false)
+        (js-call (expect (js-call (JSON/stringify response) :includes "private native answer")) :toBe false)
+        (js-call (expect (js-call (JSON/stringify response) :includes "pi-observer-workspace")) :toBe false))
+      (let*
+        ((r (piTestRequest "observe-native-start"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "subscription_event"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a))
+          (response (observePiLog r b (piTestSnapshot rows)))
+          (data (nativeGet response "data")))
+        (js-call (expect (nativeGet response "ok")) :toBe t)
+        (js-call (expect (nativeGet response "request_id")) :toBe "req-po")
+        (js-call (expect (nativeGet data "native_session_id")) :toBe "pi-session")
+        (js-call (expect (nativeGet data "native_message_id")) :toBe "user-1")
+        (js-call (expect (nativeGet data "native_event_id")) :toBe "assistant-1")
+        (js-call (expect (nativeGet data "observed_delivery_id")) :toBe "delivery-po")
+        (js-call (expect (nativeGet data "observation_source")) :toBe "pi_session_jsonl_v3")
+        (js-call (expect (nativeGet data "session_format_version")) :toBe 3)
+        (js-call (expect (nativeGet data "history_coverage")) :toBe "bounded_tail")
+        (js-call (expect (nativeGet data "instance_identity_source")) :toBe "authorized_session_log_binding")
+        (js-call (expect (js-call (JSON/stringify response) :includes "body-hidden")) :toBe false)
+        (js-call (expect (js-call (JSON/stringify response) :includes "private native answer")) :toBe false)
+        (js-call (expect (js-call (JSON/stringify response) :includes "pi-observer-workspace")) :toBe false))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "direct"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a))
+          (header (piTestHeader))
+          (snap (piTestSnapshot rows)))
+        (put header :id "other-session")
+        (put snap :header_text (JSON/stringify header))
+        (js-call (expect (lambda () (observePiLog r b snap))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "direct"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a))
+          (header (piTestHeader))
+          (snap (piTestSnapshot rows)))
+        (put header :cwd (resolve "other"))
+        (put snap :header_text (JSON/stringify header))
+        (js-call (expect (lambda () (observePiLog r b snap))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "direct"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a))
+          (header (piTestHeader))
+          (snap (piTestSnapshot rows)))
+        (put header :version 4)
+        (put snap :header_text (JSON/stringify header))
+        (js-call (expect (lambda () (observePiLog r b snap))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "direct"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a))
+          (header (piTestHeader))
+          (snap (piTestSnapshot rows)))
+        (put header :timestamp "bad")
+        (put snap :header_text (JSON/stringify header))
+        (js-call (expect (lambda () (observePiLog r b snap))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "direct"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a))
+          (header (piTestHeader))
+          (snap (piTestSnapshot rows)))
+        (put header :type "message")
+        (put snap :header_text (JSON/stringify header))
+        (js-call (expect (lambda () (observePiLog r b snap))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "direct"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a))
+          (snap (piTestSnapshot rows)))
+        (put snap :header_text "{")
+        (js-call (expect (lambda () (observePiLog r b snap))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "direct"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a))
+          (snap (piTestSnapshot rows)))
+        (put snap :entries_text "{}\n")
+        (js-call (expect (lambda () (observePiLog r b snap))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "direct"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a))
+          (snap (piTestSnapshot rows)))
+        (put snap :prefix_truncated "false")
+        (js-call (expect (lambda () (observePiLog r b snap))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "direct"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a))
+          (snap (piTestSnapshot rows)))
+        (put snap :trailing_fragment_discarded "false")
+        (js-call (expect (lambda () (observePiLog r b snap))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "direct"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a))
+          (snap (piTestSnapshot rows)))
+        (put snap :entries_text (str (JSON/stringify (piTestHeader)) "\n"))
+        (js-call (expect (lambda () (observePiLog r b snap))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "direct"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a)))
+        (put u :id "bad id")
+        (js-call (expect (lambda () (observePiLog r b (piTestSnapshot rows)))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "direct"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a)))
+        (put u :timestamp "bad")
+        (js-call (expect (lambda () (observePiLog r b (piTestSnapshot rows)))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "direct"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a)))
+        (put u :parentId 42)
+        (js-call (expect (lambda () (observePiLog r b (piTestSnapshot rows)))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "direct"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a)))
+        (put a :id "user-1")
+        (js-call (expect (lambda () (observePiLog r b (piTestSnapshot rows)))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "direct"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a))
+          (env (piTestEnvelope "direct")))
+        (put env :origin "subscription_event")
+        (put (nativeGet u "message") :content (JSON/stringify env))
+        (js-call (expect (lambda () (observePiLog r b (piTestSnapshot rows)))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "direct"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a))
+          (env (piTestEnvelope "direct")))
+        (put env :delivery_id "other")
+        (put (nativeGet u "message") :content (JSON/stringify env))
+        (js-call (expect (lambda () (observePiLog r b (piTestSnapshot rows)))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "direct"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a))
+          (env (piTestEnvelope "direct")))
+        (put env :schema_version 2)
+        (put (nativeGet u "message") :content (JSON/stringify env))
+        (js-call (expect (lambda () (observePiLog r b (piTestSnapshot rows)))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "direct"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a))
+          (env (piTestEnvelope "direct")))
+        (put env :kind "other")
+        (put (nativeGet u "message") :content (JSON/stringify env))
+        (js-call (expect (lambda () (observePiLog r b (piTestSnapshot rows)))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "direct"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a))
+          (env (piTestEnvelope "direct")))
+        (put env :content (js-object :text "not our marker"))
+        (put (nativeGet u "message") :content (JSON/stringify env))
+        (js-call (expect (lambda () (observePiLog r b (piTestSnapshot rows)))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-native-start"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "subscription_event"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a)))
+        (put (nativeGet u "message") :content (JSON/stringify (piTestEnvelope "direct")))
+        (js-call (expect (lambda () (observePiLog r b (piTestSnapshot rows)))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "direct"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a)))
+        (js-call rows :push (piTestUser "duplicate-user" nil "direct"))
+        (js-call (expect (lambda () (observePiLog r b (piTestSnapshot rows)))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "direct"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a)))
+        (put
+          (nativeGet u "message")
+          :content
+          (js-array
+            (js-object :type "text" :text (JSON/stringify (piTestEnvelope "direct")))
+            (js-object :type "image" :data "not-text")))
+        (js-call (expect (lambda () (observePiLog r b (piTestSnapshot rows)))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "direct"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a))
+          (text (nativeGet (nativeGet u "message") "content")))
+        (put
+          (nativeGet u "message")
+          :content
+          (js-array
+            (js-object :type "text" :text (js-call text :slice 0 13))
+            (js-object :type "text" :text (js-call text :slice 13))))
+        (js-call (expect (nativeGet (observePiLog r b (piTestSnapshot rows)) "ok")) :toBe t))
+      (let*
+        ((r (piTestRequest "observe-native-start"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "subscription_event"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a)))
+        (put a :parentId "noise-1")
+        (setq rows (js-array u (piTestNoise "noise-1" "user-1") a))
+        (js-call
+          (expect (nativeGet (nativeGet (observePiLog r b (piTestSnapshot rows)) "data") "native_event_id"))
+          :toBe
+          "assistant-1"))
+      (let*
+        ((r (piTestRequest "observe-native-start"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "subscription_event"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a)))
+        (put a :parentId nil)
+        (js-call (expect (lambda () (observePiLog r b (piTestSnapshot rows)))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-native-start"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "subscription_event"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a)))
+        (put a :parentId "missing")
+        (js-call (expect (lambda () (observePiLog r b (piTestSnapshot rows)))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-native-start"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "subscription_event"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a)))
+        (put a :parentId "assistant-1")
+        (js-call (expect (lambda () (observePiLog r b (piTestSnapshot rows)))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-native-start"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "subscription_event"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a)))
+        (setq rows (js-array u))
+        (js-call (expect (lambda () (observePiLog r b (piTestSnapshot rows)))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-native-start"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "subscription_event"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a))
+          (other (piTestUser "other-user" "user-1" "direct")))
+        (put (nativeGet other "message") :content "ordinary user input")
+        (put a :parentId "other-user")
+        (setq rows (js-array u other a))
+        (js-call (expect (lambda () (observePiLog r b (piTestSnapshot rows)))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-native-start"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "subscription_event"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a)))
+        (put a :parentId "future")
+        (setq rows (js-array u a (piTestNoise "future" "user-1")))
+        (js-call (expect (lambda () (observePiLog r b (piTestSnapshot rows)))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-native-start"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "subscription_event"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a))
+          (tool-result
+            (js-object
+              :type
+              "message"
+              :id
+              "tool-1"
+              :parentId
+              "user-1"
+              :timestamp
+              "2026-01-01T00:00:01.500Z"
+              :message
+              (js-object :role "toolResult" :content (js-array (js-object :type "text" :text "native tool output"))))))
+        (put a :parentId "tool-1")
+        (setq rows (js-array u tool-result a))
+        (js-call
+          (expect (nativeGet (nativeGet (observePiLog r b (piTestSnapshot rows)) "data") "native_event_id"))
+          :toBe
+          "assistant-1"))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "direct"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a))
+          (snap (piTestSnapshot rows)))
+        (put u :parentId "outside-tail")
+        (setq snap (piTestSnapshot rows))
+        (put snap :prefix_truncated t)
+        (js-call (expect (nativeGet (observePiLog r b snap) "ok")) :toBe t))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "direct"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a)))
+        (setq rows (Array/from (js-object :length 8190) (lambda (unused i) (piTestNoise (str "noise_" i)))))
+        (js-call rows :push u a)
+        (js-call (expect (nativeGet (observePiLog r b (piTestSnapshot rows)) "ok")) :toBe t)
+        (js-call rows :push (piTestNoise "overflow"))
+        (js-call (expect (lambda () (observePiLog r b (piTestSnapshot rows)))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "direct"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a))
+          (noise (piTestNoise "big-line")))
+        (put noise :data (js-call "x" :repeat (- 1048576 (Buffer/byteLength (JSON/stringify noise) "utf8"))))
+        (js-call rows :push noise)
+        (js-call (expect (nativeGet (observePiLog r b (piTestSnapshot rows)) "ok")) :toBe t)
+        (put noise :data (str (nativeGet noise "data") "x"))
+        (js-call (expect (lambda () (observePiLog r b (piTestSnapshot rows)))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "direct"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a))
+          (header (piTestHeader))
+          (snap (piTestSnapshot rows)))
+        (put header :padding (js-call "x" :repeat 65536))
+        (put snap :header_text (JSON/stringify header))
+        (js-call (expect (lambda () (observePiLog r b snap))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "direct"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a))
+          (calls (js-array))
+          (runtime
+            (js-object
+              :loadPi
+              (async (root ref) (js-call calls :push "loadPi") (piTestBinding))
+              :readPi
+              (async (target) (js-call calls :push "readPi") (piTestSnapshot rows))
+              :loadO
+              (async (root ref) (throw (new globalThis.Error "wrong platform")))
+              :fetch
+              (lambda () (throw (new globalThis.Error "no network")))
+              :now
+              (lambda () 0)))
+          (response (await (executeNativeObservation r (resolve "private-root") (nativeTestBinding) runtime))))
+        (js-call (expect (nativeGet response "ok")) :toBe t)
+        (js-call (expect (JSON/stringify calls)) :toBe (JSON/stringify (js-array "loadPi" "readPi"))))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (calls (js-array))
+          (answer
+            (js-object
+              :schema_version
+              1
+              :request_id
+              "req-po"
+              :operation
+              "observe-direct-input"
+              :run_id
+              "run-po"
+              :ok
+              t
+              :data
+              (js-object
+                :native_session_id
+                "opencode-session"
+                :native_event_id
+                "native-event"
+                :observation_source
+                "opencode_http_v1"))))
+        (put (nativeGet r "parameters") :tool "opencode")
+        (put (nativeGet r "parameters") :native_session_id "opencode-session")
+        (let*
+          ((runtime
+            (js-object
+              :loadO
+              (async (root ref) (js-call calls :push ref) (js-object :bound "original-o"))
+              :observeO
+              (async
+                (request binding ports)
+                (js-call (expect (nativeGet binding "bound")) :toBe "original-o")
+                (js-call (expect (nativeGet (nativeGet request "parameters") "tool")) :toBe "opencode")
+                answer)
+              :loadPi
+              (async () (throw (new globalThis.Error "wrong pi branch")))
+              :fetch
+              (lambda () nil)
+              :now
+              (lambda () 0)))
+            (response (await (executeNativeObservation r (resolve "private-root") (nativeTestBinding) runtime))))
+          (js-call (expect (JSON/stringify response)) :toBe (JSON/stringify answer))
+          (js-call (expect (JSON/stringify calls)) :toBe (JSON/stringify (js-array "o.json")))))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (calls 0)
+          (runtime (js-object :loadO (async () (setq calls (1+ calls))) :loadPi (async () (setq calls (1+ calls))))))
+        (put r :operation "other")
+        (js-call
+          (expect
+            (await (poReject (lambda () (executeNativeObservation r (resolve "private-root") (nativeTestBinding) runtime)))))
+          :toBe
+          t)
+        (js-call (expect calls) :toBe 0))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (calls 0)
+          (runtime (js-object :loadO (async () (setq calls (1+ calls))) :loadPi (async () (setq calls (1+ calls))))))
+        (put (nativeGet r "parameters") :tool "wrong")
+        (js-call
+          (expect
+            (await (poReject (lambda () (executeNativeObservation r (resolve "private-root") (nativeTestBinding) runtime)))))
+          :toBe
+          t)
+        (js-call (expect calls) :toBe 0))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (calls 0)
+          (runtime (js-object :loadO (async () (setq calls (1+ calls))) :loadPi (async () (setq calls (1+ calls))))))
+        (put (nativeGet r "parameters") :run_id "wrong")
+        (js-call
+          (expect
+            (await (poReject (lambda () (executeNativeObservation r (resolve "private-root") (nativeTestBinding) runtime)))))
+          :toBe
+          t)
+        (js-call (expect calls) :toBe 0))
+      (let*
+        ((calls (js-array))
+          (target
+            (js-object :authorized t :allow_model_work t :session_key "session-key" :native_session_id "native-session"))
+          (f
+            (js-object
+              :run_id
+              "run-po"
+              :profile
+              (js-object :targets (js-object :opencode target))
+              :ok
+              (async
+                (operation parameters)
+                (js-call calls :push operation)
+                (cond
+                  ((= operation "connection.list") (js-object :items (js-array)))
+                  ((= operation "session.get")
+                    (js-object
+                      :tool
+                      "opencode"
+                      :session_key
+                      "session-key"
+                      :native_session_id
+                      "native-session"
+                      :session_ref
+                      "session-ref"))
+                  ((= operation "session.send") (js-object :delivery_id "delivery-po"))
+                  (t (throw (new globalThis.Error "unexpected API")))))
+              :evidence
+              (async (value) nil)))
+          (actions
+            (js-object
+              :waitStarted
+              (async
+                (fixture id)
+                (js-call (expect id) :toBe "delivery-po")
+                (js-object
+                  :delivery
+                  (js-object :origin "direct" :event_id nil :reply_context_id nil)
+                  :receipt
+                  (js-object :evidence_level "native_protocol")))
+              :approvedDriver
+              (async
+                (fixture operation p)
+                (js-call (expect operation) :toBe "observe-direct-input")
+                (js-call (expect (nativeGet p "tool")) :toBe "opencode")
+                (js-call (expect (nativeGet p "native_session_id")) :toBe "native-session")
+                (js-object :native_session_id "native-session" :observed_delivery_id "delivery-po")))))
+        (await (runDirectControl f "opencode" actions))
+        (js-call
+          (expect (JSON/stringify calls))
+          :toBe
+          (JSON/stringify (js-array "connection.list" "session.get" "session.send")))
+        (put target :authorized false)
+        (js-call calls :splice 0)
+        (js-call (expect (await (poReject (lambda () (runDirectControl f "opencode" actions))))) :toBe t)
+        (js-call (expect (nativeGet calls "length")) :toBe 0)
+        (put target :authorized t)
+        (put target :allow_model_work false)
+        (js-call (expect (await (poReject (lambda () (runDirectControl f "opencode" actions))))) :toBe t)
+        (js-call (expect (nativeGet calls "length")) :toBe 0))
+      (let*
+        ((calls (js-array))
+          (target
+            (js-object :authorized t :allow_model_work t :session_key "session-key" :native_session_id "native-session"))
+          (f
+            (js-object
+              :run_id
+              "run-po"
+              :profile
+              (js-object :targets (js-object :pi target))
+              :ok
+              (async
+                (operation parameters)
+                (js-call calls :push operation)
+                (cond
+                  ((= operation "connection.list") (js-object :items (js-array)))
+                  ((= operation "session.get")
+                    (js-object :tool "pi" :session_key "session-key" :native_session_id "native-session" :session_ref "session-ref"))
+                  ((= operation "session.send") (js-object :delivery_id "delivery-po"))
+                  (t (throw (new globalThis.Error "unexpected API")))))
+              :evidence
+              (async (value) nil)))
+          (actions
+            (js-object
+              :waitStarted
+              (async
+                (fixture id)
+                (js-call (expect id) :toBe "delivery-po")
+                (js-object
+                  :delivery
+                  (js-object :origin "direct" :event_id nil :reply_context_id nil)
+                  :receipt
+                  (js-object :evidence_level "native_protocol")))
+              :approvedDriver
+              (async
+                (fixture operation p)
+                (js-call (expect operation) :toBe "observe-direct-input")
+                (js-call (expect (nativeGet p "tool")) :toBe "pi")
+                (js-call (expect (nativeGet p "native_session_id")) :toBe "native-session")
+                (js-object :native_session_id "native-session" :observed_delivery_id "delivery-po")))))
+        (await (runDirectControl f "pi" actions))
+        (js-call
+          (expect (JSON/stringify calls))
+          :toBe
+          (JSON/stringify (js-array "connection.list" "session.get" "session.send")))
+        (put target :authorized false)
+        (js-call calls :splice 0)
+        (js-call (expect (await (poReject (lambda () (runDirectControl f "pi" actions))))) :toBe t)
+        (js-call (expect (nativeGet calls "length")) :toBe 0)
+        (put target :authorized t)
+        (put target :allow_model_work false)
+        (js-call (expect (await (poReject (lambda () (runDirectControl f "pi" actions))))) :toBe t)
+        (js-call (expect (nativeGet calls "length")) :toBe 0))
+      (let*
+        ((b (piTestBinding)))
+        (put b :targets (new globalThis.Array 2))
+        (js-call (expect (lambda () (validatePiObserverBinding b))) :toThrow))
+      (let*
+        ((b (piTestBinding)))
+        (put b :targets (js-array nil))
+        (js-call (expect (lambda () (validatePiObserverBinding b))) :toThrow))
+      (let*
+        ((b (piTestBinding)))
+        (put
+          b
+          :targets
+          (js-array
+            (aref (nativeGet b "targets") 0)
+            (js-object
+              :native_session_id
+              "other"
+              :cwd
+              (resolve "pi-observer-workspace")
+              :log_path
+              (resolve "pi-observer-workspace/pi-session.jsonl"))))
+        (js-call (expect (lambda () (validatePiObserverBinding b))) :toThrow))
+      (let*
+        ((b (piTestBinding)))
+        (put
+          b
+          :targets
+          (js-array
+            (aref (nativeGet b "targets") 0)
+            (js-object
+              :native_session_id
+              "pi-session"
+              :cwd
+              (resolve "pi-observer-workspace")
+              :log_path
+              (resolve "other.jsonl"))))
+        (js-call (expect (lambda () (validatePiObserverBinding b))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "direct"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a)))
+        (put (nativeGet u "message") :role "custom")
+        (js-call (expect (lambda () (observePiLog r b (piTestSnapshot rows)))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "direct"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a)))
+        (put (nativeGet u "message") :content (js-object :text "not-native-text"))
+        (js-call (expect (lambda () (observePiLog r b (piTestSnapshot rows)))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (b (piTestBinding))
+          (u (piTestUser "user-1" nil "direct"))
+          (a (piTestAssistant "assistant-1" "user-1"))
+          (rows (js-array u a)))
+        (setq rows (js-array))
+        (js-call (expect (lambda () (observePiLog r b (piTestSnapshot rows)))) :toThrow))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (b (nativeTestBinding))
+          (calls 0)
+          (runtime (js-object :loadPi (async () (setq calls (1+ calls)) (piTestBinding)))))
+        (put b :authorized false)
+        (js-call
+          (expect (await (poReject (lambda () (executeNativeObservation r (resolve "private-root") b runtime)))))
+          :toBe
+          t)
+        (js-call (expect calls) :toBe 0))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (b (nativeTestBinding))
+          (calls 0)
+          (runtime (js-object :loadPi (async () (setq calls (1+ calls)) (piTestBinding)))))
+        (put b :pi_binding_ref "../outside.json")
+        (js-call
+          (expect (await (poReject (lambda () (executeNativeObservation r (resolve "private-root") b runtime)))))
+          :toBe
+          t)
+        (js-call (expect calls) :toBe 0))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (b (nativeTestBinding))
+          (calls 0)
+          (runtime (js-object :loadPi (async () (setq calls (1+ calls)) (piTestBinding)))))
+        (put b :opencode_binding_ref "")
+        (js-call
+          (expect (await (poReject (lambda () (executeNativeObservation r (resolve "private-root") b runtime)))))
+          :toBe
+          t)
+        (js-call (expect calls) :toBe 0))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (b (nativeTestBinding))
+          (calls 0)
+          (runtime (js-object :loadPi (async () (setq calls (1+ calls)) (piTestBinding)))))
+        (put b :schema_version 2)
+        (js-call
+          (expect (await (poReject (lambda () (executeNativeObservation r (resolve "private-root") b runtime)))))
+          :toBe
+          t)
+        (js-call (expect calls) :toBe 0))
+      (let*
+        ((r (piTestRequest "observe-direct-input"))
+          (reads 0)
+          (runtime (js-object :loadPi (async () (piTestBinding)) :readPi (async () (setq reads (1+ reads))))))
+        (put (nativeGet r "parameters") :native_session_id "unbound-session")
+        (js-call
+          (expect
+            (await (poReject (lambda () (executeNativeObservation r (resolve "private-root") (nativeTestBinding) runtime)))))
+          :toBe
+          t)
+        (js-call (expect reads) :toBe 0))
+      (let*
+        ((r
+          (js-object
+            :schema_version
+            1
+            :request_id
+            "req-empty"
+            :operation
+            "observe-empty-opencode"
+            :run_id
+            "run-po"
+            :parameters
+            (js-object
+              :native_session_id
+              "o-session"
+              :run_id
+              "run-po"
+              :instance_id
+              "instance-po"
+              :session_key
+              (stableSessionKey (js-object :tool "opencode" :native_namespace "project-po" :native_session_id "o-session")))))
+          (calls (js-array))
+          (runtime
+            (js-object
+              :loadO
+              (async (root ref) (js-call calls :push "o") (js-object :original t))
+              :observeO
+              (async
+                (request binding ports)
+                (js-call (expect (nativeGet request "operation")) :toBe "observe-empty-opencode")
+                (js-call (expect (nativeGet binding "original")) :toBe t)
+                (js-object
+                  :schema_version
+                  1
+                  :request_id
+                  "req-empty"
+                  :operation
+                  "observe-empty-opencode"
+                  :run_id
+                  "run-po"
+                  :ok
+                  t
+                  :data
+                  (js-object :prompt_count 0 :native_session_id "o-session")))
+              :loadPi
+              (async () (throw (new globalThis.Error "wrong pi branch")))
+              :fetch
+              (lambda () nil)
+              :now
+              (lambda () 0))))
+        (js-call
+          (expect
+            (nativeGet
+              (nativeGet (await (executeNativeObservation r (resolve "private-root") (nativeTestBinding) runtime)) "data")
+              "prompt_count"))
+          :toBe
+          0)
+        (js-call (expect (JSON/stringify calls)) :toBe (JSON/stringify (js-array "o"))))
+      (let*
+        ((calls (js-array))
+          (session
+            (js-object :tool "pi" :session_key "session-key" :native_session_id "native-session" :session_ref "session-ref"))
+          (f
+            (js-object
+              :run_id
+              "run-po"
+              :profile
+              (js-object
+                :targets
+                (js-object
+                  :pi
+                  (js-object :authorized t :allow_model_work t :session_key "session-key" :native_session_id "native-session")))
+              :ok
+              (async
+                (operation p)
+                (js-call calls :push operation)
+                (if (= operation "connection.list") (js-object :items (js-array)) session)))))
+        (put session :tool "wrong")
+        (js-call (expect (await (poReject (lambda () (runDirectControl f "pi" (js-object)))))) :toBe t)
+        (js-call (expect (js-call calls :includes "session.send")) :toBe false))
+      (let*
+        ((calls (js-array))
+          (session
+            (js-object :tool "pi" :session_key "session-key" :native_session_id "native-session" :session_ref "session-ref"))
+          (f
+            (js-object
+              :run_id
+              "run-po"
+              :profile
+              (js-object
+                :targets
+                (js-object
+                  :pi
+                  (js-object :authorized t :allow_model_work t :session_key "session-key" :native_session_id "native-session")))
+              :ok
+              (async
+                (operation p)
+                (js-call calls :push operation)
+                (if (= operation "connection.list") (js-object :items (js-array)) session)))))
+        (put session :native_session_id "wrong")
+        (js-call (expect (await (poReject (lambda () (runDirectControl f "pi" (js-object)))))) :toBe t)
+        (js-call (expect (js-call calls :includes "session.send")) :toBe false))
+      (let*
+        ((calls (js-array))
+          (session
+            (js-object :tool "pi" :session_key "session-key" :native_session_id "native-session" :session_ref "session-ref"))
+          (f
+            (js-object
+              :run_id
+              "run-po"
+              :profile
+              (js-object
+                :targets
+                (js-object
+                  :pi
+                  (js-object :authorized t :allow_model_work t :session_key "session-key" :native_session_id "native-session")))
+              :ok
+              (async
+                (operation p)
+                (js-call calls :push operation)
+                (if (= operation "connection.list") (js-object :items (js-array)) session)))))
+        (put session :session_key "wrong")
+        (js-call (expect (await (poReject (lambda () (runDirectControl f "pi" (js-object)))))) :toBe t)
+        (js-call (expect (js-call calls :includes "session.send")) :toBe false)))))

@@ -1,0 +1,142 @@
+(module dj.storage.schema
+  (import "../core/native.eli" nativeGet)
+  (defconst schemaVersion 1)
+  (defconst schemaStatements
+    (js-array
+      "CREATE TABLE counters(name TEXT PRIMARY KEY, value INTEGER NOT NULL CHECK(value>=0)) STRICT"
+      "INSERT INTO counters(name,value) VALUES ('ingress',0),('catalog',0)"
+      "CREATE TABLE service_lease(service_id TEXT PRIMARY KEY, owner_token TEXT NOT NULL, pid INTEGER NOT NULL, process_birth TEXT NOT NULL, state TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE UNIQUE INDEX service_lease_single_owner ON service_lease((1))"
+      "CREATE TABLE principal_registry(principal_id TEXT PRIMARY KEY, kind TEXT NOT NULL, authorization_revision INTEGER NOT NULL CHECK(authorization_revision>0), retired INTEGER NOT NULL CHECK(retired IN (0,1)), payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE TABLE connections(connection_id TEXT PRIMARY KEY, revision INTEGER NOT NULL CHECK(revision>0), state TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE TABLE tools(tool_id TEXT PRIMARY KEY, payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE TABLE profiles(profile_id TEXT PRIMARY KEY, tool_id TEXT NOT NULL REFERENCES tools(tool_id), revision INTEGER NOT NULL CHECK(revision>0), payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE TABLE instances(instance_id TEXT PRIMARY KEY, tool_id TEXT NOT NULL REFERENCES tools(tool_id), native_namespace TEXT NOT NULL, instance_epoch TEXT NOT NULL, ownership TEXT NOT NULL CHECK(ownership IN ('existing','managed')), profile_id TEXT REFERENCES profiles(profile_id), state TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0), payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE INDEX instances_tool ON instances(tool_id,instance_id)"
+      "CREATE TABLE instance_gates(instance_id TEXT PRIMARY KEY REFERENCES instances(instance_id), instance_epoch TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('open','closed')), revision INTEGER NOT NULL CHECK(revision>0), payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE TABLE managed_slots(profile_id TEXT PRIMARY KEY REFERENCES profiles(profile_id), instance_id TEXT NOT NULL REFERENCES instances(instance_id), instance_epoch TEXT NOT NULL, launch_token TEXT NOT NULL UNIQUE, state TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE TABLE sessions(session_key TEXT PRIMARY KEY, tool_id TEXT NOT NULL REFERENCES tools(tool_id), native_namespace TEXT NOT NULL, native_session_id TEXT NOT NULL, instance_id TEXT NOT NULL REFERENCES instances(instance_id), instance_epoch TEXT NOT NULL, workspace_ref TEXT, updated_at TEXT, runtime_state TEXT NOT NULL, tombstone INTEGER NOT NULL DEFAULT 0 CHECK(tombstone IN (0,1)), catalog_seq INTEGER NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)), UNIQUE(tool_id,native_namespace,native_session_id)) STRICT"
+      "CREATE INDEX sessions_live_key ON sessions(session_key) WHERE tombstone=0"
+      "CREATE INDEX sessions_tool_key ON sessions(tool_id,session_key)"
+      "CREATE INDEX sessions_instance_key ON sessions(instance_id,session_key)"
+      "CREATE INDEX sessions_workspace_key ON sessions(workspace_ref,session_key)"
+      "CREATE INDEX sessions_runtime_key ON sessions(runtime_state,session_key)"
+      "CREATE INDEX sessions_updated_key ON sessions(updated_at DESC,session_key)"
+      "CREATE TABLE session_versions(session_key TEXT NOT NULL, valid_from INTEGER NOT NULL, valid_to INTEGER, tool_id TEXT NOT NULL, native_namespace TEXT NOT NULL, instance_id TEXT NOT NULL, workspace_ref TEXT, updated_at TEXT, runtime_state TEXT NOT NULL, registered INTEGER NOT NULL CHECK(registered IN (0,1)), tombstone INTEGER NOT NULL CHECK(tombstone IN (0,1)), payload TEXT NOT NULL CHECK(json_valid(payload)), PRIMARY KEY(session_key,valid_from)) STRICT"
+      "CREATE INDEX session_versions_tool ON session_versions(tool_id,session_key,valid_from,valid_to)"
+      "CREATE INDEX session_versions_instance ON session_versions(instance_id,session_key,valid_from,valid_to)"
+      "CREATE INDEX session_versions_workspace ON session_versions(workspace_ref,session_key,valid_from,valid_to)"
+      "CREATE INDEX session_versions_updated ON session_versions(updated_at DESC,session_key,valid_from,valid_to)"
+      "CREATE INDEX session_versions_runtime ON session_versions(runtime_state,session_key,valid_from,valid_to)"
+      "CREATE TABLE routes(route_id TEXT PRIMARY KEY, canonical_target_key TEXT NOT NULL UNIQUE, session_key TEXT NOT NULL REFERENCES sessions(session_key), binding_id TEXT, next_delivery_seq INTEGER NOT NULL DEFAULT 0, claim_epoch INTEGER NOT NULL DEFAULT 0, claim_owner TEXT, unknown_delivery_id TEXT, payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE TABLE agents(agent_id TEXT PRIMARY KEY, route_id TEXT NOT NULL REFERENCES routes(route_id), owner_principal_id TEXT NOT NULL, recipient_principal_id TEXT NOT NULL, canonical_target_key TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('registered','closed')), revision INTEGER NOT NULL CHECK(revision>0), payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE UNIQUE INDEX agents_active_target ON agents(canonical_target_key) WHERE state='registered'"
+      "CREATE UNIQUE INDEX agents_recipient ON agents(recipient_principal_id) WHERE state='registered'"
+      "CREATE INDEX agents_owner ON agents(owner_principal_id,agent_id)"
+      "CREATE TABLE bindings(binding_id TEXT PRIMARY KEY, route_id TEXT NOT NULL REFERENCES routes(route_id), instance_id TEXT NOT NULL REFERENCES instances(instance_id), instance_epoch TEXT NOT NULL, expires_at TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE TABLE handles(ref TEXT PRIMARY KEY, kind TEXT NOT NULL, principal_id TEXT NOT NULL, resource_key TEXT NOT NULL, authorization_revision INTEGER NOT NULL, expires_at TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE INDEX handles_expiry ON handles(expires_at,ref)"
+      "CREATE TABLE previews(preview_id TEXT PRIMARY KEY, principal_id TEXT NOT NULL, expires_at TEXT NOT NULL, committed_operation_id TEXT, payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE TABLE operations(operation_id TEXT PRIMARY KEY, principal_id TEXT NOT NULL, operation TEXT NOT NULL, key_hash TEXT NOT NULL, request_hash TEXT NOT NULL, state TEXT NOT NULL, created_at TEXT NOT NULL, result_expires_at TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)), UNIQUE(principal_id,operation,key_hash)) STRICT"
+      "CREATE INDEX operations_owner ON operations(principal_id,created_at,operation_id)"
+      "CREATE INDEX operations_result_expiry ON operations(result_expires_at,operation_id) WHERE json_type(payload,'$.safe_result')='object'"
+      "CREATE TABLE idempotency(principal_id TEXT NOT NULL, operation TEXT NOT NULL, key_hash TEXT NOT NULL, request_hash TEXT NOT NULL, operation_id TEXT NOT NULL REFERENCES operations(operation_id), PRIMARY KEY(principal_id,operation,key_hash)) STRICT"
+      "CREATE TABLE lifecycle_actions(lifecycle_id TEXT PRIMARY KEY, operation_id TEXT NOT NULL UNIQUE REFERENCES operations(operation_id), principal_id TEXT NOT NULL, action TEXT NOT NULL, instance_id TEXT NOT NULL REFERENCES instances(instance_id), instance_epoch TEXT NOT NULL, launch_token TEXT, state TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0), payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE INDEX lifecycle_pending ON lifecycle_actions(state,lifecycle_id)"
+      "CREATE TABLE source_progress(connection_id TEXT PRIMARY KEY REFERENCES connections(connection_id), cursor TEXT, last_ingress_seq INTEGER NOT NULL, gap_status TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE TABLE poll_checkpoints(connection_id TEXT NOT NULL REFERENCES connections(connection_id), conversation_key TEXT NOT NULL, generation INTEGER NOT NULL CHECK(generation>0), next_due_at TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)), PRIMARY KEY(connection_id,conversation_key)) STRICT"
+      "CREATE INDEX poll_due ON poll_checkpoints(next_due_at,connection_id,conversation_key)"
+      "CREATE TABLE events(event_id TEXT PRIMARY KEY, connection_id TEXT NOT NULL REFERENCES connections(connection_id), source_key TEXT NOT NULL, conversation_key TEXT NOT NULL, native_message_id TEXT NOT NULL, event_kind TEXT NOT NULL, ingress_seq INTEGER NOT NULL UNIQUE, received_at TEXT NOT NULL, body_expires_at TEXT NOT NULL, tombstone INTEGER NOT NULL DEFAULT 0 CHECK(tombstone IN (0,1)), payload TEXT NOT NULL CHECK(json_valid(payload)), UNIQUE(connection_id,source_key)) STRICT"
+      "CREATE INDEX events_conversation_seq ON events(connection_id,conversation_key,ingress_seq)"
+      "CREATE INDEX events_native ON events(connection_id,native_message_id,ingress_seq)"
+      "CREATE INDEX events_body_expiry ON events(body_expires_at,event_id) WHERE tombstone=0"
+      "CREATE TABLE rejected_ingress(diagnostic_id TEXT PRIMARY KEY, connection_id TEXT NOT NULL, source_key TEXT NOT NULL, reason TEXT NOT NULL, received_at TEXT NOT NULL, UNIQUE(connection_id,source_key)) STRICT"
+      "CREATE TABLE subscriptions(subscription_id TEXT PRIMARY KEY, owner_principal_id TEXT NOT NULL, agent_id TEXT NOT NULL REFERENCES agents(agent_id), state TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0), payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE INDEX subscriptions_agent ON subscriptions(agent_id,subscription_id)"
+      "CREATE TABLE subscription_versions(subscription_id TEXT NOT NULL REFERENCES subscriptions(subscription_id), revision INTEGER NOT NULL CHECK(revision>0), start_seq INTEGER NOT NULL, cutover_seq INTEGER, state TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)), PRIMARY KEY(subscription_id,revision)) STRICT"
+      "CREATE TABLE subscription_sources(connection_id TEXT NOT NULL REFERENCES connections(connection_id), native_chat_id TEXT NOT NULL, thread_key TEXT NOT NULL, event_kind TEXT NOT NULL, subscription_id TEXT NOT NULL, revision INTEGER NOT NULL, include_threads INTEGER NOT NULL CHECK(include_threads IN (0,1)), PRIMARY KEY(connection_id,native_chat_id,thread_key,event_kind,subscription_id,revision), FOREIGN KEY(subscription_id,revision) REFERENCES subscription_versions(subscription_id,revision)) STRICT"
+      "CREATE INDEX subscription_candidates ON subscription_sources(connection_id,native_chat_id,event_kind,thread_key,subscription_id,revision)"
+      "CREATE TABLE routing_work(event_id TEXT PRIMARY KEY REFERENCES events(event_id), ingress_seq INTEGER NOT NULL, state TEXT NOT NULL, last_subscription_id TEXT, last_revision INTEGER, payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE INDEX routing_pending ON routing_work(state,ingress_seq)"
+      "CREATE TABLE match_decisions(event_id TEXT NOT NULL REFERENCES events(event_id), subscription_id TEXT NOT NULL, revision INTEGER NOT NULL, result TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)), PRIMARY KEY(event_id,subscription_id,revision), FOREIGN KEY(subscription_id,revision) REFERENCES subscription_versions(subscription_id,revision)) STRICT"
+      "CREATE TABLE deliveries(delivery_id TEXT PRIMARY KEY, route_id TEXT NOT NULL REFERENCES routes(route_id), origin TEXT NOT NULL CHECK(origin IN ('direct','subscription_event')), principal_id TEXT, operation_id TEXT UNIQUE REFERENCES operations(operation_id), agent_id TEXT REFERENCES agents(agent_id), event_id TEXT REFERENCES events(event_id), delivery_seq INTEGER NOT NULL, state TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0), expires_at TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)), UNIQUE(route_id,delivery_seq), CHECK((origin='direct' AND event_id IS NULL AND principal_id IS NOT NULL AND operation_id IS NOT NULL) OR (origin='subscription_event' AND event_id IS NOT NULL AND agent_id IS NOT NULL))) STRICT"
+      "CREATE UNIQUE INDEX delivery_event_route ON deliveries(route_id,event_id) WHERE origin='subscription_event'"
+      "CREATE INDEX deliveries_route_head ON deliveries(route_id,delivery_seq) WHERE state IN ('ready','deferred','blocked','submitting','unknown')"
+      "CREATE INDEX deliveries_owner ON deliveries(principal_id,delivery_id)"
+      "CREATE INDEX deliveries_state ON deliveries(state,delivery_id)"
+      "CREATE TABLE contributions(delivery_id TEXT NOT NULL REFERENCES deliveries(delivery_id), subscription_id TEXT NOT NULL, revision INTEGER NOT NULL, state TEXT NOT NULL, expires_at TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)), PRIMARY KEY(delivery_id,subscription_id,revision), FOREIGN KEY(subscription_id,revision) REFERENCES subscription_versions(subscription_id,revision)) STRICT"
+      "CREATE INDEX contribution_subscription ON contributions(subscription_id,revision,state,delivery_id)"
+      "CREATE TABLE outbound(outbound_id TEXT PRIMARY KEY, operation_id TEXT NOT NULL UNIQUE REFERENCES operations(operation_id), principal_id TEXT NOT NULL, connection_id TEXT NOT NULL REFERENCES connections(connection_id), conversation_key TEXT NOT NULL, state TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0), payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE INDEX outbound_pending ON outbound(state,outbound_id)"
+      "CREATE TABLE parts(part_id TEXT PRIMARY KEY, outbound_id TEXT NOT NULL REFERENCES outbound(outbound_id), part_index INTEGER NOT NULL, dispatch_key TEXT NOT NULL UNIQUE, state TEXT NOT NULL, native_message_id TEXT, payload TEXT NOT NULL CHECK(json_valid(payload)), UNIQUE(outbound_id,part_index)) STRICT"
+      "CREATE TABLE attempts(attempt_id TEXT PRIMARY KEY, delivery_id TEXT REFERENCES deliveries(delivery_id), outbound_id TEXT REFERENCES outbound(outbound_id), lifecycle_id TEXT REFERENCES lifecycle_actions(lifecycle_id), dispatch_key TEXT NOT NULL UNIQUE, state TEXT NOT NULL, definite_not_sent INTEGER NOT NULL CHECK(definite_not_sent IN (0,1)), payload TEXT NOT NULL CHECK(json_valid(payload)), CHECK((delivery_id IS NOT NULL)+(outbound_id IS NOT NULL)+(lifecycle_id IS NOT NULL)=1)) STRICT"
+      "CREATE INDEX attempts_delivery ON attempts(delivery_id,attempt_id) WHERE delivery_id IS NOT NULL"
+      "CREATE INDEX attempts_outbound ON attempts(outbound_id,attempt_id) WHERE outbound_id IS NOT NULL"
+      "CREATE TABLE receipts(receipt_id TEXT PRIMARY KEY, attempt_id TEXT NOT NULL REFERENCES attempts(attempt_id), native_receipt_key TEXT, kind TEXT NOT NULL, evidence_level TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)), UNIQUE(attempt_id,native_receipt_key)) STRICT"
+      "CREATE INDEX receipts_attempt ON receipts(attempt_id,receipt_id)"
+      "CREATE TABLE claims(route_id TEXT PRIMARY KEY REFERENCES routes(route_id), claim_owner TEXT NOT NULL, claim_epoch INTEGER NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE TABLE reply_contexts(reply_context_id TEXT PRIMARY KEY, delivery_id TEXT NOT NULL REFERENCES deliveries(delivery_id), recipient_principal_id TEXT NOT NULL, expires_at TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE TABLE echo_index(connection_id TEXT NOT NULL REFERENCES connections(connection_id), native_message_id TEXT NOT NULL, outbound_id TEXT NOT NULL REFERENCES outbound(outbound_id), PRIMARY KEY(connection_id,native_message_id)) STRICT"
+      "CREATE TABLE echo_gates(connection_id TEXT NOT NULL REFERENCES connections(connection_id), conversation_key TEXT NOT NULL, outbound_id TEXT NOT NULL REFERENCES outbound(outbound_id), payload TEXT NOT NULL CHECK(json_valid(payload)), PRIMARY KEY(connection_id,conversation_key,outbound_id)) STRICT"
+      "CREATE TABLE catalog_runs(catalog_run_id TEXT PRIMARY KEY, operation_id TEXT NOT NULL UNIQUE REFERENCES operations(operation_id), principal_id TEXT NOT NULL, authorization_revision INTEGER NOT NULL, state TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE TABLE catalog_checkpoints(catalog_run_id TEXT NOT NULL REFERENCES catalog_runs(catalog_run_id), source_id TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)), PRIMARY KEY(catalog_run_id,source_id)) STRICT"
+      "CREATE TABLE catalog_seen_sessions(scan_id TEXT NOT NULL, source_id TEXT NOT NULL, session_key TEXT NOT NULL, PRIMARY KEY(scan_id,source_id,session_key)) STRICT"
+      "CREATE TABLE catalog_seen_messages(scan_id TEXT NOT NULL, session_key TEXT NOT NULL, message_key TEXT NOT NULL, PRIMARY KEY(scan_id,session_key,message_key)) STRICT"
+      "CREATE TABLE catalog_body_barriers(session_key TEXT PRIMARY KEY REFERENCES sessions(session_key), scan_id TEXT NOT NULL, cutoff_seq INTEGER NOT NULL) STRICT"
+      "CREATE TABLE catalog_source_barriers(barrier_id TEXT PRIMARY KEY, instance_id TEXT NOT NULL REFERENCES instances(instance_id), source_id TEXT NOT NULL, scan_id TEXT NOT NULL, cutoff_seq INTEGER NOT NULL, scope TEXT NOT NULL CHECK(json_valid(scope))) STRICT"
+      "CREATE INDEX catalog_source_barrier_instance ON catalog_source_barriers(instance_id,cutoff_seq)"
+      "CREATE TABLE catalog_versions(resource_kind TEXT NOT NULL, resource_key TEXT NOT NULL, valid_from INTEGER NOT NULL, valid_to INTEGER, tombstone INTEGER NOT NULL CHECK(tombstone IN (0,1)), payload TEXT NOT NULL CHECK(json_valid(payload)), PRIMARY KEY(resource_kind,resource_key,valid_from)) STRICT"
+      "CREATE INDEX catalog_current ON catalog_versions(resource_kind,resource_key,valid_to,valid_from)"
+      "CREATE TABLE session_messages(message_key TEXT PRIMARY KEY, session_key TEXT NOT NULL REFERENCES sessions(session_key), native_message_id TEXT NOT NULL, content_version TEXT NOT NULL, catalog_seq INTEGER NOT NULL, acquired_at TEXT NOT NULL, expires_at TEXT NOT NULL, tombstone INTEGER NOT NULL CHECK(tombstone IN (0,1)), body_bytes INTEGER NOT NULL CHECK(body_bytes>=0), payload TEXT NOT NULL CHECK(json_valid(payload)), UNIQUE(session_key,native_message_id)) STRICT"
+      "CREATE INDEX messages_session_key ON session_messages(session_key,message_key)"
+      "CREATE TABLE message_versions(message_key TEXT NOT NULL, content_version TEXT NOT NULL, session_key TEXT NOT NULL, valid_from INTEGER NOT NULL, valid_to INTEGER, body TEXT NOT NULL, body_bytes INTEGER NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)), PRIMARY KEY(message_key,valid_from)) STRICT"
+      "CREATE INDEX message_versions_content ON message_versions(message_key,content_version,valid_from,valid_to)"
+      "CREATE INDEX message_versions_session ON message_versions(session_key,message_key,valid_from,valid_to)"
+      "CREATE TABLE text_documents(document_id TEXT PRIMARY KEY, session_key TEXT NOT NULL REFERENCES sessions(session_key), message_key TEXT REFERENCES session_messages(message_key), field TEXT NOT NULL, content_version TEXT NOT NULL, catalog_seq INTEGER NOT NULL, body_bytes INTEGER NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE INDEX text_documents_session ON text_documents(session_key,field,document_id)"
+      "CREATE VIRTUAL TABLE text_index USING fts5(document_id UNINDEXED, body, tokenize='trigram case_sensitive 1')"
+      "CREATE TABLE query_snapshots(snapshot_id TEXT PRIMARY KEY, principal_id TEXT NOT NULL, authorization_revision INTEGER NOT NULL, catalog_seq INTEGER NOT NULL, expires_at TEXT NOT NULL, state TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE INDEX snapshots_owner_expiry ON query_snapshots(principal_id,expires_at,snapshot_id)"
+      "CREATE TABLE snapshot_results(snapshot_id TEXT NOT NULL REFERENCES query_snapshots(snapshot_id), ordinal INTEGER NOT NULL, resource_key TEXT NOT NULL, content_version TEXT, payload TEXT NOT NULL CHECK(json_valid(payload)), PRIMARY KEY(snapshot_id,ordinal)) STRICT"
+      "CREATE UNIQUE INDEX snapshot_result_resource ON snapshot_results(snapshot_id,resource_key)"
+      "CREATE TABLE audit(audit_id INTEGER PRIMARY KEY, at TEXT NOT NULL, principal_id TEXT, operation_id TEXT, resource_kind TEXT, resource_id TEXT, code TEXT NOT NULL, state TEXT) STRICT"
+      "CREATE INDEX audit_retention ON audit(at,audit_id)"
+      "PRAGMA user_version=1"))
+  (defun migrate
+    (db)
+    (let
+      (
+        (version
+          (nativeGet (js-call (js-call db :query "PRAGMA user_version") :get) "user_version")))
+      (when (> version schemaVersion)
+        (throw (new globalThis.Error "database schema is newer than this release")))
+      (when (< version schemaVersion)
+        (js-call db :run "BEGIN IMMEDIATE")
+        (try
+          (js-call schemaStatements :forEach (lambda (sql) (js-call db :run sql)))
+          (js-call db :run "COMMIT")
+          (catch error
+            (try (js-call db :run "ROLLBACK") (catch ignored nil))
+            (throw error))))
+      ;; These fixed predicates match the scheduler's bounded keyset queries.
+      ;; Keep index maintenance idempotent for stores already using schema 1.
+      (js-call
+        (js-array
+          "CREATE TABLE IF NOT EXISTS im_event_inbox(seq INTEGER PRIMARY KEY AUTOINCREMENT,connection_id TEXT NOT NULL REFERENCES connections(connection_id),source_key TEXT NOT NULL,payload TEXT NOT NULL CHECK(json_valid(payload)),UNIQUE(connection_id,source_key)) STRICT"
+          "CREATE INDEX IF NOT EXISTS im_event_inbox_pending ON im_event_inbox(connection_id,seq)"
+          "CREATE TABLE IF NOT EXISTS inbox_entries(inbox_id TEXT PRIMARY KEY,subscription_id TEXT NOT NULL,revision INTEGER NOT NULL,event_id TEXT NOT NULL REFERENCES events(event_id),agent_id TEXT NOT NULL REFERENCES agents(agent_id),state TEXT NOT NULL,expires_at TEXT NOT NULL,lease_until TEXT,claim_principal_id TEXT,claim_ref TEXT,payload TEXT NOT NULL CHECK(json_valid(payload)),UNIQUE(subscription_id,revision,event_id),FOREIGN KEY(subscription_id,revision) REFERENCES subscription_versions(subscription_id,revision)) STRICT"
+          "CREATE INDEX IF NOT EXISTS inbox_pending ON inbox_entries(subscription_id,revision,state,expires_at,event_id)"
+          "CREATE TABLE IF NOT EXISTS inbox_pulls(pull_id TEXT PRIMARY KEY REFERENCES operations(operation_id),subscription_id TEXT NOT NULL REFERENCES subscriptions(subscription_id),principal_id TEXT NOT NULL,payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+          "CREATE TABLE IF NOT EXISTS inbox_reply_contexts(reply_context_id TEXT PRIMARY KEY,inbox_id TEXT NOT NULL REFERENCES inbox_entries(inbox_id),recipient_principal_id TEXT NOT NULL,expires_at TEXT NOT NULL,payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+          "CREATE INDEX IF NOT EXISTS attempts_delivery ON attempts(delivery_id,attempt_id) WHERE delivery_id IS NOT NULL"
+          "CREATE INDEX IF NOT EXISTS attempts_outbound ON attempts(outbound_id,attempt_id) WHERE outbound_id IS NOT NULL"
+          "CREATE INDEX IF NOT EXISTS sessions_live_key ON sessions(session_key) WHERE tombstone=0"
+          "CREATE INDEX IF NOT EXISTS deliveries_route_head ON deliveries(route_id,delivery_seq) WHERE state IN ('ready','deferred','blocked','submitting','unknown')"
+          "DROP INDEX IF EXISTS deliveries_route_pending"
+          "CREATE INDEX IF NOT EXISTS lifecycle_reconcile_requested ON lifecycle_actions(lifecycle_id) WHERE json_extract(payload,'$.reconcile_requested')=1"
+          "CREATE INDEX IF NOT EXISTS delivery_reconcile_requested ON deliveries(delivery_id) WHERE json_extract(payload,'$.reconcile_requested')=1"
+          "CREATE INDEX IF NOT EXISTS outbound_reconcile_requested ON outbound(outbound_id) WHERE json_extract(payload,'$.reconcile_requested')=1"
+          "CREATE INDEX IF NOT EXISTS deliveries_observe_pending ON deliveries(state,COALESCE(json_extract(payload,'$.native_drained'),0),delivery_id) WHERE state='accepted' AND COALESCE(json_extract(payload,'$.native_drained'),0)=0")
+        :forEach (lambda (sql) (js-call db :run sql)))
+      schemaVersion))
+  (export schemaVersion schemaStatements migrate))

@@ -1,0 +1,58 @@
+(module dj.policy.principals
+  (import "../core/native.eli" nativeTypeOf nativeGet)
+  (import "node:crypto" createHash timingSafeEqual)
+  (import "../core/errors.eli" success failure)
+  (defun credentialDigest
+    (credential)
+    (js-call (js-call (createHash "sha256") :update credential "utf8") :digest "hex"))
+  (defun configuredPrincipal
+    (configured id)
+    (js-call configured :find (lambda (principal) (= (nativeGet principal "principal_id") id))))
+  (defun authenticate
+    (credential configured)
+    (let ((djReturn1Token (js-object)) (djReturn1Value nil))
+      (try
+        (unless
+          (and
+            (= (nativeTypeOf credential) "string")
+            (> (js-length credential) 0)
+            (<= (js-length credential) 4096))
+          (progn
+            (setq djReturn1Value (failure "unauthenticated"))
+            (throw djReturn1Token)))
+        (let
+          ((digest (Buffer/from (credentialDigest credential) "hex"))
+            (found nil)
+            (count 0)
+            (index 0))
+          (while (< index (js-length configured))
+            (let*
+              ((principal (aref configured index))
+                (expected (nativeGet principal "credential_sha256" ""))
+                (well-formed
+                  (and
+                    (= (nativeTypeOf expected) "string")
+                    (js-call (new globalThis.RegExp "^[a-f0-9]{64}$") :test expected)))
+                (bytes
+                  (Buffer/from (if well-formed expected (js-call "0" :repeat 64)) "hex"))
+                (same (timingSafeEqual digest bytes)))
+              (when (and same well-formed (not (= (nativeGet principal "disabled") t)))
+                (setq found principal count (1+ count))))
+            (setq index (1+ index)))
+          (if (= count 1) (success found) (failure "unauthenticated")))
+        (catch djReturn1Error
+          (if (eq djReturn1Error djReturn1Token) djReturn1Value (throw djReturn1Error))))))
+  (defun principalProjection
+    (principal)
+    (js-object
+      :principal_id
+      (nativeGet principal "principal_id")
+      :kind
+      (nativeGet principal "kind")
+      :authorization_revision
+      (nativeGet principal "authorization_revision")
+      :bound_agent_id
+      (nativeGet principal "bound_agent_id" nil)
+      :binding_state
+      (if (nativeGet principal "bound_agent_id") "bound" "unbound")))
+  (export authenticate configuredPrincipal credentialDigest principalProjection))

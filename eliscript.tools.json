@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 2,
+  "sourceRoot": ".",
+  "entries": [
+    "tools/build.eli",
+    "tools/verify.eli",
+    "tools/package.eli",
+    "tools/resource-controller.eli",
+    "tools/opencode-observer-controller.eli",
+    "tools/lark-acceptance-controller.eli",
+    "tests/support/lark-controller-fixture.eli",
+    "tools/native-observer-controller.eli",
+    "tools/package-cursor.eli"
+  ],
+  "outDir": "dist-tools"
+}

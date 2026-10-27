@@ -1,0 +1,36 @@
+(module dj.core.native
+  ;; Native scalar operations are explicit at the host boundary. Business
+  ;; validation, routing and lifecycle logic remain ordinary Eliscript forms.
+  (defconst NativeGlobal (js* "globalThis"))
+  (defconst NativeBun (get NativeGlobal :Bun))
+  (defconst NativeNumber (get NativeGlobal :Number))
+  (defconst NativeBigInt (get NativeGlobal :BigInt))
+  (defconst nativeSetTimeout (get NativeGlobal :setTimeout))
+  (defconst nativeClearTimeout (get NativeGlobal :clearTimeout))
+  (defconst nativeSetInterval (get NativeGlobal :setInterval))
+  (defconst nativeClearInterval (get NativeGlobal :clearInterval))
+  (defconst nativeFetch (get NativeGlobal :fetch))
+  (defconst nativeEncodeURIComponent (get NativeGlobal :encodeURIComponent))
+  (defun nativeTypeOf (value) (js* "typeof value"))
+  (defun nativeNullish (value) (or (eq value nil) (undefined? value)))
+  (defun nativeBitAnd (left right) (js* "left & right"))
+  (defun nativeGet (object key &rest fallback)
+    (let ((value (js* "object == null ? undefined : object[key]")))
+      (if (undefined? value)
+        (if (> (js-length fallback) 0) (aref fallback 0) undefined)
+        value)))
+  (export
+    NativeGlobal
+    NativeBun
+    NativeNumber
+    NativeBigInt
+    nativeTypeOf
+    nativeNullish
+    nativeBitAnd
+    nativeGet
+    nativeSetTimeout
+    nativeClearTimeout
+    nativeSetInterval
+    nativeClearInterval
+    nativeFetch
+    nativeEncodeURIComponent))

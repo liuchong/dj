@@ -1,0 +1,902 @@
+(module dj.tests.integration.query
+  (import "../../src/core/native.eli" nativeGet)
+  (import "bun:test" expect)
+  (import "bun:sqlite" Database)
+  (import "node:path" resolve)
+  (import "../../src/core/types.eli" stableSessionKey)
+  (import "../support/case.eli" withCase)
+  (import "../support/fixtures.eli" createFixture closeFixture callOk successful)
+  (import "../support/faults.eli" atFault createBarrier)
+  (defasync setup
+    ()
+    (let ((f (await (createFixture "catalog" "one"))))
+      (js-call
+        (nativeGet (nativeGet f "opencode") "messages")
+        :set
+        "s1"
+        (js-array
+          (js-object
+            :native_message_id
+            "m1"
+            :role
+            "user"
+            :text
+            "中文😀Aa phrase[OR]"
+            :created_at
+            "2026-01-01T00:00:00Z")))
+      (js-call
+        (nativeGet (nativeGet f "opencode") "messages")
+        :set
+        "s2"
+        (js-array
+          (js-object
+            :native_message_id
+            "m2"
+            :role
+            "assistant"
+            :text
+            "later result unique"
+            :created_at
+            "2026-01-01T00:00:00Z")))
+      (await
+        (callOk
+          f
+          "O"
+          "catalog.refresh"
+          (js-object :include_content t :idempotency_key "refresh")))
+      (await (js-call f :tick))
+      f))
+  (withCase "T47.metadata-index-boundary.sqlite" setup
+    (async (f)
+      (let ((db (new Database (resolve (nativeGet f "root") "state/dj.sqlite")
+        (js-object :readonly t))))
+        (try
+          (js-call (expect (nativeGet (js-call (js-call db :query
+            "SELECT COUNT(*) AS n FROM text_documents WHERE field<>'message.text'") :get) "n")) :toBe 0)
+          (finally (js-call db :close))))
+      (let ((metadata (await (callOk f "O" "session.search"
+        (js-object :query (js-object :text "same" :fields (js-array "title") :mode "literal")))))
+        (body (await (callOk f "O" "session.message.search"
+          (js-object :query (js-object :text "Aa phrase" :fields (js-array "message.text") :mode "literal"))))))
+        (js-call (expect (js-length (nativeGet metadata "items"))) :toBe 2)
+        (js-call (expect (js-length (nativeGet body "items"))) :toBe 1)))
+    closeFixture)
+  (withCase
+    "T46.scope-query.sqlite"
+    setup
+    (async
+      (f)
+      (let ((all (await (callOk f "O" "session.list" (js-object :limit 1)))))
+        (js-call (expect (js-length (nativeGet all "items"))) :toBe 1)
+        (js-call (expect (nativeGet all "complete")) :toBe false)
+        (let*
+          (
+            (next
+              (await
+                (callOk
+                  f
+                  "O"
+                  "session.list"
+                  (js-object :limit 1 :cursor (nativeGet all "next_cursor")))))
+            (a (nativeGet (aref (nativeGet all "items") 0) "session_key"))
+            (b (nativeGet (aref (nativeGet next "items") 0) "session_key")))
+          (js-call (expect (= a b)) :toBe false)))
+      (let
+        (
+          (filtered
+            (await
+              (callOk
+                f
+                "O"
+                "session.list"
+                (js-object
+                  :scope
+                  (js-object
+                    :tools
+                    (js-array "opencode")
+                    :instance_ids
+                    (js-array "oc-existing")
+                    :registered
+                    false))))))
+        (js-call (expect (js-length (nativeGet filtered "items"))) :toBe 2)
+        (js-call
+          (nativeGet filtered "items")
+          :forEach
+          (lambda
+            (item)
+            (js-call (expect (nativeGet item "tool")) :toBe "opencode")
+            (js-call (expect (nativeGet item "registered")) :toBe false)))))
+    closeFixture)
+  (defconst searches (js-array "中" "中文" "😀" "Aa" "[OR]" "' OR 1=1 --" "aa"))
+  (js-call
+    searches
+    :forEach
+    (lambda
+      (text)
+      (withCase
+        (str "T47.literal-query.sqlite." (js-call searches :indexOf text))
+        setup
+        (async
+          (f)
+          (let
+            (
+              (page
+                (await
+                  (callOk
+                    f
+                    "O"
+                    "session.search"
+                    (js-object
+                      :query
+                      (js-object
+                        :text
+                        text
+                        :fields
+                        (js-array "message.text")
+                        :mode
+                        "literal"))))))
+            (js-call
+              (expect (js-length (nativeGet page "items")))
+              :toBe
+              (if (or (= text "' OR 1=1 --") (= text "aa")) 0 1))
+            (js-call (expect (js-length (nativeGet (nativeGet f "opencode") "inputs"))) :toBe 0)
+            (js-call (expect (js-length (nativeGet (nativeGet f "opencode") "starts"))) :toBe 0)))
+        closeFixture)))
+  (withCase
+    "T47.literal-query.sqlite"
+    setup
+    (async
+      (f)
+      (let
+        (
+          (page
+            (await
+              (callOk
+                f
+                "O"
+                "session.search"
+                (js-object
+                  :query
+                  (js-object
+                    :text
+                    "中文😀"
+                    :fields
+                    (js-array "title" "message.text")
+                    :mode
+                    "literal"))))))
+        (js-call (expect (js-length (nativeGet page "items"))) :toBe 1)
+        (js-call
+          (expect (nativeGet (aref (nativeGet page "items") 0) "matched_fields"))
+          :toContain
+          "message.text")))
+    closeFixture)
+  (withCase
+    "T63.precise-probe.sqlite"
+    setup
+    (async
+      (f)
+      (let*
+        ((first (aref (nativeGet (await (callOk f "O" "session.list" (js-object))) "items") 0))
+          (stable (nativeGet first "session_key"))
+          (renewed (await (callOk f "O" "session.get" (js-object :session_key stable)))))
+        (js-call (expect (nativeGet renewed "session_key")) :toBe stable)
+        (await
+          (callOk
+            f
+            "O"
+            "session.probe"
+            (js-object :session_ref (nativeGet renewed "session_ref"))))
+        (js-call (expect (js-length (nativeGet (nativeGet f "opencode") "inputs"))) :toBe 0)
+        (js-call (expect (js-length (nativeGet (nativeGet f "opencode") "creates"))) :toBe 0)))
+    closeFixture)
+  (withCase
+    "T48.coverage-query.sqlite"
+    setup
+    (async
+      (f)
+      (let
+        (
+          (result
+            (await
+              (js-call
+                f
+                :call
+                (nativeGet f "X")
+                "session.search"
+                (js-object
+                  :query
+                  (js-object
+                    :text
+                    "中文"
+                    :fields
+                    (js-array "message.text")
+                    :mode
+                    "literal"))))))
+        (if (nativeGet result "ok")
+          (js-call (expect (js-length (nativeGet (nativeGet result "data") "items"))) :toBe 0)
+          (js-call (expect (nativeGet (nativeGet result "error") "code")) :toBe "forbidden"))))
+    closeFixture)
+  (withCase
+    "T59.empty-page.sqlite"
+    setup
+    (async
+      (f)
+      (let ((sessions (nativeGet (nativeGet f "opencode") "sessions")) (i 0))
+        (while (< i 1100)
+          (js-call
+            sessions
+            :push
+            (js-object
+              :tool
+              "opencode"
+              :native_namespace
+              "ns-opencode"
+              :native_session_id
+              (str "scan-" (js-call (str i) :padStart 5 "0"))
+              :title
+              "a"
+              :workspace_ref
+              "ws-test"
+              :instance_id
+              "oc-existing"
+              :instance_epoch
+              "epoch-1"
+              :runtime_state
+              "idle"
+              :live_receiver
+              t
+              :visibility
+              (js-array "live")
+              :updated_at
+              "2026-01-01T00:00:00Z"))
+          (setq i (1+ i)))
+        (let ((last (aref (js-call (js-call sessions :slice) :sort
+          (lambda (a b) (if (< (stableSessionKey a) (stableSessionKey b)) -1 1)))
+          (1- (js-length sessions)))))
+          (put last :title "z"))
+        (let ((run (await (callOk f "O" "catalog.refresh" (js-object :idempotency_key "scan-refresh"))))
+          (finished false) (turns 0))
+          (while (and (not finished) (< turns 30))
+            (await (js-call f :tick))
+            (setq run (await (callOk f "O" "catalog.get"
+              (js-object :catalog_run_id (nativeGet run "catalog_run_id")))))
+            (setq finished (= (nativeGet run "state") "done") turns (1+ turns)))
+          (js-call (expect finished) :toBe t)
+          (js-call (expect (nativeGet run "consumed_records")) :toBeGreaterThanOrEqual 1102))
+        (let
+          ((cursor nil)
+            (matched (new globalThis.Set))
+            (saw-empty false)
+            (pages 0)
+            (done false))
+          (while (and (not done) (< pages 30))
+            (let
+              (
+                (page
+                  (await
+                    (callOk
+                      f
+                      "O"
+                      "session.search"
+                      (Object/assign
+                        (js-object
+                          :query
+                          (js-object
+                            :text
+                            "z"
+                            :fields
+                            (js-array "title")
+                            :mode
+                            "literal")
+                          :limit
+                          1)
+                        (if cursor (js-object :cursor cursor) (js-object)))))))
+              (when (and (= (js-length (nativeGet page "items")) 0) (nativeGet page "next_cursor"))
+                (setq saw-empty t)
+                (js-call (expect (nativeGet page "complete")) :toBe false))
+              (js-call
+                (nativeGet page "items")
+                :forEach
+                (lambda
+                  (item)
+                  (js-call
+                    (expect (js-call matched :has (nativeGet item "session_key")))
+                    :toBe
+                    false)
+                  (js-call matched :add (nativeGet item "session_key"))))
+              (setq cursor (nativeGet page "next_cursor") done (not cursor)))
+            (setq pages (1+ pages)))
+          (js-call (expect done) :toBe t)
+          (js-call (expect saw-empty) :toBe t)
+          (js-call (expect (nativeGet matched "size")) :toBe 1))))
+    closeFixture)
+  (withCase
+    "T60.snapshot-revision.sqlite"
+    setup
+    (async
+      (f)
+      (let ((page (await (callOk f "O" "session.list" (js-object :limit 1)))))
+        (put
+          (aref (nativeGet (nativeGet f "opencode") "sessions") 1)
+          :title
+          "new title after snapshot")
+        (await
+          (callOk f "O" "catalog.refresh" (js-object :idempotency_key "new-version")))
+        (await (js-call f :tick))
+        (let
+          (
+            (next
+              (await
+                (callOk
+                  f
+                  "O"
+                  "session.list"
+                  (js-object :limit 1 :cursor (nativeGet page "next_cursor"))))))
+          (js-call (expect (nativeGet next "snapshot_id")) :toBe (nativeGet page "snapshot_id"))
+          (js-call (expect (nativeGet next "as_of")) :toBe (nativeGet page "as_of")))
+        (js-call (nativeGet f "clock") :advance 600001)
+        (let
+          (
+            (expired
+              (await
+                (js-call
+                  f
+                  :call
+                  (nativeGet f "O")
+                  "session.list"
+                  (js-object :limit 1 :cursor (nativeGet page "next_cursor"))))))
+          (js-call (expect (nativeGet expired "ok")) :toBe false)
+          (js-call (expect (nativeGet (nativeGet expired "error") "code")) :toBe "stale_reference"))))
+    closeFixture)
+  (withCase
+    "T61.partial-not-delete.sqlite"
+    setup
+    (async
+      (f)
+      (let*
+        (
+          (before
+            (await
+              (callOk
+                f
+                "O"
+                "session.list"
+                (js-object :scope (js-object :tools (js-array "opencode"))))))
+          (native (nativeGet (nativeGet f "opencode") "sessions"))
+          (first (aref native 0)))
+        (put
+          (nativeGet f "opencode")
+          :listSessions
+          (async
+            (scope cursor budget context)
+            (js-object
+              :items
+              (js-array first)
+              :next_cursor
+              "remaining"
+              :complete
+              false
+              :coverage
+              "partial")))
+        (await
+          (callOk
+            f
+            "O"
+            "catalog.refresh"
+            (js-object :idempotency_key "partial" :budget (js-object :max_records 1))))
+        (await (js-call f :tick))
+        (let
+          (
+            (after
+              (await
+                (callOk
+                  f
+                  "O"
+                  "session.list"
+                  (js-object :scope (js-object :tools (js-array "opencode")))))))
+          (js-call
+            (expect (js-length (nativeGet after "items")))
+            :toBe
+            (js-length (nativeGet before "items")))
+          (js-call (expect (nativeGet after "coverage_complete")) :toBe false))))
+    closeFixture)
+  (withCase
+    "T60.snapshot-revision.sqlite.old-body"
+    setup
+    (async
+      (f)
+      (let*
+        (
+          (first
+            (await
+              (callOk
+                f
+                "O"
+                "session.message.search"
+                (js-object
+                  :query
+                  (js-object
+                    :text
+                    "中文"
+                    :fields
+                    (js-array "message.text")
+                    :mode
+                    "literal")))))
+          (ref (nativeGet (aref (nativeGet first "items") 0) "session_message_ref")))
+        (js-call
+          (nativeGet (nativeGet f "opencode") "messages")
+          :set
+          "s1"
+          (js-array
+            (js-object
+              :native_message_id
+              "m1"
+              :role
+              "user"
+              :text
+              "new version without old term"
+              :created_at
+              "2026-01-01T00:00:00Z")))
+        (await
+          (callOk
+            f
+            "O"
+            "catalog.refresh"
+            (js-object :include_content t :idempotency_key "body-version")))
+        (await (js-call f :tick))
+        (let
+          (
+            (old
+              (await
+                (callOk f "O" "session.message.get" (js-object :session_message_ref ref)))))
+          (js-call (expect (nativeGet old "text")) :toBe "中文😀Aa phrase[OR]"))
+        (let
+          (
+            (current
+              (await
+                (callOk
+                  f
+                  "O"
+                  "session.message.search"
+                  (js-object
+                    :query
+                    (js-object
+                      :text
+                      "中文"
+                      :fields
+                      (js-array "message.text")
+                      :mode
+                      "literal"))))))
+        (js-call (expect (js-length (nativeGet current "items"))) :toBe 0))))
+  closeFixture)
+  (withCase
+    "T61.authoritative-delete.sqlite"
+    setup
+    (async
+      (f)
+      (let*
+        ((listed (await (callOk f "O" "session.list" (js-object :limit 1))))
+          (body-page
+            (await
+              (callOk
+                f
+                "O"
+                "session.message.search"
+                (js-object
+                  :query
+                  (js-object
+                    :text
+                    "中文"
+                    :fields
+                    (js-array "message.text")
+                    :mode
+                    "literal")))))
+          (body (aref (nativeGet body-page "items") 0))
+          (native (nativeGet (nativeGet f "opencode") "sessions")))
+        (js-call native :splice 0 1)
+        (await
+          (callOk
+            f
+            "O"
+            "catalog.refresh"
+            (js-object :include_content t :idempotency_key "complete-delete")))
+        (await (js-call f :tick))
+        (let
+          (
+            (get-body
+              (await
+                (js-call
+                  f
+                  :call
+                  (nativeGet f "O")
+                  "session.message.get"
+                  (js-object :session_message_ref (nativeGet body "session_message_ref")))))
+            (cursor
+              (await
+                (js-call
+                  f
+                  :call
+                  (nativeGet f "O")
+                  "session.list"
+                  (js-object :limit 1 :cursor (nativeGet listed "next_cursor")))))
+            (search
+              (await
+                (callOk
+                  f
+                  "O"
+                  "session.message.search"
+                  (js-object
+                    :query
+                    (js-object
+                      :text
+                      "中文"
+                      :fields
+                      (js-array "message.text")
+                      :mode
+                      "literal"))))))
+          (js-call (expect (nativeGet get-body "ok")) :toBe false)
+          (js-call (expect (nativeGet cursor "ok")) :toBe false)
+          (js-call (expect (nativeGet (nativeGet cursor "error") "code")) :toBe "stale_reference")
+          (js-call
+            (nativeGet (expect (JSON/stringify get-body)) "not")
+            :toContain
+            "phrase[OR]")
+          (js-call (expect (js-length (nativeGet search "items"))) :toBe 0))))
+    closeFixture)
+  (withCase
+    "T60.authorization-snapshot.sqlite"
+    setup
+    (async
+      (f)
+      (let*
+        ((first (await (callOk f "S" "session.list" (js-object :limit 1))))
+          (cursor (nativeGet first "next_cursor")))
+        (put (nativeGet f "S") :grants (js-array))
+        (put (nativeGet f "S") :authorization_revision 2)
+        (let
+          (
+            (next
+              (await
+                (js-call
+                  f
+                  :call
+                  (nativeGet f "S")
+                  "session.list"
+                  (js-object :limit 1 :cursor cursor)))))
+          (js-call (expect (nativeGet next "ok")) :toBe false)
+          (js-call (expect (nativeGet next "effect_state")) :toBe "none")
+          (js-call (expect (nativeGet (nativeGet next "data" (js-object)) "items")) :toBeUndefined))
+        (let
+          (
+            (foreign
+              (await
+                (js-call
+                  f
+                  :call
+                  (nativeGet f "X")
+                  "session.list"
+                  (js-object :limit 1 :cursor cursor)))))
+          (js-call (expect (nativeGet foreign "ok")) :toBe false))))
+    closeFixture)
+  (withCase
+    "T46.dimensions-and-order.sqlite"
+    setup
+    (async
+      (f)
+      (let ((native (nativeGet (nativeGet f "opencode") "sessions")))
+        (put (aref native 0) :updated_at "2026-01-01T00:01:00Z")
+        (put (aref native 1) :updated_at "2026-01-01T00:02:00Z")
+        (await
+          (callOk f "O" "catalog.refresh" (js-object :idempotency_key "updated-order")))
+        (await (js-call f :tick))
+        (let*
+          (
+            (ordered
+              (await
+                (callOk
+                  f
+                  "O"
+                  "session.list"
+                  (js-object
+                    :scope
+                    (js-object
+                      :tools
+                      (js-array "opencode" "pi")
+                      :instance_ids
+                      (js-array "oc-existing")
+                      :workspace_refs
+                      (js-array "ws-test")
+                      :runtime_states
+                      (js-array "idle")
+                      :visibility
+                      (js-array "live")
+                      :updated_range
+                      (js-object
+                        :from
+                        "2026-01-01T00:00:30Z"
+                        :to
+                        "2026-01-01T00:02:00Z"))
+                    :sort
+                    "updated_at_desc"))))
+            (items (nativeGet ordered "items")))
+          (js-call (expect (js-length items)) :toBe 1)
+          (js-call (expect (nativeGet (aref items 0) "native_session_id")) :toBe "s1"))
+        (let
+          (
+            (two
+              (await
+                (callOk
+                  f
+                  "O"
+                  "session.list"
+                  (js-object
+                    :scope
+                    (js-object :tools (js-array "opencode"))
+                    :sort
+                    "updated_at_desc")))))
+          (js-call
+            (expect
+              (js-call (nativeGet two "items") :map (lambda (s) (nativeGet s "native_session_id"))))
+            :toEqual
+            (js-array "s2" "s1"))))
+      ) closeFixture)
+  (withCase
+    "T47.body-offset-and-chunk.sqlite"
+    setup
+    (async
+      (f)
+      (let*
+        ((long-text (str (js-call "a" :repeat 65534) "中文😀needle"))
+          (messages (nativeGet (nativeGet f "opencode") "messages")))
+        (js-call
+          messages
+          :set
+          "s1"
+          (js-array
+            (js-object
+              :native_message_id
+              "m1"
+              :role
+              "user"
+              :text
+              long-text
+              :created_at
+              "2026-01-01T00:00:00Z")))
+        (await
+          (callOk
+            f
+            "O"
+            "catalog.refresh"
+            (js-object :include_content t :idempotency_key "chunk-body")))
+        (await (js-call f :tick))
+        (let*
+          (
+            (result
+              (await
+                (callOk
+                  f
+                  "O"
+                  "session.message.search"
+                  (js-object
+                    :query
+                    (js-object
+                      :text
+                      "中文😀needle"
+                      :fields
+                      (js-array "message.text")
+                      :mode
+                      "literal")))))
+            (item (aref (nativeGet result "items") 0))
+            (page
+              (await
+                (callOk
+                  f
+                  "O"
+                  "session.message.get"
+                  (js-object
+                    :session_message_ref
+                    (nativeGet item "session_message_ref")
+                    :offset_bytes
+                    65534
+                    :max_bytes
+                    10)))))
+          (js-call (expect (js-length (nativeGet result "items"))) :toBe 1)
+          (js-call (expect (nativeGet page "text")) :toBe "中文😀")
+          (js-call (expect (nativeGet page "next_offset_bytes")) :toBe 65544)
+          (let
+            (
+              (misaligned
+                (await
+                  (js-call
+                    f
+                    :call
+                    (nativeGet f "O")
+                    "session.message.get"
+                    (js-object
+                      :session_message_ref
+                      (nativeGet item "session_message_ref")
+                      :offset_bytes
+                      65535
+                      :max_bytes
+                      10)))))
+            (js-call (expect (nativeGet misaligned "ok")) :toBe false)
+            (js-call
+              (expect (nativeGet (nativeGet misaligned "error") "code"))
+              :toBe
+              "invalid_argument")))))
+    closeFixture)
+  (withCase
+    "T63.precise-refresh.sqlite"
+    setup
+    (async
+      (f)
+      (let*
+        (
+          (sessions
+            (nativeGet
+              (await
+                (callOk
+                  f
+                  "O"
+                  "session.list"
+                  (js-object :scope (js-object :tools (js-array "opencode")))))
+              "items"))
+          (one
+            (js-call sessions :find (lambda (s) (= (nativeGet s "native_session_id") "s1"))))
+          (seen (js-array))
+          (peer (nativeGet f "opencode"))
+          (read (nativeGet peer "readMessages")))
+        (put
+          peer
+          :readMessages
+          (async
+            (session cursor budget ctx)
+            (js-call seen :push (nativeGet session "native_session_id"))
+            (await (funcall read session cursor budget ctx))))
+        (await
+          (callOk
+            f
+            "O"
+            "catalog.refresh"
+            (js-object
+              :scope
+              (js-object :session_keys (js-array (nativeGet one "session_key")))
+              :include_content
+              t
+              :idempotency_key
+              "precise-refresh")))
+        (await (js-call f :tick))
+        (js-call (expect seen) :toEqual (js-array "s1"))
+        (js-call (expect (js-length (nativeGet peer "inputs"))) :toBe 0)
+        (js-call (expect (js-length (nativeGet peer "starts"))) :toBe 0)
+        (js-call (expect (js-length (nativeGet peer "creates"))) :toBe 0)))
+    closeFixture)
+  (withCase
+    "T60.catalog-batch-atomic.sqlite"
+    setup
+    (async
+      (f)
+      (let* ((peer (nativeGet f "opencode")) (barrier (createBarrier)))
+        (put (aref (nativeGet peer "sessions") 0) :title "new atomic marker")
+        (js-call
+          (nativeGet peer "messages")
+          :set
+          "s1"
+          (js-array
+            (js-object
+              :native_message_id
+              "m1"
+              :role
+              "user"
+              :text
+              "new atomic marker"
+              :created_at
+              "2026-01-01T00:00:00Z")))
+        (atFault
+          (nativeGet f "faults")
+          "catalog.after_batch_before_checkpoint"
+          (async (ctx) (await (js-call barrier :wait))))
+        (let*
+          (
+            (accepted
+              (await
+                (callOk
+                  f
+                  "O"
+                  "catalog.refresh"
+                  (js-object :include_content t :idempotency_key "atomic-catalog"))))
+            (inflight (js-call f :tick)))
+          (try
+            (await (nativeGet barrier "ready"))
+            (let
+              (
+                (before
+                  (await
+                    (callOk
+                      f
+                      "O"
+                      "session.search"
+                      (js-object
+                        :query
+                        (js-object
+                          :text
+                          "new atomic marker"
+                          :fields
+                          (js-array "title" "message.text")
+                          :mode
+                          "literal"))))))
+              (js-call (expect (js-length (nativeGet before "items"))) :toBe 0))
+            (finally (js-call barrier :release)))
+          (await inflight)
+          (let*
+            (
+              (after
+                (await
+                  (callOk
+                    f
+                    "O"
+                    "session.search"
+                    (js-object
+                      :query
+                      (js-object
+                        :text
+                        "new atomic marker"
+                        :fields
+                        (js-array "title" "message.text")
+                        :mode
+                        "literal")))))
+              (record (aref (nativeGet after "items") 0)))
+            (js-call (expect (js-length (nativeGet after "items"))) :toBe 1)
+            (js-call (expect (nativeGet record "matched_fields")) :toContain "title")
+            (js-call (expect (nativeGet record "matched_fields")) :toContain "message.text")))))
+    closeFixture)
+  (withCase
+    "T71.explicit-offline.sqlite"
+    setup
+    (async
+      (f)
+      (let*
+        (
+          (items
+            (nativeGet
+              (await
+                (callOk
+                  f
+                  "O"
+                  "session.list"
+                  (js-object :scope (js-object :tools (js-array "opencode")))))
+              "items"))
+          (target (aref items 0))
+          (native
+            (js-call
+              (nativeGet (nativeGet f "opencode") "sessions")
+              :find
+              (lambda
+                (s)
+                (= (nativeGet s "native_session_id") (nativeGet target "native_session_id"))))))
+        (put native :runtime_state "offline")
+        (put native :live_receiver false)
+        (let
+          (
+            (probe
+              (await
+                (callOk
+                  f
+                  "O"
+                  "session.probe"
+                  (js-object :session_ref (nativeGet target "session_ref"))))))
+          (js-call (expect (nativeGet probe "runtime_state")) :toBe "offline"))
+        (js-call (nativeGet f "clock") :advance 600001)
+        (let
+          (
+            (stale
+              (await
+                (callOk
+                  f
+                  "O"
+                  "session.get"
+                  (js-object :session_key (nativeGet target "session_key"))))))
+          (js-call (expect (nativeGet stale "runtime_state")) :toBe "offline")
+          (js-call (expect (nativeGet stale "stale")) :toBe t))
+        (js-call (expect (js-length (nativeGet (nativeGet f "opencode") "starts"))) :toBe 0)))
+    closeFixture))

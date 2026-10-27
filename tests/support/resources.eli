@@ -1,0 +1,384 @@
+(module dj.tests.support.resources
+  (import "../../src/core/native.eli"
+    nativeTypeOf
+    nativeGet
+    nativeSetTimeout
+    nativeClearTimeout
+    nativeSetInterval
+    nativeClearInterval)
+  ;; Validate and sum native measurements; no guessed memory/child ownership.
+  (defun summarizeResources
+    (report)
+    (unless
+      (and
+        (= (nativeGet report "measurement_source") "proc_pid_rusage")
+        (= (nativeGet report "complete") t)
+        (Number/isSafeInteger (nativeGet report "interval_ms"))
+        (> (nativeGet report "interval_ms") 0)
+        (<= (nativeGet report "interval_ms") 100)
+        (= (nativeTypeOf (nativeGet report "native_capture_id")) "string")
+        (>= (nativeGet report "duration_ms") 60000)
+        (> (js-length (nativeGet report "samples" (js-array))) 1))
+      (throw (new globalThis.Error "native resource coverage incomplete")))
+    (let
+      ((roles (new globalThis.Set))
+        (dj-peak 0)
+        (external-peak 0)
+        (total-peak 0)
+        (previous nil)
+        (samples (js-array)))
+      (js-call
+        (nativeGet report "samples")
+        :forEach
+        (lambda
+          (sample)
+          (let
+            ((dj 0)
+              (external 0)
+              (seen (new globalThis.Set))
+              (at (nativeGet sample "elapsed_ms")))
+            (unless
+              (and
+                (Number/isFinite at)
+                (if (= previous nil)
+                  (= at 0)
+                  (and (> at previous) (<= (- at previous) 200))))
+              (throw (new globalThis.Error "resource sample clock/gap invalid")))
+            (setq previous at)
+            (js-call
+              (nativeGet sample "processes")
+              :forEach
+              (lambda
+                (process)
+                (let
+                  ((footprint (nativeGet process "physical_footprint_bytes"))
+                    (rss (nativeGet process "rss_bytes"))
+                    (key (str (nativeGet process "pid") ":" (nativeGet process "start_abstime"))))
+                  (unless
+                    (and
+                      (Number/isSafeInteger (nativeGet process "pid"))
+                      (> (nativeGet process "pid") 0)
+                      (= (nativeTypeOf (nativeGet process "start_abstime")) "string")
+                      (js-call
+                        (new globalThis.RegExp "^[0-9]+$")
+                        :test
+                        (nativeGet process "start_abstime"))
+                      (not (js-call seen :has (nativeGet process "pid")))
+                      (Number/isSafeInteger footprint)
+                      (>= footprint 0)
+                      (Number/isSafeInteger rss)
+                      (>= rss 0)
+                      (= (nativeGet process "ownership_verified") t)
+                      (js-call
+                        (js-array "dj" "external_agent")
+                        :includes
+                        (nativeGet process "category")))
+                    (throw
+                      (new
+                        globalThis.Error
+                        "invalid or unowned native process measurement")))
+                  (js-call seen :add (nativeGet process "pid"))
+                  (js-call
+                    (nativeGet process "roles")
+                    :forEach
+                    (lambda (role) (js-call roles :add role)))
+                  (if (= (nativeGet process "category") "dj")
+                    (setq dj (+ dj footprint))
+                    (setq external (+ external footprint))))))
+            (setq
+              dj-peak
+              (Math/max dj-peak dj)
+              external-peak
+              (Math/max external-peak external)
+              total-peak
+              (Math/max total-peak (+ dj external)))
+            (js-call
+              samples
+              :push
+              (js-object
+                :elapsed_ms
+                at
+                :dj_physical_footprint_bytes
+                dj
+                :external_agent_physical_footprint_bytes
+                external
+                :total_physical_footprint_bytes
+                (+ dj external))))))
+      (js-call
+        (js-array "dj" "lark_websocket" "mcp_proxy" "external_agent")
+        :forEach
+        (lambda
+          (role)
+          (unless (js-call roles :has role)
+            (throw (new globalThis.Error "required deployment process role missing")))))
+      (unless (>= previous 60000)
+        (throw (new globalThis.Error "resource window incomplete")))
+      (js-object
+        :measurement_source
+        "proc_pid_rusage"
+        :includes_compressed_footprint
+        t
+        :sampling_interval_ms
+        (nativeGet report "interval_ms")
+        :duration_ms
+        previous
+        :dj_peak_physical_footprint_bytes
+        dj-peak
+        :external_agent_peak_physical_footprint_bytes
+        external-peak
+        :total_peak_physical_footprint_bytes
+        total-peak
+        :samples
+        samples)))
+  (defasync runCapacitySchedule
+    (options)
+    (let*
+      ((total-events (nativeGet options "total_events" 6000))
+        (pace-ms (nativeGet options "pace_ms" 10))
+        (catchup-yield-every (nativeGet options "catchup_yield_every" 16))
+        (consumer-interval-ms (nativeGet options "consumer_interval_ms" 20))
+        (drain-poll-ms (nativeGet options "drain_poll_ms" 5))
+        (deadline-ms (nativeGet options "deadline_ms" 70000))
+        (now-fn (or (nativeGet options "now") (lambda () (performance/now))))
+        (ingest-event (nativeGet options "ingest_event"))
+        (run-tick (nativeGet options "run_tick"))
+        (is-drained (nativeGet options "is_drained"))
+        (snapshot-pending (nativeGet options "snapshot_pending"))
+        (start (funcall now-fn))
+        (deadline (+ start deadline-ms))
+        (stopped false)
+        (drained false)
+        (in-drain-phase false)
+        (cancel-reason nil)
+        (consumer-error nil)
+        (producer-error nil)
+        (ingested-events 0)
+        (catchup-streak 0)
+        (catchup-yields 0)
+        (tick-running false)
+        (in-flight-tick nil)
+        (active-ticks 0)
+        (max-concurrent-ticks 0)
+        (tick-count 0)
+        (tick-skipped-count 0)
+        (tick-error-count 0)
+        (consumer-timer nil)
+        (deadline-timer nil)
+        (wait-timer nil)
+        (wake-waiter nil)
+        (ingest-wall-ms nil)
+        (wall-ms nil)
+        (final-snapshot nil)
+        (notify-wake nil)
+        (stop-now nil)
+        (sleep-until-or-stop nil)
+        (run-one-tick nil)
+        (trigger-consumer-tick nil))
+      (setq
+        notify-wake
+        (lambda
+          ()
+          (when wait-timer
+            (nativeClearTimeout wait-timer)
+            (setq wait-timer nil))
+          (when wake-waiter
+            (let ((callback wake-waiter))
+              (setq wake-waiter nil)
+              (funcall callback)))))
+      (setq
+        stop-now
+        (lambda
+          (reason err)
+          (unless stopped
+            (setq stopped t)
+            (when reason (setq cancel-reason reason)))
+          (when err
+            (if (= reason "consumer_error")
+              (unless consumer-error (setq consumer-error err))
+              (unless producer-error (setq producer-error err))))
+          (when consumer-timer
+            (nativeClearInterval consumer-timer)
+            (setq consumer-timer nil))
+          (when deadline-timer
+            (nativeClearTimeout deadline-timer)
+            (setq deadline-timer nil))
+          (funcall notify-wake)))
+      (setq
+        sleep-until-or-stop
+        (async
+          (delay-ms)
+          (unless stopped
+            (await
+              (new
+                globalThis.Promise
+                (lambda
+                  (resolve reject)
+                  (let ((done false) (finish nil))
+                    (setq
+                      finish
+                      (lambda
+                        ()
+                        (unless done
+                          (setq done t)
+                          (when wait-timer
+                            (nativeClearTimeout wait-timer)
+                            (setq wait-timer nil))
+                          (when (eq wake-waiter finish)
+                            (setq wake-waiter nil))
+                          (funcall resolve nil))))
+                    (setq wake-waiter finish)
+                    (if stopped
+                      (funcall finish)
+                      (setq
+                        wait-timer
+                        (nativeSetTimeout finish (Math/max 0 delay-ms)))))))))))
+      (setq
+        run-one-tick
+        (async
+          ()
+          (try
+            (let ((outcome (await (funcall run-tick))))
+              (when (and outcome (= (nativeGet outcome "ok") false))
+                (throw
+                  (new
+                    globalThis.Error
+                    (str
+                      "consumer tick failed: "
+                      (nativeGet
+                        (nativeGet outcome "error" (js-object))
+                        "code"
+                        "unknown"))))))
+            (catch err
+              (setq tick-error-count (1+ tick-error-count))
+              (funcall stop-now "consumer_error" err))
+            (finally
+              (setq active-ticks (1- active-ticks)
+                tick-running false
+                in-flight-tick nil)
+              (when (or stopped in-drain-phase)
+                (funcall notify-wake))))))
+      (setq
+        trigger-consumer-tick
+        (lambda
+          ()
+          (unless stopped
+            (if tick-running
+              (setq tick-skipped-count (1+ tick-skipped-count))
+              (progn
+                (setq
+                  tick-running
+                  t
+                  active-ticks
+                  (1+ active-ticks)
+                  max-concurrent-ticks
+                  (Math/max max-concurrent-ticks active-ticks)
+                  tick-count
+                  (1+ tick-count)
+                  in-flight-tick
+                  (funcall run-one-tick)))))))
+      (try
+        (setq
+          deadline-timer
+          (nativeSetTimeout
+            (lambda () (funcall stop-now "internal_deadline" nil))
+            deadline-ms))
+        (setq
+          consumer-timer
+          (nativeSetInterval trigger-consumer-tick consumer-interval-ms))
+        (while (and (< ingested-events total-events) (not stopped))
+          (when (>= (funcall now-fn) deadline)
+            (funcall stop-now "internal_deadline" nil))
+          (unless stopped
+            (let*
+              ((target-at (+ start (* ingested-events pace-ms)))
+                (delay (- target-at (funcall now-fn))))
+              (if (> delay 0)
+                (progn
+                  (setq catchup-streak 0)
+                  (while (and (not stopped) (> (- target-at (funcall now-fn)) 0))
+                    (when (>= (funcall now-fn) deadline)
+                      (funcall stop-now "internal_deadline" nil))
+                    (unless stopped
+                      (await (funcall sleep-until-or-stop (- target-at (funcall now-fn)))))))
+                (when (>= catchup-streak catchup-yield-every)
+                  (setq catchup-streak 0 catchup-yields (1+ catchup-yields))
+                  (await
+                    (new
+                      globalThis.Promise
+                      (lambda (done reject) (nativeSetTimeout done 0))))))))
+          (when (>= (funcall now-fn) deadline)
+            (funcall stop-now "internal_deadline" nil))
+          (unless stopped
+            (try
+              (await (funcall ingest-event ingested-events))
+              (setq ingested-events (1+ ingested-events)
+                catchup-streak (1+ catchup-streak))
+              (catch err
+                (funcall stop-now "producer_error" err)))))
+        (setq ingest-wall-ms (- (funcall now-fn) start)
+          in-drain-phase t)
+        (while (and (not stopped) (not drained))
+          (let ((probe (funcall is-drained)))
+            (if (and probe (= (nativeGet probe "done") t))
+              (progn
+                (setq
+                  drained
+                  t
+                  wall-ms
+                  (- (funcall now-fn) start)
+                  final-snapshot
+                  probe)
+                (funcall stop-now nil nil))
+              (if (>= (funcall now-fn) deadline)
+                (funcall stop-now "internal_deadline" nil)
+                (await (funcall sleep-until-or-stop drain-poll-ms))))))
+        (finally
+          (setq stopped t)
+          (when consumer-timer
+            (nativeClearInterval consumer-timer)
+            (setq consumer-timer nil))
+          (when deadline-timer
+            (nativeClearTimeout deadline-timer)
+            (setq deadline-timer nil))
+          (funcall notify-wake)
+          (when in-flight-tick
+            (await (Promise/allSettled (js-array in-flight-tick))))
+          (unless final-snapshot
+            (when snapshot-pending
+              (setq final-snapshot (funcall snapshot-pending))))
+          (unless ingest-wall-ms
+            (setq ingest-wall-ms (- (funcall now-fn) start)))
+          (unless wall-ms
+            (setq wall-ms (- (funcall now-fn) start)))))
+      (js-object
+        :completed
+        (and (= drained t) (not consumer-error) (not producer-error) (not cancel-reason))
+        :cancel_reason
+        cancel-reason
+        :consumer_error
+        consumer-error
+        :producer_error
+        producer-error
+        :ingested_events
+        ingested-events
+        :ingest_wall_ms
+        ingest-wall-ms
+        :drain_wall_ms
+        (Math/max 0 (- wall-ms ingest-wall-ms))
+        :wall_ms
+        wall-ms
+        :tick_count
+        tick-count
+        :tick_skipped_count
+        tick-skipped-count
+        :tick_error_count
+        tick-error-count
+        :max_concurrent_ticks
+        max-concurrent-ticks
+        :catchup_yields
+        catchup-yields
+        :in_flight_at_exit
+        (not (= in-flight-tick nil))
+        :final_snapshot
+        final-snapshot)))
+  (export summarizeResources runCapacitySchedule))

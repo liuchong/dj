@@ -1,0 +1,107 @@
+(module dj.tests.support.case
+  (import "../../src/core/native.eli" nativeGet)
+  (import "bun:test" test)
+  (import "node:fs" readFileSync appendFileSync)
+  (import "node:path" resolve)
+  (defconst manifest (JSON/parse (readFileSync (resolve "tests/cases.json") "utf8")))
+  (defconst recorded (new globalThis.Set))
+  (defun caseMetadata
+    (case-id)
+    (let
+      (
+        (found
+          (js-call
+            (nativeGet manifest "cases")
+            :find
+            (lambda (item) (= (nativeGet item "case_id") case-id)))))
+      (when (undefined? found)
+        (throw (new globalThis.Error (str "Case absent from manifest: " case-id))))
+      found))
+  (defun recordTiming
+    (meta outcome setup-ms exercise-ms teardown-ms wall-ms)
+    (let ((file (nativeGet (nativeGet globalThis.process "env") "DJ_TEST_TIMING_FILE")))
+      (when file
+        (appendFileSync
+          file
+          (str
+            (JSON/stringify
+              (js-object
+                :case_id
+                (nativeGet meta "case_id")
+                :parent_id
+                (nativeGet meta "parent_id")
+                :suite
+                (nativeGet meta "suite")
+                :status
+                outcome
+                :attempt
+                1
+                :setup_ms
+                setup-ms
+                :exercise_ms
+                exercise-ms
+                :teardown_ms
+                teardown-ms
+                :wall_ms
+                wall-ms
+                :clock
+                "performance.now"))
+            "\n")
+          (js-object :mode 384)))))
+  (defun withCase
+    (case-id setup exercise teardown)
+    (let ((meta (caseMetadata case-id)))
+      (when (js-call recorded :has case-id)
+        (throw (new globalThis.Error (str "Duplicate case registration: " case-id))))
+      (js-call recorded :add case-id)
+      (if (= (nativeGet meta "applicability") "deferred")
+        (js-call test :todo case-id)
+        (test
+          case-id
+          (async
+            ()
+            (let
+              ((context nil)
+                (problem nil)
+                (outcome "failed")
+                (start (performance/now))
+                (phase-start (performance/now))
+                (setup-ms 0)
+                (exercise-ms 0)
+                (teardown-ms 0)
+                (phase "setup"))
+              (try
+                (setq context (await (funcall setup)))
+                (setq setup-ms (- (performance/now) phase-start))
+                (setq phase-start (performance/now) phase "exercise")
+                (await (funcall exercise context))
+                (setq exercise-ms (- (performance/now) phase-start))
+                (setq outcome "passed")
+                (catch failure
+                  (setq problem failure)
+                  (when (js-call (nativeGet failure "message" "") :includes "real not_run:")
+                    (setq outcome "not_run"))
+                  (if (= phase "setup")
+                    (setq setup-ms (- (performance/now) phase-start))
+                    (setq exercise-ms (- (performance/now) phase-start))))
+                (finally
+                  (setq phase-start (performance/now))
+                  (try
+                    (await (funcall teardown context))
+                    (catch cleanup-failure
+                      (setq outcome "failed")
+                      (unless problem (setq problem cleanup-failure))))
+                  (setq teardown-ms (- (performance/now) phase-start))
+                  (recordTiming
+                    meta
+                    outcome
+                    setup-ms
+                    exercise-ms
+                    teardown-ms
+                    (- (performance/now) start))))
+              (when problem (throw problem))))
+          (nativeGet meta "timeout_ms")))))
+  (defun withUnitCase
+    (case-id exercise)
+    (withCase case-id (lambda () nil) exercise (lambda (context) nil)))
+  (export withCase withUnitCase caseMetadata))

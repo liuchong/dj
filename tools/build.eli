@@ -1,0 +1,285 @@
+(module dj.tools.build
+  (import "../src/core/native.eli" nativeTypeOf NativeBun nativeGet)
+  (import "node:fs/promises" readFile writeFile mkdir readdir lstat readlink rm rename)
+  (import "node:path" resolve dirname relative isAbsolute)
+  (import "./build-inputs.eli" sha256 requiredBuildInputs)
+  (import "./runtime.eli" installFixedRuntime)
+  (import "./process-helper.eli" buildProcessHelper)
+  (defun inside
+    (root name)
+    (unless
+      (and
+        (= (nativeTypeOf name) "string")
+        (not (isAbsolute name))
+        (not (js-call name :includes "\\"))
+        (not (js-call (js-call name :split "/") :includes "..")))
+      (throw (new globalThis.Error "toolchain record has an unsafe relative path")))
+    (resolve root name))
+  (defasync readJson (path) (JSON/parse (await (readFile path "utf8"))))
+  (defasync bindCompiler
+    ()
+    (let*
+      ((lock (await (readJson "config/toolchain.lock.json")))
+        (compiler (nativeGet lock "compiler"))
+        (prepared (await (readJson (nativeGet compiler "prepared_source_record"))))
+        (root (resolve (nativeGet prepared "prepared_source_ref")))
+        (files (nativeGet prepared "files"))
+        (index 0))
+      (unless
+        (and
+          (= (nativeGet prepared "source_commit") (nativeGet compiler "source_commit"))
+          (=
+            (nativeGet prepared "source_inputs_sha256")
+            (nativeGet compiler "prepared_source_inputs_sha256"))
+          (= (nativeGet NativeBun "version") (nativeGet (nativeGet lock "bun") "version"))
+          (= (nativeGet globalThis.process "platform") (nativeGet (nativeGet lock "bun") "platform"))
+          (= (nativeGet globalThis.process "arch") (nativeGet (nativeGet lock "bun") "arch")))
+        (throw
+          (new
+            globalThis.Error
+            "fixed source or Bun identity does not match the toolchain lock")))
+      (while (< index (js-length files))
+        (let*
+          ((record (aref files index))
+            (path (inside root (nativeGet record "path")))
+            (info (await (lstat path))))
+          (if (= (nativeGet record "kind") "symlink")
+            (unless
+              (and
+                (js-call info :isSymbolicLink)
+                (= (await (readlink path)) (nativeGet record "target")))
+              (throw (new globalThis.Error "prepared compiler link changed")))
+            (unless
+              (and
+                (js-call info :isFile)
+                (not (js-call info :isSymbolicLink))
+                (= (sha256 (await (readFile path))) (nativeGet record "sha256")))
+              (throw (new globalThis.Error "prepared compiler source changed")))))
+        (setq index (1+ index)))
+      ;; Rebuilding is an explicit S3 preparation step. This function never
+      ;; falls back to npm's stale frozen compiler or starts a bootstrap.
+      (let*
+        ((receipt-path (resolve root "dist/stage3-release.json"))
+          (receipt (await (readJson receipt-path)))
+          (metadata (await (readJson (resolve root "dist/compiler-artifact.json"))))
+          (identity (nativeGet receipt "formalSourceIdentity"))
+          (sources
+            (js-call
+              (js-call (js-array) :concat (nativeGet identity "modules"))
+              :concat
+              (js-array (nativeGet identity "runtime"))
+              (nativeGet identity "literalSources")))
+          (artifacts (nativeGet (nativeGet metadata "artifactIdentity") "files")))
+        (unless
+          (and
+            (= (nativeGet receipt "format") "eliscript-stage3-release")
+            (= (nativeGet receipt "status") "accepted")
+            (= (nativeGet receipt "verification") "identical")
+            (> (nativeGet receipt "fixedPointFileCount") 0)
+            (=
+              (JSON/stringify (nativeGet receipt "stage2ProductIdentity"))
+              (JSON/stringify (nativeGet receipt "stage3ProductIdentity")))
+            (=
+              (JSON/stringify (nativeGet receipt "packagedProductIdentity"))
+              (JSON/stringify (nativeGet metadata "productIdentity"))))
+          (throw
+            (new
+              globalThis.Error
+              "fixed-source complete stage3 receipt is missing or inconsistent")))
+        (setq index 0)
+        (while (< index (js-length sources))
+          (let*
+            ((source (aref sources index))
+              (name (nativeGet source "filename"))
+              (record (js-call files :find (lambda (row) (= (nativeGet row "path") name))))
+              (bytes (await (readFile (inside root name)))))
+            (unless
+              (and
+                record
+                (= (nativeGet record "kind") "file")
+                (= (sha256 bytes) (nativeGet record "sha256"))
+                (= (nativeGet source "encoding") "utf16le")
+                (=
+                  (sha256 (Buffer/from (js-call bytes :toString "utf8") "utf16le"))
+                  (nativeGet source "sha256")))
+              (throw
+                (new
+                  globalThis.Error
+                  "certified compiler formal source is not bound to the fixed inputs"))))
+          (setq index (1+ index)))
+        (unless (> (js-length artifacts) 0)
+          (throw (new globalThis.Error "compiler artifact inventory is empty")))
+        (setq index 0)
+        (while (< index (js-length artifacts))
+          (let*
+            ((record (aref artifacts index))
+              (bytes
+                (await (readFile (inside (resolve root "dist") (nativeGet record "path"))))))
+            (unless (= (sha256 bytes) (nativeGet record "sha256"))
+              (throw (new globalThis.Error "certified compiler artifact changed"))))
+          (setq index (1+ index)))
+        (js-object
+          :root
+          root
+          :entry
+          (inside root (nativeGet compiler "entry"))
+          :source_commit
+          (nativeGet compiler "source_commit")
+          :source_inputs_sha256
+          (nativeGet prepared "source_inputs_sha256")
+          :receipt_sha256
+          (sha256 (await (readFile receipt-path)))
+          :metadata_sha256
+          (sha256 (await (readFile (resolve root "dist/compiler-artifact.json"))))))))
+  (defasync buildEntries
+    (&optional selection)
+    (unless (or (undefined? selection) (= selection "all"))
+      (throw
+        (new
+          globalThis.Error
+          "the source-bound acceptance build requires all three entry groups")))
+    (let*
+      ((compiler (await (bindCompiler)))
+        (sources (js-array))
+        (input-paths (await (requiredBuildInputs)))
+        (index 0)
+        (configs
+          (js-array "eliscript.json" "eliscript.tests.json" "eliscript.tools.json"))
+        (outputs (js-array)))
+      (while (< index (js-length input-paths))
+        (let ((path (aref input-paths index)))
+          (js-call
+            sources
+            :push
+            (js-object :path path :sha256 (sha256 (await (readFile path))))))
+        (setq index (1+ index)))
+      ;; Invalidate the old receipt before replacing any owned build output.
+      (await (mkdir ".local/build" (js-object :recursive t :mode 448)))
+      (await (rm ".local/build/manifest.json" (js-object :force t)))
+      (setq index 0)
+      (while (< index (js-length configs))
+        (let*
+          ((name (aref configs index))
+            (config (await (readJson name)))
+            (directory (nativeGet config "outDir")))
+          (unless
+            (js-call (js-array "dist" "dist-tests" "dist-tools") :includes directory)
+            (throw
+              (new
+                globalThis.Error
+                "build output is outside the owned generated directories")))
+          (await (rm directory (js-object :recursive t :force t)))
+          (let*
+            (
+              (env
+                (Object/assign
+                  (js-object)
+                  (nativeGet globalThis.process "env")
+                  (js-object
+                    :ELISCRIPT_JS_RUNTIME
+                    (nativeGet globalThis.process "execPath")
+                    :ELISCRIPT_BOOTSTRAP_MODULE_DIR
+                    (resolve (nativeGet compiler "root") "dist/bootstrap"))))
+              (child
+                (Bun/spawn
+                  (js-array (nativeGet compiler "entry") "--json" "--config" name)
+                  (js-object
+                    :env
+                    env
+                    :stdin
+                    "ignore"
+                    :stdout
+                    "inherit"
+                    :stderr
+                    "inherit"))))
+            (unless (= (await (nativeGet child "exited")) 0)
+              (throw (new globalThis.Error "Eliscript multi-entry build failed"))))
+          (await (installFixedRuntime compiler directory))
+          (let ((collect nil))
+            (setq
+              collect
+              (async
+                (folder)
+                (let
+                  ((entries (await (readdir folder (js-object :withFileTypes t))))
+                    (entry-index 0))
+                  (while (< entry-index (js-length entries))
+                    (let*
+                      ((entry (aref entries entry-index))
+                        (path (str folder "/" (nativeGet entry "name"))))
+                      (cond
+                        ((js-call entry :isSymbolicLink)
+                          (throw
+                            (new globalThis.Error "generated output contains a symlink")))
+                        ((js-call entry :isDirectory) (await (collect path)))
+                        ((js-call entry :isFile)
+                          (js-call
+                            outputs
+                            :push
+                            (js-object
+                              :path
+                              path
+                              :sha256
+                              (sha256 (await (readFile path))))))))
+                    (setq entry-index (1+ entry-index))))))
+            (await (collect directory))))
+        (setq index (1+ index)))
+      (js-call outputs :push (await (buildProcessHelper)))
+      (setq index 0)
+      (while (< index (js-length sources))
+        (let ((row (aref sources index)))
+          (unless (= (sha256 (await (readFile (nativeGet row "path")))) (nativeGet row "sha256"))
+            (throw
+              (new
+                globalThis.Error
+                "source changed during the build; no acceptance receipt emitted"))))
+        (setq index (1+ index)))
+      (Reflect/deleteProperty compiler "root")
+      (Reflect/deleteProperty compiler "entry")
+      (let
+        (
+          (manifest
+            (js-object
+              :schema_version
+              1
+              :sources
+              sources
+              :outputs
+              outputs
+              :compiler
+              compiler
+              :bun_version
+              (nativeGet NativeBun "version")
+              :built_at
+              (js-call (new globalThis.Date) :toISOString))))
+        (await
+          (writeFile
+            ".local/build/manifest.json.next"
+            (str (JSON/stringify manifest nil 2) "\n")
+            (js-object :mode 384)))
+        (await (rename ".local/build/manifest.json.next" ".local/build/manifest.json"))
+        manifest)))
+  (when
+    (and
+      (nativeGet globalThis.process "argv")
+      (js-call (nativeGet (nativeGet globalThis.process "argv") 1 "") :endsWith "/tools/build.mjs"))
+    (funcall (async ()
+(try
+      (let ((args (js-call (nativeGet globalThis.process "argv") :slice 2)))
+        (unless
+          (or
+            (= (js-length args) 0)
+            (and (= (js-length args) 1) (= (aref args 0) "all"))
+            (and
+              (= (js-length args) 2)
+              (= (aref args 0) "--scope")
+              (= (aref args 1) "all")))
+          (throw (new globalThis.Error "usage: build --scope all")))
+        (await (buildEntries "all")))
+      (catch error
+        (js-call
+          (nativeGet globalThis.process "stderr")
+          :write
+          (str "DJ build: " (nativeGet error "message") "\n"))
+        (put globalThis.process :exitCode 1))))))
+  (export bindCompiler buildEntries))

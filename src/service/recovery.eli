@@ -1,0 +1,588 @@
+(module dj.service.recovery
+  (import "../core/native.eli" nativeGet)
+  (import "../core/errors.eli" success failure)
+  (import "../core/types.eli" hashValue nextRevision)
+  (import "../application/context.eli"
+    utcNow
+    nextId
+    inTransaction
+    must
+    agentPort
+    nativeCallContext
+    safeFields)
+  (import "../catalog/records.eli" putSession)
+  (import "../lifecycle/gates.eli" releaseSlot)
+  (import "../policy/registry.eli" reconcilePrincipals)
+  (import "./ownership.eli" ownerGuard)
+  (defconst knownTools
+    (js-array "opencode" "pi" "codex" "claude" "cursor" "antigravity"))
+  (defun connectionIdentity
+    (connection)
+    (hashValue
+      (safeFields
+        connection
+        (js-array
+          "platform"
+          "brand"
+          "identity"
+          "tenant_ref"
+          "account_ref"
+          "credential_ref"
+          "user_identity"
+          "source_delivery"
+          "event_app_id"
+          "event_subject_id"))))
+  (defun seedConfiguration
+    (context)
+    (inTransaction
+      context
+      (lambda
+        (tx)
+        (must (ownerGuard context))
+        (must (reconcilePrincipals context (nativeGet (nativeGet context "config") "principals")))
+        (let*
+          ((repository (nativeGet context "repository"))
+            (config (nativeGet context "config"))
+            (connection-ids (new globalThis.Set))
+            (profile-ids (new globalThis.Set))
+            (instance-ids (new globalThis.Set)))
+          (js-call
+            knownTools
+            :forEach
+            (lambda
+              (tool)
+              (let*
+                ((old (js-call repository :get "tools" tool))
+                  (supported (js-call (js-array "opencode" "pi" "codex" "cursor" "claude" "antigravity") :includes tool))
+                  (record
+                    (js-object
+                      :tool_id
+                      tool
+                      :adapter_id
+                      tool
+                      :adapter_version
+                      "0.1.0"
+                      :adapter_state
+                      (if supported "available" "unsupported")
+                      :configured
+                      false
+                      :installed
+                      false
+                      :capabilities
+                      (js-object)
+                      :limitations
+                      (if supported
+                        (js-array "runtime_verification_pending")
+                        (js-array "not_in_first_release")))))
+                (if old
+                  (must (js-call repository :replace "tools" record))
+                  (js-call repository :insert "tools" record)))))
+          (js-call
+            (nativeGet config "connections")
+            :forEach
+            (lambda
+              (configured)
+              (let*
+                ((id (nativeGet configured "connection_id"))
+                  (old (js-call repository :get "connections" id))
+                  (fingerprint (connectionIdentity configured))
+                  (record
+                    (Object/assign
+                      (js-object)
+                      configured
+                      (js-object :state "recovering" :identity_fingerprint fingerprint))))
+                (js-call connection-ids :add id)
+                (when old
+                  (if (= (nativeGet old "identity_fingerprint") fingerprint)
+                    (put
+                      record
+                      :identity_revision
+                      (Math/max
+                        (nativeGet configured "identity_revision")
+                        (nativeGet old "identity_revision")))
+                    (put
+                      record
+                      :identity_revision
+                      (Math/max
+                        (nativeGet configured "identity_revision")
+                        (nextRevision (nativeGet old "identity_revision" (nativeGet old "revision")))))))
+                (put configured :identity_revision (nativeGet record "identity_revision"))
+                (if old
+                  (must (js-call repository :replace "connections" record))
+                  (js-call repository :insert "connections" record)))))
+          (js-call
+            (nativeGet config "managed_profiles")
+            :forEach
+            (lambda
+              (configured)
+              (let*
+                ((id (nativeGet configured "profile_id"))
+                  (old (js-call repository :get "profiles" id))
+                  (record (Object/assign (js-object) configured (js-object :enabled t))))
+                (js-call profile-ids :add id)
+                (when (and old (< (nativeGet record "revision") (nativeGet old "revision")))
+                  (must (failure "revision_conflict")))
+                (if old
+                  (must (js-call repository :replace "profiles" record))
+                  (js-call repository :insert "profiles" record))
+                (let ((tool (js-call repository :get "tools" (nativeGet record "tool"))))
+                  (put tool :configured t)
+                  (must (js-call repository :replace "tools" tool))))))
+          (js-call
+            (nativeGet config "agent_endpoints")
+            :forEach
+            (lambda
+              (endpoint)
+              (let*
+                ((id (nativeGet endpoint "instance_id"))
+                  (old (js-call repository :get "instances" id))
+                  (fingerprint
+                    (hashValue
+                      (safeFields
+                        endpoint
+                        (js-array
+                          "endpoint_ref"
+                          "base_url"
+                          "socket_path"
+                          "manifest_path"
+                          "history_database"
+                          "window_id"
+                          "native_namespace"
+                          "directory"
+                          "credential_ref"
+          "user_identity"
+          "source_delivery"
+          "event_app_id"
+          "event_subject_id"))))
+                  (same (and old (= (nativeGet old "endpoint_fingerprint") fingerprint)))
+                  (epoch
+                    (or
+                      (nativeGet endpoint "instance_epoch")
+                      (and same (nativeGet old "instance_epoch"))
+                      (nextId context "epoch")))
+                  (record
+                    (Object/assign
+                      (js-object)
+                      endpoint
+                      (js-object
+                        :instance_epoch
+                        epoch
+                        :ownership
+                        "existing"
+                        :configured
+                        t
+                        :state
+                        "recovering"
+                        :revision
+                        (if old (nextRevision (nativeGet old "revision")) 1)
+                        :endpoint_fingerprint
+                        fingerprint
+                        :epoch_unverified
+                        (and (not old) (not (nativeGet endpoint "instance_epoch")))))))
+                (when (and old (not (= (nativeGet old "ownership") "existing")))
+                  (must (failure "profile_conflict")))
+                (js-call instance-ids :add id)
+                (if old
+                  (must (js-call repository :replace "instances" record))
+                  (js-call repository :insert "instances" record))
+                (let*
+                  ((old-gate (js-call repository :get "instance_gates" id))
+                    (gate
+                      (js-object
+                        :instance_id
+                        id
+                        :instance_epoch
+                        epoch
+                        :state
+                        "closed"
+                        :reason
+                        "recovery"
+                        :revision
+                        (if old-gate (nextRevision (nativeGet old-gate "revision")) 1))))
+                  (if old-gate
+                    (must (js-call repository :replace "instance_gates" gate))
+                    (js-call repository :insert "instance_gates" gate)))
+                (let ((tool (js-call repository :get "tools" (nativeGet record "tool"))))
+                  (put tool :configured t)
+                  (must (js-call repository :replace "tools" tool))))))
+          ;; Removed configuration cannot keep receiving or launching work merely
+          ;; because a historical record remains in the database.
+          (let ((after nil) (done false))
+            (while (not done)
+              (let* ((options (js-object :limit 1000)) (rows nil))
+                (when after (put options :after_key after))
+                (setq rows (js-call repository :page "connections" options))
+                (js-call
+                  rows
+                  :forEach
+                  (lambda
+                    (record)
+                    (setq after (nativeGet record "connection_id"))
+                    (unless (js-call connection-ids :has after)
+                      (put record :state "disabled")
+                      (put record :disabled t)
+                      (must (js-call repository :replace "connections" record)))))
+                (setq done (< (js-length rows) 1000)))))
+          (js-call
+            (js-array
+              (js-array "profiles" "profile_id" profile-ids)
+              (js-array "instances" "instance_id" instance-ids))
+            :forEach
+            (lambda
+              (entry)
+              (let ((after nil) (done false))
+                (while (not done)
+                  (let ((options (js-object :limit 1000)) (rows nil))
+                    (when after (put options :after_key after))
+                    (setq rows (js-call repository :page (aref entry 0) options))
+                    (js-call
+                      rows
+                      :forEach
+                      (lambda
+                        (record)
+                        (setq after (nativeGet record (aref entry 1)))
+                        (unless
+                          (or
+                            (js-call (aref entry 2) :has after)
+                            (and
+                              (= (aref entry 0) "instances")
+                              (= (nativeGet record "ownership") "managed")))
+                          (if (= (aref entry 0) "profiles")
+                            (put record :enabled false)
+                            (progn
+                              (put record :configured false)
+                              (put record :state "offline")))
+                          (must (js-call repository :replace (aref entry 0) record)))))
+                    (setq done (< (js-length rows) 1000)))))))
+          (success
+            (js-object
+              :connections
+              (nativeGet connection-ids "size")
+              :profiles
+              (nativeGet profile-ids "size")
+              :existing_instances
+              (nativeGet instance-ids "size")))))))
+  (defun recoverLedger
+    (context)
+    (inTransaction
+      context
+      (lambda
+        (tx)
+        (must (ownerGuard context))
+        (let ((db (nativeGet tx "db")) (now (utcNow context)))
+          (js-call
+            db
+            :run
+            "UPDATE deliveries SET state='unknown',revision=revision+1,payload=json_set(payload,'$.state','unknown','$.revision',revision+1,'$.recovered',json('true')) WHERE state='submitting'")
+          (js-call
+            db
+            :run
+            "UPDATE outbound SET state='unknown',revision=revision+1,payload=json_set(payload,'$.state','unknown','$.revision',revision+1,'$.recovered',json('true')) WHERE state='submitting'")
+          (js-call
+            db
+            :run
+            "UPDATE parts SET state='unknown',payload=json_set(payload,'$.state','unknown') WHERE state='submitting'")
+          (js-call
+            db
+            :run
+            "UPDATE lifecycle_actions SET state='unknown',revision=revision+1,payload=json_set(payload,'$.state','unknown','$.revision',revision+1) WHERE state='submitting'")
+          (js-call
+            db
+            :run
+            "UPDATE attempts SET state='unknown',payload=json_set(payload,'$.state','unknown') WHERE state='submitting'")
+          (js-call
+            db
+            :run
+            "UPDATE routes SET unknown_delivery_id=(SELECT d.delivery_id FROM deliveries d WHERE d.route_id=routes.route_id AND d.state='unknown' ORDER BY d.delivery_seq LIMIT 1),claim_owner=NULL,payload=json_set(payload,'$.claim_owner',NULL,'$.unknown_delivery_id',(SELECT d.delivery_id FROM deliveries d WHERE d.route_id=routes.route_id AND d.state='unknown' ORDER BY d.delivery_seq LIMIT 1))")
+          (js-call db :run "DELETE FROM claims")
+          (js-call
+            db
+            :run
+            "UPDATE instance_gates SET state='closed',revision=revision+1,payload=json_set(payload,'$.state','closed','$.revision',revision+1,'$.reason','recovery')")
+          (js-call
+            (js-call
+              db
+              :query
+              "UPDATE sessions SET runtime_state=CASE WHEN runtime_state IN ('offline','incompatible') THEN runtime_state ELSE 'unknown' END,payload=json_set(payload,'$.runtime_state',CASE WHEN runtime_state IN ('offline','incompatible') THEN runtime_state ELSE 'unknown' END,'$.live_receiver',json('false'),'$.observation_expires_at',?)")
+            :run
+            now)
+          (success (js-object :state "ledger_recovered"))))))
+  (defasync verifyExisting
+    (context instance)
+    (let ((djReturn1Token (js-object)) (djReturn1Value nil))
+      (try
+        (when (= (nativeGet instance "configured") false)
+          (progn
+            (setq
+              djReturn1Value
+              (success
+                (js-object :instance_id (nativeGet instance "instance_id") :state "offline")))
+            (throw djReturn1Token)))
+        (let*
+          ((repository (nativeGet context "repository"))
+            (port (agentPort context instance))
+            (report nil)
+            (items (js-array)))
+          (when port
+            (try
+              (if (nativeGet port "probeInstance")
+                (setq
+                  report
+                  (await
+                    (js-call port :probeInstance instance (nativeCallContext context))))
+                (let
+                  (
+                    (page
+                      (await
+                        (js-call
+                          port
+                          :listSessions
+                          (js-object
+                            :instance_ids
+                            (js-array (nativeGet instance "instance_id")))
+                          nil
+                          (js-object :max_records 100 :max_bytes 1048576)
+                          (nativeCallContext context)))))
+                  (setq items (nativeGet page "items" (js-array)))
+                  (let ((first (aref items 0)))
+                    (when
+                      (and
+                        first
+                        (=
+                          (nativeGet first "native_namespace")
+                          (nativeGet instance "native_namespace")))
+                      (setq
+                        report
+                        (js-object
+                          :state
+                          "ready"
+                          :native_namespace
+                          (nativeGet first "native_namespace")
+                          :instance_epoch
+                          (nativeGet first "instance_epoch")
+                          :evidence_level
+                          "native_protocol"))))))
+              (catch unavailable
+                (when (eq unavailable djReturn1Token) (throw unavailable))
+                nil)))
+          (inTransaction
+            context
+            (lambda
+              (tx)
+              (must (ownerGuard context))
+              (let*
+                (
+                  (current
+                    (js-call repository :get "instances" (nativeGet instance "instance_id")))
+                  (gate
+                    (js-call
+                      repository
+                      :get
+                      "instance_gates"
+                      (nativeGet instance "instance_id")))
+                  (desktop (js-call (js-array "codex" "cursor") :includes (nativeGet current "tool")))
+                  (ready
+                    (and
+                      (= (nativeGet report "state") "ready")
+                      (= (nativeGet report "evidence_level") "native_protocol")
+                      (= (nativeGet report "native_namespace") (nativeGet current "native_namespace"))
+                      (or
+                        desktop
+                        (nativeGet current "epoch_unverified")
+                        (not (nativeGet report "instance_epoch"))
+                        (= (nativeGet report "instance_epoch") (nativeGet current "instance_epoch"))))))
+                (when
+                  (and
+                    ready
+                    (or desktop (nativeGet current "epoch_unverified"))
+                    (nativeGet report "instance_epoch"))
+                  (put current :instance_epoch (nativeGet report "instance_epoch")))
+                (put current :epoch_unverified false)
+                (put current :state (if ready "ready" "offline"))
+                (put current :revision (nextRevision (nativeGet current "revision")))
+                (put gate :instance_epoch (nativeGet current "instance_epoch"))
+                (put gate :state (if ready "open" "closed"))
+                (put gate :revision (nextRevision (nativeGet gate "revision")))
+                (must (js-call repository :replace "instances" current))
+                (must (js-call repository :replace "instance_gates" gate))
+                (when ready
+                  (js-call
+                    (js-call items :slice 0 100)
+                    :forEach
+                    (lambda (native) (must (putSession context native current)))))
+                (success
+                  (js-object
+                    :instance_id
+                    (nativeGet current "instance_id")
+                    :state
+                    (nativeGet current "state")))))))
+        (catch djReturn1Error
+          (if (eq djReturn1Error djReturn1Token) djReturn1Value (throw djReturn1Error))))))
+  (defun managedStopConfirmed (instance stop)
+    (and (= (nativeGet instance "ownership") "managed")
+      (or (= (nativeGet instance "state") "stopped")
+        (and stop (= (nativeGet stop "action") "stop")
+          (= (nativeGet stop "state") "stopped")
+          (= (nativeGet stop "evidence_level") "native_protocol")
+          (nativeGet instance "launch_token")
+          (= (nativeGet stop "instance_id") (nativeGet instance "instance_id"))
+          (= (nativeGet stop "instance_epoch") (nativeGet instance "instance_epoch"))
+          (= (nativeGet stop "launch_token") (nativeGet instance "launch_token"))))))
+  (defasync verifyManaged
+    (context instance)
+    (let* ((repository (nativeGet context "repository"))
+           (gate (js-call repository :get "instance_gates" (nativeGet instance "instance_id")))
+           (stop (and (nativeGet gate "stop_lifecycle_id")
+                  (js-call repository :get "lifecycle_actions" (nativeGet gate "stop_lifecycle_id")))))
+      (if (managedStopConfirmed instance stop)
+        (inTransaction context (lambda (tx)
+          (must (ownerGuard context))
+          (let ((current (js-call repository :get "instances" (nativeGet instance "instance_id"))))
+            (unless (= (nativeGet current "state") "stopped")
+              (put current :state "stopped")
+              (put current :revision (nextRevision (nativeGet current "revision")))
+              (must (js-call repository :replace "instances" current)))
+            ;; The historical stop already released its exact slot atomically.
+            ;; A later launch may own this profile now; never release that slot.
+            (success (js-object :instance_id (nativeGet current "instance_id") :state "stopped")))))
+        (let*
+      ((repository (nativeGet context "repository"))
+        (port (agentPort context instance))
+        (report nil))
+      (when (and port (nativeGet port "inspectInstance"))
+        (try
+          (setq
+            report
+            (await
+              (js-call
+                port
+                :inspectInstance
+                instance
+                (nativeGet instance "launch_token")
+                (nativeCallContext context))))
+          (catch unavailable nil)))
+      (inTransaction
+        context
+        (lambda
+          (tx)
+          (must (ownerGuard context))
+          (let*
+            ((current (js-call repository :get "instances" (nativeGet instance "instance_id")))
+              (gate
+                (js-call repository :get "instance_gates" (nativeGet instance "instance_id")))
+              (stopped
+                (and
+                  (= (nativeGet report "absence_verified") t)
+                  (= (nativeGet report "evidence_level") "native_protocol")))
+              (ready
+                (and
+                  (= (nativeGet report "state") "ready")
+                  (= (nativeGet report "ownership") "managed")
+                  (= (nativeGet report "launch_token") (nativeGet current "launch_token"))
+                  (= (nativeGet report "evidence_level") "native_protocol"))))
+            (when stopped
+              (must
+                (releaseSlot
+                  tx
+                  (nativeGet current "profile_id")
+                  (js-object
+                    :absence_verified
+                    t
+                    :evidence_level
+                    "native_protocol"
+                    :launch_token
+                    (nativeGet current "launch_token")
+                    :instance_id
+                    (nativeGet current "instance_id")
+                    :instance_epoch
+                    (nativeGet current "instance_epoch")))))
+            (put
+              current
+              :state
+              (cond (stopped "stopped")
+                ((and ready (not (nativeGet gate "stop_lifecycle_id"))) "ready")
+                ((nativeGet gate "stop_lifecycle_id") "stopping")
+                (t "unknown")))
+            (put current :revision (nextRevision (nativeGet current "revision")))
+            (put gate :state (if (= (nativeGet current "state") "ready") "open" "closed"))
+            (put gate :revision (nextRevision (nativeGet gate "revision")))
+            (must (js-call repository :replace "instances" current))
+            (must (js-call repository :replace "instance_gates" gate))
+            (let
+              (
+                (slot
+                  (js-call repository :get "managed_slots" (nativeGet current "profile_id"))))
+              (when slot
+                (put slot :state (nativeGet current "state"))
+                (must (js-call repository :replace "managed_slots" slot))))
+            (when (and ready (nativeGet report "initial_session"))
+              (must (putSession context (nativeGet report "initial_session") current)))
+            (success
+              (js-object
+                :instance_id
+                (nativeGet current "instance_id")
+                :state
+                (nativeGet current "state"))))))))))
+  (defasync recoverState
+    (context)
+    (let ((djReturn2Token (js-object)) (djReturn2Value nil))
+      (try
+        (let ((ledger (recoverLedger context)))
+          (unless (nativeGet ledger "ok")
+            (progn (setq djReturn2Value ledger) (throw djReturn2Token))))
+        (let
+          ((repository (nativeGet context "repository"))
+            (after nil)
+            (count 0)
+            (unknown 0)
+            (done false))
+          (while (not done)
+            (let ((options (js-object :limit 100)) (rows nil) (index 0))
+              (when after (put options :after_key after))
+              (setq rows (js-call repository :page "instances" options))
+              (while (< index (js-length rows))
+                (let ((batch (js-call rows :slice index (+ index 4))))
+                  (let
+                    (
+                      (results
+                        (await
+                          (Promise/allSettled
+                            (js-call
+                              batch
+                              :map
+                              (lambda
+                                (instance)
+                                (if (= (nativeGet instance "ownership") "existing")
+                                  (verifyExisting context instance)
+                                  (verifyManaged context instance))))))))
+                    (js-call
+                      results
+                      :forEach
+                      (lambda
+                        (result)
+                        (setq count (1+ count))
+                        (unless
+                          (and
+                            (= (nativeGet result "status") "fulfilled")
+                            (nativeGet (nativeGet result "value") "ok")
+                            (js-call
+                              (js-array "ready" "stopped")
+                              :includes
+                              (nativeGet (nativeGet (nativeGet result "value") "data") "state")))
+                          (setq unknown (1+ unknown)))))))
+                (setq index (+ index 4)))
+            (when (> (js-length rows) 0)
+              (setq after (nativeGet (aref rows (1- (js-length rows))) "instance_id")))
+            (setq done (< (js-length rows) 100))))
+        (success
+          (js-object :state "recovered" :instances count :unverified_instances unknown))
+        )(catch djReturn2Error
+          (if (eq djReturn2Error djReturn2Token) djReturn2Value (throw djReturn2Error))))))
+  (export
+    seedConfiguration
+    recoverLedger
+    recoverState
+    verifyExisting
+    verifyManaged
+    managedStopConfirmed
+    connectionIdentity))

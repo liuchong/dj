@@ -1,0 +1,205 @@
+(module dj.core.types
+  (import "./native.eli"
+    NativeBigInt
+    NativeNumber
+    nativeBitAnd
+    nativeNullish
+    nativeTypeOf nativeGet)
+  (import "node:crypto" createHash)
+  (import "./errors.eli" invalidField)
+  (defun utf8Bytes (text) (Buffer/byteLength text "utf8"))
+  (defun isObject
+    (value)
+    (and
+      (not (nativeNullish value))
+      (= (nativeTypeOf value) "object")
+      (not (Array/isArray value))))
+  (defun stableJson
+    (value)
+    (cond
+      ((nativeNullish value)
+        (if (undefined? value)
+          (throw (new globalThis.TypeError "undefined is not a JSON value"))
+          "null"))
+      ((= (nativeTypeOf value) "string") (JSON/stringify value))
+      ((= (nativeTypeOf value) "boolean") (if value "true" "false"))
+      ((= (nativeTypeOf value) "number")
+        (unless (Number/isFinite value)
+          (throw (new globalThis.TypeError "nonfinite JSON number")))
+        (JSON/stringify value))
+      ((Array/isArray value)
+        (str "[" (js-call (js-call value :map stableJson) :join ",") "]"))
+      ((isObject value)
+        (let ((keys (js-call (Object/keys value) :sort)))
+          (str
+            "{"
+            (js-call
+              (js-call
+                keys
+                :map
+                (lambda
+                  (key)
+                  (str (JSON/stringify key) ":" (stableJson (nativeGet value key)))))
+              :join
+              ",")
+            "}")))
+      (t (throw (new globalThis.TypeError "unsupported JSON value")))))
+  (defun hashValue
+    (value)
+    (js-call
+      (js-call (createHash "sha256") :update (stableJson value) "utf8")
+      :digest
+      "hex"))
+  (defun nativeIdentity
+    (target)
+    (let
+      ((tool (nativeGet target "tool"))
+        (namespace (nativeGet target "native_namespace"))
+        (session (nativeGet target "native_session_id")))
+      (unless
+        (js-call
+          (js-array tool namespace session)
+          :every
+          (lambda
+            (value)
+            (and (= (nativeTypeOf value) "string") (> (js-length value) 0))))
+        (throw
+          (new
+            globalThis.TypeError
+            "native target requires exact tool, namespace and session identifiers")))
+      (js-array tool namespace session)))
+  (defun canonicalTargetKey
+    (target)
+    (str "target_" (hashValue (nativeIdentity target))))
+  (defun stableSessionKey (target) (str "session_" (hashValue (nativeIdentity target))))
+  (defun conversationKey
+    (address)
+    (hashValue
+      (js-array
+        (nativeGet address "connection_id")
+        (nativeGet address "native_chat_id")
+        (nativeGet address "native_thread_id" nil)
+        (nativeGet address "thread_kind" "main"))))
+  (defun encodeSeq
+    (sequence)
+    (unless
+      (or
+        (= (nativeTypeOf sequence) "bigint")
+        (and (= (nativeTypeOf sequence) "number") (Number/isSafeInteger sequence))
+        (and
+          (= (nativeTypeOf sequence) "string")
+          (js-call (new globalThis.RegExp "^(0|[1-9][0-9]*)$") :test sequence)))
+      (throw (new globalThis.TypeError "sequence must be an exact nonnegative integer")))
+    (let ((integer (NativeBigInt sequence)))
+      (when
+        (or
+          (< integer (NativeBigInt "0"))
+          (> integer (NativeBigInt "9223372036854775807")))
+        (throw
+          (new
+            globalThis.RangeError
+            "sequence is outside the signed 64-bit storage range")))
+      (js-call integer :toString)))
+  (defun nextSeq
+    (sequence)
+    (encodeSeq (+ (NativeBigInt (encodeSeq sequence)) (NativeBigInt "1"))))
+  (defun nextRevision
+    (revision)
+    (unless
+      (and
+        (Number/isSafeInteger revision)
+        (> revision 0)
+        (< revision (nativeGet NativeNumber "MAX_SAFE_INTEGER")))
+      (throw (new globalThis.RangeError "revision exhausted or invalid")))
+    (1+ revision))
+  (defun isUtcTime
+    (value)
+    (and
+      (= (nativeTypeOf value) "string")
+      (js-call
+        (new
+          globalThis.RegExp
+          "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$")
+        :test
+        value)
+      (Number/isFinite (Date/parse value))
+      (=
+        (js-call (js-call (new globalThis.Date value) :toISOString) :slice 0 19)
+        (js-call value :slice 0 19))))
+  (defun addSeconds
+    (utc seconds)
+    (js-call (new globalThis.Date (+ (Date/parse utc) (* seconds 1000))) :toISOString))
+  (defun sliceUtf8
+    (text offset max-bytes)
+    (let ((djReturn1Token (js-object)) (djReturn1Value nil))
+      (try
+        (unless
+          (and
+            (= (nativeTypeOf text) "string")
+            (Number/isSafeInteger offset)
+            (>= offset 0)
+            (Number/isSafeInteger max-bytes)
+            (> max-bytes 0))
+          (progn
+            (setq
+              djReturn1Value
+              (invalidField
+                "/offset_bytes"
+                "nonnegative UTF-8 boundary and a positive byte budget"))
+            (throw djReturn1Token)))
+        (let* ((bytes (Buffer/from text "utf8")) (size (js-length bytes)))
+          (when
+            (or
+              (> offset size)
+              (and (< offset size) (= (nativeBitAnd (aref bytes offset) 192) 128)))
+            (progn
+              (setq
+                djReturn1Value
+                (invalidField
+                  "/offset_bytes"
+                  "UTF-8 boundary within the available body"))
+              (throw djReturn1Token)))
+          (let ((end (Math/min size (+ offset max-bytes))))
+            (while
+              (and
+                (> end offset)
+                (< end size)
+                (= (nativeBitAnd (aref bytes end) 192) 128))
+              (setq end (1- end)))
+            (when (and (= end offset) (< end size))
+              (progn
+                (setq
+                  djReturn1Value
+                  (invalidField
+                    "/max_bytes"
+                    "enough bytes for the next complete Unicode scalar"))
+                (throw djReturn1Token)))
+            (js-object
+              :ok
+              t
+              :text
+              (js-call (js-call bytes :subarray offset end) :toString "utf8")
+              :offset_bytes
+              offset
+              :next_offset_bytes
+              end
+              :complete
+              (= end size)
+              :total_bytes
+              size)))
+        (catch djReturn1Error
+          (if (eq djReturn1Error djReturn1Token) djReturn1Value (throw djReturn1Error))))))
+  (export
+    utf8Bytes
+    isObject
+    stableJson
+    hashValue
+    canonicalTargetKey
+    stableSessionKey
+    conversationKey
+    encodeSeq
+    nextSeq
+    nextRevision
+    isUtcTime
+    addSeconds
+    sliceUtf8))

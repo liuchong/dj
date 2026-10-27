@@ -1,0 +1,80 @@
+(module dj.policy.registry
+  (import "../core/native.eli" nativeGet)
+  (import "../core/types.eli" hashValue)
+  (import "../core/errors.eli" success failure)
+  (import "../application/context.eli" must)
+  (defun policyFingerprint
+    (principal)
+    (hashValue
+      (js-object
+        :kind
+        (nativeGet principal "kind")
+        :grants
+        (nativeGet principal "grants")
+        :disabled
+        (= (nativeGet principal "disabled") t)
+        :target_constraint
+        (nativeGet principal "target_constraint" nil))))
+  (defun reconcilePrincipals
+    (context principals)
+    (let ((repository (nativeGet context "repository")) (seen (new globalThis.Set)))
+      (js-call
+        principals
+        :forEach
+        (lambda
+          (principal)
+          (let*
+            ((id (nativeGet principal "principal_id"))
+              (old (js-call repository :get "principal_registry" id))
+              (fingerprint (policyFingerprint principal))
+              (record
+                (js-object
+                  :principal_id
+                  id
+                  :kind
+                  (nativeGet principal "kind")
+                  :authorization_revision
+                  (nativeGet principal "authorization_revision")
+                  :policy_fingerprint
+                  fingerprint
+                  :retired
+                  false)))
+            (when (js-call seen :has id) (must (failure "invalid_argument")))
+            (js-call seen :add id)
+            (when old
+              (when
+                (or
+                  (= (nativeGet old "retired") t)
+                  (not (= (nativeGet old "kind") (nativeGet principal "kind"))))
+                (must (failure "forbidden")))
+              (when
+                (or
+                  (<
+                    (nativeGet record "authorization_revision")
+                    (nativeGet old "authorization_revision"))
+                  (and
+                    (not (= fingerprint (nativeGet old "policy_fingerprint")))
+                    (<=
+                      (nativeGet record "authorization_revision")
+                      (nativeGet old "authorization_revision"))))
+                (must (failure "revision_conflict"))))
+            (if old
+              (must (js-call repository :replace "principal_registry" record))
+              (js-call repository :insert "principal_registry" record)))))
+      (let ((after nil) (done false))
+        (while (not done)
+          (let ((options (js-object :limit 1000)) (rows nil))
+            (when after (put options :after_key after))
+            (setq rows (js-call repository :page "principal_registry" options))
+            (js-call
+              rows
+              :forEach
+              (lambda
+                (record)
+                (setq after (nativeGet record "principal_id"))
+                (unless (js-call seen :has after)
+                  (put record :retired t)
+                  (must (js-call repository :replace "principal_registry" record)))))
+            (setq done (< (js-length rows) 1000)))))
+      (success (js-object :principals (nativeGet seen "size")))))
+  (export reconcilePrincipals policyFingerprint))

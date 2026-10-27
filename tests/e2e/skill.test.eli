@@ -1,0 +1,178 @@
+(module dj.tests.e2e.skill
+  (import "../../src/core/native.eli" nativeGet)
+  (import "bun:test" expect)
+  (import "../support/case.eli" withCase)
+  (import "../support/real.eli" createRealFixture approvedDriver realRelay)
+  (withCase
+    "T23.skill-adoption.real"
+    (async () (await (createRealFixture "T23.skill-adoption.real")))
+    (async
+      (f)
+      (let ((tools (js-array "opencode" "pi")) (index 0))
+        (while (< index (js-length tools))
+          (let*
+            ((tool (aref tools index))
+              (observation
+                (await
+                  (approvedDriver
+                    f
+                    "observe-skill-adoption"
+                    (js-object :tool tool :run_id (nativeGet f "run_id")))))
+              (who
+                (await
+                  (js-call
+                    f
+                    :ok
+                    "agent.get"
+                    (js-object :agent_id (nativeGet observation "agent_id"))))))
+            (js-call (expect (nativeGet observation "skill_discovered")) :toBe t)
+            (js-call (expect (nativeGet observation "skill_read")) :toBe t)
+            (js-call (expect (nativeGet observation "references_read")) :toBe t)
+            (js-call (expect (nativeGet observation "actual_preview_id")) :toBeDefined)
+            (js-call
+              (expect (nativeGet (nativeGet observation "preview_call") "operation"))
+              :toBe
+              "subscription.preview")
+            (js-call
+              (expect (nativeGet (nativeGet observation "preview_call") "native_tool_call_id"))
+              :toBeDefined)
+            (js-call
+              (expect (nativeGet (nativeGet observation "create_call") "operation"))
+              :toBe
+              "subscription.create")
+            (js-call
+              (expect (nativeGet (nativeGet (nativeGet observation "create_call") "arguments") "preview_id"))
+              :toBe
+              (nativeGet observation "actual_preview_id"))
+            (js-call (expect (nativeGet observation "actual_subscription_id")) :toBeDefined)
+            (js-call (expect (nativeGet who "tool")) :toBe tool)
+            (let
+              (
+                (subscription
+                  (await
+                    (js-call
+                      f
+                      :ok
+                      "subscription.get"
+                      (js-object
+                        :subscription_id
+                        (nativeGet observation "actual_subscription_id"))))))
+              (js-call
+                (expect (nativeGet subscription "agent_id"))
+                :toBe
+                (nativeGet observation "agent_id")))
+            (await (js-call f :evidence (js-object :tool tool :adoption observation))))
+          (setq index (1+ index)))))
+    (lambda (f) nil))
+  (withCase
+    "T44.skill-reply.real"
+    (async () (await (createRealFixture "T44.skill-reply.real")))
+    (async
+      (f)
+      (await (realRelay f "lark" "opencode" false))
+      (let
+        (
+          (observation
+            (await
+              (approvedDriver
+                f
+                "observe-reply-key-recovery"
+                (js-object :run_id (nativeGet f "run_id"))))))
+        (js-call
+          (expect (nativeGet observation "original_operation_id"))
+          :toBe
+          (nativeGet observation "recovered_operation_id"))
+        (js-call (expect (nativeGet observation "native_send_count")) :toBe 1)
+        (let
+          (
+            (operation
+              (await
+                (js-call
+                  f
+                  :ok
+                  "operation.get"
+                  (js-object :operation_id (nativeGet observation "original_operation_id"))))))
+          (js-call (expect (nativeGet operation "operation")) :toBe "message.reply"))
+        (await (js-call f :evidence observation))))
+    (lambda (f) nil))
+  (withCase
+    "T67.recipient-wiring.real"
+    (async () (await (createRealFixture "T67.recipient-wiring.real")))
+    (async
+      (f)
+      (let*
+        (
+          (observation
+            (await
+              (approvedDriver
+                f
+                "create-and-wire-recipient"
+                (js-object :run_id (nativeGet f "run_id")))))
+          (recipient
+            (await
+              (js-call
+                f
+                :ok
+                "agent.get"
+                (js-object :agent_id (nativeGet observation "new_agent_id"))))))
+        (js-call
+          (nativeGet (expect (nativeGet observation "creator_principal_id")) "not")
+          :toBe
+          (nativeGet observation "recipient_principal_id"))
+        (js-call
+          (expect (nativeGet observation "creator_bound_agent_before"))
+          :toBe
+          (nativeGet observation "creator_bound_agent_after"))
+        (js-call (expect (nativeGet observation "unwired_reply_capability")) :toBe false)
+        (js-call
+          (expect (nativeGet recipient "recipient_principal_id"))
+          :toBe
+          (nativeGet observation "recipient_principal_id"))
+        (js-call
+          (expect (nativeGet recipient "native_session_id"))
+          :toBe
+          (nativeGet observation "new_native_session_id"))
+        (await (js-call f :evidence observation))))
+    (lambda (f) nil))
+  (withCase
+    "T44.no-explicit-reply.real"
+    (async () (await (createRealFixture "T44.no-explicit-reply.real")))
+    (async
+      (f)
+      (let*
+        (
+          (observation
+            (await
+              (approvedDriver f "run-without-reply" (js-object :run_id (nativeGet f "run_id")))))
+          (delivery
+            (await
+              (js-call
+                f
+                :ok
+                "delivery.get"
+                (js-object :delivery_id (nativeGet observation "delivery_id"))))))
+        (js-call (expect (nativeGet observation "trace_complete")) :toBe t)
+        (js-call (expect (nativeGet observation "reply_tool_call_count")) :toBe 0)
+        (js-call
+          (expect (nativeGet (nativeGet observation "native_settled") "evidence_level"))
+          :toBe
+          "native_protocol")
+        (js-call (expect (nativeGet delivery "reply_outbound_id" nil)) :toBe nil)
+        (await
+          (js-call
+            f
+            :evidence
+            (js-object
+              :native_observation
+              observation
+              :delivery_id
+              (nativeGet delivery "delivery_id")
+              :explicit_reply_observed
+              false)))))
+    (lambda (f) nil))
+  (withCase
+    "T23.other-clients.future"
+    (lambda () nil)
+    (lambda (f) nil)
+    (lambda (f) nil))
+  (withCase "T44.pi-mcp-host.future" (lambda () nil) (lambda (f) nil) (lambda (f) nil)))

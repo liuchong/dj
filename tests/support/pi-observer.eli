@@ -1,0 +1,33 @@
+(module dj.tests.support.pi-observer
+  (import "../../src/core/native.eli" nativeGet)
+  (import "node:path" resolve)
+  (defun piTestRequest (operation)
+    (js-object :schema_version 1 :request_id "req-po" :operation operation :run_id "run-po"
+      :parameters (js-object :tool "pi" :native_session_id "pi-session" :delivery_id "delivery-po" :run_id "run-po")))
+  (defun piTestBinding (&optional root)
+    (let ((cwd (or root (resolve "pi-observer-workspace"))))
+      (js-object :schema_version 1 :authorized t :targets (js-array
+        (js-object :native_session_id "pi-session" :cwd cwd :log_path (resolve cwd "pi-session.jsonl"))))))
+  (defun piTestHeader (&optional root)
+    (js-object :type "session" :version 3 :id "pi-session" :timestamp "2026-01-01T00:00:00.000Z"
+      :cwd (or root (resolve "pi-observer-workspace"))))
+  (defun piTestEnvelope (origin)
+    (js-object :schema_version 1 :kind "external_message" :origin origin :delivery_id "delivery-po"
+      :content (js-object :type "text" :text "run-po body-hidden")))
+  (defun piTestUser (id parent origin)
+    (js-object :type "message" :id id :parentId parent :timestamp "2026-01-01T00:00:01.000Z"
+      :message (js-object :role "user" :content (JSON/stringify (piTestEnvelope origin)) :timestamp 1767225601000)))
+  (defun piTestAssistant (id parent)
+    (js-object :type "message" :id id :parentId parent :timestamp "2026-01-01T00:00:02.000Z"
+      :message (js-object :role "assistant" :content (js-array (js-object :type "text" :text "private native answer"))
+        :api "test-native-api" :provider "test-provider" :model "test-model" :stopReason "stop" :timestamp 1767225602000)))
+  (defun piTestNoise (id &optional parent)
+    (js-object :type "custom" :id id :parentId (or parent nil) :timestamp "2026-01-01T00:00:01.500Z"
+      :customType "unrelated" :data ""))
+  (defun piTestSnapshot (entries &optional root)
+    (js-object :header_text (JSON/stringify (piTestHeader root))
+      :entries_text (str (js-call (js-call entries :map (lambda (row) (JSON/stringify row))) :join "\n") "\n")
+      :prefix_truncated false :trailing_fragment_discarded false))
+  (defun nativeTestBinding ()
+    (js-object :schema_version 1 :authorized t :opencode_binding_ref "o.json" :pi_binding_ref "pi.json"))
+  (export piTestRequest piTestBinding piTestHeader piTestEnvelope piTestUser piTestAssistant piTestNoise piTestSnapshot nativeTestBinding))

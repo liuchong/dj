@@ -1,0 +1,72 @@
+(module dj.delivery.envelope
+  (import "../core/native.eli" nativeTypeOf nativeGet)
+  (import "../core/types.eli" utf8Bytes hashValue)
+  (defconst envelopeFields
+    (js-array
+      "schema_version"
+      "kind"
+      "origin"
+      "delivery_id"
+      "inbox_id"
+      "event_id"
+      "source"
+      "sender"
+      "matched"
+      "instructions"
+      "content"
+      "attachments"
+      "reply_context_id"
+      "allowed_actions"))
+  (defun encodeEnvelope
+    (envelope &optional max-frame-bytes)
+    (unless
+      (and
+        (= (nativeGet envelope "schema_version") 1)
+        (= (nativeGet envelope "kind") "external_message")
+        (Array/isArray (nativeGet envelope "allowed_actions"))
+        (= (nativeTypeOf (nativeGet (nativeGet envelope "content") "text")) "string"))
+      (throw (new globalThis.TypeError "invalid external-message envelope")))
+    (let ((safe (js-object)))
+      (js-call
+        envelopeFields
+        :forEach
+        (lambda
+          (field)
+          (when (object-has? envelope field) (put safe field (nativeGet envelope field)))))
+      (let ((text (JSON/stringify safe)))
+        (when (and max-frame-bytes (> (utf8Bytes text) max-frame-bytes))
+          (throw
+            (new
+              globalThis.RangeError
+              "encoded external-message frame exceeds native budget")))
+        text)))
+  (defun encodeAgentInput
+    (tool envelope dispatch-key)
+    (let*
+      ((message (encodeEnvelope envelope))
+        (value
+          (cond
+            ((= tool "opencode")
+              (js-object
+                :messageID
+                (openCodeMessageId dispatch-key)
+                :parts
+                (js-array (js-object :type "text" :text message))))
+            ((= tool "pi") (js-object :id dispatch-key :type "prompt" :message message))
+            ((js-call (js-array "codex" "cursor" "claude" "antigravity") :includes tool)
+              (js-object :text message))
+            (t (throw (new globalThis.TypeError "unsupported native input codec")))))
+        (wire (JSON/stringify value)))
+      (setq
+        wire
+        (js-call
+          (js-call wire :replaceAll "\u2028" "\\u2028")
+          :replaceAll
+          "\u2029"
+          "\\u2029"))
+      (when (= tool "pi") (setq wire (str wire "\n")))
+      (js-object :value value :wire wire :frame_bytes (utf8Bytes wire))))
+  (defun openCodeMessageId
+    (dispatch-key)
+    (str "msg_" (hashValue (js-array "dj_dispatch" dispatch-key))))
+  (export encodeEnvelope encodeAgentInput openCodeMessageId))

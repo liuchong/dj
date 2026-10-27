@@ -1,0 +1,293 @@
+(module dj.tests.performance.catalog
+  (import "../../src/core/native.eli" NativeNumber nativeSetTimeout nativeGet)
+  (import "bun:test" expect)
+  (import "node:fs/promises" appendFile)
+  (import "../support/case.eli" withCase)
+  (import "../support/fixtures.eli"
+    createFixture
+    closeFixture
+    callOk
+    createdEvent
+    bindRecipient
+    subscribe)
+  (defasync setupCatalog
+    ()
+    (let
+      (
+        (f
+          (await
+            (createFixture
+              "catalog-load"
+              "one"
+              (js-object
+                :configure
+                (lambda
+                  (config ports)
+                  (js-call
+                    (nativeGet (js-call (nativeGet ports "agent_ports") :get "opencode") "sessions")
+                    :splice
+                    1)))))))
+      (let ((agent (await (bindRecipient f)))) (await (subscribe f agent "lark")))
+      f))
+  (defasync advanceCatalog
+    (f id counter)
+    (let ((run nil) (turn 0) (done false))
+      (while (and (not done) (< turn 256))
+        (await (js-call f :tick))
+        (await
+          (js-call
+            f
+            :ingest
+            (createdEvent
+              "lark"
+              (str "catalog-fairness-" (nativeGet counter "value"))
+              "forward during refresh")))
+        (put counter :value (1+ (nativeGet counter "value")))
+        (await (js-call f :tick))
+        (setq run (await (callOk f "O" "catalog.get" (js-object :catalog_run_id id))))
+        (setq
+          done
+          (js-call (js-array "done" "partial" "failed") :includes (nativeGet run "state")))
+        ;; Give Bun's reporter/deadline and native peer work a macrotask boundary.
+        (await (new globalThis.Promise (lambda (done reject) (nativeSetTimeout done 0))))
+        (setq turn (1+ turn)))
+      (js-call (expect done) :toBe t)
+      (js-call (nativeGet (expect (nativeGet run "state")) "not") :toBe "failed")
+      run))
+  (withCase
+    "T57.catalog-load.performance"
+    setupCatalog
+    (async
+      (f)
+      (let*
+        ((peer (nativeGet f "opencode"))
+          (sessions (nativeGet peer "sessions"))
+          (index 1)
+          (samples (js-array))
+          (counter (js-object :value 0))
+          (start (performance/now)))
+        (while (< index 100000)
+          (js-call
+            sessions
+            :push
+            (Object/assign
+              (js-object)
+              (aref sessions 0)
+              (js-object
+                :native_session_id
+                (str "s-" index)
+                :title
+                (str "catalog " index))))
+          (setq index (1+ index)))
+        (put
+          peer
+          :listSessions
+          (async
+            (scope cursor budget context)
+            (let*
+              ((offset (if cursor (NativeNumber cursor) 0))
+                (end (Math/min (+ offset 100) (js-length sessions))))
+              (js-object
+                :items
+                (js-call sessions :slice offset end)
+                :complete
+                (= end (js-length sessions))
+                :next_cursor
+                (if (< end (js-length sessions)) (str end) nil)
+                :coverage
+                "covered"))))
+        (let ((continuation nil) (done false) (round 0))
+          (while (and (not done) (< round 16))
+            (let*
+              (
+                (accepted
+                  (await
+                    (callOk
+                      f
+                      "O"
+                      "catalog.refresh"
+                      (Object/assign
+                        (js-object
+                          :scope
+                          (js-object :tools (js-array "opencode"))
+                          :idempotency_key
+                          (str "catalog-batch-" round))
+                        (if continuation
+                          (js-object :continuation continuation)
+                          (js-object))))))
+                (run (await (advanceCatalog f (nativeGet accepted "catalog_run_id") counter))))
+              (setq continuation (nativeGet run "continuation") done (not continuation)))
+            (setq round (1+ round)))
+          (js-call (expect done) :toBe t))
+        (let ((cursor nil))
+          (setq index 0)
+          (while (< index 100)
+            (let*
+              ((before (performance/now))
+                (page
+                  (await
+                    (callOk
+                      f
+                      "O"
+                      "session.search"
+                      (Object/assign
+                        (js-object
+                          :query
+                          (js-object
+                            :text
+                            "a"
+                            :fields
+                            (js-array "title")
+                            :mode
+                            "literal")
+                          :limit
+                          1)
+                        (if cursor (js-object :cursor cursor) (js-object)))))))
+              (setq cursor (nativeGet page "next_cursor"))
+              (js-call samples :push (- (performance/now) before)))
+            (setq index (1+ index))))
+        (let*
+          ((stats (await (callOk f "O" "service.status" (js-object))))
+            (metrics (nativeGet stats "catalog_metrics"))
+            (output (nativeGet (nativeGet globalThis.process "env") "DJ_TEST_PERFORMANCE_FILE")))
+          (js-call (expect (nativeGet metrics "metadata_count")) :toBe 100000)
+          (js-call
+            (expect (nativeGet metrics "body_and_index_bytes"))
+            :toBeLessThanOrEqual
+            536870912)
+          (js-call (expect (nativeGet metrics "active_snapshots")) :toBeLessThanOrEqual 32)
+          (js-call
+            (expect (nativeGet (nativeGet stats "routing_metrics") "lost_routing_work"))
+            :toBe
+            0)
+          (js-call (expect (js-length (nativeGet peer "inputs"))) :toBe (nativeGet counter "value"))
+          (unless output
+            (throw (new globalThis.Error "performance evidence output required")))
+          (await
+            (appendFile
+              output
+              (str
+                (JSON/stringify
+                  (js-object
+                    :case_id
+                    "T57.catalog-load.performance"
+                    :metadata_fixture_count
+                    100000
+                    :wall_ms
+                    (- (performance/now) start)
+                    :query_page_wall_ms
+                    samples
+                    :forwarded_during_refresh
+                    (js-length (nativeGet peer "inputs"))
+                    :metrics
+                    metrics
+                    :rss_bytes
+                    (nativeGet (js-call globalThis.process :memoryUsage) "rss")))
+                "\n")
+              (js-object :mode 384))))))
+    closeFixture)
+  (withCase
+    "T57.body-quota.performance"
+    setupCatalog
+    (async
+      (f)
+      (let*
+        ((peer (nativeGet f "opencode"))
+          (text (js-call "q" :repeat 65536))
+          (counter (js-object :value 0))
+          (continuation nil)
+          (round 0)
+          (capacity false)
+          (metrics nil))
+        (put
+          peer
+          :readMessages
+          (async
+            (session cursor budget context)
+            (let
+              ((offset (if cursor (NativeNumber cursor) 0))
+                (items (js-array))
+                (index 0))
+              (while (and (< index 8) (< (+ offset index) 8193))
+                (js-call
+                  items
+                  :push
+                  (js-object
+                    :native_message_id
+                    (str "body-" (+ offset index))
+                    :role
+                    "user"
+                    :text
+                    text
+                    :created_at
+                    "2026-01-01T00:00:00Z"))
+                (setq index (1+ index)))
+              (js-object
+                :items
+                items
+                :complete
+                (>= (+ offset index) 8193)
+                :next_cursor
+                (if (< (+ offset index) 8193) (str (+ offset index)) nil)))))
+        (while (and (not capacity) (< round 80))
+          (let*
+            (
+              (accepted
+                (await
+                  (callOk
+                    f
+                    "O"
+                    "catalog.refresh"
+                    (Object/assign
+                      (js-object
+                        :scope
+                        (js-object :tools (js-array "opencode"))
+                        :include_content
+                        t
+                        :idempotency_key
+                        (str "body-quota-" round))
+                      (if continuation
+                        (js-object :continuation continuation)
+                        (js-object))))))
+              (run (await (advanceCatalog f (nativeGet accepted "catalog_run_id") counter))))
+            (setq continuation (nativeGet run "continuation"))
+            (setq capacity (or (= (nativeGet run "capacity_exceeded") t)
+              (= (nativeGet run "reason") "capacity_exceeded"))))
+          (setq
+            metrics
+            (nativeGet (await (callOk f "O" "service.status" (js-object))) "catalog_metrics"))
+          (js-call
+            (expect (nativeGet metrics "body_and_index_bytes"))
+            :toBeLessThanOrEqual
+            536870912)
+          (setq round (1+ round)))
+        (js-call (expect capacity) :toBe t)
+        (js-call
+          (expect (nativeGet metrics "body_and_index_bytes"))
+          :toBeGreaterThan
+          (* 536870912 0.9))
+        (js-call (expect (js-length (nativeGet peer "inputs"))) :toBe (nativeGet counter "value"))
+        (let ((output (nativeGet (nativeGet globalThis.process "env") "DJ_TEST_PERFORMANCE_FILE")))
+          (unless output
+            (throw (new globalThis.Error "performance evidence output required")))
+          (await
+            (appendFile
+              output
+              (str
+                (JSON/stringify
+                  (js-object
+                    :case_id
+                    "T57.body-quota.performance"
+                    :body_fixture_bytes
+                    (* 8193 65536)
+                    :capacity_exceeded
+                    capacity
+                    :metrics
+                    metrics
+                    :forwarded_during_refresh
+                    (js-length (nativeGet peer "inputs"))
+                    :refresh_rounds
+                    round))
+                "\n")
+              (js-object :mode 384))))))
+    closeFixture))

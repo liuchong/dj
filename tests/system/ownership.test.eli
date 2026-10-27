@@ -1,0 +1,514 @@
+(module dj.tests.system.ownership
+  (import "../../src/core/native.eli" nativeGet)
+  (import "bun:test" expect)
+  (import "../support/case.eli" withCase)
+  (import "../support/process.eli" spawnFixture closeProcess)
+  (import "../support/fixtures.eli"
+    createFixture
+    closeFixture
+    callOk
+    successful
+    getSession)
+  (import "../../src/library.eli" createCore)
+  (import "../../tools/package.eli" buildPackage)
+  (import "node:fs/promises" cp mkdir readFile)
+  (import "node:path" resolve)
+  (import "node:os" homedir)
+  (import "node:crypto" randomUUID)
+  (defasync setup () (await (createFixture "ownership" "one")))
+  (withCase
+    "T17.revocation.system"
+    setup
+    (async
+      (f)
+      (let ((target (await (getSession f "s1"))))
+        (put (nativeGet f "S") :grants (js-array))
+        (put (nativeGet f "S") :authorization_revision 2)
+        (let
+          (
+            (denied
+              (await
+                (js-call
+                  f
+                  :call
+                  (nativeGet f "S")
+                  "session.send"
+                  (js-object
+                    :session_ref
+                    (nativeGet target "session_ref")
+                    :content
+                    (js-object :type "text" :text "revoked")
+                    :idempotency_key
+                    "revoked")))))
+          (js-call (expect (nativeGet denied "ok")) :toBe false)
+          (js-call (expect (nativeGet denied "effect_state")) :toBe "none")
+          (js-call (expect (js-length (nativeGet (nativeGet f "opencode") "inputs"))) :toBe 0))
+        (let
+          (
+            (spoof
+              (await
+                (js-call
+                  f
+                  :call
+                  (nativeGet f "X")
+                  "service.status"
+                  (js-object :principal_id "O")))))
+          (js-call (expect (nativeGet spoof "ok")) :toBe false))))
+    closeFixture)
+  (withCase
+    "T39.single-core.system"
+    setup
+    (async
+      (f)
+      (let*
+        ((other (createCore (nativeGet f "ports") (nativeGet f "config")))
+          (result (await (js-call other :start))))
+        (js-call (expect (nativeGet result "ok")) :toBe false)
+        (js-call (expect (nativeGet (nativeGet result "error") "code")) :toBe "owner_conflict")
+        (let ((status (await (callOk f "O" "service.status" (js-object)))))
+          (js-call (expect (nativeGet status "state")) :toBe "ready"))))
+    closeFixture)
+  (withCase
+    "T25.no-ai.system"
+    setup
+    (async
+      (f)
+      (let ((status (await (callOk f "O" "service.status" (js-object)))))
+        (js-call (expect (nativeGet status "ai_enabled")) :toBe false)
+        (js-call (expect (nativeGet status "model_requests")) :toBe 0)
+        (js-call (expect (nativeGet status "embedding_requests")) :toBe 0))
+      (await (js-call f :tick))
+      (js-call (expect (js-length (nativeGet (nativeGet f "opencode") "inputs"))) :toBe 0))
+    closeFixture)
+  (withCase
+    "T38.directory-runtime.system"
+    standaloneFiles
+    (async
+      (f)
+      (let*
+        (
+          (built
+            (await
+              (buildPackage
+                (js-object :output (str ".local/tests/bundle-" (randomUUID))))))
+          (outside
+            (resolve
+              (homedir)
+              ".local/share/dj-acceptance"
+              (str "bundle-" (randomUUID)))))
+        (await (mkdir (resolve outside "..") (js-object :recursive t :mode 448)))
+        (await
+          (cp
+            (nativeGet built "directory")
+            outside
+            (js-object :recursive t :errorOnExist t :force false)))
+        (let*
+          (
+            (run
+              (await
+                (launchStandalone
+                  f
+                  false
+                  (resolve outside "dist/src/service/main.mjs")
+                  outside)))
+            (status (await (waitReady f run)))
+            (manifest
+              (JSON/parse
+                (await (readFile (resolve outside "package-manifest.json") "utf8")))))
+          (js-call (expect (nativeGet status "state")) :toBe "ready")
+          (js-call (expect (nativeGet status "build_id")) :toBe (nativeGet manifest "build_id"))
+          (js-call (expect (nativeGet manifest "compiler_required_at_runtime")) :toBe false)
+          (let*
+            (
+              (p
+                (js-object
+                  :root
+                  (nativeGet f "root")
+                  :credentials
+                  (js-object :O (nativeGet f "token"))))
+              (client
+                (await
+                  (createMcpClient
+                    p
+                    "O"
+                    (resolve outside "dist/src/interfaces/mcp.mjs")
+                    outside))))
+            (try
+              (let
+                ((result (await (js-call client :call "service.status" (js-object)))))
+                (js-call (expect (nativeGet result "ok")) :toBe t)
+                (js-call
+                  (expect (nativeGet (nativeGet result "data") "build_id"))
+                  :toBe
+                  (nativeGet manifest "build_id")))
+              (finally (await (js-call client :close))))))))
+    closeStandalone)
+  (withCase
+    "T67.recipient-reload.system"
+    setup
+    (async
+      (f)
+      (let*
+        (
+          (start
+            (await
+              (callOk
+                f
+                "O"
+                "instance.start"
+                (js-object
+                  :profile_id
+                  "pi-profile"
+                  :expected_profile_revision
+                  1
+                  :idempotency_key
+                  "reload-pi-start")))))
+        (await (js-call f :tick))
+        (let*
+          (
+            (action
+              (await
+                (callOk
+                  f
+                  "O"
+                  "lifecycle.get"
+                  (js-object :lifecycle_id (nativeGet start "lifecycle_id")))))
+            (session
+              (await
+                (callOk
+                  f
+                  "O"
+                  "session.get"
+                  (js-object :session_key (nativeGet action "initial_session_key")))))
+            (config (JSON/parse (JSON/stringify (nativeGet f "config"))))
+            (actor
+              (Object/assign
+                (JSON/parse (JSON/stringify (nativeGet f "B")))
+                (js-object
+                  :principal_id
+                  "new-recipient"
+                  :credential_sha256
+                  (js-call "3" :repeat 64)
+                  :target_constraint
+                  (js-object
+                    :tool
+                    "pi"
+                    :native_namespace
+                    (nativeGet session "native_namespace")
+                    :native_session_id
+                    (nativeGet session "native_session_id"))))))
+          (js-call (nativeGet config "principals") :push actor)
+          (successful (await (js-call (nativeGet f "core") :reloadConfig config)))
+          (let*
+            (
+              (candidates
+                (nativeGet
+                  (successful
+                    (await
+                      (js-call
+                        f
+                        :call
+                        actor
+                        "agent.discover"
+                        (js-object :tool "pi" :scope "managed"))))
+                  "items"))
+              (candidate (aref candidates 0))
+              (registered
+                (successful
+                  (await
+                    (js-call
+                      f
+                      :call
+                      actor
+                      "agent.register"
+                      (js-object
+                        :candidate_ref
+                        (nativeGet candidate "candidate_ref")
+                        :display_name
+                        "new recipient"
+                        :binding_mode
+                        "managed"
+                        :idempotency_key
+                        "reload-register"))))))
+            (js-call
+              (expect (nativeGet registered "recipient_principal_id"))
+              :toBe
+              "new-recipient"))
+          (js-call
+            (expect
+              (nativeGet (await (callOk f "O" "agent.whoami" (js-object))) "bound_agent_id"))
+            :toBe
+            nil)
+          (js-call (expect (js-length (nativeGet (nativeGet f "pi") "starts"))) :toBe 1)
+          (js-call (expect (js-length (nativeGet (nativeGet f "pi") "inputs"))) :toBe 0)
+          (let ((bad (JSON/parse (JSON/stringify config))))
+            (put
+              (js-call
+                (nativeGet bad "principals")
+                :find
+                (lambda (principal) (= (nativeGet principal "principal_id") "new-recipient")))
+              :kind
+              "operator")
+            (js-call
+              (expect (nativeGet (await (js-call (nativeGet f "core") :reloadConfig bad)) "ok"))
+              :toBe
+              false)
+            (js-call
+              (expect
+                (nativeGet
+                  (successful
+                    (await (js-call f :call actor "agent.whoami" (js-object))))
+                  "kind"))
+              :toBe
+              "agent")))))
+    closeFixture)
+  (withCase
+    "T21.owner-webhook.system"
+    (async () (await (spawnFixture)))
+    (async
+      (p)
+      (let
+        (
+          (denied
+            (await
+              (js-call
+                p
+                :request
+                "X"
+                "connection.get"
+                (js-object :connection_id "telegram")))))
+        (js-call (expect (nativeGet denied "ok")) :toBe false)
+        (js-call (expect (nativeGet denied "effect_state")) :toBe "none"))
+      (let ((duplicate nil))
+        (try
+          (setq duplicate (await (spawnFixture (nativeGet p "root"))))
+          (catch failure (setq duplicate nil)))
+        (js-call (expect duplicate) :toBe nil)))
+    closeProcess)
+  (import "../support/entries.eli" createMcpClient callCli)
+  (withCase
+    "T19.proxy-eof.system"
+    (async () (await (spawnFixture)))
+    (async
+      (p)
+      (let*
+        ((before (await (js-call p :request "O" "service.status" (js-object))))
+          (client (await (createMcpClient p "O"))))
+        (await (js-call client :call "service.status" (js-object)))
+        (await (js-call client :close))
+        (let ((after (await (js-call p :request "O" "service.status" (js-object)))))
+          (js-call (expect (nativeGet after "ok")) :toBe t)
+          (js-call
+            (expect (nativeGet (nativeGet after "data") "service_id"))
+            :toBe
+            (nativeGet (nativeGet before "data") "service_id"))
+          (js-call (expect (nativeGet (nativeGet p "child") "exitCode")) :toBe nil))
+        (let
+          (
+            (denied
+              (await
+                (callCli
+                  p
+                  "X"
+                  "instance.start"
+                  (js-object
+                    :profile_id
+                    "oc-profile"
+                    :expected_profile_revision
+                    1
+                    :idempotency_key
+                    "proxy-not-operator")))))
+          (js-call (expect (nativeGet denied "exit_code")) :toBe 3)
+          (js-call (expect (nativeGet (nativeGet denied "envelope") "ok")) :toBe false))))
+    closeProcess)
+  (import "../support/fixtures.eli" bindRecipient subscribe createdEvent)
+  (withCase
+    "T33.recipient-boundary.system"
+    setup
+    (async
+      (f)
+      (let ((agent (await (bindRecipient f))))
+        (put
+          (nativeGet f "A")
+          :grants
+          (js-call
+            (nativeGet (nativeGet f "A") "grants")
+            :filter
+            (lambda (g) (not (= (nativeGet g "action") "message.reply")))))
+        (await (subscribe f agent "lark"))
+        (await
+          (js-call
+            f
+            :ingest
+            (createdEvent "lark" "no-reply-grant" "read-only recipient")))
+        (await (js-call f :tick))
+        (let
+          (
+            (delivery
+              (aref (nativeGet (await (callOk f "O" "delivery.list" (js-object))) "items") 0)))
+          (js-call (expect (nativeGet delivery "reply_context_id")) :toBe nil)
+          (js-call
+            (nativeGet (expect (nativeGet delivery "allowed_actions" (js-array))) "not")
+            :toContain
+            "reply"))))
+    closeFixture)
+  (import "../support/standalone.eli"
+    standaloneFiles
+    launchStandalone
+    standaloneCall
+    waitReady
+    closeStandalone)
+  (import "../support/process.eli" until)
+  (import "../support/agent-protocol.eli" piProcessHarness)
+  (withCase
+    "T39.standalone-owner.system"
+    standaloneFiles
+    (async
+      (f)
+      (let*
+        ((first (await (launchStandalone f)))
+          (status (await (waitReady f first)))
+          (other (await (launchStandalone f t))))
+        (await
+          (until
+            "duplicate production owner rejected"
+            (lambda () (not (= (nativeGet (nativeGet other "child") "exitCode") nil)))
+            10000))
+        (await (nativeGet other "drained"))
+        (js-call (nativeGet (expect (nativeGet (nativeGet other "child") "exitCode")) "not") :toBe 0)
+        (js-call
+          (expect (nativeGet (nativeGet other "diagnostics") "stderr"))
+          :toContain
+          "owner_conflict")
+        (let ((current (await (standaloneCall f "service.status" (js-object)))))
+          (js-call (expect (nativeGet current "ok")) :toBe t)
+          (js-call
+            (expect (nativeGet (nativeGet current "data") "service_id"))
+            :toBe
+            (nativeGet status "service_id"))
+          (js-call (expect (nativeGet (nativeGet first "child") "exitCode")) :toBe nil))))
+    closeStandalone)
+  (withCase
+    "T68.core-pi-pipes-drain.system"
+    (async
+      ()
+      (let*
+        ((native (piProcessHarness))
+          (f
+            (await
+              (createFixture
+                "core-pi-drain"
+                "one"
+                (js-object
+                  :configure
+                  (lambda
+                    (config ports)
+                    (js-call (nativeGet config "managed_profiles") :push (nativeGet native "profile"))
+                    (js-call (nativeGet ports "agent_ports") :set "pi" (nativeGet native "port"))))))))
+        (put f :native_pi native)
+        f))
+    (async
+      (f)
+      (let*
+        ((native (nativeGet f "native_pi"))
+          (profile (nativeGet native "profile"))
+          (start
+            (await
+              (callOk
+                f
+                "O"
+                "instance.start"
+                (js-object
+                  :profile_id
+                  (nativeGet profile "profile_id")
+                  :expected_profile_revision
+                  (nativeGet profile "revision")
+                  :idempotency_key
+                  "drain-native-pi-start")))))
+        (await (js-call f :tick))
+        (let*
+          (
+            (action
+              (await
+                (callOk
+                  f
+                  "O"
+                  "lifecycle.get"
+                  (js-object :lifecycle_id (nativeGet start "lifecycle_id")))))
+            (session
+              (await
+                (callOk
+                  f
+                  "S"
+                  "session.get"
+                  (js-object :session_key (nativeGet action "initial_session_key")))))
+            (args
+              (js-object
+                :session_ref
+                (nativeGet session "session_ref")
+                :content
+                (js-object :type "text" :text "hold queued work")
+                :idempotency_key
+                "queued-during-drain")))
+          (put (nativeGet native "state") :streaming t)
+          (let ((accepted (await (callOk f "S" "session.send" args))))
+            (await (js-call f :tick))
+            (let
+              (
+                (drain
+                  (successful (await (js-call (nativeGet f "core") :stop "test_deadline" 0)))))
+              (js-call (expect (nativeGet drain "state")) :toBe "draining")
+              (js-call (expect (nativeGet drain "deadline_reached")) :toBe t)
+              (js-call (expect (nativeGet drain "held_deliveries")) :toBe 1))
+            (js-call (expect (nativeGet (nativeGet native "state") "stdin_closed")) :toBe false)
+            (js-call (expect (js-length (nativeGet native "kills"))) :toBe 0)
+            (let
+              (
+                (new-send
+                  (await
+                    (js-call
+                      f
+                      :call
+                      (nativeGet f "S")
+                      "session.send"
+                      (Object/assign
+                        (js-object)
+                        args
+                        (js-object :idempotency_key "new-during-drain")))))
+                (existing
+                  (await
+                    (callOk
+                      f
+                      "S"
+                      "delivery.get"
+                      (js-object :delivery_id (nativeGet accepted "delivery_id"))))))
+              (js-call (expect (nativeGet (nativeGet new-send "error") "code")) :toBe "unavailable")
+              (js-call (expect (nativeGet new-send "effect_state")) :toBe "none")
+              (js-call (nativeGet (expect (nativeGet existing "state")) "not") :toBe "cancelled"))
+            (put (nativeGet native "state") :streaming false)
+            (js-call native :emit (js-object :type "agent_settled" :aborted false))
+            (let
+              (
+                (stopped
+                  (successful
+                    (await (until "Core retains Pi pipes until safe drain"
+                      (async () (let ((result (await (js-call (nativeGet f "core") :stop "test_safe_boundary" 1000))))
+                        (when (= (nativeGet (nativeGet result "data") "state") "stopped") result)))
+                      1000)))))
+              (js-call (expect (nativeGet stopped "state")) :toBe "stopped"))
+            (js-call (expect (nativeGet (nativeGet native "state") "stdin_closed")) :toBe t)
+            (js-call (expect (js-length (nativeGet native "kills"))) :toBe 0)
+            (js-call
+              (expect
+                (js-call
+                  (nativeGet native "commands")
+                  :some
+                  (lambda (command) (= (nativeGet command "type") "prompt"))))
+              :toBe
+              false)))))
+    (async
+      (f)
+      (when f
+        (put (nativeGet (nativeGet f "native_pi") "state") :streaming false)
+        (await (closeFixture f))
+        (await (js-call (nativeGet f "native_pi") :close))))))

@@ -1,0 +1,252 @@
+(module dj.catalog.snapshots
+  (import "../core/native.eli" nativeGet)
+  (import "../core/types.eli" hashValue addSeconds)
+  (import "../core/errors.eli" success failure)
+  (import "../core/limits.eli" limits)
+  (import "../application/context.eli"
+    utcNow
+    nextId
+    currentPrincipal
+    inTransaction
+    must
+    issueResourceHandle
+    resolveResourceHandle)
+  (defun queryIdentity
+    (query)
+    (let ((copy (Object/assign (js-object) query)))
+      (js-call
+        (js-array "cursor" "limit" "request_id")
+        :forEach
+        (lambda (key) (Reflect/deleteProperty copy key)))
+      (hashValue copy)))
+  (defun openSnapshot
+    (context scope query sort)
+    (inTransaction
+      context
+      (lambda
+        (tx)
+        (let ((djReturn1Token (js-object)) (djReturn1Value nil))
+          (try
+            (let*
+              ((db (nativeGet tx "db"))
+                (principal (currentPrincipal context))
+                (count
+                  (nativeGet
+                    (js-call
+                      (js-call
+                        db
+                        :query
+                        "SELECT COUNT(*) AS n FROM query_snapshots WHERE state='active' AND expires_at>?")
+                      :get
+                      (utcNow context))
+                    "n")))
+              (when (>= count (nativeGet limits "active_snapshots"))
+                (progn
+                  (setq djReturn1Value (failure "limit_exceeded"))
+                  (throw djReturn1Token)))
+              (let
+                (
+                  (snapshot
+                    (js-object
+                      :snapshot_id
+                      (nextId context "snapshot")
+                      :principal_id
+                      (nativeGet principal "principal_id")
+                      :scope_hash
+                      (hashValue scope)
+                      :query_hash
+                      (queryIdentity query)
+                      :sort
+                      sort
+                      :scope
+                      scope
+                      :operation
+                      (nativeGet context "operation" "internal")
+                      :authorization_revision
+                      (nativeGet principal "authorization_revision")
+                      :as_of
+                      (utcNow context)
+                      :catalog_seq
+                      (js-call (nativeGet context "repository") :currentSequence "catalog")
+                      :expires_at
+                      (addSeconds (utcNow context) (nativeGet limits "handle_ttl_seconds"))
+                      :last_scan_key
+                      nil
+                      :pending_group
+                      nil
+                      :result_count
+                      0
+                      :state
+                      "active")))
+                (js-call (nativeGet context "repository") :insert "query_snapshots" snapshot)
+                (success snapshot)))
+            (catch djReturn1Error
+              (if (eq djReturn1Error djReturn1Token)
+                djReturn1Value
+                (throw djReturn1Error))))))))
+  (defun resumeSnapshot
+    (context cursor scope query sort)
+    (let ((djReturn2Token (js-object)) (djReturn2Value nil))
+      (try
+        (let ((resolved (resolveResourceHandle context cursor "cursor")))
+          (unless (nativeGet resolved "ok")
+            (progn (setq djReturn2Value resolved) (throw djReturn2Token)))
+          (let*
+            ((handle (nativeGet resolved "data"))
+              (snapshot
+                (js-call
+                  (nativeGet context "repository")
+                  :get
+                  "query_snapshots"
+                  (nativeGet handle "resource_key")))
+              (principal (currentPrincipal context)))
+            (unless
+              (and
+                snapshot
+                (not (= (nativeGet snapshot "state") "invalidated"))
+                (>
+                  (Date/parse (nativeGet snapshot "expires_at"))
+                  (Date/parse (utcNow context)))
+                (= (nativeGet snapshot "principal_id") (nativeGet principal "principal_id"))
+                (=
+                  (nativeGet snapshot "authorization_revision")
+                  (nativeGet principal "authorization_revision"))
+                (= (nativeGet snapshot "scope_hash") (hashValue scope))
+                (= (nativeGet snapshot "query_hash") (queryIdentity query))
+                (= (nativeGet snapshot "sort") sort)
+                (= (nativeGet snapshot "operation") (nativeGet context "operation" "internal")))
+              (progn
+                (setq djReturn2Value (failure "stale_reference"))
+                (throw djReturn2Token)))
+            ;; The handle freezes a page checkpoint. Reusing an old cursor does not
+            ;; consume or advance another caller's cursor on the same snapshot.
+            (success
+              (Object/assign
+                (js-object)
+                snapshot
+                (js-object
+                  :last_scan_key
+                  (nativeGet handle "last_scan_key" nil)
+                  :pending_group
+                  (nativeGet handle "pending_group" nil)
+                  :source_checkpoint
+                  (nativeGet handle "source_checkpoint" nil))))))
+        (catch djReturn2Error
+          (if (eq djReturn2Error djReturn2Token) djReturn2Value (throw djReturn2Error))))))
+  (defun advanceSnapshot
+    (context snapshot scan-result)
+    (inTransaction
+      context
+      (lambda
+        (tx)
+        (let ((djReturn3Token (js-object)) (djReturn3Value nil))
+          (try
+            (let*
+              ((repository (nativeGet context "repository"))
+                (db (nativeGet tx "db"))
+                (current
+                  (js-call
+                    repository
+                    :get
+                    "query_snapshots"
+                    (nativeGet snapshot "snapshot_id")))
+                (items (nativeGet scan-result "items"))
+                (keys (nativeGet scan-result "result_keys" (js-array)))
+                (index 0)
+                (next-cursor nil))
+              (unless
+                (and
+                  current
+                  (not (= (nativeGet current "state") "invalidated"))
+                  (=
+                    (nativeGet current "authorization_revision")
+                    (nativeGet (currentPrincipal context) "authorization_revision")))
+                (progn
+                  (setq djReturn3Value (failure "stale_reference"))
+                  (throw djReturn3Token)))
+              (while (< index (js-length keys))
+                (let*
+                  ((key (aref keys index))
+                    (resource-key (nativeGet key "resource_key"))
+                    (existing
+                      (js-call
+                        (js-call
+                          db
+                          :query
+                          "SELECT ordinal FROM snapshot_results WHERE snapshot_id=? AND resource_key=?")
+                        :get
+                        (nativeGet current "snapshot_id")
+                        resource-key)))
+                  (unless existing
+                    (when
+                      (>= (nativeGet current "result_count") (nativeGet limits "snapshot_results"))
+                      (progn
+                        (setq djReturn3Value (failure "limit_exceeded"))
+                        (throw djReturn3Token)))
+                    (js-call
+                      repository
+                      :insert
+                      "snapshot_results"
+                      (js-object
+                        :snapshot_id
+                        (nativeGet current "snapshot_id")
+                        :ordinal
+                        (nativeGet current "result_count")
+                        :resource_key
+                        resource-key
+                        :content_version
+                        (nativeGet key "content_version" nil)))
+                    (put current :result_count (1+ (nativeGet current "result_count")))))
+                (setq index (1+ index)))
+              (put current :last_scan_key (nativeGet scan-result "next_scan_key" nil))
+              (put current :pending_group (nativeGet scan-result "pending_group" nil))
+              (unless (= (nativeGet scan-result "complete") t)
+                (let
+                  (
+                    (handle
+                      (must
+                        (issueResourceHandle
+                          context
+                          "cursor"
+                          (nativeGet current "snapshot_id")
+                          (js-object
+                            :last_scan_key
+                            (nativeGet current "last_scan_key")
+                            :pending_group
+                            (nativeGet current "pending_group")
+                            :source_checkpoint
+                            (nativeGet scan-result "source_checkpoint" nil))
+                          (Math/max
+                            1
+                            (Math/floor
+                              (/
+                                (-
+                                  (Date/parse (nativeGet current "expires_at"))
+                                  (Date/parse (utcNow context)))
+                                1000)))))))
+                  (setq next-cursor (nativeGet handle "ref"))))
+              (put current :state (if next-cursor "active" "complete"))
+              (must (js-call repository :replace "query_snapshots" current))
+              (success
+                (js-object
+                  :items
+                  items
+                  :next_cursor
+                  next-cursor
+                  :complete
+                  (not next-cursor)
+                  :snapshot_id
+                  (nativeGet current "snapshot_id")
+                  :as_of
+                  (nativeGet current "as_of")
+                  :coverage_complete
+                  (= (nativeGet scan-result "coverage_complete") t)
+                  :sources
+                  (nativeGet scan-result "sources" (js-array))
+                  :stale
+                  (= (nativeGet scan-result "stale") t))))
+            (catch djReturn3Error
+              (if (eq djReturn3Error djReturn3Token)
+                djReturn3Value
+                (throw djReturn3Error))))))))
+  (export openSnapshot resumeSnapshot advanceSnapshot queryIdentity))

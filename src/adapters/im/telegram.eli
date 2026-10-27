@@ -1,0 +1,648 @@
+(module dj.adapters.im.telegram
+  (import "../../core/native.eli"
+    NativeBigInt
+    NativeNumber
+    nativeNullish
+    nativeTypeOf
+    nativeClearTimeout
+    nativeSetTimeout nativeGet)
+  (import "../../core/types.eli" encodeSeq nextSeq utf8Bytes)
+  (import "../../core/limits.eli" limits)
+  (defasync readJson
+    (response maximum)
+    (let*
+      ((declared (js-call (nativeGet response "headers") :get "content-length"))
+        (stream (nativeGet response "body"))
+        (reader nil)
+        (size 0)
+        (chunks (js-array)))
+      (when (and declared (> (NativeNumber declared) maximum))
+        (when stream (await (js-call stream :cancel)))
+        (throw (new globalThis.Error "native response budget exceeded")))
+      (unless stream (throw (new globalThis.Error "native response body missing")))
+      (setq reader (js-call stream :getReader))
+      (try
+        (let ((done false))
+          (while (not done)
+            (let ((part (await (js-call reader :read))))
+              (setq done (nativeGet part "done"))
+              (unless done
+                (setq size (+ size (js-length (nativeGet part "value"))))
+                (when (> size maximum)
+                  (throw (new globalThis.Error "native response budget exceeded")))
+                (js-call chunks :push (Buffer/from (nativeGet part "value")))))))
+        (JSON/parse
+          (js-call
+            (new globalThis.TextDecoder "utf-8" (js-object :fatal t))
+            :decode
+            (Buffer/concat chunks size)))
+        (finally
+          (try (await (js-call reader :cancel)) (catch ignored nil))
+          (js-call reader :releaseLock)))))
+  (defun numericId
+    (value)
+    (unless (and (= (nativeTypeOf value) "number") (Number/isSafeInteger value))
+      (throw (new globalThis.TypeError "native identifier is not an exact integer")))
+    (str value))
+  (defun wireId
+    (value)
+    (unless
+      (and
+        (= (nativeTypeOf value) "string")
+        (js-call (new globalThis.RegExp "^-?[0-9]+$") :test value))
+      (throw (new globalThis.TypeError "native identifier is not a decimal string")))
+    ;; JSON numeric IDs are only emitted when their full value is exact.
+    (let ((number (NativeNumber value)))
+      (unless (and (Number/isSafeInteger number) (= (str number) value))
+        (throw
+          (new
+            globalThis.RangeError
+            "native identifier exceeds the exact JSON number range")))
+      number))
+  (defun normalizeUpdate
+    (config update)
+    (let ((djReturn1Token (js-object)) (djReturn1Value nil))
+      (try
+        (let*
+          ((id (encodeSeq (nativeGet update "update_id")))
+            (connection-id (nativeGet config "connection_id"))
+            (diagnostic
+              (js-object
+                :kind
+                "diagnostic"
+                :connection_id
+                connection-id
+                :source_key
+                (str id ":update")
+                :reason
+                "unsupported_native_update"
+                :source_cursor
+                (nextSeq id)))
+            (message (nativeGet update "message")))
+          (unless message
+            (progn (setq djReturn1Value diagnostic) (throw djReturn1Token)))
+          (unless
+            (and
+              (= (nativeTypeOf (nativeGet message "text")) "string")
+              (> (js-length (nativeGet message "text")) 0))
+            (put diagnostic :reason "unsupported_native_content")
+            (progn (setq djReturn1Value diagnostic) (throw djReturn1Token)))
+          (let*
+            ((chat (nativeGet message "chat"))
+              (sender (nativeGet message "from"))
+              (thread (nativeGet message "message_thread_id"))
+              (chat-id (numericId (nativeGet chat "id")))
+              (thread-id (if (nativeNullish thread) nil (numericId thread)))
+              (message-id (numericId (nativeGet message "message_id")))
+              (address
+                (js-object
+                  :connection_id
+                  connection-id
+                  :native_chat_id
+                  chat-id
+                  :native_thread_id
+                  thread-id
+                  :thread_kind
+                  (if thread-id "thread" "main")))
+              (normalized
+                (js-object
+                  :connection_id
+                  connection-id
+                  :source_key
+                  (str id ":update")
+                  :source_cursor
+                  (nextSeq id)
+                  :native_message_id
+                  message-id
+                  :event_kind
+                  "message.created"
+                  :source_revision
+                  "1"
+                  :conversation
+                  address
+                  :sender
+                  (js-object
+                    :id
+                    (if sender (numericId (nativeGet sender "id")) "unknown")
+                    :kind
+                    (if sender (if (= (nativeGet sender "is_bot") t) "bot" "human") "unknown"))
+                  :content
+                  (js-object :kind "text" :text (nativeGet message "text") :truncated false)
+                  :attachments
+                  (js-array))))
+            (when
+              (and (Number/isSafeInteger (nativeGet message "date")) (> (nativeGet message "date") 0))
+              (put
+                normalized
+                :source_time
+                (js-call
+                  (new globalThis.Date (* (nativeGet message "date") 1000))
+                  :toISOString)))
+            (when (nativeGet message "reply_to_message")
+              (put
+                normalized
+                :reply_to
+                (js-object
+                  :id
+                  (numericId (nativeGet (nativeGet message "reply_to_message") "message_id")))))
+            normalized))
+        (catch djReturn1Error
+          (if (eq djReturn1Error djReturn1Token) djReturn1Value (throw djReturn1Error))))))
+  (defun createTelegramPort
+    (config host)
+    (let*
+      ((connection-id (nativeGet config "connection_id"))
+        (checked false)
+        (bot-id nil)
+        (closed false)
+        (health
+          (js-object
+            :ready
+            false
+            :gap_status
+            "possible"
+            :reason_codes
+            (js-array "not_observed")))
+        (capabilities
+          (js-object
+            :receive_events
+            "supported"
+            :send
+            "supported"
+            :reply_thread
+            "supported"
+            :ack_control
+            t
+            :replay
+            "bounded"
+            :native_history
+            "unsupported"
+            :native_idempotency
+            "unsupported"
+            :lookup_send
+            "unsupported"
+            :max_text_bytes
+            (nativeGet limits "text_bytes")
+            :max_text_characters
+            4096)))
+      (let ((api nil) (probe nil) (receive nil))
+        (setq
+          api
+          (async
+            (method body context)
+            (let ((djReturn2Token (js-object)) (djReturn2Value nil))
+              (try
+                (when closed
+                  (progn
+                    (setq
+                      djReturn2Value
+                      (js-object :ok false :reason "closed" :definite_not_sent t))
+                    (throw djReturn2Token)))
+                (let
+                  ((token nil)
+                    (controller (new globalThis.AbortController))
+                    (timer nil)
+                    (parent (nativeGet context "abort_signal"))
+                    (launched false)
+                    (abort nil))
+                  (setq abort (lambda () (js-call controller :abort)))
+                  (try
+                    (setq
+                      token
+                      (await
+                        (js-call
+                          (nativeGet host "credentials")
+                          :resolve
+                          (nativeGet config "credential_ref"))))
+                    (when (and token (= (nativeTypeOf token) "object"))
+                      (setq token (nativeGet token "token")))
+                    (unless
+                      (and
+                        (= (nativeTypeOf token) "string")
+                        (> (js-length token) 0)
+                        (not (js-call (new globalThis.RegExp "[\\s/\\?#]") :test token)))
+                      (progn
+                        (setq
+                          djReturn2Value
+                          (js-object
+                            :ok
+                            false
+                            :reason
+                            "credential_unavailable"
+                            :definite_not_sent
+                            t))
+                        (throw djReturn2Token)))
+                    (let*
+                      (
+                        (remaining
+                          (-
+                            (nativeGet
+                              context
+                              "deadline"
+                              (+ (js-call (nativeGet host "clock") :monoNow) 15000))
+                            (js-call (nativeGet host "clock") :monoNow))))
+                      (when (or (<= remaining 0) (= (nativeGet parent "aborted") t))
+                        (progn
+                          (setq
+                            djReturn2Value
+                            (js-object
+                              :ok
+                              false
+                              :reason
+                              "deadline"
+                              :definite_not_sent
+                              t))
+                          (throw djReturn2Token)))
+                      (setq timer (nativeSetTimeout abort remaining)))
+                    (when parent
+                      (js-call
+                        parent
+                        :addEventListener
+                        "abort"
+                        abort
+                        (js-object :once t)))
+                    (setq launched t)
+                    (let*
+                      (
+                        (response
+                          (await
+                            (js-call
+                              (nativeGet host "http")
+                              :fetch
+                              (str "https://api.telegram.org/bot" token "/" method)
+                              (js-object
+                                :method
+                                "POST"
+                                :headers
+                                (js-object :content-type "application/json")
+                                :body
+                                (JSON/stringify body)
+                                :signal
+                                (nativeGet controller "signal")
+                                :redirect
+                                "error"))))
+                        (wire
+                          (await
+                            (readJson
+                              response
+                              (nativeGet
+                                context
+                                "max_response_bytes"
+                                (nativeGet limits "native_response_max_bytes"))))))
+                      (if (and (= (nativeGet wire "ok") t) (= (nativeGet response "ok") t))
+                        (js-object :ok t :data (nativeGet wire "result"))
+                        (let ((code (nativeGet wire "error_code" (nativeGet response "status"))))
+                          (js-object
+                            :ok
+                            false
+                            :reason
+                            (cond ((= code 409) "source_conflict")
+                              ((= code 401) "unauthorized")
+                              ((= code 403) "forbidden")
+                              ((= code 429) "rate_limited")
+                              (t "native_rejected"))
+                            :retry_after_seconds
+                            (nativeGet (nativeGet wire "parameters") "retry_after")
+                            :definite_not_sent
+                            (js-call (js-array 400 401 403 404 409 429) :includes code)
+                            :retryable
+                            (= code 429)))))
+                    (catch unavailable
+                      (when (eq unavailable djReturn2Token) (throw unavailable))
+                      (js-object
+                        :ok
+                        false
+                        :reason
+                        (if launched "transport_unknown" "credential_unavailable")
+                        :definite_not_sent
+                        (not launched)))
+                    (finally
+                      (when timer (nativeClearTimeout timer))
+                      (when parent (js-call parent :removeEventListener "abort" abort)))))
+                (catch djReturn2Error
+                  (if (eq djReturn2Error djReturn2Token)
+                    djReturn2Value
+                    (throw djReturn2Error)))))))
+        (setq
+          probe
+          (async
+            (connection context)
+            (let ((djReturn3Token (js-object)) (djReturn3Value nil))
+              (try
+                (let ((webhook (await (api "getWebhookInfo" (js-object) context))))
+                  (unless (nativeGet webhook "ok")
+                    (setq checked false)
+                    (put health :ready false)
+                    (put health :reason_codes (js-array (nativeGet webhook "reason")))
+                    (progn (setq djReturn3Value webhook) (throw djReturn3Token)))
+                  (when (> (js-length (nativeGet (nativeGet webhook "data") "url" "")) 0)
+                    (setq checked false)
+                    (put health :ready false)
+                    (put health :reason_codes (js-array "existing_webhook"))
+                    (progn
+                      (setq
+                        djReturn3Value
+                        (js-object
+                          :ok
+                          false
+                          :reason
+                          "existing_webhook"
+                          :definite_not_sent
+                          t))
+                      (throw djReturn3Token)))
+                  (let ((me (await (api "getMe" (js-object) context))))
+                    (unless (and (nativeGet me "ok") (= (nativeGet (nativeGet me "data") "is_bot") t))
+                      (setq checked false)
+                      (put health :ready false)
+                      (put health :reason_codes (js-array "identity_unverified"))
+                      (progn
+                        (setq
+                          djReturn3Value
+                          (js-object :ok false :reason "identity_unverified"))
+                        (throw djReturn3Token)))
+                    (setq checked t bot-id (numericId (nativeGet (nativeGet me "data") "id")))
+                    (js-object
+                      :ok
+                      t
+                      :credential_state
+                      "available"
+                      :native_bot_id
+                      bot-id
+                      :capabilities
+                      capabilities)))
+                (catch djReturn3Error
+                  (if (eq djReturn3Error djReturn3Token)
+                    djReturn3Value
+                    (throw djReturn3Error)))))))
+        (setq
+          receive
+          (async
+            (connection cursor budget context)
+            (let ((djReturn4Token (js-object)) (djReturn4Value nil))
+              (try
+                (unless checked
+                  (let ((observation (await (probe connection context))))
+                    (unless (nativeGet observation "ok")
+                      (progn
+                        (setq
+                          djReturn4Value
+                          (js-object
+                            :items
+                            (js-array)
+                            :cursor
+                            cursor
+                            :ready
+                            false
+                            :gap_status
+                            "possible"
+                            :reason_codes
+                            (nativeGet health "reason_codes")))
+                        (throw djReturn4Token)))))
+                (let*
+                  ((offset (encodeSeq (or cursor "0")))
+                    (request
+                      (js-object
+                        :offset
+                        (NativeNumber offset)
+                        :limit
+                        (Math/min 100 (nativeGet budget "max_events" 100))
+                        :timeout
+                        0))
+                    (response (await (api "getUpdates" request context))))
+                  (unless (nativeGet response "ok")
+                    (put health :ready false)
+                    (put health :reason_codes (js-array (nativeGet response "reason")))
+                    (when (= (nativeGet response "reason") "source_conflict")
+                      (setq checked false))
+                    (progn
+                      (setq
+                        djReturn4Value
+                        (js-object
+                          :items
+                          (js-array)
+                          :cursor
+                          cursor
+                          :ready
+                          false
+                          :gap_status
+                          "possible"
+                          :reason_codes
+                          (nativeGet health "reason_codes")))
+                      (throw djReturn4Token)))
+                  (let
+                    ((updates (nativeGet response "data"))
+                      (items (js-array))
+                      (last (NativeBigInt offset)))
+                    (unless (and (Array/isArray updates) (<= (js-length updates) 100))
+                      (progn
+                        (setq
+                          djReturn4Value
+                          (js-object
+                            :items
+                            items
+                            :cursor
+                            cursor
+                            :ready
+                            false
+                            :gap_status
+                            "possible"
+                            :reason_codes
+                            (js-array "invalid_native_page")))
+                        (throw djReturn4Token)))
+                    (js-call
+                      updates
+                      :forEach
+                      (lambda
+                        (update)
+                        (let ((id (encodeSeq (nativeGet update "update_id"))))
+                          (when (< (NativeBigInt id) last)
+                            (throw
+                              (new
+                                globalThis.Error
+                                "native update order is not monotonic")))
+                          (js-call items :push (normalizeUpdate config update))
+                          (setq last (NativeBigInt (nextSeq id))))))
+                    (put health :ready t)
+                    (put health :reason_codes (js-array))
+                    ;; cursor is deliberately the old durable offset. Each item carries
+                    ;; its own next cursor; Core commits it with that Event/diagnostic.
+                    (js-object
+                      :items
+                      items
+                      :cursor
+                      cursor
+                      :ready
+                      t
+                      :gap_status
+                      "possible"
+                      :reason_codes
+                      (js-array))))
+                (catch djReturn4Error
+                  (if (eq djReturn4Error djReturn4Token)
+                    djReturn4Value
+                    (throw djReturn4Error)))))))
+    (let ((send nil))
+      (setq
+        send
+        (async
+          (outbound key context)
+          (let ((djReturn5Token (js-object)) (djReturn5Value nil))
+            (try
+              (let*
+                ((destination (nativeGet outbound "destination"))
+                  (text (nativeGet (nativeGet outbound "content") "text"))
+                  (thread (nativeGet destination "native_thread_id"))
+                  (original (nativeGet outbound "native_reply_to"))
+                  (body
+                    (js-object
+                      :chat_id
+                      (wireId (nativeGet destination "native_chat_id"))
+                      :text
+                      text)))
+                (unless (= (nativeGet destination "connection_id") connection-id)
+                  (progn
+                    (setq
+                      djReturn5Value
+                      (js-object
+                        :state
+                        "failed"
+                        :definite_not_sent
+                        t
+                        :retryable
+                        false
+                        :evidence_level
+                        "service_record"))
+                    (throw djReturn5Token)))
+                (when
+                  (or
+                    (> (utf8Bytes text) (nativeGet capabilities "max_text_bytes"))
+                    (> (js-length (Array/from text)) 4096))
+                  (progn
+                    (setq
+                      djReturn5Value
+                      (js-object
+                        :state
+                        "failed"
+                        :definite_not_sent
+                        t
+                        :retryable
+                        false
+                        :evidence_level
+                        "service_record"))
+                    (throw djReturn5Token)))
+                (when thread (put body :message_thread_id (wireId thread)))
+                (when original
+                  (put
+                    body
+                    :reply_parameters
+                    (js-object
+                      :message_id
+                      (wireId original)
+                      :allow_sending_without_reply
+                      false)))
+                (let ((response (await (api "sendMessage" body context))))
+                  (if (nativeGet response "ok")
+                    (let ((message (nativeGet response "data")))
+                      (unless
+                        (and
+                          (=
+                            (numericId (nativeGet (nativeGet message "chat") "id"))
+                            (nativeGet destination "native_chat_id"))
+                          (or
+                            (not thread)
+                            (= (numericId (nativeGet message "message_thread_id")) thread)))
+                        (progn
+                          (setq
+                            djReturn5Value
+                            (js-object
+                              :state
+                              "unknown"
+                              :definite_not_sent
+                              false
+                              :evidence_level
+                              "none"))
+                          (throw djReturn5Token)))
+                      (js-object
+                        :state
+                        "accepted"
+                        :native_message_id
+                        (numericId (nativeGet message "message_id"))
+                        :evidence_level
+                        "native_protocol"))
+                    (js-object
+                      :state
+                      (if (nativeGet response "definite_not_sent") "failed" "unknown")
+                      :definite_not_sent
+                      (= (nativeGet response "definite_not_sent") t)
+                      :retryable
+                      (= (nativeGet response "retryable") t)
+                      :retry_after_seconds
+                      (nativeGet response "retry_after_seconds")
+                      :evidence_level
+                      "native_protocol"))))
+              (catch djReturn5Error
+                (if (eq djReturn5Error djReturn5Token)
+                  djReturn5Value
+                  (throw djReturn5Error)))))))
+      (js-object
+        :connection_id
+        connection-id
+        :capabilities
+        capabilities
+        :probe
+        probe
+        :receive
+        receive
+        :send
+        send
+        :initialize
+        (lambda (context) (setq closed false checked false))
+        :ack
+        (async
+          (receipt context)
+          (js-object :ok t :ack_control t :mode "next_durable_offset"))
+        :resolveConversation
+        (async
+          (address context)
+          (let ((djReturn6Token (js-object)) (djReturn6Value nil))
+            (try
+              (let
+                (
+                  (response
+                    (await
+                      (api
+                        "getChat"
+                        (js-object :chat_id (wireId (nativeGet address "native_chat_id")))
+                        context))))
+                (unless (nativeGet response "ok")
+                  (progn (setq djReturn6Value response) (throw djReturn6Token)))
+                (let ((chat (nativeGet response "data")))
+                  (if
+                    (and
+                      (= (numericId (nativeGet chat "id")) (nativeGet address "native_chat_id"))
+                      (or
+                        (not (nativeGet address "native_thread_id"))
+                        (= (nativeGet chat "is_forum") t)))
+                    (js-object
+                      :ok
+                      t
+                      :address
+                      address
+                      :evidence_level
+                      "native_protocol"
+                      :coverage
+                      "chat_visible_topic_address_only")
+                    (js-object :ok false :reason "address_unverified"))))
+              (catch djReturn6Error
+                (if (eq djReturn6Error djReturn6Token)
+                  djReturn6Value
+                  (throw djReturn6Error))))))
+        :lookup
+        (async
+          (outbound context)
+          (js-object :state "unknown" :status "unsupported" :definite_not_sent false))
+        :health
+        (lambda () (Object/assign (js-object) health))
+        :close
+        (async () (setq closed t) (js-object :state "stopped")))))))
+  (export createTelegramPort normalizeUpdate readJson))

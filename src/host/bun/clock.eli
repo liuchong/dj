@@ -1,0 +1,10 @@
+(module dj.host.bun.clock
+  ;; UTC is durable domain time; monotonic time is local to this process only.
+  (defun createClockPort
+    ()
+    (js-object
+      :utcNow
+      (lambda () (js-call (new globalThis.Date) :toISOString))
+      :monoNow
+      (lambda () (performance/now))))
+  (export createClockPort))

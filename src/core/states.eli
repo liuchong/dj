@@ -1,0 +1,121 @@
+(module dj.core.states
+  (import "./native.eli" nativeGet)
+  (defconst deliveryTransitions
+    (Object/freeze
+      (js-object
+        :ready
+        (js-array "deferred" "blocked" "submitting" "expired" "cancelled")
+        :deferred
+        (js-array "ready" "blocked" "expired" "cancelled")
+        :blocked
+        (js-array "ready" "deferred" "expired" "cancelled")
+        :submitting
+        (js-array "accepted" "failed" "unknown")
+        :unknown
+        (js-array "accepted" "failed" "resolved")
+        :failed
+        (js-array "ready" "cancelled" "resolved")
+        :accepted
+        (js-array)
+        :expired
+        (js-array)
+        :cancelled
+        (js-array)
+        :resolved
+        (js-array))))
+  (defconst stateTables
+    (Object/freeze
+      (js-object
+        :delivery
+        deliveryTransitions
+        :outbound
+        deliveryTransitions
+        :subscription
+        (js-object
+          :active
+          (js-array "paused" "deleted")
+          :paused
+          (js-array "active" "deleted")
+          :deleted
+          (js-array))
+        :operation
+        (js-object
+          :recorded
+          (js-array "done" "result_expired")
+          :done
+          (js-array "result_expired")
+          :result_expired
+          (js-array))
+        :lifecycle
+        (js-object
+          :recorded
+          (js-array "submitting" "stopping" "blocked")
+          :blocked
+          (js-array "failed" "resolved")
+          :submitting
+          (js-array "starting" "stopping" "ready" "failed" "unknown")
+          :starting
+          (js-array "ready" "failed" "unknown")
+          :stopping
+          (js-array "submitting" "stopped" "unknown")
+          :unknown
+          (js-array "ready" "stopped" "failed" "resolved")
+          :ready
+          (js-array)
+          :stopped
+          (js-array)
+          :failed
+          (js-array)
+          :cancelled
+          (js-array)
+          :resolved
+          (js-array)))))
+  (defun isTransitionAllowed
+    (kind from to)
+    (let ((table (nativeGet stateTables kind)))
+      (and table (object-has? table from) (js-call (nativeGet table from) :includes to))))
+  (defun deriveObservationState
+    (observation now)
+    (let ((state (nativeGet observation "runtime_state" "unknown")))
+      (cond ((or (= state "offline") (= state "incompatible")) state)
+        (
+          (or
+            (not (nativeGet observation "expires_at"))
+            (<= (Date/parse (nativeGet observation "expires_at")) (Date/parse now)))
+          "unknown")
+        (
+          (js-call
+            (js-array "idle" "busy" "waiting_permission" "unknown")
+            :includes
+            state)
+          state)
+        (t "unknown"))))
+  (defun mapNativeReceipt
+    (tool observation)
+    ;; Each receipt is one fact. Turn end does not assert Agent idle, and an
+    ;; Agent-written report never becomes native protocol evidence.
+    (let ((kind "unknown") (evidence "native_protocol"))
+      (cond
+        ((= tool "agent")
+          (setq kind (nativeGet observation "state" "reported") evidence "agent_report"))
+        ((= tool "opencode")
+          (cond ((= (nativeGet observation "status") 204) (setq kind "accepted"))
+            ((= (nativeGet observation "type") "session.idle") (setq kind "agent_settled"))
+            ((= (nativeGet observation "type") "message.updated")
+              (setq kind "native_observation"))
+            ((= (nativeGet observation "type") "session.error") (setq kind "rejected"))))
+        ((= tool "pi")
+          (cond
+            (
+              (and
+                (= (nativeGet observation "type") "response")
+                (= (nativeGet observation "command") "prompt"))
+              (setq kind (if (= (nativeGet observation "success") t) "handled" "rejected")))
+            ((= (nativeGet observation "type") "agent_start") (setq kind "started"))
+            ((= (nativeGet observation "type") "turn_end") (setq kind "turn_finished"))
+            ((= (nativeGet observation "type") "agent_end") (setq kind "ended"))
+            ((= (nativeGet observation "type") "agent_settled") (setq kind "agent_settled"))
+            ((= (nativeGet observation "disposition") "held") (setq kind "held"))))
+        (t (setq evidence "none")))
+      (js-object :kind kind :evidence_level evidence)))
+  (export isTransitionAllowed deriveObservationState mapNativeReceipt stateTables))

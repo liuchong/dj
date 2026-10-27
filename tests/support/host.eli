@@ -1,0 +1,189 @@
+(module dj.tests.support.host
+  (import "../../src/core/native.eli" nativeClearInterval nativeSetInterval nativeGet)
+  (import "node:path" resolve)
+  (import "../support/fixtures.eli" createFixture)
+  (import "./faults.eli" createBarrier)
+  (import "../../src/interfaces/gepo.eli" handleServiceRequest)
+  (import "../../src/service/main.eli" prepareSocket)
+  (import "./fixtures.eli" successful)
+  ;; Executable test host: the production Core and API, isolated controlled ports.
+  ;; Test control endpoints exist in this test module only.
+  (defasync runFixtureHost
+    ()
+    (let*
+      ((env (nativeGet globalThis.process "env"))
+        (f
+          (await
+            (createFixture
+              "process-host"
+              "one"
+              (js-object :root (nativeGet env "DJ_FIXTURE_ROOT") :external_journal t
+                :configure (lambda (config ports)
+                  (put config :managed_profiles (js-array))
+                  (let ((recipient (js-call (nativeGet config "principals") :find (lambda (p) (= (nativeGet p "principal_id") "A")))))
+                    (js-call (nativeGet recipient "grants") :push
+                      (js-object :action "subscription.consume" :resources (js-array "self")))))))))
+        (socket (resolve (nativeGet f "root") "run/dj.sock"))
+        (timer nil)
+        (busy false)
+        (holds (new globalThis.Map))
+        (server
+          nil))
+(successful (await (prepareSocket socket)))
+(setq server (Bun/serve
+            (js-object
+              :unix
+              socket
+              :fetch
+              (async
+                (request)
+                (let ((url (new globalThis.URL (nativeGet request "url"))))
+                  (if (= (nativeGet url "pathname") "/__fixture/control")
+                    (if
+                      (not
+                        (=
+                          (js-call (nativeGet request "headers") :get "authorization")
+                          (str "Bearer " (nativeGet (nativeGet f "credentials") "O"))))
+                      (new globalThis.Response "forbidden" (js-object :status 403))
+                      (let*
+                        ((command (await (js-call request :json)))
+                          (kind (nativeGet command "kind")))
+                        (cond ((= kind "tick") (await (js-call f :tick)))
+                          ((= kind "ingest")
+                            (await (js-call f :ingest (nativeGet command "event"))))
+                          ((= kind "native-state")
+                            (put
+                              (aref (nativeGet (nativeGet f "opencode") "sessions") 0)
+                              :runtime_state
+                              (nativeGet command "state")))
+                          ((= kind "advance")
+                            (js-call
+                              (nativeGet f "clock")
+                              :advance
+                              (nativeGet command "milliseconds")))
+                          ((= kind "fault")
+                            (js-call
+                              (nativeGet f "faults")
+                              :install
+                              (nativeGet command "point")
+                              (lambda (context) (js-call globalThis.process :exit 86))))
+                          ((= kind "native-submit-loss")
+                            (put (nativeGet (nativeGet f "opencode") "behavior") :submit "throw"))
+                          ((= kind "stats") nil)
+                          ((= kind "hold-operation")
+                            (js-call
+                              holds
+                              :set
+                              (nativeGet command "idempotency_key")
+                              (js-object
+                                :phase
+                                (nativeGet command "phase")
+                                :barrier
+                                (createBarrier)
+                                :released
+                                false)))
+                          ((= kind "release-operation")
+                            (let
+                              (
+                                (hold
+                                  (js-call holds :get (nativeGet command "idempotency_key"))))
+                              (put hold :released t)
+                              (js-call (nativeGet hold "barrier") :release)))
+                          ((= kind "stop")
+                            (js-call
+                              holds
+                              :forEach
+                              (lambda (hold) (js-call (nativeGet hold "barrier") :release)))
+                            (let ((result (await (js-call f :close))))
+                              (when
+                                (=
+                                  (nativeGet (nativeGet result "data" (js-object)) "state")
+                                  "stopped")
+                                (nativeClearInterval timer)
+                                (js-call server :stop false)
+                                nil)))
+                          (t (throw (new globalThis.Error "unknown fixture command"))))
+                        (Response/json
+                          (js-object
+                            :ok
+                            t
+                            :inputs
+                            (js-length (nativeGet (nativeGet f "opencode") "inputs"))
+                            :starts
+                            (js-length (nativeGet (nativeGet f "opencode") "starts"))
+                            :creates
+                            (js-length (nativeGet (nativeGet f "opencode") "creates"))
+                            :holds
+                            (js-call
+                              (Array/from (js-call holds :entries))
+                              :map
+                              (lambda
+                                (entry)
+                                (js-object
+                                  :idempotency_key
+                                  (aref entry 0)
+                                  :phase
+                                  (nativeGet (aref entry 1) "phase")
+                                  :entered
+                                  (js-call (nativeGet (aref entry 1) "barrier") :entered))))))))
+                    (let ((hold nil) (saved request))
+                      (when (> (nativeGet holds "size") 0)
+                        (try
+                          (let*
+                            ((body (await (js-call (js-call request :clone) :text)))
+                              (wire (JSON/parse body)))
+                            (when (= (nativeGet wire "operation") "session.send")
+                              (setq hold (js-call holds :get
+                                (nativeGet (nativeGet wire "arguments") "idempotency_key"))))
+                            (when (and hold (not (nativeGet hold "released")))
+                              ;; A received request can outlive its original response channel.
+                              (setq
+                                saved
+                                (new
+                                  globalThis.Request
+                                  (nativeGet request "url")
+                                  (js-object
+                                    :method
+                                    (nativeGet request "method")
+                                    :headers
+                                    (nativeGet request "headers")
+                                    :body
+                                    body)))))
+                          (catch parse-failure nil)))
+                      (when
+                        (and
+                          hold
+                          (not (nativeGet hold "released"))
+                          (= (nativeGet hold "phase") "before"))
+                        (await (js-call (nativeGet hold "barrier") :wait)))
+                      (let ((response (await (handleServiceRequest saved (nativeGet f "core")))))
+                        (when
+                          (and
+                            hold
+                            (not (nativeGet hold "released"))
+                            (= (nativeGet hold "phase") "after"))
+                          (await (js-call (nativeGet hold "barrier") :wait)))
+                        response))))))))
+
+    (setq
+      timer
+      (nativeSetInterval
+        (async
+          ()
+          (unless busy
+            (setq busy t)
+            (try
+              (await (js-call f :tick))
+              (catch failure
+                (js-call
+                  (nativeGet globalThis.process "stderr")
+                  :write
+                  "fixture tick failed\n"))
+              (finally (setq busy false)))))
+        10))
+    (js-call
+      (nativeGet globalThis.process "stdout")
+      :write
+      (str (JSON/stringify (js-object :type "ready" :socket socket)) "\n"))))
+  (when (= (nativeGet (nativeGet globalThis.process "env") "DJ_TEST_HOST") "1") (runFixtureHost))
+  (export runFixtureHost))

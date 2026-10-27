@@ -1,0 +1,1086 @@
+(module dj.tests.integration.im
+  (import "../../src/core/native.eli" NativeNumber nativeGet)
+  (import "bun:test" expect)
+  (import "../support/case.eli" withCase)
+  (import "../support/fixtures.eli"
+    createFixture
+    closeFixture
+    callOk
+    createdEvent
+    bindRecipient
+    subscribe)
+  (import "../../src/adapters/im/lark.eli" planPollWindow normalizePollPage)
+  (import "../support/telegram-http.eli" telegramFixture nativeMessage)
+  (defasync setup () (await (createFixture "im" "one")))
+  (withCase
+    "T24.address-proof.integration"
+    setup
+    (async
+      (f)
+      (let ((calls 0) (permitted false))
+        (put
+          (nativeGet f "lark")
+          :resolveConversation
+          (async
+            (address context application)
+            (setq calls (1+ calls))
+            (js-object :ok permitted :address address :evidence_level "native_protocol")))
+        (let
+          (
+            (denied
+              (await
+                (js-call
+                  f
+                  :call
+                  (nativeGet f "A")
+                  "conversation.resolve"
+                  (js-object :connection_id "lark" :chat_id "c1" :thread_id nil)))))
+          (js-call (expect (nativeGet denied "ok")) :toBe false)
+          (js-call (expect (nativeGet denied "effect_state")) :toBe "none"))
+        (setq permitted t)
+        (let
+          (
+            (resolved
+              (await
+                (callOk
+                  f
+                  "A"
+                  "conversation.resolve"
+                  (js-object :connection_id "lark" :chat_id "c1" :thread_id nil)))))
+          (js-call (expect (nativeGet resolved "conversation_ref")) :toBeDefined)
+          (js-call (expect calls) :toBe 2))
+        (put
+          (nativeGet f "lark")
+          :resolveConversation
+          (async
+            (address context application)
+            (put (nativeGet f "A") :grants (js-array))
+            (put (nativeGet f "A") :authorization_revision 2)
+            (js-object :ok t :address address :evidence_level "native_protocol")))
+        (let
+          (
+            (revoked
+              (await
+                (js-call
+                  f
+                  :call
+                  (nativeGet f "A")
+                  "conversation.resolve"
+                  (js-object :connection_id "lark" :chat_id "c1" :thread_id nil)))))
+          (js-call (expect (nativeGet revoked "ok")) :toBe false)
+          (js-call (expect (nativeGet (nativeGet revoked "error") "code")) :toBe "forbidden"))))
+    closeFixture)
+  (withCase
+    "T24.local-created.integration"
+    setup
+    (async
+      (f)
+      (await (js-call f :ingest (createdEvent "lark" "m1" "中文😀A")))
+      (let*
+        (
+          (conversation
+            (await
+              (callOk
+                f
+                "O"
+                "conversation.resolve"
+                (js-object :connection_id "lark" :chat_id "c1" :thread_id nil))))
+          (page
+            (await
+              (callOk
+                f
+                "O"
+                "message.list"
+                (js-object :conversation_ref (nativeGet conversation "conversation_ref")))))
+          (event (aref (nativeGet page "items") 0)))
+        (js-call (expect (js-length (nativeGet page "items"))) :toBe 1)
+        (let
+          (
+            (body
+              (await
+                (callOk
+                  f
+                  "O"
+                  "message.get"
+                  (js-object
+                    :event_id
+                    (nativeGet event "event_id")
+                    :offset_bytes
+                    3
+                    :max_bytes
+                    7)))))
+          (js-call (expect (nativeGet body "text")) :toBe "文😀"))
+        (js-call (expect (js-length (nativeGet (nativeGet f "opencode") "inputs"))) :toBe 0)))
+    closeFixture)
+  (withCase
+    "T37.native-im-disabled.integration"
+    setup
+    (async
+      (f)
+      (let*
+        (
+          (conversation
+            (await
+              (callOk
+                f
+                "O"
+                "conversation.resolve"
+                (js-object :connection_id "lark" :chat_id "c1" :thread_id nil))))
+          (result
+            (await
+              (js-call
+                f
+                :call
+                (nativeGet f "O")
+                "message.list"
+                (js-object
+                  :conversation_ref
+                  (nativeGet conversation "conversation_ref")
+                  :corpus
+                  "native")))))
+        (js-call (expect (nativeGet result "ok")) :toBe false)
+        (js-call (expect (nativeGet (nativeGet result "error") "code")) :toBe "unsupported")))
+    closeFixture)
+  (withCase
+    "T41.im-ingress.integration"
+    setup
+    (async
+      (f)
+      (await (js-call f :ingest (createdEvent "lark" "same-native" "one")))
+      (await (js-call f :ingest (createdEvent "lark" "same-native" "one")))
+      (let*
+        (
+          (conversation
+            (await
+              (callOk
+                f
+                "O"
+                "conversation.resolve"
+                (js-object :connection_id "lark" :chat_id "c1" :thread_id nil))))
+          (page
+            (await
+              (callOk
+                f
+                "O"
+                "message.list"
+                (js-object :conversation_ref (nativeGet conversation "conversation_ref"))))))
+        (js-call (expect (js-length (nativeGet page "items"))) :toBe 1))
+      ;; readSource trailing health updates join write-batch: per-source identity_revision mismatch
+      ;; rolls back only that source's health item while neighbor source health and post-commit ACK succeed.
+      (let* ((lark-peer (nativeGet f "lark"))
+        (telegram-peer (nativeGet f "telegram"))
+        (original-lark-receive (nativeGet lark-peer "receive"))
+        (original-tg-ack (nativeGet telegram-peer "ack"))
+        (ack-saw-committed false))
+        (put lark-peer :receive (async (connection cursor budget context)
+          (put connection :identity_revision 99)
+          (js-object :items (js-array) :cursor cursor :ready t :gap_status "none" :reason_codes (js-array))))
+        (put telegram-peer :ack (async (receipt context)
+          (let ((body (await (callOk f "O" "message.get"
+            (js-object :event_id (nativeGet receipt "event_id") :offset_bytes 0 :max_bytes 64)))))
+            (when (= (nativeGet body "text") "committed before ack")
+              (setq ack-saw-committed t)))
+          (await (funcall original-tg-ack receipt context))))
+        (js-call (nativeGet telegram-peer "incoming") :push
+          (Object/assign (createdEvent "telegram" "tg-batch-1" "committed before ack")
+            (js-object :source_cursor "tg-cursor-batch-1")))
+        (await (js-call f :tick))
+        (put lark-peer :receive original-lark-receive)
+        (put telegram-peer :ack original-tg-ack)
+        (js-call (expect ack-saw-committed) :toBe t)
+        (js-call (expect (js-length (nativeGet telegram-peer "acks"))) :toBe 1)
+        (let ((lark-conn (await (callOk f "O" "connection.get" (js-object :connection_id "lark"))))
+          (tg-conn (await (callOk f "O" "connection.get" (js-object :connection_id "telegram")))))
+          (js-call (expect (nativeGet (nativeGet lark-conn "source_health") "gap_status")) :toBe "possible")
+          (js-call (expect (nativeGet (nativeGet tg-conn "source_health") "last_success_at")) :toBeDefined))))
+    closeFixture)
+  (withCase
+    "T20.reply-expiry.integration"
+    setup
+    (async
+      (f)
+      (let ((agent (await (bindRecipient f))))
+        (await (subscribe f agent "lark"))
+        (await (js-call f :ingest (createdEvent "lark" "reply-source" "reply")))
+        (await (js-call f :tick))
+        (let*
+          (
+            (delivery
+              (aref (nativeGet (await (callOk f "A" "delivery.list" (js-object))) "items") 0))
+            (context (nativeGet delivery "reply_context_id")))
+          (js-call (expect context) :toBeDefined)
+          (js-call (nativeGet f "clock") :advance 86401000)
+          (let
+            (
+              (result
+                (await
+                  (js-call
+                    f
+                    :call
+                    (nativeGet f "A")
+                    "message.reply"
+                    (js-object
+                      :reply_context_id
+                      context
+                      :content
+                      (js-object :type "text" :text "too late")
+                      :idempotency_key
+                      "expired-reply")))))
+            (js-call (expect (nativeGet result "ok")) :toBe false)
+            (js-call (expect (nativeGet result "effect_state")) :toBe "none")
+            (js-call (expect (js-length (nativeGet (nativeGet f "lark") "sent"))) :toBe 0)))))
+    closeFixture)
+  (withCase
+    "T15.source-gap.integration"
+    setup
+    (async
+      (f)
+      (put
+        (nativeGet f "lark")
+        :receive
+        (async
+          (connection cursor budget context)
+          (js-object
+            :items
+            (js-array)
+            :gap_status
+            "possible"
+            :reason_codes
+            (js-array "history_window_unavailable"))))
+      (await (js-call f :tick))
+      (let
+        (
+          (connection
+            (await (callOk f "O" "connection.get" (js-object :connection_id "lark")))))
+        (js-call
+          (expect (nativeGet (nativeGet connection "source_health") "gap_status"))
+          :toBe
+          "possible")
+        (js-call
+          (expect
+            (js-length (nativeGet (await (callOk f "O" "delivery.list" (js-object))) "items")))
+          :toBe
+          0)))
+    closeFixture)
+  (withCase
+    "T34.multipart-disabled.integration"
+    setup
+    (async
+      (f)
+      (put (nativeGet (nativeGet f "lark") "capabilities") :max_text_bytes 8)
+      (let*
+        (
+          (address
+            (await
+              (callOk
+                f
+                "O"
+                "conversation.resolve"
+                (js-object :connection_id "lark" :chat_id "c1" :thread_id nil))))
+          (result
+            (await
+              (js-call
+                f
+                :call
+                (nativeGet f "O")
+                "message.send"
+                (js-object
+                  :destination_ref
+                  (nativeGet address "conversation_ref")
+                  :content
+                  (js-object :type "text" :text "123456789")
+                  :idempotency_key
+                  "single-platform-limit")))))
+        (js-call (expect (nativeGet result "ok")) :toBe false)
+        (js-call (expect (nativeGet result "effect_state")) :toBe "none")
+        (js-call (expect (js-length (nativeGet (nativeGet f "lark") "sent"))) :toBe 0)))
+    closeFixture)
+  (withCase
+    "T24.events-disabled.integration"
+    setup
+    (async
+      (f)
+      (let*
+        ((agent (await (bindRecipient f)))
+          (address
+            (await
+              (callOk
+                f
+                "A"
+                "conversation.resolve"
+                (js-object :connection_id "lark" :chat_id "c1" :thread_id nil))))
+          (result
+            (await
+              (js-call
+                f
+                :call
+                (nativeGet f "A")
+                "subscription.preview"
+                (js-object
+                  :spec
+                  (js-object
+                    :agent_id
+                    (nativeGet agent "agent_id")
+                    :selector
+                    (js-object
+                      :sources
+                      (js-array
+                        (js-object :conversation_ref (nativeGet address "conversation_ref")))
+                      :event_kinds
+                      (js-array "message.edited"))
+                    :start
+                    "now"))))))
+        (js-call (expect (nativeGet result "ok")) :toBe false)
+        (js-call (expect (nativeGet (nativeGet result "error") "code")) :toBe "unsupported")))
+    closeFixture)
+  (withCase
+    "T24.events-native.future"
+    (lambda () nil)
+    (lambda (f) nil)
+    (lambda (f) nil))
+  (withCase
+    "T34.multipart-recovery.future"
+    (lambda () nil)
+    (lambda (f) nil)
+    (lambda (f) nil))
+  (withCase "T37.native-live.future" (lambda () nil) (lambda (f) nil) (lambda (f) nil))
+  (import "../../src/adapters/im/lark.eli" createLarkPort)
+  (import "../support/lark-http.eli" createLarkHttp)
+  (import "../support/faults.eli" atFault)
+  (defconst larkVariants
+    (js-array
+      "initial-cutoff"
+      "same-timestamp-two-pages"
+      "empty-page-with-more"
+      "overlap-replay"
+      "crash-before-page-commit"
+      "crash-after-page-commit"
+      "expired-token"
+      "repeated-token"
+      "partial-budget"
+      "thread-new-reply-old-root"
+      "malformed-output"
+      "oversized-output"
+      "identity-revision-change"
+      "missing-oauth"
+      "missing-scope"
+      "clock-regressed"
+      "rate-limit-backoff"
+      "non-text"
+      "deleted"
+      "updated-first-seen"))
+  (js-call
+    larkVariants
+    :forEach
+    (lambda
+      (variant)
+      (withCase
+        (str "T41.lark-user." variant ".integration")
+        (async
+          ()
+          (let ((script nil))
+            (let
+              (
+                (f
+                  (await
+                    (createFixture
+                      (str "lark-" variant)
+                      "one"
+                      (js-object
+                        :configure
+                        (lambda
+                          (config ports)
+                          (let*
+                            ((clock (nativeGet ports "clock"))
+                              (connection (aref (nativeGet config "connections") 0)))
+                            (put
+                              connection
+                              :watches
+                              (js-array
+                                (if (= variant "thread-new-reply-old-root")
+                                  (js-object :chat_id "c1" :thread_id "t1")
+                                  (js-object :chat_id "c1"))))
+                            (put config :managed_profiles (js-array))
+                            (setq script (createLarkHttp clock variant))
+                            (js-call
+                              (nativeGet ports "im_ports")
+                              :set
+                              "lark"
+                              (createLarkPort
+                                connection
+                                (Object/assign
+                                  (js-object)
+                                  ports
+                                  script))))))))))
+              (put f :lark_script script)
+              (js-call (nativeGet f "clock") :advance 10000)
+              f)))
+        (async
+          (f)
+          (let*
+            ((clock (nativeGet f "clock"))
+              (script (nativeGet f "lark_script"))
+              (fault
+                (if (= variant "crash-after-page-commit")
+                  "poll.after_page_commit"
+                  "poll.before_page_commit")))
+            (when
+              (or
+                (= variant "crash-before-page-commit")
+                (= variant "crash-after-page-commit"))
+              (atFault
+                (nativeGet f "faults")
+                fault
+                (lambda
+                  (context)
+                  (throw (new globalThis.Error "controlled poll interruption")))))
+            (try (await (js-call f :tick)) (catch interrupted nil))
+            (when
+              (or
+                (= variant "crash-before-page-commit")
+                (= variant "crash-after-page-commit"))
+              (atFault (nativeGet f "faults") fault nil)
+              (await (js-call f :restart)))
+            (when (= variant "clock-regressed")
+              (js-call clock :setUtc "2025-12-31T23:59:00Z"))
+            (when (= variant "identity-revision-change")
+              (let ((connection (aref (nativeGet (nativeGet f "config") "connections") 0)))
+                (put connection :identity_revision 2)
+                (put connection :account_ref "second-test-account")
+                (await (js-call f :restart))))
+            (when (= variant "rate-limit-backoff")
+              (let ((count (js-length (nativeGet script "calls"))))
+                (js-call clock :advance 500)
+                (await (js-call f :tick))
+                (js-call (expect (js-length (nativeGet script "calls"))) :toBe count)))
+            (let ((round 0))
+              (while (< round 4)
+                (js-call clock :advance 5000)
+                (try (await (js-call f :tick)) (catch poll-failed nil))
+                (setq round (1+ round))))
+            (let*
+              ((thread (if (= variant "thread-new-reply-old-root") "t1" nil))
+                (known (nativeGet (await (callOk f "O" "conversation.list"
+                  (js-object :connection_id "lark"))) "items"))
+                (address (js-call known :find (lambda (item)
+                  (let ((value (nativeGet item "address")))
+                    (and (= (nativeGet value "native_chat_id") "c1")
+                      (= (nativeGet value "native_thread_id" nil) thread))))))
+                (events (if address
+                  (nativeGet (await (callOk f "O" "message.list"
+                    (js-object :conversation_ref (nativeGet address "conversation_ref")))) "items")
+                  (js-array)))
+                (health
+                  (nativeGet
+                    (await
+                      (callOk f "O" "connection.get" (js-object :connection_id "lark")))
+                    "source_health")))
+              (js-call (nativeGet script "calls") :forEach (lambda (call)
+                (js-call (expect (js-call (nativeGet call "url") :startsWith "https://open.larksuite.com/open-apis/")) :toBe t)))
+              (cond
+                (
+                  (js-call
+                    (js-array
+                      "missing-oauth"
+                      "missing-scope"
+                      "malformed-output"
+                      "oversized-output"
+                      "non-text"
+                      "deleted"
+                      "identity-revision-change")
+                    :includes
+                    variant)
+                  (js-call (expect (js-length events)) :toBe 0))
+                ((or (= variant "same-timestamp-two-pages") (= variant "expired-token"))
+                  (js-call (expect (js-length events)) :toBe 2))
+                (t (js-call (expect (js-length events)) :toBe 1)))
+              (when (= variant "updated-first-seen")
+                (js-call
+                  (expect (nativeGet (aref events 0) "event_kind"))
+                  :toBe
+                  "message.created")
+                (js-call
+                  (expect (nativeGet (nativeGet (aref events 0) "content") "text"))
+                  :toBe
+                  "edited observed value"))
+              (when (= variant "partial-budget")
+                (js-call (expect (nativeGet health "completed_until")) :toBeUndefined))
+              (when (= variant "repeated-token")
+                (js-call (expect (js-length (nativeGet script "calls"))) :toBeLessThan 12))
+              (js-call (expect (nativeGet health "gap_status")) :toBe "possible")
+              (js-call (expect (js-length (nativeGet script "killed"))) :toBe 0))))
+        closeFixture)))
+  (import "../../src/adapters/im/telegram.eli" createTelegramPort)
+  (withCase
+    "T21.telegram-webhook.integration"
+    setup
+    (async
+      (f)
+      (let*
+        ((requests (js-array))
+          (port
+            (createTelegramPort
+              (js-object
+                :connection_id
+                "telegram-test"
+                :credential_ref
+                "test:bot"
+                :allowed_chats
+                (js-array "c1"))
+              (Object/assign
+                (js-object)
+                (nativeGet f "ports")
+                (js-object
+                  :credentials
+                  (js-object :resolve (lambda (ref) "test-only-bot-token"))
+                  :http
+                  (js-object
+                    :fetch
+                    (async
+                      (url options)
+                      (js-call requests :push url)
+                      (if (js-call url :endsWith "/getWebhookInfo")
+                        (Response/json
+                          (js-object
+                            :ok
+                            t
+                            :result
+                            (js-object :url "https://owned-elsewhere.invalid/hook")))
+                        (throw (new globalThis.Error "must not take over webhook")))))))))
+        (probe
+          (await
+            (js-call
+              port
+              :probe
+              (js-object :connection_id "telegram-test")
+              (js-object :deadline (+ (performance/now) 1000))))))
+      (js-call (expect (nativeGet probe "ok")) :toBe false)
+      (js-call (expect (js-length requests)) :toBe 1)
+      (js-call
+        (expect (js-call (aref requests 0) :includes "deleteWebhook"))
+        :toBe
+        false)))
+  closeFixture)
+  (js-call
+    (js-array "main" "thread" "lost-response")
+    :forEach
+    (lambda
+      (variant)
+      (withCase
+        (str "T20.lark-user-send.integration." variant)
+        (async () (await (createFixture "native-im-send" "one" (js-object :configure
+          (lambda (config ports) (put config :managed_profiles (js-array)))))))
+        (async
+          (f)
+          (let*
+            (
+              (script
+                (createLarkHttp
+                  (nativeGet f "clock")
+                  (if (= variant "lost-response") "send-response-loss" "overlap-replay")))
+              (config (aref (nativeGet (nativeGet f "config") "connections") 0))
+              (port
+                (createLarkPort
+                  config
+                  (Object/assign (js-object) (nativeGet f "ports") script)))
+              (text "literal 中文😀 $(do-not-execute)\n```text```")
+              (outbound
+                (js-object
+                  :outbound_id
+                  "lark-native-outbound"
+                  :destination
+                  (js-object
+                    :connection_id
+                    "lark"
+                    :native_chat_id
+                    "c1"
+                    :native_thread_id
+                    (if (= variant "main") nil "t1")
+                    :thread_kind
+                    (if (= variant "main") "main" "thread"))
+                  :native_reply_to
+                  (if (= variant "main") nil "om_original")
+                  :content
+                  (js-object :type "text" :text text)))
+              (receipt
+                (await
+                  (js-call
+                    port
+                    :send
+                    outbound
+                    "fixed-native-dispatch"
+                    (js-object
+                      :deadline
+                      (+ (js-call (nativeGet f "clock") :monoNow) 10000)
+                      :abort_signal
+                      (nativeGet (new globalThis.AbortController) "signal")
+                      :max_frame_bytes
+                      1048576
+                      :max_response_bytes
+                      1048576)))))
+            (js-call (expect (js-length (nativeGet script "calls"))) :toBe 1)
+            (let* ((call (aref (nativeGet script "calls") 0)) (body (nativeGet call "body")))
+              (js-call (expect (nativeGet (JSON/parse (nativeGet body "content")) "text")) :toBe text)
+              (js-call (expect (nativeGet body "uuid")) :toBeDefined)
+              (if (= variant "main")
+                (js-call (expect (nativeGet body "receive_id")) :toBe "c1")
+                (progn (js-call (expect (js-call (nativeGet call "url") :includes "/om_original/reply")) :toBe t)
+                  (js-call (expect (nativeGet body "reply_in_thread")) :toBe t))))
+            (if (= variant "lost-response")
+              (progn
+                (js-call (expect (nativeGet receipt "state")) :toBe "unknown")
+                (js-call (expect (nativeGet receipt "definite_not_sent")) :toBe false))
+              (progn
+                (js-call (expect (nativeGet receipt "state")) :toBe "accepted")
+                (js-call
+                  (expect (nativeGet receipt "native_message_id"))
+                  :toBe
+                  "om_fixture_reply")))
+            (js-call (expect (js-length (nativeGet script "sent"))) :toBe 1)
+            (js-call (expect (js-length (nativeGet script "killed"))) :toBe 0)))
+        closeFixture)))
+  (defasync telegramAddress
+    (f &optional actor)
+    (await
+      (callOk
+        f
+        (or actor "O")
+        "conversation.resolve"
+        (js-object :connection_id "telegram" :chat_id "-10041" :thread_id "71"))))
+  (withCase
+    "T41.telegram-persisted-offset.integration"
+    telegramFixture
+    (async
+      (f)
+      (let* ((script (nativeGet f "telegram_http")) (calls (nativeGet script "calls")))
+        (js-call
+          (nativeGet script "updates")
+          :push
+          (js-object
+            :update_id
+            101
+            :message
+            (nativeMessage 11 "durable forum input" 71)))
+        (atFault
+          (nativeGet f "faults")
+          "event.after_commit_before_ack"
+          (lambda
+            (ctx)
+            (throw (new globalThis.Error "controlled post-commit interruption"))))
+        (try (await (js-call f :tick)) (catch interrupted nil))
+        (let
+          (
+            (reads
+              (js-call
+                calls
+                :filter
+                (lambda (call) (= (nativeGet call "method") "getUpdates")))))
+          (js-call (expect (> (js-length reads) 0)) :toBe t)
+          (js-call
+            reads
+            :forEach
+            (lambda
+              (read)
+              (js-call
+                (expect (NativeNumber (nativeGet (nativeGet read "body") "offset" 0)))
+                :toBeLessThanOrEqual
+                101))))
+        (atFault (nativeGet f "faults") "event.after_commit_before_ack" nil)
+        (let ((count (js-length calls)))
+          (await (js-call f :restart))
+          (await (js-call f :tick))
+          (let
+            (
+              (after
+                (js-call
+                  (js-call calls :slice count)
+                  :filter
+                  (lambda (call) (= (nativeGet call "method") "getUpdates")))))
+            (js-call (expect (> (js-length after) 0)) :toBe t)
+            (js-call
+              (expect (NativeNumber (nativeGet (nativeGet (aref after 0) "body") "offset")))
+              :toBe
+              102)))
+        (let*
+          ((address (await (telegramAddress f)))
+            (messages
+              (await
+                (callOk
+                  f
+                  "O"
+                  "message.list"
+                  (js-object :conversation_ref (nativeGet address "conversation_ref"))))))
+          (js-call (expect (js-length (nativeGet messages "items"))) :toBe 1)
+          (js-call
+            (expect (nativeGet (aref (nativeGet messages "items") 0) "native_message_id"))
+            :toBe
+            "11"))
+        (js-call
+          (expect
+            (js-call
+              calls
+              :some
+              (lambda
+                (call)
+                (js-call
+                  (js-array "deleteWebhook" "setWebhook")
+                  :includes
+                  (nativeGet call "method")))))
+          :toBe
+          false)))
+    closeFixture)
+  (withCase
+    "T41.telegram-unsupported-offset.integration"
+    telegramFixture
+    (async
+      (f)
+      (let ((script (nativeGet f "telegram_http")))
+        (js-call
+          (nativeGet script "updates")
+          :push
+          (js-object
+            :update_id
+            101
+            :edited_message
+            (nativeMessage 11 "not a created event" 71))
+          (js-object
+            :update_id
+            102
+            :message
+            (Object/assign
+              (nativeMessage 12 "" 71)
+              (js-object
+                :photo
+                (js-array (js-object :file_id "opaque-photo-id" :width 1 :height 1))))))
+        (await (js-call f :tick))
+        (await (js-call f :tick))
+        (js-call (expect (nativeGet (nativeGet script "state") "last_confirmed_offset")) :toBe 103)
+        (let*
+          ((address (await (telegramAddress f)))
+            (messages
+              (await
+                (callOk
+                  f
+                  "O"
+                  "message.list"
+                  (js-object :conversation_ref (nativeGet address "conversation_ref"))))))
+          (js-call (expect (js-length (nativeGet messages "items"))) :toBe 0))
+        (js-call
+          (expect
+            (js-length (nativeGet (await (callOk f "O" "delivery.list" (js-object))) "items")))
+          :toBe
+          0)))
+    closeFixture)
+  (js-call
+    (js-array "conflict" "unauthorized")
+    :forEach
+    (lambda
+      (failure)
+      (withCase
+        (str "T15.telegram-native-error.integration." failure)
+        telegramFixture
+        (async
+          (f)
+          (let ((script (nativeGet f "telegram_http")))
+            (put (nativeGet script "state") :ingress_error failure)
+            (await (js-call f :tick))
+            (let
+              (
+                (connection
+                  (await
+                    (callOk f "O" "connection.get" (js-object :connection_id "telegram")))))
+              (js-call (nativeGet (expect (nativeGet connection "state")) "not") :toBe "online")
+              (js-call
+                (expect (nativeGet (nativeGet connection "source_health") "gap_status"))
+                :toBe
+                "possible"))
+            (js-call
+              (expect
+                (js-call
+                  (nativeGet script "calls")
+                  :some
+                  (lambda
+                    (call)
+                    (js-call
+                      (js-array "deleteWebhook" "setWebhook" "logOut")
+                      :includes
+                      (nativeGet call "method")))))
+              :toBe
+              false)))
+        closeFixture)))
+  (withCase
+    "T20.telegram-original-topic.integration"
+    telegramFixture
+    (async
+      (f)
+      (let*
+        ((agent (await (bindRecipient f)))
+          (address (await (telegramAddress f "A")))
+          (preview
+            (await
+              (callOk
+                f
+                "A"
+                "subscription.preview"
+                (js-object
+                  :spec
+                  (js-object
+                    :agent_id
+                    (nativeGet agent "agent_id")
+                    :selector
+                    (js-object
+                      :sources
+                      (js-array
+                        (js-object
+                          :conversation_ref
+                          (nativeGet address "conversation_ref")
+                          :include_threads
+                          false))
+                      :event_kinds
+                      (js-array "message.created"))
+                    :predicate
+                    (js-object :all (js-array))
+                    :context_policy
+                    (js-object :mode "current" :max_events 1 :max_bytes 16384)
+                    :delivery_policy
+                    (js-object :busy "queue" :offline "hold" :ttl_seconds 60)
+                    :start
+                    "now"))))))
+        (await
+          (callOk
+            f
+            "A"
+            "subscription.create"
+            (js-object
+              :preview_id
+              (nativeGet preview "preview_id")
+              :idempotency_key
+              "tg-topic-sub")))
+        (js-call
+          (nativeGet (nativeGet f "telegram_http") "updates")
+          :push
+          (js-object :update_id 101 :message (nativeMessage 11 "reply here" 71)))
+        (await (js-call f :tick))
+        (let*
+          (
+            (delivery
+              (aref (nativeGet (await (callOk f "A" "delivery.list" (js-object))) "items") 0))
+            (outbound
+              (await
+                (callOk
+                  f
+                  "A"
+                  "message.reply"
+                  (js-object
+                    :reply_context_id
+                    (nativeGet delivery "reply_context_id")
+                    :content
+                    (js-object :type "text" :text "literal <b>*中文😀*</b>")
+                    :idempotency_key
+                    "tg-reply")))))
+          (await (js-call f :tick))
+          (let*
+            ((native (nativeGet (nativeGet f "telegram_http") "accepted"))
+              (body (nativeGet (aref native 0) "body"))
+              (record
+                (await
+                  (callOk
+                    f
+                    "A"
+                    "outbound.get"
+                    (js-object :outbound_id (nativeGet outbound "outbound_id"))))))
+            (js-call (expect (js-length native)) :toBe 1)
+            (js-call (expect (str (nativeGet body "chat_id"))) :toBe "-10041")
+            (js-call (expect (str (nativeGet body "message_thread_id"))) :toBe "71")
+            (js-call
+              (expect (str (nativeGet (nativeGet body "reply_parameters") "message_id")))
+              :toBe
+              "11")
+            (js-call
+              (expect
+                (nativeGet (nativeGet body "reply_parameters") "allow_sending_without_reply" false))
+              :toBe
+              false)
+            (js-call (expect (nativeGet body "text")) :toBe "literal <b>*中文😀*</b>")
+            (js-call (expect (nativeGet body "parse_mode")) :toBeUndefined)
+            (js-call (expect (nativeGet record "state")) :toBe "accepted")
+            (js-call (expect (nativeGet record "native_message_ids")) :toContain "501")))))
+    closeFixture)
+  (withCase
+    "T13.outbound-unknown-no-retry.integration"
+    telegramFixture
+    (async
+      (f)
+      (let*
+        ((script (nativeGet f "telegram_http"))
+          (address (await (telegramAddress f)))
+          (args
+            (js-object
+              :destination_ref
+              (nativeGet address "conversation_ref")
+              :content
+              (js-object :type "text" :text "native accepted response lost")
+              :idempotency_key
+              "tg-unknown"))
+          (outbound (await (callOk f "O" "message.send" args))))
+        (put (nativeGet script "state") :send_error "response-loss")
+        (await (js-call f :tick))
+        (let*
+          (
+            (record
+              (await
+                (callOk
+                  f
+                  "O"
+                  "outbound.get"
+                  (js-object :outbound_id (nativeGet outbound "outbound_id")))))
+            (again (await (callOk f "O" "message.send" args)))
+            (retry
+              (await
+                (js-call
+                  f
+                  :call
+                  (nativeGet f "O")
+                  "outbound.retry"
+                  (js-object
+                    :outbound_id
+                    (nativeGet record "outbound_id")
+                    :expected_revision
+                    (nativeGet record "revision")
+                    :idempotency_key
+                    "unsafe-retry"))))
+            (cancel
+              (await
+                (js-call
+                  f
+                  :call
+                  (nativeGet f "O")
+                  "outbound.cancel"
+                  (js-object
+                    :outbound_id
+                    (nativeGet record "outbound_id")
+                    :expected_revision
+                    (nativeGet record "revision")
+                    :idempotency_key
+                    "unsafe-cancel")))))
+        (js-call (expect (nativeGet record "state")) :toBe "unknown")
+        (js-call (expect (nativeGet again "outbound_id")) :toBe (nativeGet outbound "outbound_id"))
+        (js-call (expect (nativeGet retry "ok")) :toBe false)
+        (js-call (expect (nativeGet cancel "ok")) :toBe false)
+        (await
+          (callOk
+            f
+            "O"
+            "outbound.reconcile"
+            (js-object
+              :outbound_id
+              (nativeGet outbound "outbound_id")
+              :idempotency_key
+              "tg-lookup")))
+        (await (js-call f :tick))
+        (js-call (expect (js-length (nativeGet script "accepted"))) :toBe 1))))
+  closeFixture)
+  (withCase
+    "T13.outbound-definite-safe-retry.integration"
+    telegramFixture
+    (async
+      (f)
+      (let*
+        ((script (nativeGet f "telegram_http"))
+          (address (await (telegramAddress f)))
+          (outbound
+            (await
+              (callOk
+                f
+                "O"
+                "message.send"
+                (js-object
+                  :destination_ref
+                  (nativeGet address "conversation_ref")
+                  :content
+                  (js-object :type "text" :text "rate limited before accept")
+                  :idempotency_key
+                  "tg-safe-retry")))))
+        (put (nativeGet script "state") :send_error "rate-limited")
+        (await (js-call f :tick))
+        (js-call (expect (js-length (nativeGet script "accepted"))) :toBe 0)
+        (let
+          (
+            (record
+              (await
+                (callOk
+                  f
+                  "O"
+                  "outbound.get"
+                  (js-object :outbound_id (nativeGet outbound "outbound_id"))))))
+          (js-call (expect (nativeGet record "state")) :toBe "failed")
+          (put (nativeGet script "state") :send_error "none")
+          (js-call (nativeGet f "clock") :advance 1001)
+          (await
+            (callOk
+              f
+              "O"
+              "outbound.retry"
+              (js-object
+                :outbound_id
+                (nativeGet record "outbound_id")
+                :expected_revision
+                (nativeGet record "revision")
+                :idempotency_key
+                "explicit-safe-retry"))))
+        (await (js-call f :tick))
+        (js-call (expect (js-length (nativeGet script "accepted"))) :toBe 1)))
+    closeFixture)
+  (withCase "T01.lark-key-api.integration" (lambda () nil)
+    (async (unused)
+      (let* ((calls (js-array)) (credentials 0)
+             (host (js-object :clock (js-object :monoNow (lambda () (performance/now))
+                        :utcNow (lambda () "2026-01-01T00:00:12.000Z"))
+               :credentials (js-object :resolve (async (ref)
+                 (setq credentials (1+ credentials))
+                 (js-call (expect ref) :toBe "secrets/app.json")
+                 (js-object :app_id "test-app" :app_secret "test-secret")))
+               :http (js-object :fetch (async (url options)
+                 (js-call calls :push (js-object :url url :options options))
+                 (cond
+                   ((js-call url :endsWith "/auth/v3/tenant_access_token/internal")
+                     (js-call (expect (JSON/parse (nativeGet options "body"))) :toEqual
+                       (js-object :app_id "test-app" :app_secret "test-secret"))
+                     (Response/json (js-object :code 0 :tenant_access_token "test-token" :expire 7200)))
+                   ((= (nativeGet options "method") "GET")
+                     (js-call (expect (nativeGet (nativeGet options "headers") "authorization")) :toBe "Bearer test-token")
+                     (Response/json (js-object :code 0 :data (js-object :has_more false :items
+                       (js-array (js-object :message_id "key-source" :chat_id "key-chat" :msg_type "text"
+                         :create_time "1767225605000" :sender (js-object :id "sender" :sender_type "user")
+                         :body (js-object :content "{\"text\":\"key-driven\"}")))))))
+                   (t (Response/json (js-object :code 0 :data
+                     (js-object :message_id "key-reply" :chat_id "key-chat")))))))))
+             (config (js-object :connection_id "key-lark" :platform "lark" :brand "lark" :identity "bot"
+                       :credential_ref "secrets/app.json" :watches (js-array)))
+             (port (createLarkPort config host))
+             (context (js-object :deadline (+ (performance/now) 5000))))
+        (try
+          (let* ((page (await (js-call port :readPollPage (js-object :chat_id "key-chat")
+                     (js-object :activation_at "2026-01-01T00:00:00.000Z"
+                       :window_start "2026-01-01T00:00:00.000Z" :window_end "2026-01-01T00:00:10.000Z"
+                       :identity_revision 1 :generation 1) nil context)))
+                 (event (aref (nativeGet (nativeGet page "data") "messages") 0)))
+            (js-call (expect (nativeGet page "ok")) :toBe t)
+            (js-call (expect (nativeGet event "native_message_id")) :toBe "key-source")
+            (js-call (expect (nativeGet (nativeGet event "content") "text")) :toBe "key-driven"))
+          (let ((receipt (await (js-call port :send (js-object
+              :destination (js-object :connection_id "key-lark" :native_chat_id "key-chat")
+              :native_reply_to "key-source" :content (js-object :text "reply")) "key-once" context))))
+            (js-call (expect (nativeGet receipt "state")) :toBe "accepted")
+            (js-call (expect (nativeGet receipt "native_message_id")) :toBe "key-reply"))
+          (js-call (expect credentials) :toBe 1)
+          (js-call (expect (js-length calls)) :toBe 3)
+          (js-call (expect (nativeGet (aref calls 0) "url")) :toBe
+            "https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal")
+          (let ((last (nativeGet (aref calls 2) "options")))
+            (js-call (expect (nativeGet last "redirect")) :toBe "error")
+            (js-call (expect (nativeGet (JSON/parse (nativeGet last "body")) "uuid")) :toHaveLength 40))
+          (await (js-call port :close))
+          (js-call (expect (js-call port :pendingWork)) :toBe 0)
+          (finally (await (js-call port :close))))))
+    (lambda (unused) nil)))

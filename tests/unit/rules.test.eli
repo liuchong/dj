@@ -1,0 +1,261 @@
+(module dj.tests.unit.rules
+  (import "../../src/core/native.eli" nativeGet)
+  (import "bun:test" expect)
+  (import "../support/case.eli" withUnitCase)
+  (import "../../src/core/rules.eli" evaluatePredicate validatePredicate matchesSource)
+  (defconst event
+    (js-object
+      :event_kind
+      "message.created"
+      :connection_id
+      "lark"
+      :conversation
+      (js-object :native_chat_id "chat-1" :native_thread_id nil)
+      :sender
+      (js-object :id "u-1" :kind "human")
+      :content
+      (js-object :kind "text" :text "请检查 Aa😀" :truncated false)))
+  (withUnitCase
+    "T04.tristate.unit"
+    (lambda
+      (unused)
+      (js-call
+        (expect
+          (evaluatePredicate
+            (js-object :not (js-object :field "reply_to.id" :op "eq" :value "missing"))
+            event))
+        :toBe
+        "indeterminate")))
+  (defconst vectors
+    (js-array
+      (js-object :id "empty-all" :predicate (js-object :all (js-array)) :result "true")
+      (js-object
+        :id
+        "contains-hit"
+        :predicate
+        (js-object :field "text" :op "contains" :value "😀")
+        :result
+        "true")
+      (js-object
+        :id
+        "case-sensitive"
+        :predicate
+        (js-object :field "text" :op "contains" :value "aa")
+        :result
+        "false")
+      (js-object
+        :id
+        "literal-regex"
+        :predicate
+        (js-object :field "text" :op "contains" :value ".*")
+        :result
+        "false")
+      (js-object
+        :id
+        "typed-eq"
+        :predicate
+        (js-object :field "sender.kind" :op "eq" :value "human")
+        :result
+        "true")
+      (js-object
+        :id
+        "prefix"
+        :predicate
+        (js-object :field "text" :op "prefix" :value "请检查")
+        :result
+        "true")
+      (js-object
+        :id
+        "in"
+        :predicate
+        (js-object :field "sender.id" :op "in" :value (js-array "u-2" "u-1"))
+        :result
+        "true")
+      (js-object
+        :id
+        "any-unknown"
+        :predicate
+        (js-object
+          :any
+          (js-array
+            (js-object :field "reply_to.id" :op "eq" :value "x")
+            (js-object :field "sender.id" :op "eq" :value "none")))
+        :result
+        "indeterminate")
+      (js-object
+        :id
+        "all-false-unknown"
+        :predicate
+        (js-object
+          :all
+          (js-array
+            (js-object :field "sender.id" :op "eq" :value "none")
+            (js-object :field "reply_to.id" :op "eq" :value "x")))
+        :result
+        "false")))
+  (js-call
+    vectors
+    :forEach
+    (lambda
+      (row)
+      (withUnitCase
+        (str "T04.tristate.unit." (nativeGet row "id"))
+        (lambda
+          (unused)
+          (js-call
+            (expect (evaluatePredicate (nativeGet row "predicate") event))
+            :toBe
+            (nativeGet row "result"))))))
+  (withUnitCase
+    "T04.tristate.unit.truncated"
+    (lambda
+      (unused)
+      (let
+        (
+          (partial
+            (Object/assign
+              (js-object)
+              event
+              (js-object :content (js-object :kind "text" :text "ABC" :truncated t)))))
+        (js-call
+          (expect
+            (evaluatePredicate
+              (js-object :field "text" :op "contains" :value "B")
+              partial))
+          :toBe
+          "true")
+        (js-call
+          (expect
+            (evaluatePredicate
+              (js-object :field "text" :op "contains" :value "D")
+              partial))
+          :toBe
+          "indeterminate")
+        (js-call
+          (expect
+            (evaluatePredicate
+              (js-object :not (js-object :field "text" :op "contains" :value "D"))
+              partial))
+          :toBe
+          "indeterminate")
+        (js-call
+          (expect
+            (evaluatePredicate (js-object :field "text" :op "eq" :value "ABC") partial))
+          :toBe
+          "indeterminate"))))
+  (withUnitCase
+    "T04.tristate.unit.source-thread"
+    (lambda
+      (unused)
+      (let
+        (
+          (address
+            (js-object
+              :connection_id
+              "lark"
+              :native_chat_id
+              "chat-1"
+              :native_thread_id
+              nil
+              :thread_kind
+              "main"))
+          (thread-event
+            (Object/assign
+              (js-object)
+              event
+              (js-object
+                :conversation
+                (js-object :native_chat_id "chat-1" :native_thread_id "t-1")))))
+        (js-call (expect (matchesSource address false event)) :toBe t)
+        (js-call (expect (matchesSource address false thread-event)) :toBe false)
+        (js-call (expect (matchesSource address t thread-event)) :toBe t))))
+  (defconst rejected
+    (js-array
+      (js-object :id "empty-any" :value (js-object :any (js-array)))
+      (js-object
+        :id
+        "unknown-field"
+        :value
+        (js-object :field "role" :op "eq" :value "admin"))
+      (js-object
+        :id
+        "wrong-type"
+        :value
+        (js-object :field "addressed_bot" :op "eq" :value "true"))
+      (js-object :id "regex" :value (js-object :field "text" :op "regex" :value ".*"))
+      (js-object
+        :id
+        "mixed-node"
+        :value
+        (js-object :all (js-array) :not (js-object :all (js-array))))))
+  (js-call
+    rejected
+    :forEach
+    (lambda
+      (row)
+      (withUnitCase
+        (str "T04.tristate.unit.reject-" (nativeGet row "id"))
+        (lambda
+          (unused)
+          (js-call (expect (nativeGet (validatePredicate (nativeGet row "value")) "ok")) :toBe false)))))
+  (withUnitCase "T32.deleted-selector.future" (lambda (unused) nil))
+  (withUnitCase
+    "T32.truncated-not.unit"
+    (lambda
+      (unused)
+      (let
+        (
+          (partial
+            (js-object
+              :content
+              (js-object :kind "text" :text "known prefix" :truncated t))))
+        (js-call
+          (expect
+            (evaluatePredicate
+              (js-object :not (js-object :field "text" :op "contains" :value "absent"))
+              partial))
+          :toBe
+          "indeterminate")
+        (js-call
+          (expect
+            (evaluatePredicate
+              (js-object :field "text" :op "eq" :value "known prefix")
+              partial))
+          :toBe
+          "indeterminate")
+        (js-call
+          (expect (evaluatePredicate (js-object :all (js-array)) partial))
+          :toBe
+          "true"))))
+  (withUnitCase
+    "T04.tristate.unit.in-limit"
+    (lambda
+      (unused)
+      (let ((values (js-array)) (index 0))
+        (while (< index 64)
+          (js-call values :push (str "sender-" index))
+          (setq index (1+ index)))
+        (js-call
+          (expect
+            (nativeGet
+              (validatePredicate (js-object :field "sender.id" :op "in" :value values))
+              "ok"))
+          :toBe
+          t)
+        (js-call values :push "sender-over")
+        (js-call
+          (expect
+            (nativeGet
+              (validatePredicate (js-object :field "sender.id" :op "in" :value values))
+              "ok"))
+          :toBe
+          false))))
+  (withUnitCase
+    "T04.tristate.unit.depth-over"
+    (lambda
+      (unused)
+      (let ((predicate (js-object :field "text" :op "contains" :value "x")) (index 0))
+        (while (< index 9)
+          (setq predicate (js-object :not predicate))
+          (setq index (1+ index)))
+        (js-call (expect (nativeGet (validatePredicate predicate) "ok")) :toBe false)))))

@@ -1,0 +1,649 @@
+(module dj.tests.performance.router
+  (import "../../src/core/native.eli" NativeNumber nativeSetTimeout nativeGet)
+  (import "bun:test" expect)
+  (import "bun:sqlite" Database)
+  (import "node:fs/promises" appendFile)
+  (import "node:path" resolve)
+  (import "../support/case.eli" withCase)
+  (import "../support/fixtures.eli" createFixture closeFixture callOk createdEvent successful)
+  (import "../support/resources.eli" summarizeResources runCapacitySchedule)
+  (defun durablePending
+    (f)
+    (let ((reader (new Database (resolve (nativeGet f "root") "state/dj.sqlite") (js-object :readonly t))))
+      (try
+        (let
+          ((unaccepted
+              (nativeGet
+                (js-call
+                  (js-call reader :query "SELECT COUNT(*) AS n FROM deliveries WHERE state!='accepted'")
+                  :get)
+                "n"))
+            (accepted
+              (nativeGet
+                (js-call
+                  (js-call reader :query "SELECT COUNT(*) AS n FROM deliveries WHERE state='accepted'")
+                  :get)
+                "n"))
+            (claims
+              (nativeGet
+                (js-call (js-call reader :query "SELECT COUNT(*) AS n FROM claims") :get)
+                "n"))
+            (routing
+              (nativeGet
+                (js-call
+                  (js-call reader :query "SELECT COUNT(*) AS n FROM routing_work WHERE state!='done'")
+                  :get)
+                "n")))
+          (js-object
+            :unaccepted
+            unaccepted
+            :accepted
+            accepted
+            :claims
+            claims
+            :routing
+            routing
+            :remaining
+            (+ unaccepted claims routing)))
+        (finally (js-call reader :close)))))
+  (defasync setupRouter
+    (&optional large-fanout)
+    (let
+      (
+        (f
+          (await
+            (createFixture
+              "router-load"
+              "one"
+              (js-object
+                :configure
+                (lambda
+                  (config ports)
+                  (let
+                    (
+                      (sessions
+                        (nativeGet
+                          (js-call (nativeGet ports "agent_ports") :get "opencode")
+                          "sessions"))
+                      (connections (js-array))
+                      (index 0))
+                    (js-call sessions :splice 0)
+                    (while (< index 1000)
+                      (js-call
+                        sessions
+                        :push
+                        (js-object
+                          :tool
+                          "opencode"
+                          :native_namespace
+                          "ns-opencode"
+                          :native_session_id
+                          (str "load-" index)
+                          :title
+                          "load target"
+                          :workspace_ref
+                          "ws-test"
+                          :instance_id
+                          "oc-existing"
+                          :instance_epoch
+                          "epoch-1"
+                          :runtime_state
+                          "idle"
+                          :live_receiver
+                          t
+                          :visibility
+                          (js-array "live")
+                          :updated_at
+                          "2026-01-01T00:00:00.000Z"))
+                      (js-call
+                        (nativeGet config "principals")
+                        :push
+                        (js-object
+                          :principal_id
+                          (str "R-" index)
+                          :kind
+                          "agent"
+                          :authorization_revision
+                          1
+                          :target_constraint
+                          (js-object
+                            :tool
+                            "opencode"
+                            :native_namespace
+                            "ns-opencode"
+                            :native_session_id
+                            (str "load-" index))
+                          :grants
+                          (js-array
+                            (js-object :action "message.read" :resources (js-array "*"))
+                            (js-object
+                              :action
+                              "subscription.manage"
+                              :resources
+                              (js-array "self")))))
+                      (setq index (1+ index)))
+                    (setq index 0)
+                    (while (< index 100)
+                      (let ((id (str "load-source-" index)))
+                        (js-call
+                          connections
+                          :push
+                          (js-object
+                            :connection_id
+                            id
+                            :platform
+                            "lark"
+                            :brand
+                            "lark"
+                            :identity
+                            "user"
+                            :source_delivery
+                            "poll"
+                            :user_identity
+                            (js-object :app_id "cli_test" :open_id "ou_user")
+                            :credential_ref
+                            "test:load"
+                            :watches
+                            (js-array
+                              (js-object :chat_id "c1")
+                              (js-object :chat_id "c2"))))
+                        (js-call
+                          (nativeGet ports "im_ports")
+                          :set
+                          id
+                          (js-object
+                            :capabilities
+                            (js-object
+                              :receive_events
+                              "supported"
+                              :reply_thread
+                              "supported")
+                            :resolveConversation
+                            (async (address context application)
+                              (js-object :ok t :address address :evidence_level "native_protocol" :coverage "controlled_peer"))
+                            :receive
+                            (async
+                              (connection cursor budget context)
+                              (js-object
+                                :items
+                                (js-array)
+                                :cursor
+                                cursor
+                                :gap_status
+                                "possible")))))
+                      (setq index (1+ index)))
+                    (put config :connections connections))))))))
+    (await (callOk f "O" "catalog.refresh" (js-object :idempotency_key "load-catalog")))
+    (await (js-call f :tick))
+    (let ((cursor nil) (candidates (js-array)) (done false))
+      (while (not done)
+        (let
+          (
+            (page
+              (await
+                (callOk
+                  f
+                  "O"
+                  "agent.discover"
+                  (Object/assign
+                    (js-object :tool "opencode" :scope "live" :limit 200)
+                    (if cursor (js-object :cursor cursor) (js-object)))))))
+          (js-call
+            (nativeGet page "items")
+            :forEach
+            (lambda (candidate) (js-call candidates :push candidate)))
+          (setq cursor (nativeGet page "next_cursor") done (not cursor))))
+      (js-call (expect (js-length candidates)) :toBe 1000)
+      (let ((index 0))
+        (while (< index (js-length candidates))
+          (let*
+            ((candidate (aref candidates index))
+              (native-id (nativeGet candidate "native_session_id"))
+              (ordinal (NativeNumber (js-call native-id :slice 5)))
+              (agent
+                (await
+                  (callOk
+                    f
+                    "O"
+                    "agent.register"
+                    (js-object
+                      :candidate_ref
+                      (nativeGet candidate "candidate_ref")
+                      :display_name
+                      "load target"
+                      :binding_mode
+                      "existing"
+                      :recipient_principal_id
+                      (str "R-" ordinal)
+                      :idempotency_key
+                      (str "load-agent-" ordinal)))))
+              (slot 0))
+            (while (< slot 10)
+              (let*
+                (
+                  (address
+                    (await
+                      (callOk
+                        f
+                        "O"
+                        "conversation.resolve"
+                        (js-object
+                          :connection_id
+                          (str "load-source-" (if large-fanout 0 (% ordinal 100)))
+                          :chat_id
+                          (if (or large-fanout (< slot 5)) "c1" "c2")
+                          :thread_id
+                          nil))))
+                  (preview
+                    (await
+                      (callOk
+                        f
+                        "O"
+                        "subscription.preview"
+                        (js-object
+                          :spec
+                          (js-object
+                            :agent_id
+                            (nativeGet agent "agent_id")
+                            :selector
+                            (js-object
+                              :sources
+                              (js-array
+                                (js-object
+                                  :conversation_ref
+                                  (nativeGet address "conversation_ref")))
+                              :event_kinds
+                              (js-array "message.created"))
+                            :predicate
+                            (js-object :all (js-array))
+                            :context_policy
+                            (js-object :mode "current" :max_events 1 :max_bytes 16384)
+                            :delivery_policy
+                            (js-object :busy "queue" :offline "hold" :ttl_seconds 86400)
+                            :start
+                            "now"))))))
+                (await
+                  (callOk
+                    f
+                    "O"
+                    "subscription.create"
+                    (js-object
+                      :preview_id
+                      (nativeGet preview "preview_id")
+                      :idempotency_key
+                      (str "load-sub-" ordinal "-" slot)))))
+              (setq slot (1+ slot))))
+          (setq index (1+ index)))))
+    f))
+  (withCase
+    "T27.route-load.performance"
+    setupRouter
+    (async
+      (f)
+      (let*
+        ((samples (js-array))
+          (peaks (js-array))
+          (inputs (nativeGet (nativeGet f "opencode") "inputs"))
+          (payload-text (js-call "x" :repeat 4096))
+          (cpu-start (js-call globalThis.process :cpuUsage))
+          ;; 100 sources x 100 rules, half on an unstimulated chat: 50 candidates/event.
+          ;; Producer paces 100 events/s on an absolute 10ms schedule (yielding every 16
+          ;; catch-up events); consumer runs an independent non-reentrant 20ms tick timer.
+          (schedule
+            (await
+              (runCapacitySchedule
+                (js-object
+                  :total_events
+                  6000
+                  :pace_ms
+                  10
+                  :catchup_yield_every
+                  16
+                  :consumer_interval_ms
+                  20
+                  :drain_poll_ms
+                  5
+                  :deadline_ms
+                  70000
+                  :ingest_event
+                  (async
+                    (index)
+                    (js-call (nativeGet f "clock") :advance 10)
+                    (let ((before (performance/now)))
+                      (successful
+                        (await
+                          (js-call
+                            f
+                            :ingest
+                            (createdEvent
+                              (str "load-source-" (% index 100))
+                              (str "load-" index)
+                              payload-text))))
+                      (js-call samples :push (- (performance/now) before))
+                      (js-call
+                        peaks
+                        :push
+                        (nativeGet (js-call globalThis.process :memoryUsage) "rss"))))
+                  :run_tick
+                  (async () (await (js-call f :tick)))
+                  :is_drained
+                  (lambda
+                    ()
+                    (let ((count (js-length inputs)))
+                      (if (< count 60000)
+                        (js-object :done false :native_inputs count :durable nil)
+                        (let ((settled (durablePending f)))
+                          (js-object
+                            :done
+                            (and
+                              (= count 60000)
+                              (= (nativeGet settled "accepted") 60000)
+                              (= (nativeGet settled "unaccepted") 0)
+                              (= (nativeGet settled "claims") 0)
+                              (= (nativeGet settled "routing") 0)
+                              (= (nativeGet settled "remaining") 0))
+                            :native_inputs
+                            count
+                            :durable
+                            settled)))))
+                  :snapshot_pending
+                  (lambda
+                    ()
+                    (js-object
+                      :done
+                      false
+                      :native_inputs
+                      (js-length inputs)
+                      :durable
+                      (durablePending f))))))))
+        (let*
+          ((wall-ms (nativeGet schedule "wall_ms"))
+            (ingested (nativeGet schedule "ingested_events"))
+            (completed (= (nativeGet schedule "completed") t))
+            (snapshot (or (nativeGet schedule "final_snapshot") (js-object)))
+            (settled (or (nativeGet snapshot "durable") (durablePending f)))
+            (output (nativeGet (nativeGet globalThis.process "env") "DJ_TEST_PERFORMANCE_FILE")))
+          (unless output
+            (throw (new globalThis.Error "performance evidence output required")))
+          (unless completed
+            (let
+              ((failure-report
+                  (js-object
+                    :case_id
+                    "T27.route-load.performance"
+                    :status
+                    "failed"
+                    :schedule_completed
+                    false
+                    :schedule_mode
+                    "independent_10ms_producer_20ms_consumer"
+                    :cancel_reason
+                    (or (nativeGet schedule "cancel_reason") "incomplete")
+                    :events
+                    ingested
+                    :native_inputs
+                    (js-length inputs)
+                    :durable_pending
+                    settled
+                    :tick_count
+                    (nativeGet schedule "tick_count")
+                    :tick_skipped_count
+                    (nativeGet schedule "tick_skipped_count")
+                    :tick_error_count
+                    (nativeGet schedule "tick_error_count")
+                    :max_concurrent_ticks
+                    (nativeGet schedule "max_concurrent_ticks")
+                    :catchup_yields
+                    (nativeGet schedule "catchup_yields")
+                    :in_flight_at_exit
+                    (nativeGet schedule "in_flight_at_exit")
+                    :ingest_wall_ms
+                    (nativeGet schedule "ingest_wall_ms")
+                    :drain_wall_ms
+                    (nativeGet schedule "drain_wall_ms")
+                    :wall_ms
+                    wall-ms)))
+              (await
+                (appendFile
+                  output
+                  (str (JSON/stringify failure-report) "\n")
+                  (js-object :mode 384)))
+              (when (nativeGet schedule "consumer_error")
+                (throw (nativeGet schedule "consumer_error")))
+              (when (nativeGet schedule "producer_error")
+                (throw (nativeGet schedule "producer_error")))
+              (throw
+                (new
+                  globalThis.Error
+                  (str
+                    "T27.route-load.performance incomplete: reason="
+                    (or (nativeGet schedule "cancel_reason") "incomplete")
+                    " events="
+                    ingested
+                    " inputs="
+                    (js-length inputs)
+                    " remaining="
+                    (nativeGet settled "remaining"))))))
+          (let*
+            ((actual-eps (/ (* ingested 1000) wall-ms))
+              (stats (await (callOk f "O" "service.status" (js-object))))
+              (metrics (nativeGet stats "routing_metrics"))
+              (cpu (js-call globalThis.process :cpuUsage cpu-start))
+              (gates-passed
+                (and
+                  (= ingested 6000)
+                  (= (js-length inputs) 60000)
+                  (= (nativeGet settled "accepted") 60000)
+                  (= (nativeGet settled "unaccepted") 0)
+                  (= (nativeGet settled "claims") 0)
+                  (= (nativeGet settled "routing") 0)
+                  (= (nativeGet schedule "tick_error_count") 0)
+                  (<= (nativeGet schedule "max_concurrent_ticks") 1)
+                  (= (nativeGet schedule "in_flight_at_exit") false)
+                  (= (nativeGet metrics "lost_routing_work") 0)
+                  (<= (nativeGet metrics "bounded_candidate_cpu_p95_ms") 10)
+                  (<= (nativeGet metrics "max_candidates_observed") 64)
+                  (>= actual-eps 100)))
+              (report
+                (js-object
+                  :case_id
+                  "T27.route-load.performance"
+                  :status
+                  (if gates-passed "passed" "failed")
+                  :schedule_completed
+                  t
+                  :schedule_mode
+                  "independent_10ms_producer_20ms_consumer"
+                  :cancel_reason
+                  (if gates-passed
+                    nil
+                    (if (< actual-eps 100)
+                      "throughput_below_target"
+                      "gate_assertion_failed"))
+                  :events
+                  ingested
+                  :native_inputs
+                  (js-length inputs)
+                  :actual_events_per_second
+                  actual-eps
+                  :connections
+                  100
+                  :targets
+                  1000
+                  :subscriptions
+                  10000
+                  :candidates_per_event
+                  50
+                  :target_events_per_second
+                  100
+                  :text_bytes
+                  4096
+                  :ingest_wall_ms
+                  (nativeGet schedule "ingest_wall_ms")
+                  :drain_wall_ms
+                  (nativeGet schedule "drain_wall_ms")
+                  :wall_ms
+                  wall-ms
+                  :tick_count
+                  (nativeGet schedule "tick_count")
+                  :tick_skipped_count
+                  (nativeGet schedule "tick_skipped_count")
+                  :tick_error_count
+                  (nativeGet schedule "tick_error_count")
+                  :max_concurrent_ticks
+                  (nativeGet schedule "max_concurrent_ticks")
+                  :catchup_yields
+                  (nativeGet schedule "catchup_yields")
+                  :durable_pending
+                  settled
+                  :cpu_user_us
+                  (nativeGet cpu "user")
+                  :cpu_system_us
+                  (nativeGet cpu "system")
+                  :rss_samples
+                  peaks
+                  :measurement_scope
+                  "core plus synthetic peer fixtures; native consumers/proxies need separate owned-process evidence"
+                  :route_metrics
+                  metrics
+                  :source_samples_ms
+                  samples)))
+            (await
+              (appendFile
+                output
+                (str (JSON/stringify report) "\n")
+                (js-object :mode 384)))
+            (js-call (expect ingested) :toBe 6000)
+            (js-call (expect (js-length inputs)) :toBe 60000)
+            (js-call (expect (nativeGet settled "accepted")) :toBe 60000)
+            (js-call (expect (nativeGet settled "unaccepted")) :toBe 0)
+            (js-call (expect (nativeGet settled "claims")) :toBe 0)
+            (js-call (expect (nativeGet settled "routing")) :toBe 0)
+            (js-call (expect (nativeGet schedule "tick_error_count")) :toBe 0)
+            (js-call
+              (expect (nativeGet schedule "max_concurrent_ticks"))
+              :toBeLessThanOrEqual
+              1)
+            (js-call (expect (nativeGet schedule "in_flight_at_exit")) :toBe false)
+            (js-call (expect (nativeGet metrics "lost_routing_work")) :toBe 0)
+            (js-call
+              (expect (nativeGet metrics "bounded_candidate_cpu_p95_ms"))
+              :toBeLessThanOrEqual
+              10)
+            (js-call
+              (expect (nativeGet metrics "max_candidates_observed"))
+              :toBeLessThanOrEqual
+              64)
+            (js-call
+              (expect (nativeGet report "actual_events_per_second"))
+              :toBeGreaterThanOrEqual
+              100)))))
+    closeFixture)
+  (import "../support/real.eli" createRealFixture approvedDriver)
+  (withCase
+    "T27.deployment-resources.performance"
+    (async () (await (createRealFixture "T27.deployment-resources.performance")))
+    (async
+      (f)
+      (let*
+        (
+          (raw
+            (await
+              (approvedDriver
+                f
+                "measure-owned-deployment"
+                (js-object :run_id (nativeGet f "run_id") :duration_ms 60000 :interval_ms 100))))
+          (summary (summarizeResources raw))
+          (output (nativeGet (nativeGet globalThis.process "env") "DJ_TEST_PERFORMANCE_FILE")))
+        (js-call
+          (expect (nativeGet summary "dj_peak_physical_footprint_bytes"))
+          :toBeLessThanOrEqual
+          268435456)
+        (unless output
+          (throw (new globalThis.Error "performance evidence output required")))
+        (await
+          (appendFile
+            output
+            (str
+              (JSON/stringify
+                (Object/assign
+                  (js-object :case_id "T27.deployment-resources.performance")
+                  summary))
+              "\n")
+            (js-object :mode 384)))
+        (await
+          (js-call
+            f
+            :evidence
+            (js-object
+              :source
+              (nativeGet summary "measurement_source")
+              :native_capture_id
+              (nativeGet raw "native_capture_id")
+              :dj_peak_bytes
+              (nativeGet summary "dj_peak_physical_footprint_bytes")
+              :external_peak_bytes
+              (nativeGet summary "external_agent_peak_physical_footprint_bytes")
+              :total_peak_bytes
+              (nativeGet summary "total_peak_physical_footprint_bytes"))))))
+    (lambda (f) nil))
+  (withCase
+    "T27.large-fanout.performance"
+    (async () (await (setupRouter t)))
+    (async
+      (f)
+      (let ((turns 0) (start (performance/now)))
+        (await
+          (js-call
+            f
+            :ingest
+            (createdEvent
+              "load-source-0"
+              "large-fanout-event"
+              (js-call "x" :repeat 4096))))
+        (while
+          (and
+            (< turns 256)
+            (or
+              (< (js-length (nativeGet (nativeGet f "opencode") "inputs")) 1000)
+              (> (nativeGet (durablePending f) "remaining") 0)))
+          (await (js-call f :tick))
+          (setq turns (1+ turns)))
+        (js-call (expect (js-length (nativeGet (nativeGet f "opencode") "inputs"))) :toBe 1000)
+        (let ((settled (durablePending f)))
+          (js-call (expect (nativeGet settled "accepted")) :toBe 1000)
+          (js-call (expect (nativeGet settled "unaccepted")) :toBe 0)
+          (js-call (expect (nativeGet settled "claims")) :toBe 0)
+          (js-call (expect (nativeGet settled "routing")) :toBe 0))
+        (let*
+          ((status (await (callOk f "O" "service.status" (js-object))))
+            (metrics (nativeGet status "routing_metrics"))
+            (output (nativeGet (nativeGet globalThis.process "env") "DJ_TEST_PERFORMANCE_FILE")))
+          (js-call
+            (expect (nativeGet metrics "max_match_batch_candidates"))
+            :toBeLessThanOrEqual
+            64)
+          (js-call (expect (nativeGet metrics "lost_routing_work")) :toBe 0)
+          (unless output
+            (throw (new globalThis.Error "performance evidence output required")))
+          (await
+            (appendFile
+              output
+              (str
+                (JSON/stringify
+                  (js-object
+                    :case_id
+                    "T27.large-fanout.performance"
+                    :event_candidates
+                    10000
+                    :target_deliveries
+                    1000
+                    :scheduler_turns
+                    turns
+                    :wall_ms
+                    (- (performance/now) start)
+                    :routing_metrics
+                    metrics))
+                "\n")
+              (js-object :mode 384))))))
+    closeFixture))

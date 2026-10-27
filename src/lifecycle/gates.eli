@@ -1,0 +1,174 @@
+(module dj.lifecycle.gates
+  (import "../core/native.eli" nativeGet)
+  (import "../core/errors.eli" success failure)
+  (import "../core/types.eli" nextRevision)
+  (defun readGate
+    (tx instance-id)
+    (let
+      (
+        (row
+          (js-call
+            (js-call
+              (nativeGet tx "db")
+              :query
+              "SELECT payload FROM instance_gates WHERE instance_id=?")
+            :get
+            instance-id)))
+      (when row (JSON/parse (nativeGet row "payload")))))
+  (defun readInstance
+    (tx instance-id)
+    (let
+      (
+        (row
+          (js-call
+            (js-call
+              (nativeGet tx "db")
+              :query
+              "SELECT payload FROM instances WHERE instance_id=?")
+            :get
+            instance-id)))
+      (when row (JSON/parse (nativeGet row "payload")))))
+  (defun assertGate
+    (tx instance-id expected-epoch required-state)
+    (let ((djReturn1Token (js-object)) (djReturn1Value nil))
+      (try
+        (let ((gate (readGate tx instance-id)) (instance (readInstance tx instance-id)))
+          (unless
+            (and
+              instance
+              gate
+              (= (nativeGet instance "instance_epoch") expected-epoch)
+              (= (nativeGet gate "instance_epoch") expected-epoch))
+            (progn
+              (setq djReturn1Value (failure "stale_reference"))
+              (throw djReturn1Token)))
+          (unless
+            (and
+              (= (nativeGet gate "state") required-state)
+              (or (not (= required-state "open")) (= (nativeGet instance "state") "ready")))
+            (progn
+              (setq djReturn1Value (failure "instance_not_ready"))
+              (throw djReturn1Token)))
+          (success gate))
+        (catch djReturn1Error
+          (if (eq djReturn1Error djReturn1Token) djReturn1Value (throw djReturn1Error))))))
+  (defun closeGate
+    (tx instance-id expected-revision lifecycle-id &optional at)
+    (let ((djReturn2Token (js-object)) (djReturn2Value nil))
+      (try
+        (unless (js-call tx :inTransaction)
+          (progn
+            (setq djReturn2Value (failure "invalid_transaction"))
+            (throw djReturn2Token)))
+        (let*
+          ((instance (readInstance tx instance-id))
+            (gate (readGate tx instance-id))
+            (db (nativeGet tx "db")))
+          (unless (and instance gate)
+            (progn
+              (setq djReturn2Value (failure "instance_not_ready"))
+              (throw djReturn2Token)))
+          (unless (= (nativeGet instance "revision") expected-revision)
+            (progn
+              (setq djReturn2Value (failure "revision_conflict"))
+              (throw djReturn2Token)))
+          (put gate :state "closed")
+          (put gate :reason "instance_stop")
+          (put gate :stop_lifecycle_id lifecycle-id)
+          (put gate :closed_at (or at (js-call (new globalThis.Date) :toISOString)))
+          (put gate :revision (nextRevision (nativeGet gate "revision")))
+          (js-call
+            (js-call
+              db
+              :query
+              "UPDATE instance_gates SET state='closed',revision=?,payload=? WHERE instance_id=? AND instance_epoch=?")
+            :run
+            (nativeGet gate "revision")
+            (JSON/stringify gate)
+            instance-id
+            (nativeGet instance "instance_epoch"))
+          (success gate))
+        (catch djReturn2Error
+          (if (eq djReturn2Error djReturn2Token) djReturn2Value (throw djReturn2Error))))))
+  (defun releaseSlot
+    (tx profile-id absence-evidence)
+    (let ((djReturn3Token (js-object)) (djReturn3Value nil))
+      (try
+        (unless (js-call tx :inTransaction)
+          (progn
+            (setq djReturn3Value (failure "invalid_transaction"))
+            (throw djReturn3Token)))
+        (let*
+          ((db (nativeGet tx "db"))
+            (row
+              (js-call
+                (js-call
+                  db
+                  :query
+                  "SELECT payload FROM managed_slots WHERE profile_id=?")
+                :get
+                profile-id)))
+          (unless row
+            (progn (setq djReturn3Value (success nil)) (throw djReturn3Token)))
+          (let ((slot (JSON/parse (nativeGet row "payload"))))
+            (unless
+              (and
+                (= (nativeGet absence-evidence "absence_verified") t)
+                (= (nativeGet absence-evidence "evidence_level") "native_protocol")
+                (not (= (nativeGet absence-evidence "manual") t))
+                (= (nativeGet absence-evidence "launch_token") (nativeGet slot "launch_token"))
+                (= (nativeGet absence-evidence "instance_id") (nativeGet slot "instance_id"))
+                (= (nativeGet absence-evidence "instance_epoch") (nativeGet slot "instance_epoch")))
+              (progn
+                (setq djReturn3Value (failure "profile_conflict"))
+                (throw djReturn3Token)))
+            (js-call
+              (js-call
+                db
+                :query
+                "DELETE FROM managed_slots WHERE profile_id=? AND instance_id=? AND instance_epoch=? AND launch_token=?")
+              :run
+              profile-id
+              (nativeGet slot "instance_id")
+              (nativeGet slot "instance_epoch")
+              (nativeGet slot "launch_token"))
+            (success nil)))
+        (catch djReturn3Error
+          (if (eq djReturn3Error djReturn3Token) djReturn3Value (throw djReturn3Error))))))
+  (defun reserveSlot
+    (tx repository profile instance action token)
+    (let ((djReturn4Token (js-object)) (djReturn4Value nil))
+      (try
+        (unless (js-call tx :inTransaction)
+          (progn
+            (setq djReturn4Value (failure "invalid_transaction"))
+            (throw djReturn4Token)))
+        (when (js-call repository :get "managed_slots" (nativeGet profile "profile_id"))
+          (progn
+            (setq djReturn4Value (failure "profile_conflict"))
+            (throw djReturn4Token)))
+        (let
+          (
+            (slot
+              (js-object
+                :profile_id
+                (nativeGet profile "profile_id")
+                :profile_revision
+                (nativeGet profile "revision")
+                :instance_id
+                (nativeGet instance "instance_id")
+                :instance_epoch
+                (nativeGet instance "instance_epoch")
+                :launch_token
+                token
+                :start_lifecycle_id
+                (nativeGet action "lifecycle_id")
+                :state
+                "starting"
+                :ownership_evidence_ref
+                nil)))
+          (js-call repository :insert "managed_slots" slot)
+          (success slot))
+        (catch djReturn4Error
+          (if (eq djReturn4Error djReturn4Token) djReturn4Value (throw djReturn4Error))))))
+  (export assertGate closeGate releaseSlot reserveSlot readGate))

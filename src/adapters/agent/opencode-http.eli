@@ -1,0 +1,1045 @@
+(module dj.adapters.agent.opencode-http
+  (import "../../core/native.eli"
+    nativeTypeOf
+    nativeClearTimeout
+    nativeEncodeURIComponent
+    nativeSetTimeout nativeGet)
+  (import "../../core/limits.eli" limits)
+  (import "../../core/types.eli" utf8Bytes)
+  (import "../../delivery/envelope.eli" encodeAgentInput openCodeMessageId)
+  (import "../im/telegram.eli" readJson)
+  (defun nativeSession
+    (endpoint native &optional state)
+    (unless
+      (and
+        (= (nativeTypeOf (nativeGet native "id")) "string")
+        (> (js-length (nativeGet native "id")) 0)
+        (= (nativeGet native "projectID") (nativeGet endpoint "native_namespace"))
+        (= (nativeGet native "directory") (nativeGet endpoint "directory")))
+      (throw
+        (new
+          globalThis.TypeError
+          "OpenCode session identity does not match the configured project")))
+    (let
+      (
+        (session
+          (js-object
+            :tool
+            "opencode"
+            :native_namespace
+            (nativeGet endpoint "native_namespace")
+            :native_session_id
+            (nativeGet native "id")
+            :instance_id
+            (nativeGet endpoint "instance_id")
+            :instance_epoch
+            (nativeGet endpoint "instance_epoch")
+            :workspace_ref
+            (nativeGet endpoint "workspace_ref")
+            :title
+            (nativeGet native "title" "")
+            :visibility
+            (if (= (nativeGet endpoint "ownership") "managed")
+              (js-array "history" "live" "managed")
+              (js-array "history" "live"))
+            :runtime_state
+            (or state "unknown")
+            :live_receiver
+            t
+            :coverage
+            "covered")))
+      (js-call
+        (js-array "created" "updated")
+        :forEach
+        (lambda
+          (field)
+          (let ((milliseconds (nativeGet (nativeGet native "time") field)))
+            (when (Number/isSafeInteger milliseconds)
+              (put
+                session
+                (str field "_at")
+                (js-call (new globalThis.Date milliseconds) :toISOString))))))
+      session))
+  (defun createOpenCodePort
+    (config host)
+    (let* ((endpoints (new globalThis.Map))
+        (existing-only (= (nativeGet config "existing_only") t))
+        (managed (new globalThis.Map))
+        (closed false)
+        (capabilities
+          (js-object
+            :session_list
+            "supported"
+            :session_messages
+            "supported"
+            :session_probe
+            "supported"
+            :session_create
+            "supported"
+            :session_send
+            "supported"
+            :start_idle
+            "supported"
+            :instance_start
+            (if existing-only "unsupported" "supported")
+            :instance_stop
+            (if existing-only "unsupported" "supported")
+            :native_idempotency
+            "unsupported"
+            :lookup_send
+            "positive_only"
+            :lookup_create
+            "unsupported"
+            :observe
+            "supported"
+            :max_input_frame_bytes
+            (nativeGet limits "native_frame_max_bytes"))))
+(let ((endpointFor nil) (headersFor nil) (urlFor nil) (request nil) (verifyEndpoint nil) (probe nil) (listOne nil) (listSessions nil) (readMessages nil) (submit nil) (lookup nil) (observe nil) (inspectInstance nil))
+
+      (js-call
+        (nativeGet config "endpoints" (js-array))
+        :forEach
+        (lambda
+          (endpoint)
+          (js-call endpoints :set (nativeGet endpoint "endpoint_ref") endpoint)))
+
+(setq endpointFor (lambda
+            (target)
+            (let ((endpoint
+                  (and
+                    (nativeGet target "endpoint_ref")
+                    (js-call endpoints :get (nativeGet target "endpoint_ref")))))
+              (unless endpoint
+                (setq
+                  endpoint
+                  (js-call
+                    (Array/from (js-call endpoints :values))
+                    :find
+                    (lambda
+                      (candidate)
+                      (and
+                        (= (nativeGet candidate "instance_id") (nativeGet target "instance_id"))
+                        (=
+                          (nativeGet candidate "native_namespace")
+                          (nativeGet target "native_namespace")))))))
+              (unless
+                (and
+                  endpoint
+                  (= (nativeGet endpoint "native_namespace") (nativeGet target "native_namespace"))
+                  (or
+                    (not (nativeGet target "instance_epoch"))
+                    (= (nativeGet endpoint "instance_epoch") (nativeGet target "instance_epoch"))))
+                (throw
+                  (new
+                    globalThis.Error
+                    "exact OpenCode endpoint binding is unavailable")))
+              endpoint)))
+(setq headersFor (async
+            (endpoint)
+            (let ((headers (js-object :accept "application/json")))
+              (when (nativeGet endpoint "credential_ref")
+                (let ((credentials
+                      (await
+                        (js-call
+                          (nativeGet host "credentials")
+                          :resolve
+                          (nativeGet endpoint "credential_ref")))))
+                  (unless
+                    (and
+                      (= (nativeTypeOf (nativeGet credentials "username" "opencode")) "string")
+                      (= (nativeTypeOf (nativeGet credentials "password")) "string"))
+                    (throw
+                      (new globalThis.Error "OpenCode Basic credential is unavailable")))
+                  (put
+                    headers
+                    :authorization
+                    (str
+                      "Basic "
+                      (js-call
+                        (Buffer/from
+                          (str
+                            (nativeGet credentials "username" "opencode")
+                            ":"
+                            (nativeGet credentials "password"))
+                          "utf8")
+                        :toString
+                        "base64")))))
+              headers)))
+(setq urlFor (lambda
+            (endpoint path)
+            (let ((url (new globalThis.URL path (nativeGet endpoint "base_url"))))
+              (unless
+                (and
+                  (js-call (js-array "http:" "https:") :includes (nativeGet url "protocol"))
+                  (js-call (js-array "localhost" "127.0.0.1" "[::1]") :includes (nativeGet url "hostname"))
+                  (= (nativeGet url "username") "")
+                  (= (nativeGet url "password") ""))
+                (throw
+                  (new globalThis.TypeError "configured OpenCode URL is incompatible")))
+              (js-call
+                (nativeGet url "searchParams")
+                :set
+                "directory"
+                (nativeGet endpoint "directory"))
+              url)))
+(setq request (async
+            (endpoint path method body context)
+            (let ((djReturn1Token (js-object)) (djReturn1Value nil))
+              (try
+                (let* ((controller (new globalThis.AbortController)) (timer nil) (parent (nativeGet context "abort_signal")) (launched false) (abort (lambda () (js-call controller :abort))))
+                  (try
+                    (when closed
+                      (progn
+                        (setq
+                          djReturn1Value
+                          (js-object :ok false :definite_not_sent t :reason "closed"))
+                        (throw djReturn1Token)))
+                    (let* ((headers (await (headersFor endpoint))) (remaining
+                          (-
+                            (nativeGet
+                              context
+                              "deadline"
+                              (+ (js-call (nativeGet host "clock") :monoNow) 15000))
+                            (js-call (nativeGet host "clock") :monoNow))))
+                      (when (or (<= remaining 0) (= (nativeGet parent "aborted") t))
+                        (progn
+                          (setq
+                            djReturn1Value
+                            (js-object
+                              :ok
+                              false
+                              :definite_not_sent
+                              t
+                              :reason
+                              "deadline"))
+                          (throw djReturn1Token)))
+                      (setq timer (nativeSetTimeout abort remaining))
+                      (when parent
+                        (js-call
+                          parent
+                          :addEventListener
+                          "abort"
+                          abort
+                          (js-object :once t)))
+                      (when body (put headers :content-type "application/json"))
+                      (let ((options
+                            (js-object
+                              :method
+                              method
+                              :headers
+                              headers
+                              :signal
+                              (nativeGet controller "signal")
+                              :redirect
+                              "error")))
+                        (when body (put options :body (JSON/stringify body)))
+                        (setq launched t)
+                        (let* ((response
+                              (await
+                                (js-call
+                                  (nativeGet host "http")
+                                  :fetch
+                                  (urlFor endpoint path)
+                                  options))) (status (nativeGet response "status")))
+                          (if (= status 204)
+                            (js-object :ok t :status 204)
+                            (let ((wire
+                                  (await
+                                    (readJson
+                                      response
+                                      (Math/min
+                                        (nativeGet
+                                          context
+                                          "max_response_bytes"
+                                          (nativeGet limits "native_response_max_bytes"))
+                                        (nativeGet limits "native_response_max_bytes"))))))
+                              (if (nativeGet response "ok")
+                                (js-object :ok t :status status :data wire
+                                  :native_cursor (js-call (nativeGet response "headers") :get "x-next-cursor"))
+                                (js-object
+                                  :ok
+                                  false
+                                  :status
+                                  status
+                                  :reason
+                                  "native_rejected"
+                                  :definite_not_sent
+                                  (js-call
+                                    (js-array 400 401 403 404 409 413 422 429)
+                                    :includes
+                                    status)
+                                  :retryable
+                                  (= status 429))))))))
+                    (catch unavailable
+                      (when (eq unavailable djReturn1Token) (throw unavailable))
+                      (js-object
+                        :ok
+                        false
+                        :definite_not_sent
+                        (not launched)
+                        :reason
+                        (if (= (nativeGet unavailable "message") "native response budget exceeded")
+                          "native_response_limit" "native_unavailable")))
+                    (finally
+                      (when timer (nativeClearTimeout timer))
+                      (when parent (js-call parent :removeEventListener "abort" abort)))))
+                (catch djReturn1Error
+                  (if (eq djReturn1Error djReturn1Token)
+                    djReturn1Value
+                    (throw djReturn1Error)))))))
+(setq verifyEndpoint (async
+            (endpoint context &optional owned-namespace-adoption)
+            (let ((djReturn2Token (js-object)) (djReturn2Value nil))
+              (try
+                (let ((health
+                      (await (request endpoint "/global/health" "GET" nil context))))
+                  (unless (and (nativeGet health "ok") (= (nativeGet (nativeGet health "data") "healthy") t))
+                    (progn (setq djReturn2Value nil) (throw djReturn2Token)))
+                  (let ((project
+                        (await (request endpoint "/project/current" "GET" nil context))))
+                    (when
+                      (and
+                        owned-namespace-adoption
+                        (= (nativeGet endpoint "ownership") "managed")
+                        (not (nativeGet endpoint "native_namespace"))
+                        (nativeGet project "ok")
+                        (=
+                          (nativeGet (nativeGet project "data") "worktree")
+                          (nativeGet endpoint "directory"))
+                        (= (nativeTypeOf (nativeGet (nativeGet project "data") "id")) "string")
+                        (> (js-length (nativeGet (nativeGet project "data") "id")) 0))
+                      (put endpoint :native_namespace (nativeGet (nativeGet project "data") "id")))
+                    (and
+                      (nativeGet project "ok")
+                      (= (nativeGet (nativeGet project "data") "id") (nativeGet endpoint "native_namespace"))
+                      (= (nativeGet (nativeGet project "data") "worktree") (nativeGet endpoint "directory")))))
+                (catch djReturn2Error
+                  (if (eq djReturn2Error djReturn2Token)
+                    djReturn2Value
+                    (throw djReturn2Error)))))))
+(setq probe (async
+            (target binding context)
+            (let ((djReturn3Token (js-object)) (djReturn3Value nil))
+              (try
+                (try
+                  (let ((endpoint (endpointFor binding)))
+                    (unless (await (verifyEndpoint endpoint context))
+                      (progn
+                        (setq
+                          djReturn3Value
+                          (js-object :runtime_state "offline" :live_receiver false))
+                        (throw djReturn3Token)))
+                    (let* ((native
+                          (await
+                            (request
+                              endpoint
+                              (str
+                                "/session/"
+                                (nativeEncodeURIComponent
+                                  (nativeGet target "native_session_id")))
+                              "GET"
+                              nil
+                              context))) (statuses
+                          (await (request endpoint "/session/status" "GET" nil context))))
+                      (unless (and (nativeGet native "ok") (nativeGet statuses "ok"))
+                        (progn
+                          (setq
+                            djReturn3Value
+                            (js-object :runtime_state "unknown" :live_receiver false))
+                          (throw djReturn3Token)))
+                      (let* ((status
+                            (nativeGet (nativeGet statuses "data") (nativeGet target "native_session_id"))) (type (nativeGet status "type" "idle")) (runtime
+                            (cond ((= type "idle") "idle")
+                              ((= type "waiting_permission") "waiting_permission")
+                              ((js-call (js-array "busy" "retry") :includes type)
+                                "busy")
+                              (t "unknown"))))
+                        (Object/assign
+                          (nativeSession endpoint (nativeGet native "data") runtime)
+                          (js-object
+                            :ok
+                            t
+                            :capabilities
+                            capabilities
+                            :evidence_level
+                            "native_protocol")))))
+                  (catch incompatible
+                    (when (eq incompatible djReturn3Token) (throw incompatible))
+                    (js-object :runtime_state "incompatible" :live_receiver false)))
+                (catch djReturn3Error
+                  (if (eq djReturn3Error djReturn3Token)
+                    djReturn3Value
+                    (throw djReturn3Error)))))))
+(setq listOne (async
+            (endpoint scope context)
+            (let ((djReturn4Token (js-object)) (djReturn4Value nil))
+              (try
+                (unless (await (verifyEndpoint endpoint context))
+                  (progn
+                    (setq
+                      djReturn4Value
+                      (js-object :items (js-array) :complete false :coverage "offline"))
+                    (throw djReturn4Token)))
+                (let ((response (await (request endpoint "/session" "GET" nil context))))
+                  (unless (and (nativeGet response "ok") (Array/isArray (nativeGet response "data")))
+                    (progn
+                      (setq
+                        djReturn4Value
+                        (js-object
+                          :items
+                          (js-array)
+                          :complete
+                          false
+                          :coverage
+                          "partial"
+                          :reason
+                          "native_page_unavailable_or_oversized"))
+                      (throw djReturn4Token)))
+                  (let ((items (js-array)))
+                    (js-call
+                      (nativeGet response "data")
+                      :forEach
+                      (lambda
+                        (native)
+                        (when
+                          (and
+                            (= (nativeGet native "projectID") (nativeGet endpoint "native_namespace"))
+                            (= (nativeGet native "directory") (nativeGet endpoint "directory")))
+                          (let ((session (nativeSession endpoint native "unknown")))
+                            (put session :capabilities capabilities)
+                            (js-call items :push session)))))
+                    (js-object
+                      :items
+                      items
+                      :next_cursor
+                      nil
+                      :complete
+                      t
+                      :coverage
+                      "covered")))
+                (catch djReturn4Error
+                  (if (eq djReturn4Error djReturn4Token)
+                    djReturn4Value
+                    (throw djReturn4Error)))))))
+(setq listSessions (async
+          (scope cursor budget context)
+          (let ((djReturn5Token (js-object)) (djReturn5Value nil))
+            (try
+              (let* ((selected
+                    (js-call
+                      (Array/from (js-call endpoints :values))
+                      :filter
+                      (lambda
+                        (endpoint)
+                        (and
+                          (or
+                            (not (nativeGet scope "instance_id"))
+                            (= (nativeGet scope "instance_id") (nativeGet endpoint "instance_id")))
+                          (or
+                            (not (nativeGet scope "instance_ids"))
+                            (js-call
+                              (nativeGet scope "instance_ids")
+                              :includes
+                              (nativeGet endpoint "instance_id")))
+                          (or
+                            (not (nativeGet scope "workspace_refs"))
+                            (js-call
+                              (nativeGet scope "workspace_refs")
+                              :includes
+                              (nativeGet endpoint "workspace_ref"))))))) (index (if cursor (nativeGet cursor "endpoint_index" 0) 0)))
+                (when (>= index (js-length selected))
+                  (progn
+                    (setq
+                      djReturn5Value
+                      (js-object
+                        :items
+                        (js-array)
+                        :complete
+                        t
+                        :coverage
+                        "covered"
+                        :next_cursor
+                        nil))
+                    (throw djReturn5Token)))
+                (let ((page (await (listOne (aref selected index) scope context))))
+                  (when (and (nativeGet page "complete") (< (1+ index) (js-length selected)))
+                    (put page :complete false)
+                    (put page :next_cursor (js-object :endpoint_index (1+ index))))
+                  page))
+              (catch djReturn5Error
+                (if (eq djReturn5Error djReturn5Token)
+                  djReturn5Value
+                  (throw djReturn5Error)))))))
+(setq readMessages (async
+          (session cursor budget context)
+          (let* ((endpoint (endpointFor session))
+                 (maximum (nativeGet budget "max_records" 32))
+                 (byte-limit (nativeGet budget "max_bytes" (nativeGet limits "native_response_max_bytes")))
+                 (count (Math/min 32 maximum)) (before nil)
+                 (page nil) (finished false))
+            (unless (and (Number/isSafeInteger maximum) (> maximum 0)
+                         (Number/isSafeInteger byte-limit) (> byte-limit 0))
+              (throw (new globalThis.TypeError "invalid native message budget")))
+            (when cursor
+              (unless (and (= (nativeGet cursor "native_session_id") (nativeGet session "native_session_id"))
+                           (= (nativeTypeOf (nativeGet cursor "before")) "string")
+                           (> (js-length (nativeGet cursor "before")) 0)
+                           (<= (js-length (nativeGet cursor "before")) 8192))
+                (throw (new globalThis.TypeError "native message cursor does not match the session")))
+              (setq before (nativeGet cursor "before")))
+            ;; OpenCode returns its latest page and an opaque before cursor.
+            ;; Shrinking an oversized read is bounded and never retries a write.
+            (while (not finished)
+              (let* ((path (str "/session/"
+                       (nativeEncodeURIComponent (nativeGet session "native_session_id"))
+                       "/message?limit=" count
+                       (if before (str "&before=" (nativeEncodeURIComponent before)) "")))
+                     (response (await (request endpoint path "GET" nil context)))
+                     (rows (nativeGet response "data")) (items (js-array))
+                     (bytes 0) (next-cursor (nativeGet response "native_cursor" nil)))
+                (if (and (= (nativeGet response "reason") "native_response_limit") (> count 1))
+                  (setq count (Math/max 1 (Math/floor (/ count 2))))
+                  (if (not (and (nativeGet response "ok") (Array/isArray rows) (<= (js-length rows) count)))
+                    (setq page (js-object :items (js-array) :complete false :coverage "partial"
+                      :next_cursor nil :reason "native_page_unavailable_or_oversized") finished t)
+                    (progn
+                      (js-call rows :forEach
+                        (lambda (message)
+                          (let* ((info (nativeGet message "info")) (parts (nativeGet message "parts"))
+                                 (texts (js-array)))
+                            (unless (and (= (nativeGet info "sessionID") (nativeGet session "native_session_id"))
+                                         (= (nativeTypeOf (nativeGet info "id")) "string")
+                                         (> (js-length (nativeGet info "id")) 0) (Array/isArray parts))
+                              (throw (new globalThis.Error "native message identity is incompatible")))
+                            (js-call parts :forEach
+                              (lambda (part)
+                                (when (and (= (nativeGet part "type") "text")
+                                           (= (nativeTypeOf (nativeGet part "text")) "string"))
+                                  (js-call texts :push (nativeGet part "text")))))
+                            (let ((item (js-object :native_message_id (nativeGet info "id")
+                                         :role (nativeGet info "role") :text (js-call texts :join "\n")
+                                         :created_at (js-call (new globalThis.Date
+                                           (nativeGet (nativeGet info "time") "created")) :toISOString))))
+                              (setq bytes (+ bytes (utf8Bytes (JSON/stringify item))))
+                              (js-call items :push item)))))
+                      (if (> bytes byte-limit)
+                        (if (> count 1)
+                          (setq count (Math/max 1 (Math/floor (/ count 2))))
+                          (setq page (js-object :items (js-array) :complete false :coverage "partial"
+                            :next_cursor nil :reason "native_message_budget_exceeded") finished t))
+                        (progn
+                          (when next-cursor
+                            (unless (and (= (nativeTypeOf next-cursor) "string")
+                                         (> (js-length next-cursor) 0) (<= (js-length next-cursor) 8192)
+                                         (not (= next-cursor before)))
+                              (throw (new globalThis.Error "native message cursor did not advance"))))
+                          (setq page (js-object :items items :complete (not next-cursor)
+                            :next_cursor (if next-cursor (js-object :before next-cursor
+                              :native_session_id (nativeGet session "native_session_id")) nil)
+                            :coverage "covered") finished t))))))))
+            page)))
+(setq submit (async
+                    (binding envelope mode key context)
+                    (let ((djReturn7Token (js-object)) (djReturn7Value nil))
+                      (try
+                        (unless (= mode "start_idle")
+                          (progn
+                            (setq
+                              djReturn7Value
+                              (js-object
+                                :state
+                                "failed"
+                                :definite_not_sent
+                                t
+                                :retryable
+                                false))
+                            (throw djReturn7Token)))
+                        (let* ((endpoint (endpointFor binding)) (observation (await (probe binding binding context))))
+                          (unless
+                            (and
+                              (= (nativeGet observation "runtime_state") "idle")
+                              (= (nativeGet observation "live_receiver") t))
+                            (progn
+                              (setq
+                                djReturn7Value
+                                (js-object
+                                  :state
+                                  "failed"
+                                  :definite_not_sent
+                                  t
+                                  :retryable
+                                  t
+                                  :evidence_level
+                                  "native_protocol"))
+                              (throw djReturn7Token)))
+                          (let ((input (encodeAgentInput "opencode" envelope key)))
+                            (when
+                              (>
+                                (nativeGet input "frame_bytes")
+                                (nativeGet capabilities "max_input_frame_bytes"))
+                              (progn
+                                (setq
+                                  djReturn7Value
+                                  (js-object
+                                    :state
+                                    "failed"
+                                    :definite_not_sent
+                                    t
+                                    :retryable
+                                    false))
+                                (throw djReturn7Token)))
+                            (let ((response
+                                  (await
+                                    (request
+                                      endpoint
+                                      (str
+                                        "/session/"
+                                        (nativeEncodeURIComponent
+                                          (nativeGet binding "native_session_id"))
+                                        "/prompt_async")
+                                      "POST"
+                                      (nativeGet input "value")
+                                      context))))
+                              (cond
+                                ((and (nativeGet response "ok") (= (nativeGet response "status") 204))
+                                  (js-object
+                                    :state
+                                    "accepted"
+                                    :kind
+                                    "accepted"
+                                    :status
+                                    204
+                                    :native_ref
+                                    (openCodeMessageId key)
+                                    :evidence_level
+                                    "native_protocol"))
+                                ((nativeGet response "definite_not_sent")
+                                  (js-object
+                                    :state
+                                    "failed"
+                                    :definite_not_sent
+                                    t
+                                    :retryable
+                                    (= (nativeGet response "retryable") t)
+                                    :evidence_level
+                                    "native_protocol"))
+                                (t
+                                  (js-object
+                                    :state
+                                    "unknown"
+                                    :definite_not_sent
+                                    false
+                                    :evidence_level
+                                    "none"))))))
+                        (catch djReturn7Error
+                          (if (eq djReturn7Error djReturn7Token)
+                            djReturn7Value
+                            (throw djReturn7Error)))))))
+(setq lookup (async (binding key ref context)
+      (let* ((endpoint (endpointFor binding)) (id (openCodeMessageId key)))
+        (if (and ref (not (= ref id)))
+          (js-object :state "unknown" :status "incompatible")
+          (let ((response (await (request endpoint
+                   (str "/session/" (nativeEncodeURIComponent (nativeGet binding "native_session_id"))
+                        "/message/" (nativeEncodeURIComponent id)) "GET" nil context))))
+            (if (and (nativeGet response "ok")
+                     (= (nativeGet (nativeGet (nativeGet response "data") "info") "id") id)
+                     (= (nativeGet (nativeGet (nativeGet response "data") "info") "sessionID") (nativeGet binding "native_session_id")))
+              (js-object :state "accepted" :kind "accepted" :native_ref id :evidence_level "native_protocol")
+              (js-object :state "unknown" :status "not_proven" :definite_not_sent false)))))))
+(setq observe (async (binding ref cursor budget context)
+      (if (not ref)
+        (js-object :items (js-array) :complete t :next_cursor nil)
+        (let* ((endpoint (endpointFor binding)) (response (await (request endpoint
+                 (str "/session/" (nativeEncodeURIComponent (nativeGet binding "native_session_id")) "/message")
+                 "GET" nil context))) (facts (js-array)))
+          (when (and (nativeGet response "ok") (Array/isArray (nativeGet response "data")))
+            (js-call (nativeGet response "data") :forEach
+              (lambda (message)
+                (let ((info (nativeGet message "info")))
+                  (when (and (= (nativeGet info "role") "assistant") (= (nativeGet info "parentID") ref)
+                             (= (nativeGet info "sessionID") (nativeGet binding "native_session_id")))
+                    (js-call facts :push (js-object :kind "started" :native_ref ref
+                      :native_receipt_key (str "assistant-start:" (nativeGet info "id")) :evidence_level "native_protocol"))
+                    (when (nativeGet (nativeGet info "time") "completed")
+                      (js-call facts :push (js-object :kind "turn_finished" :native_ref ref
+                        :native_receipt_key (str "assistant-end:" (nativeGet info "id")) :evidence_level "native_protocol"))))))))
+          (js-object :items facts :next_cursor nil :complete t)))))
+(setq inspectInstance (async
+                    (instance token context)
+                    (let ((djReturn10Token (js-object)) (djReturn10Value nil))
+                      (try
+                        (let ((record (js-call managed :get token)))
+                          (unless
+                            (and
+                              record
+                              (=
+                                (nativeGet (nativeGet record "endpoint") "instance_id")
+                                (nativeGet instance "instance_id"))
+                              (=
+                                (nativeGet (nativeGet record "endpoint") "instance_epoch")
+                                (nativeGet instance "instance_epoch")))
+                            (progn
+                              (setq
+                                djReturn10Value
+                                (js-object :state "unknown" :absence_verified false))
+                              (throw djReturn10Token)))
+                          (if (nativeGet record "exited")
+                            (js-object
+                              :state
+                              "stopped"
+                              :absence_verified
+                              t
+                              :evidence_level
+                              "native_protocol"
+                              :launch_token
+                              token)
+                            (if
+                              (await (verifyEndpoint (nativeGet record "endpoint") context t))
+                              (js-object
+                                :state
+                                "ready"
+                                :ownership
+                                "managed"
+                                :launch_token
+                                token
+                                :native_instance_id
+                                (nativeGet (nativeGet record "endpoint") "instance_id")
+                                :native_namespace
+                                (nativeGet (nativeGet record "endpoint") "native_namespace")
+                                :absence_verified
+                                false
+                                :evidence_level
+                                "native_protocol")
+                              (js-object
+                                :state
+                                "unknown"
+                                :absence_verified
+                                false
+                                :launch_token
+                                token))))
+                        (catch djReturn10Error
+                          (if (eq djReturn10Error djReturn10Token)
+                            djReturn10Value
+                            (throw djReturn10Error)))))))
+(js-object
+                  :capabilities
+                  capabilities
+                  :probe
+                  probe
+                  :listSessions
+                  listSessions
+                  :readMessages
+                  readMessages
+                  :submit
+                  submit
+                  :initialize
+                  (lambda (context) (setq closed false))
+                  :probeInstance
+                  (async
+                    (instance context)
+                    (try
+                      (let ((endpoint (endpointFor instance)))
+                        (if (await (verifyEndpoint endpoint context))
+                          (js-object
+                            :state
+                            "ready"
+                            :native_namespace
+                            (nativeGet endpoint "native_namespace")
+                            :instance_epoch
+                            (nativeGet endpoint "instance_epoch")
+                            :evidence_level
+                            "native_protocol")
+                          (js-object :state "offline" :evidence_level "none")))
+                      (catch unavailable
+                        (js-object :state "unknown" :evidence_level "none"))))
+                  :lookup
+                  lookup
+                  :observe
+                  observe
+                  :discover
+                  (async
+                    (scope page context)
+                    (await
+                      (listSessions
+                        (js-object
+                          :instance_ids
+                          (js-array (nativeGet page "instance_id"))
+                          :visibility
+                          (js-array scope))
+                        (nativeGet page "cursor" nil)
+                        (js-object)
+                        context)))
+                  :create
+                  (async
+                    (instance workspace key context)
+                    (let ((djReturn11Token (js-object)) (djReturn11Value nil))
+                      (try
+                        (let ((endpoint (endpointFor instance)))
+                          (unless (= workspace (nativeGet endpoint "workspace_ref"))
+                            (progn
+                              (setq
+                                djReturn11Value
+                                (js-object :state "failed" :definite_not_sent t))
+                              (throw djReturn11Token)))
+                          (let ((body (js-object)))
+                            (when (nativeGet context "title")
+                              (put body :title (nativeGet context "title")))
+                            (let ((response
+                                  (await
+                                    (request endpoint "/session" "POST" body context))))
+                              (if (nativeGet response "ok")
+                                (js-object
+                                  :state
+                                  "ready"
+                                  :creation_key
+                                  key
+                                  :session
+                                  (nativeSession endpoint (nativeGet response "data") "idle")
+                                  :evidence_level
+                                  "native_protocol")
+                                (js-object :state "unknown" :definite_not_sent false)))))
+                        (catch djReturn11Error
+                          (if (eq djReturn11Error djReturn11Token)
+                            djReturn11Value
+                            (throw djReturn11Error))))))
+                  :lookupCreate
+                  (async
+                    (instance key ref context)
+                    (js-object
+                      :state
+                      "unknown"
+                      :status
+                      "unsupported"
+                      :definite_not_sent
+                      false))
+                  :start
+                  (async
+                    (profile token context)
+                    (let ((djReturn12Token (js-object)) (djReturn12Value nil))
+                      (try
+                        (when existing-only
+                          (setq djReturn12Value (js-object :state "failed" :definite_not_sent t
+                            :evidence_level "none" :reason "existing_receiver_only"))
+                          (throw djReturn12Token))
+                        (when (js-call managed :has token)
+                          (progn
+                            (setq
+                              djReturn12Value
+                              (await (inspectInstance profile token context)))
+                            (throw djReturn12Token)))
+                        (let* ((template
+                              (or
+                                (nativeGet profile "endpoint")
+                                (js-call endpoints :get (nativeGet profile "endpoint_ref")))) (endpoint
+                              (Object/assign
+                                (js-object)
+                                template
+                                (js-object
+                                  :instance_id
+                                  (nativeGet profile "instance_id")
+                                  :instance_epoch
+                                  (nativeGet profile "instance_epoch")
+                                  :ownership
+                                  "managed"))) (argv (nativeGet profile "argv")) (env
+                              (Object/assign
+                                (js-object)
+                                (nativeGet globalThis.process "env")
+                                (nativeGet profile "env" (js-object)))))
+                          (unless
+                            (and template (Array/isArray argv) (> (js-length argv) 0))
+                            (progn
+                              (setq
+                                djReturn12Value
+                                (js-object :state "unknown" :definite_not_sent t))
+                              (throw djReturn12Token)))
+                          ;; A listener already present at this exact profile endpoint is a
+                          ;; conflict, even when it responds as the expected project.
+                          (let ((existing
+                                (await
+                                  (request endpoint "/global/health" "GET" nil context))))
+                            (when (nativeGet existing "ok")
+                              (progn
+                                (setq
+                                  djReturn12Value
+                                  (js-object
+                                    :state
+                                    "unknown"
+                                    :definite_not_sent
+                                    t
+                                    :reason
+                                    "endpoint_occupied"))
+                                (throw djReturn12Token))))
+                          (when (nativeGet endpoint "credential_ref")
+                            (let ((credentials
+                                  (await
+                                    (js-call
+                                      (nativeGet host "credentials")
+                                      :resolve
+                                      (nativeGet endpoint "credential_ref")))))
+                              (put
+                                env
+                                :OPENCODE_SERVER_USERNAME
+                                (nativeGet credentials "username" "opencode"))
+                              (put
+                                env
+                                :OPENCODE_SERVER_PASSWORD
+                                (nativeGet credentials "password"))))
+                          (let* ((child
+                                (js-call
+                                  (nativeGet host "process")
+                                  :spawn
+                                  argv
+                                  (js-object
+                                    :cwd
+                                    (nativeGet profile "cwd" (nativeGet endpoint "directory"))
+                                    :env
+                                    env
+                                    :launch_token
+                                    token
+                                    :stdin
+                                    "pipe"
+                                    :stdout
+                                    "pipe"
+                                    :stderr
+                                    "pipe"))) (record
+                                (js-object
+                                  :child
+                                  child
+                                  :endpoint
+                                  endpoint
+                                  :launch_token
+                                  token
+                                  :exited
+                                  false)))
+                            (js-call managed :set token record)
+                            (js-call
+                              endpoints
+                              :set
+                              (nativeGet endpoint "endpoint_ref")
+                              endpoint)
+                            ;; Drain both pipes continuously with fixed memory; output is not
+                            ;; a proof of readiness and is never copied to public diagnostics.
+                            (js-call
+                              (js-array "stdout" "stderr")
+                              :forEach
+                              (lambda
+                                (stream-name)
+                                (put
+                                  record
+                                  stream-name
+                                  (funcall
+                                    (async
+                                      ()
+                                      (let ((reader
+                                            (js-call (nativeGet child stream-name) :getReader)))
+                                        (try
+                                          (let ((done false))
+                                            (while (not done)
+                                              (setq
+                                                done
+                                                (nativeGet
+                                                  (await (js-call reader :read))
+                                                  "done"))))
+                                          (finally (js-call reader :releaseLock)))))))))
+                            (js-call
+                              (nativeGet child "exited")
+                              :then
+                              (lambda (code) (put record :exited t)))
+                            (await (inspectInstance profile token context))))
+                        (catch djReturn12Error
+                          (if (eq djReturn12Error djReturn12Token)
+                            djReturn12Value
+                            (throw djReturn12Error))))))
+                  :inspectInstance
+                  inspectInstance
+                  :stop
+                  (async
+                    (instance budget context)
+                    (let ((djReturn13Token (js-object)) (djReturn13Value nil))
+                      (try
+                        (when existing-only
+                          (setq djReturn13Value (js-object :state "unknown" :absence_verified false
+                            :evidence_level "none" :reason "existing_receiver_only"))
+                          (throw djReturn13Token))
+                        (let* ((token (nativeGet instance "launch_token")) (record (js-call managed :get token)))
+                          (unless
+                            (and
+                              (= (nativeGet instance "ownership") "managed")
+                              record
+                              (=
+                                (nativeGet (nativeGet record "endpoint") "instance_id")
+                                (nativeGet instance "instance_id"))
+                              (=
+                                (nativeGet (nativeGet record "endpoint") "instance_epoch")
+                                (nativeGet instance "instance_epoch")))
+                            (progn
+                              (setq
+                                djReturn13Value
+                                (js-object :state "unknown" :absence_verified false))
+                              (throw djReturn13Token)))
+                          (when (nativeGet record "exited")
+                            (progn
+                              (setq
+                                djReturn13Value
+                                (js-object
+                                  :state
+                                  "stopped"
+                                  :absence_verified
+                                  t
+                                  :evidence_level
+                                  "native_protocol"))
+                              (throw djReturn13Token)))
+                          (let ((statuses
+                                (await
+                                  (request
+                                    (nativeGet record "endpoint")
+                                    "/session/status"
+                                    "GET"
+                                    nil
+                                    context))))
+                            (unless
+                              (and
+                                (nativeGet statuses "ok")
+                                (js-call
+                                  (Object/values (nativeGet statuses "data"))
+                                  :every
+                                  (lambda (state) (= (nativeGet state "type") "idle"))))
+                              (progn
+                                (setq
+                                  djReturn13Value
+                                  (js-object
+                                    :state
+                                    "draining"
+                                    :absence_verified
+                                    false
+                                    :deadline_reached
+                                    t))
+                                (throw djReturn13Token))))
+                          ;; Only the exact child held by this port may receive SIGTERM, and
+                          ;; only after current native status proves all its sessions idle.
+                          (js-call (nativeGet record "child") :kill "SIGTERM")
+                          (js-object
+                            :state
+                            "draining"
+                            :absence_verified
+                            false
+                            :deadline_reached
+                            t))
+                        (catch djReturn13Error
+                          (if (eq djReturn13Error djReturn13Token)
+                            djReturn13Value
+                            (throw djReturn13Error))))))
+                  :close
+                  (async
+                    ()
+                    ;; Closing the adapter never disposes an existing server or kills a
+                    ;; still active/unknown owned Agent. Its pipe owners stay attached.
+                    (let ((draining
+                          (js-call
+                            (Array/from (js-call managed :values))
+                            :some
+                            (lambda (record) (not (nativeGet record "exited"))))))
+                      (unless draining (setq closed t))
+                      (js-object :state (if draining "draining" "stopped"))))))))
+  (export createOpenCodePort nativeSession))

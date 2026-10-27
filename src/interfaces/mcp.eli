@@ -1,0 +1,296 @@
+(module dj.interfaces.mcp
+  (import "../core/native.eli" nativeTypeOf nativeGet)
+  (import "@modelcontextprotocol/server" Server ProtocolError ProtocolErrorCode)
+  (import "@modelcontextprotocol/server/stdio" serveStdio StdioServerTransport)
+  (import "ajv/dist/2020.js" :default Ajv2020)
+  (import "../core/errors.eli" success failure)
+  (import "../core/limits.eli" limits)
+  (import "../application/operations.eli" operationCatalog operationCatalogDigest)
+  (import "./client.eli" loadClientProfile callService)
+  (defconst validators (new globalThis.Map))
+  (defconst ajv
+    (new
+      Ajv2020
+      (js-object
+        :strict
+        t
+        :allErrors
+        t
+        :allowUnionTypes
+        t
+        :coerceTypes
+        false
+        :removeAdditional
+        false
+        :useDefaults
+        false)))
+  (defun toolName (operation) (str "dj_" (js-call operation :replaceAll "." "_")))
+  (defun toolsFromStatus
+    (status)
+    (js-call
+      (nativeGet status "visible_operations")
+      :map
+      (lambda
+        (operation)
+        (let ((descriptor (js-call operationCatalog :get operation)))
+          (unless descriptor
+            (throw
+              (new
+                ProtocolError
+                (nativeGet ProtocolErrorCode "InternalError")
+                "DJ operation catalog is incompatible")))
+          (js-object
+            :name
+            (toolName operation)
+            :description
+            (nativeGet descriptor "help")
+            :inputSchema
+            (nativeGet descriptor "input_schema")
+            :outputSchema
+            (nativeGet descriptor "output_schema")
+            :annotations
+            (js-object
+              :readOnlyHint
+              (nativeGet descriptor "read_only")
+              :destructiveHint
+              (nativeGet descriptor "destructive")
+              :idempotentHint
+              (or
+                (nativeGet descriptor "read_only")
+                (= (nativeGet descriptor "idempotency") "required"))
+              :openWorldHint
+              (not (= (nativeGet descriptor "effect_kind") "query"))))))))
+  (defun validateResult
+    (descriptor result)
+    (let ((validate (js-call validators :get (nativeGet descriptor "operation"))))
+      (unless validate
+        (setq validate (js-call ajv :compile (nativeGet descriptor "output_schema")))
+        (js-call validators :set (nativeGet descriptor "operation") validate))
+      (if (funcall validate result)
+        result
+        (failure
+          "internal_error"
+          (js-object
+            :effect_state
+            (cond ((nativeGet result "operation_id") "recorded")
+              ((= (nativeGet descriptor "idempotency") "required") "unknown")
+              (t "none"))
+            :details
+            (if (nativeGet result "operation_id")
+              (js-object :operation_id (nativeGet result "operation_id"))
+              (js-object))
+            :warnings
+            (js-array "invalid_result_inspect_original_operation"))))))
+  (defun createMcpServer
+    (profile proxy-abort on-close)
+    (let*
+      (
+        (server
+          (new
+            Server
+            (js-object :name "dispatch-junction" :version "0.1.0")
+            (js-object
+              :capabilities
+              (js-object :tools (js-object :listChanged false))
+              :instructions
+              "DJ performs deterministic routing. Reuse typed references, choose exact scopes, and inspect original operations after uncertain results. It does not select targets or generate answers.")))
+        (names (new globalThis.Map)))
+      (js-call
+        operationCatalog
+        :forEach
+        (lambda
+          (descriptor operation)
+          (js-call names :set (toolName operation) operation)))
+      (put server :onclose on-close)
+      (put
+        server
+        :onerror
+        (lambda
+          (error)
+          (js-call (nativeGet globalThis.process "stderr") :write "DJ MCP transport error\n")))
+      (js-call
+        server
+        :setRequestHandler
+        "tools/list"
+        (async
+          (request context)
+          (when (nativeGet (nativeGet request "params") "cursor")
+            (throw
+              (new
+                ProtocolError
+                (nativeGet ProtocolErrorCode "InvalidParams")
+                "DJ tools/list has no continuation cursor")))
+          (let
+            (
+              (result
+                (await
+                  (callService
+                    profile
+                    "service.status"
+                    (js-object)
+                    30
+                    nil
+                    (js-object :abort_signal (nativeGet proxy-abort "signal"))))))
+            (unless
+              (and
+                (nativeGet result "ok")
+                (=
+                  (nativeGet (nativeGet result "data") "operation_catalog_digest")
+                  operationCatalogDigest))
+              (throw
+                (new
+                  ProtocolError
+                  (nativeGet ProtocolErrorCode "InternalError")
+                  "DJ service is unavailable or incompatible")))
+            (js-object :tools (toolsFromStatus (nativeGet result "data"))))))
+      (js-call
+        server
+        :setRequestHandler
+        "tools/call"
+        (async
+          (request context)
+          (let*
+            ((params (nativeGet request "params"))
+              (operation (js-call names :get (nativeGet params "name"))))
+            (unless operation
+              (throw
+                (new
+                  ProtocolError
+                  (nativeGet ProtocolErrorCode "InvalidParams")
+                  "Unknown DJ tool")))
+            (let*
+              ((descriptor (js-call operationCatalog :get operation))
+                ;; SDK validates only the protocol shell. Business arguments
+                ;; reach the same authoritative validator as CLI and API.
+                (result
+                  (await
+                    (callService
+                      profile
+                      operation
+                      (nativeGet params "arguments" (js-object))
+                      30
+                      nil
+                      (js-object :abort_signal (nativeGet proxy-abort "signal")))))
+                (safe (validateResult descriptor result))
+                (output
+                  (js-object
+                    :structuredContent
+                    safe
+                    :isError
+                    (not (nativeGet safe "ok"))
+                    :content
+                    (js-array
+                      (js-object
+                        :type
+                        "text"
+                        :text
+                        (if (nativeGet safe "ok")
+                          (str
+                            operation
+                            ": "
+                            (nativeGet safe "effect_state")
+                            "; inspect returned resource IDs for current state.")
+                          (str
+                            (nativeGet (nativeGet safe "error") "code")
+                            "; effect_state="
+                            (nativeGet safe "effect_state"))))))))
+              (js-call
+                server
+                :projectCallToolResult
+                output
+                (nativeGet descriptor "output_schema"))))))
+      server))
+  (defasync runMcp
+    (&optional supplied-profile supplied-transport)
+    (let ((djReturn1Token (js-object)) (djReturn1Value nil))
+      (try
+        (let
+          ((profile supplied-profile)
+            (proxy-abort (new globalThis.AbortController))
+            (entry nil)
+            (complete nil)
+            (finished false)
+            (end nil)
+            (transport nil))
+          (unless (and profile (= (nativeTypeOf profile) "object"))
+            (let ((loaded (await (loadClientProfile profile))))
+              (unless (nativeGet loaded "ok")
+                (progn (setq djReturn1Value loaded) (throw djReturn1Token)))
+              (setq profile (nativeGet loaded "data"))))
+          (let ((status (await (callService profile "service.status" (js-object) 30))))
+            (unless (nativeGet status "ok")
+              (progn (setq djReturn1Value status) (throw djReturn1Token))))
+          (setq
+            complete
+            (new
+              globalThis.Promise
+              (lambda
+                (resolve reject)
+                (setq
+                  end
+                  (lambda
+                    ()
+                    (unless finished
+                      (setq finished t)
+                      (js-call proxy-abort :abort)
+                      (funcall resolve nil)))))))
+        (setq
+          transport
+          (or
+            supplied-transport
+            (new
+              StdioServerTransport
+              (nativeGet globalThis.process "stdin")
+              (nativeGet globalThis.process "stdout")
+              (js-object :maxBufferSize (nativeGet limits "api_response_bytes")))))
+        (unless supplied-transport
+          (js-call (nativeGet globalThis.process "stdin") :once "end" end)
+          (js-call (nativeGet globalThis.process "stdin") :once "close" end))
+        (try
+          (setq
+            entry
+            (serveStdio
+              (lambda (context) (createMcpServer profile proxy-abort end))
+              (js-object
+                :transport
+                transport
+                :onerror
+                (lambda
+                  (error)
+                  (js-call
+                    (nativeGet globalThis.process "stderr")
+                    :write
+                    "DJ MCP protocol error\n")))))
+          (await complete)
+          (success (js-object :state "stopped"))
+          (finally
+            (js-call proxy-abort :abort)
+            (when entry (await (js-call entry :close)))
+            (unless supplied-transport
+              (js-call (nativeGet globalThis.process "stdin") :removeListener "end" end)
+              (js-call (nativeGet globalThis.process "stdin") :removeListener "close" end))))
+        )(catch djReturn1Error
+          (if (eq djReturn1Error djReturn1Token) djReturn1Value (throw djReturn1Error))))))
+  (defasync main
+    ()
+    (try
+      (let ((result (await (runMcp))))
+        (unless (nativeGet result "ok")
+          (js-call
+            (nativeGet globalThis.process "stderr")
+            :write
+            (str (JSON/stringify result) "\n")))
+        (put globalThis.process :exitCode (if (nativeGet result "ok") 0 1)))
+      (catch unavailable
+        (js-call
+          (nativeGet globalThis.process "stderr")
+          :write
+          (str (JSON/stringify (failure "unavailable")) "\n"))
+        (put globalThis.process :exitCode 1))))
+  (when
+    (js-call
+      (or (aref (nativeGet globalThis.process "argv") 1) "")
+      :endsWith
+      "/interfaces/mcp.mjs")
+    (main))
+  (export runMcp createMcpServer toolsFromStatus toolName validateResult))

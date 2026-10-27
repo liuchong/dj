@@ -1,0 +1,56 @@
+(module dj.tests.support.faults
+  ;; Test-owned hooks are injected through ports, never through a business request.
+  (defconst faultPoints
+    (js-array
+      "event.after_commit_before_ack"
+      "routing.before_checkpoint_commit"
+      "delivery.after_submitting_before_write"
+      "delivery.after_native_accept_before_receipt"
+      "lifecycle.after_spawn_before_ready"
+      "lifecycle.after_create_before_receipt"
+      "gate.stop_race"
+      "catalog.after_batch_before_checkpoint"
+      "protocol.oversized_no_lf"
+      "storage.disk_full_or_lock"
+      "poll.before_page_commit"
+      "poll.after_page_commit"))
+  (defun createFaults
+    ()
+    (let ((actions (new globalThis.Map)) (visits (js-array)))
+      (js-object
+        :install
+        (lambda
+          (point action)
+          (unless (js-call faultPoints :includes point)
+            (throw (new globalThis.Error (str "Unknown fault point: " point))))
+          (js-call actions :set point action))
+        :hit
+        (async
+          (point context)
+          (js-call visits :push point)
+          (let ((action (js-call actions :get point)))
+            (when action (await (funcall action context)))))
+        :visits
+        visits)))
+  (defun atFault (faults point action) (js-call faults :install point action))
+  (defun createBarrier
+    ()
+    (let ((release nil) (entered-release nil) (entered false) (released false))
+      (let
+        (
+          (waiting
+            (new globalThis.Promise (lambda (resolve reject) (setq release resolve))))
+          (ready
+            (new
+              globalThis.Promise
+              (lambda (resolve reject) (setq entered-release resolve)))))
+        (js-object
+          :wait
+          (async () (setq entered t) (funcall entered-release) (await waiting))
+          :entered
+          (lambda () entered)
+          :ready
+          ready
+          :release
+          (lambda () (unless released (setq released t) (funcall release)))))))
+  (export faultPoints createFaults atFault createBarrier))

@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "default_endpoint": "local",
+  "endpoints": [
+    {
+      "endpoint_id": "local",
+      "socket_ref": "run/dj.sock",
+      "credential_ref": "secrets/recipient-codex.token"
+    }
+  ]
+}

@@ -1,0 +1,201 @@
+(module dj.tests.support.standalone
+  (import "../../src/core/native.eli" nativeClearTimeout nativeFetch nativeSetTimeout nativeGet)
+  (import "node:fs/promises" mkdir writeFile)
+  (import "node:path" resolve)
+  (import "node:crypto" randomUUID randomBytes)
+  (import "./process.eli" until)
+  ;; Production service/main with isolated files; no real IM or model resources.
+  (defasync standaloneFiles
+    ()
+    (let*
+      ((root (resolve ".local/tests" (str "s-" (js-call (randomUUID) :slice 0 8))))
+        (token (js-call (randomBytes 32) :toString "hex"))
+        (config
+          (js-object
+            :schema_version
+            1
+            :service
+            (js-object :service_id (str "isolated-" (randomUUID)) :socket "run/dj.sock")
+            :storage
+            (js-object
+              :database
+              "state/dj.sqlite"
+              :journal_mode
+              "WAL"
+              :synchronous
+              "FULL"
+              :foreign_keys
+              t
+              :busy_timeout
+              0)
+            :principals
+            (js-array
+              (js-object
+                :principal_id
+                "O"
+                :kind
+                "operator"
+                :authorization_revision
+                1
+                :credential_ref
+                "secrets/operator.token"
+                :grants
+                (js-array (js-object :action "*" :resources (js-array "*")))))
+            :connections
+            (js-array)
+            :agent_endpoints
+            (js-array)
+            :managed_profiles
+            (js-array)
+            :client_profiles
+            (js-array))))
+      (await (mkdir root (js-object :recursive t :mode 448)))
+      (let ((names (js-array "run" "state" "secrets")) (i 0))
+        (while (< i (js-length names))
+          (await (mkdir (resolve root (aref names i)) (js-object :mode 448)))
+          (setq i (1+ i))))
+      (await
+        (writeFile (resolve root "secrets/operator.token") token (js-object :mode 384)))
+      (await
+        (writeFile
+          (resolve root "service.json")
+          (JSON/stringify config)
+          (js-object :mode 384)))
+      (js-object
+        :root
+        root
+        :config
+        config
+        :config_path
+        (resolve root "service.json")
+        :socket
+        (resolve root "run/dj.sock")
+        :token
+        token
+        :children
+        (js-array))))
+  (defasync launchStandalone
+    (f &optional second entry working-directory)
+    (let ((path (nativeGet f "config_path")))
+      (when second
+        (let ((other (JSON/parse (JSON/stringify (nativeGet f "config")))))
+          (put (nativeGet other "service") :socket "run/second.sock")
+          (setq path (resolve (nativeGet f "root") "second.json"))
+          (await (writeFile path (JSON/stringify other) (js-object :mode 384)))))
+      (let*
+        (
+          (child
+            (Bun/spawn
+              (js-array
+                (nativeGet globalThis.process "execPath")
+                (or entry "dist/src/service/main.mjs")
+                "--config"
+                path)
+              (js-object
+                :cwd
+                working-directory
+                :stdin
+                "ignore"
+                :stdout
+                "pipe"
+                :stderr
+                "pipe")))
+          (diagnostics (js-object :stdout "" :stderr "")))
+        (js-call (nativeGet f "children") :push child)
+        (let ((drain nil))
+          (setq
+            drain
+            (async
+              (stream field)
+              (let
+                ((reader (js-call stream :getReader))
+                  (decoder (new globalThis.TextDecoder))
+                  (done false))
+                (while (not done)
+                  (let ((part (await (js-call reader :read))))
+                    (setq done (nativeGet part "done"))
+                    (unless done
+                      (put
+                        diagnostics
+                        field
+                        (js-call
+                          (str
+                            (nativeGet diagnostics field)
+                            (js-call
+                              decoder
+                              :decode
+                              (nativeGet part "value")
+                              (js-object :stream t)))
+                          :slice
+                          -32768))))))))
+          (let
+            ((out (drain (nativeGet child "stdout") "stdout"))
+              (err (drain (nativeGet child "stderr") "stderr")))
+            (js-object
+              :child
+              child
+              :diagnostics
+              diagnostics
+              :drained
+              (Promise/all (js-array out err))))))))
+  (defasync standaloneCall
+    (f operation args)
+    (let
+      (
+        (response
+          (await
+            (nativeFetch
+              "http://localhost/v1/operations"
+              (js-object
+                :unix
+                (nativeGet f "socket")
+                :method
+                "POST"
+                :headers
+                (js-object
+                  :content-type
+                  "application/json"
+                  :authorization
+                  (str "Bearer " (nativeGet f "token")))
+                :body
+                (JSON/stringify
+                  (js-object :api_version "1" :operation operation :arguments args)))))))
+      (await (js-call response :json))))
+  (defasync waitReady
+    (f run)
+    (await
+      (until
+        "production standalone ready"
+        (async
+          ()
+          (when (not (= (nativeGet (nativeGet run "child") "exitCode") nil))
+            (throw
+              (new globalThis.Error "isolated production service exited before ready")))
+          (try
+            (let ((result (await (standaloneCall f "service.status" (js-object)))))
+              (when (and (nativeGet result "ok") (= (nativeGet (nativeGet result "data") "state") "ready"))
+                (nativeGet result "data")))
+            (catch not-yet nil)))
+      10000)))
+  (defasync closeStandalone
+    (f)
+    (when f
+      (let ((children (nativeGet f "children")) (i 0))
+        (while (< i (js-length children))
+          (let ((child (aref children i)))
+            (when (= (nativeGet child "exitCode") nil)
+              (js-call child :kill "SIGTERM")
+              (let
+                (
+                  (timer
+                    (nativeSetTimeout
+                      (lambda
+                        ()
+                        ;; This private fixture has no IM, Agent, or model processes.
+                        (when (= (nativeGet child "exitCode") nil)
+                          (js-call child :kill "SIGKILL")))
+                      10000)))
+                (await (nativeGet child "exited"))
+                (nativeClearTimeout timer))))
+          (setq i (1+ i))))))
+  (export standaloneFiles launchStandalone standaloneCall waitReady closeStandalone))

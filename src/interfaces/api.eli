@@ -1,0 +1,210 @@
+(module dj.interfaces.api
+  (import "../core/native.eli" NativeNumber nativeTypeOf nativeGet)
+  (import "../core/errors.eli" failure)
+  (import "../core/types.eli" isObject)
+  (import "../core/limits.eli" limits)
+  (import "../application/operations.eli" operationCatalogDigest)
+  (defconst inFlight (new globalThis.WeakMap))
+  (defun jsonResponse
+    (result status)
+    (Response/json
+      result
+      (js-object
+        :status
+        status
+        :headers
+        (js-object
+          :cache-control
+          "no-store"
+          :x-dj-api-version
+          "1"
+          :x-dj-operation-catalog-digest
+          operationCatalogDigest))))
+  (defasync readRequestBody
+    (request)
+    (let ((djReturn1Token (js-object)) (djReturn1Value nil))
+      (try
+        (let*
+          ((declared (js-call (nativeGet request "headers") :get "content-length"))
+            (body (nativeGet request "body"))
+            (maximum (nativeGet limits "request_bytes"))
+            (reader nil)
+            (chunks (js-array))
+            (bytes 0))
+          (when (and declared (> (NativeNumber declared) maximum))
+            (when body (await (js-call body :cancel)))
+            (progn
+              (setq
+                djReturn1Value
+                (js-object :status 413 :result (failure "limit_exceeded")))
+              (throw djReturn1Token)))
+          (unless body
+            (progn
+              (setq
+                djReturn1Value
+                (js-object :status 400 :result (failure "invalid_argument")))
+              (throw djReturn1Token)))
+          (setq reader (js-call body :getReader))
+          (try
+            (let ((done false))
+              (while (not done)
+                (let ((part (await (js-call reader :read))))
+                  (setq done (nativeGet part "done"))
+                  (unless done
+                    (setq bytes (+ bytes (js-length (nativeGet part "value"))))
+                    (when (> bytes maximum)
+                      (progn
+                        (setq
+                          djReturn1Value
+                          (js-object :status 413 :result (failure "limit_exceeded")))
+                        (throw djReturn1Token)))
+                    (js-call chunks :push (Buffer/from (nativeGet part "value")))))))
+            (js-object
+              :status
+              200
+              :wire
+              (JSON/parse
+                (js-call
+                  (new globalThis.TextDecoder "utf-8" (js-object :fatal t))
+                  :decode
+                  (Buffer/concat chunks bytes))))
+            (catch invalid
+              (when (eq invalid djReturn1Token) (throw invalid))
+              (js-object :status 400 :result (failure "invalid_argument")))
+            (finally
+              (try
+                (await (js-call reader :cancel))
+                (catch ignored (when (eq ignored djReturn1Token) (throw ignored)) nil))
+              (js-call reader :releaseLock))))
+        (catch djReturn1Error
+          (if (eq djReturn1Error djReturn1Token) djReturn1Value (throw djReturn1Error))))))
+  (defasync handleApiRequest
+    (request core &optional route-operation)
+    (let ((djReturn2Token (js-object)) (djReturn2Value nil))
+      (try
+        (let ((count (or (js-call inFlight :get core) 0)) (started false))
+          (when (>= count 32)
+            (progn
+              (setq djReturn2Value (jsonResponse (failure "limit_exceeded") 503))
+              (throw djReturn2Token)))
+          (js-call inFlight :set core (1+ count))
+          (try
+            (let ((url (new globalThis.URL (nativeGet request "url"))))
+              (unless
+                (and
+                  (= (nativeGet request "method") "POST")
+                  (if route-operation
+                    (= (nativeGet url "pathname") (str "/" (js-call route-operation :replaceAll "." "/")))
+                    (= (nativeGet url "pathname") "/v1/operations"))
+                  (= (nativeGet url "search") ""))
+                (progn
+                  (setq djReturn2Value (jsonResponse (failure "invalid_argument") 400))
+                  (throw djReturn2Token))))
+            (when (js-call (nativeGet request "headers") :get "origin")
+              (progn
+                (setq djReturn2Value (jsonResponse (failure "forbidden") 403))
+                (throw djReturn2Token)))
+            (let*
+              ((header (js-call (nativeGet request "headers") :get "authorization"))
+                (credential
+                  (and
+                    (= (nativeTypeOf header) "string")
+                    (js-call header :startsWith "Bearer ")
+                    (js-call header :slice 7)))
+                (identity (js-call core :authenticate credential)))
+              (unless (nativeGet identity "ok")
+                (progn
+                  (setq djReturn2Value (jsonResponse identity 401))
+                  (throw djReturn2Token)))
+              (unless
+                (js-call
+                  (js-array "ready" "draining")
+                  :includes
+                  (js-call core :transportState))
+                (progn
+                  (setq djReturn2Value (jsonResponse (failure "unavailable") 503))
+                  (throw djReturn2Token)))
+              (let
+                (
+                  (digest
+                    (js-call
+                      (nativeGet request "headers")
+                      :get
+                      "x-dj-operation-catalog-digest")))
+                (when (and digest (not (= digest operationCatalogDigest)))
+                  (progn
+                    (setq djReturn2Value (jsonResponse (failure "incompatible") 400))
+                    (throw djReturn2Token))))
+              (unless
+                (js-call
+                  (or (js-call (nativeGet request "headers") :get "content-type") "")
+                  :startsWith
+                  "application/json")
+                (progn
+                  (setq djReturn2Value (jsonResponse (failure "invalid_argument") 400))
+                  (throw djReturn2Token)))
+              (let*
+                ((parsed (await (readRequestBody request)))
+                 (wire (if route-operation
+                   (js-object :api_version "1" :operation route-operation :arguments (nativeGet parsed "wire"))
+                   (nativeGet parsed "wire"))))
+                (unless (= (nativeGet parsed "status") 200)
+                  (progn
+                    (setq
+                      djReturn2Value
+                      (jsonResponse (nativeGet parsed "result") (nativeGet parsed "status")))
+                    (throw djReturn2Token)))
+                (unless
+                  (and
+                    (isObject wire)
+                    (= (js-length (Object/keys wire)) 3)
+                    (= (nativeGet wire "api_version") "1")
+                    (= (nativeTypeOf (nativeGet wire "operation")) "string")
+                    (> (js-length (nativeGet wire "operation")) 0)
+                    (<= (js-length (nativeGet wire "operation")) 256)
+                    (object-has? wire :arguments))
+                  (progn
+                    (setq
+                      djReturn2Value
+                      (jsonResponse
+                        (failure
+                          (if
+                            (and (isObject wire) (not (= (nativeGet wire "api_version") "1")))
+                            "incompatible"
+                            "invalid_argument"))
+                        400))
+                    (throw djReturn2Token)))
+                ;; Do not couple the authoritative operation to request.signal.
+                ;; Losing this response cannot undo or cancel accepted state.
+                (setq started t)
+                (jsonResponse
+                  (await
+                    (js-call
+                      core
+                      :execute
+                      (nativeGet identity "data")
+                      (nativeGet wire "operation")
+                      (nativeGet wire "arguments")))
+                  200)))
+            (catch unavailable
+              (when (eq unavailable djReturn2Token) (throw unavailable))
+              (jsonResponse
+                (failure
+                  "internal_error"
+                  (js-object
+                    :effect_state
+                    (if started "unknown" "none")
+                    :warnings
+                    (if started
+                      (js-array "inspect_original_operation_before_retry")
+                      (js-array))))
+                500))
+            (finally
+              (js-call
+                inFlight
+                :set
+                core
+                (Math/max 0 (1- (or (js-call inFlight :get core) 1)))))))
+        (catch djReturn2Error
+          (if (eq djReturn2Error djReturn2Token) djReturn2Value (throw djReturn2Error))))))
+  (export handleApiRequest jsonResponse readRequestBody))

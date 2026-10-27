@@ -1,0 +1,41 @@
+{
+  "name": "dj-cursor-control",
+  "displayName": "DJ Cursor Create Connector",
+  "description": "Explicit empty-session creation through the running Cursor command API.",
+  "version": "0.1.0",
+  "publisher": "dj-local",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "main": "./extension.cjs",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "configuration": {
+      "title": "DJ Cursor Control",
+      "properties": {
+        "dj.cursorControl.enabled": {
+          "type": "boolean",
+          "default": false,
+          "scope": "window",
+          "description": "Expose only explicit empty-session creation for this single workspace. Requires reload."
+        },
+        "dj.cursorControl.workspaceRef": {
+          "type": "string",
+          "default": "",
+          "scope": "window",
+          "description": "Exact DJ workspace_ref allowed in this workspace. Requires reload."
+        }
+      }
+    }
+  },
+  "extensionKind": [
+    "ui"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false
+    }
+  }
+}

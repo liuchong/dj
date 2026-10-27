@@ -1,0 +1,1101 @@
+(module dj.lifecycle.service
+  (import "../core/native.eli" nativeTypeOf nativeGet)
+  (import "../core/errors.eli" success failure)
+  (import "../core/types.eli" nextRevision)
+  (import "../application/context.eli"
+    utcNow
+    nextId
+    currentPrincipal
+    can
+    requirePermission
+    must
+    inTransaction
+    typedRef
+    nativeCallContext
+    agentPort
+    safeFields)
+  (import "../policy/principals.eli" configuredPrincipal)
+  (import "../catalog/records.eli" putSession projectSession)
+  (import "../catalog/service.eli" objectProjection)
+  (import "./gates.eli" assertGate closeGate releaseSlot reserveSlot)
+  (defun projectLifecycle
+    (context action)
+    (let*
+      (
+        (projection
+          (safeFields
+            action
+            (js-array
+              "lifecycle_id"
+              "action"
+              "state"
+              "instance_id"
+              "instance_epoch"
+              "profile_id"
+              "revision"
+              "created_at"
+              "operation_id"
+              "initial_session_key"
+              "session_key"
+              "deadline_reached"
+              "absence_verified"
+              "evidence_level"
+              "resolution")))
+        (repository (nativeGet context "repository"))
+        (instance (js-call repository :get "instances" (nativeGet action "instance_id")))
+        (key (nativeGet action "session_key" (nativeGet action "initial_session_key"))))
+      (when (and instance (can context "instance.inspect" instance))
+        (put projection :current_instance (objectProjection "instance" instance)))
+      (when key
+        (let ((session (js-call repository :get "sessions" key)))
+          (when
+            (and
+              session
+              (not (= (nativeGet session "tombstone") t))
+              (can context "session.inspect" session))
+            (let ((projected (projectSession context session)))
+              (when (nativeGet projected "ok")
+                (put projection :session_ref (nativeGet (nativeGet projected "data") "session_ref")))))))
+      projection))
+  (defun newAction
+    (context operation-id action instance)
+    (js-object
+      :lifecycle_id
+      (nextId context "lifecycle")
+      :operation_id
+      operation-id
+      :principal_id
+      (nativeGet (currentPrincipal context) "principal_id")
+      :action
+      action
+      :instance_id
+      (nativeGet instance "instance_id")
+      :instance_epoch
+      (nativeGet instance "instance_epoch")
+      :profile_id
+      (nativeGet instance "profile_id" nil)
+      :state
+      "recorded"
+      :revision
+      1
+      :created_at
+      (utcNow context)
+      :dispatch_key
+      (nextId context "lifecycle_dispatch")
+      :launch_token
+      (nativeGet instance "launch_token" nil)))
+  (defun acceptLifecycle
+    (context operation args)
+    (let ((djReturn1Token (js-object)) (djReturn1Value nil))
+      (try
+        (let ((repository (nativeGet context "repository")))
+          (cond
+            ((= operation "instance.start")
+              (let
+                ((profile (js-call repository :get "profiles" (nativeGet args "profile_id"))))
+                (unless profile
+                  (progn
+                    (setq djReturn1Value (failure "not_found"))
+                    (throw djReturn1Token)))
+                (when (= (nativeGet profile "enabled") false)
+                  (progn
+                    (setq djReturn1Value (failure "unsupported"))
+                    (throw djReturn1Token)))
+                (let ((permission (requirePermission context "instance.start" profile)))
+                  (unless (nativeGet permission "ok")
+                    (progn (setq djReturn1Value permission) (throw djReturn1Token))))
+                (unless
+                  (= (nativeGet profile "revision") (nativeGet args "expected_profile_revision"))
+                  (progn
+                    (setq djReturn1Value (failure "revision_conflict"))
+                    (throw djReturn1Token)))
+                (js-call
+                  context
+                  :accept
+                  (lambda
+                    (tx operation-id)
+                    (let ((djReturn2Token (js-object)) (djReturn2Value nil))
+                      (try
+                        (let*
+                          (
+                            (current
+                              (js-call
+                                repository
+                                :get
+                                "profiles"
+                                (nativeGet profile "profile_id")))
+                            (slot
+                              (js-call
+                                repository
+                                :get
+                                "managed_slots"
+                                (nativeGet profile "profile_id"))))
+                          (unless
+                            (=
+                              (nativeGet current "revision")
+                              (nativeGet args "expected_profile_revision"))
+                            (progn
+                              (setq djReturn2Value (failure "revision_conflict"))
+                              (throw djReturn2Token)))
+                          (when slot
+                            (if
+                              (js-call
+                                (js-array "starting" "ready")
+                                :includes
+                                (nativeGet slot "state"))
+                              (progn
+                                (setq
+                                  djReturn2Value
+                                  (success
+                                    (projectLifecycle
+                                      context
+                                      (js-call
+                                        repository
+                                        :get
+                                        "lifecycle_actions"
+                                        (nativeGet slot "start_lifecycle_id")))))
+                                (throw djReturn2Token))
+                              (progn
+                                (setq djReturn2Value (failure "profile_conflict"))
+                                (throw djReturn2Token))))
+                          (let*
+                            ((token (nextId context "launch"))
+                              (instance
+                                (js-object
+                                  :instance_id
+                                  (nextId context "instance")
+                                  :tool
+                                  (nativeGet profile "tool" (nativeGet profile "tool_id"))
+                                  :native_namespace
+                                  (nativeGet profile "native_namespace" "")
+                                  :instance_epoch
+                                  (nextId context "epoch")
+                                  :ownership
+                                  "managed"
+                                  :profile_id
+                                  (nativeGet profile "profile_id")
+                                  :profile_revision
+                                  (nativeGet profile "revision")
+                                  :workspace_refs
+                                  (nativeGet profile "workspace_refs")
+                                  :state
+                                  "starting"
+                                  :revision
+                                  1
+                                  :launch_token
+                                  token
+                                  :created_at
+                                  (utcNow context)
+                                  :capabilities
+                                  (nativeGet profile "capabilities" (js-object))))
+                              (action (newAction context operation-id "start" instance)))
+                            (put action :profile_revision (nativeGet profile "revision"))
+                            (js-call repository :insert "instances" instance)
+                            (js-call
+                              repository
+                              :insert
+                              "instance_gates"
+                              (js-object
+                                :instance_id
+                                (nativeGet instance "instance_id")
+                                :instance_epoch
+                                (nativeGet instance "instance_epoch")
+                                :revision
+                                1
+                                :state
+                                "closed"
+                                :reason
+                                "starting"))
+                            (js-call repository :insert "lifecycle_actions" action)
+                            (must
+                              (reserveSlot tx repository profile instance action token))
+                            (success (projectLifecycle context action))))
+                        (catch djReturn2Error
+                          (if (eq djReturn2Error djReturn2Token)
+                            djReturn2Value
+                            (throw djReturn2Error))))))
+                  (lambda
+                    (data)
+                    (js-array
+                      (typedRef "lifecycle" (nativeGet data "lifecycle_id"))
+                      (typedRef "instance" (nativeGet data "instance_id")))))))
+            ((or (= operation "session.create") (= operation "instance.stop"))
+              (let*
+                (
+                  (instance
+                    (js-call repository :get "instances" (nativeGet args "instance_id")))
+                  (resource
+                    (Object/assign
+                      (js-object)
+                      instance
+                      (if (= operation "session.create")
+                        (js-object :workspace_ref (nativeGet args "workspace_ref"))
+                        (js-object))))
+                  (permission (requirePermission context operation resource)))
+                (unless (nativeGet permission "ok")
+                  (progn (setq djReturn1Value permission) (throw djReturn1Token)))
+                (unless instance
+                  (progn
+                    (setq djReturn1Value (failure "not_found"))
+                    (throw djReturn1Token)))
+                (when (= operation "session.create")
+                  (when (= (nativeGet instance "tool" (nativeGet instance "tool_id")) "pi")
+                    (progn
+                      (setq djReturn1Value (failure "unsupported"))
+                      (throw djReturn1Token)))
+                  (unless
+                    (js-call
+                      (nativeGet instance "workspace_refs" (js-array))
+                      :includes
+                      (nativeGet args "workspace_ref"))
+                    (progn
+                      (setq djReturn1Value (failure "forbidden"))
+                      (throw djReturn1Token)))
+                  ;; Record a create only when this existing receiver exposes a
+                  ;; native create interface. Never leave an unrunnable action or
+                  ;; substitute a process launch for unsupported client APIs.
+                  (let ((port (agentPort context instance)))
+                    (unless (and port (nativeGet port "create")
+                                 (= (nativeGet (nativeGet port "capabilities") "session_create") "supported"))
+                      (setq djReturn1Value (failure "unsupported"))
+                      (throw djReturn1Token))))
+                (when
+                  (and
+                    (= operation "instance.stop")
+                    (not (= (nativeGet instance "ownership") "managed")))
+                  (progn
+                    (setq djReturn1Value (failure "unsupported"))
+                    (throw djReturn1Token)))
+                (js-call
+                  context
+                  :accept
+                  (lambda
+                    (tx operation-id)
+                    (let ((djReturn3Token (js-object)) (djReturn3Value nil))
+                      (try
+                        (let
+                          (
+                            (current
+                              (js-call
+                                repository
+                                :get
+                                "instances"
+                                (nativeGet instance "instance_id"))))
+                          (when (= operation "session.create")
+                            (let
+                              (
+                                (gate
+                                  (assertGate
+                                    tx
+                                    (nativeGet current "instance_id")
+                                    (nativeGet args "expected_instance_epoch")
+                                    "open")))
+                              (unless (nativeGet gate "ok")
+                                (progn
+                                  (setq djReturn3Value gate)
+                                  (throw djReturn3Token))))
+                            (unless
+                              (js-call
+                                (nativeGet current "workspace_refs")
+                                :includes
+                                (nativeGet args "workspace_ref"))
+                              (progn
+                                (setq djReturn3Value (failure "forbidden"))
+                                (throw djReturn3Token))))
+                          (when (= operation "instance.stop")
+                            (unless
+                              (= (nativeGet current "revision") (nativeGet args "expected_revision"))
+                              (progn
+                                (setq djReturn3Value (failure "revision_conflict"))
+                                (throw djReturn3Token))))
+                          (let
+                            (
+                              (action
+                                (newAction
+                                  context
+                                  operation-id
+                                  (if (= operation "session.create") "create" "stop")
+                                  current)))
+                            (when (= operation "session.create")
+                              (put action :workspace_ref (nativeGet args "workspace_ref"))
+                              (when (nativeGet args "title")
+                                (put action :title (nativeGet args "title")))
+                              (put action :creation_key (nextId context "create")))
+                            (js-call repository :insert "lifecycle_actions" action)
+                            (when (= operation "instance.stop")
+                              (must
+                                (closeGate
+                                  tx
+                                  (nativeGet current "instance_id")
+                                  (nativeGet args "expected_revision")
+                                  (nativeGet action "lifecycle_id")
+                                  (utcNow context)))
+                              (put current :state "stopping")
+                              (put
+                                current
+                                :revision
+                                (nextRevision (nativeGet current "revision")))
+                              (must
+                                (js-call
+                                  repository
+                                  :replace
+                                  "instances"
+                                  current
+                                  (nativeGet args "expected_revision")))
+                              (let
+                                (
+                                  (slot
+                                    (js-call
+                                      repository
+                                      :get
+                                      "managed_slots"
+                                      (nativeGet current "profile_id"))))
+                                (when slot
+                                  (put slot :state "stopping")
+                                  (must
+                                    (js-call repository :replace "managed_slots" slot)))))
+                            (success (projectLifecycle context action))))
+                        (catch djReturn3Error
+                          (if (eq djReturn3Error djReturn3Token)
+                            djReturn3Value
+                            (throw djReturn3Error))))))
+                  (lambda
+                    (data)
+                    (js-array
+                      (typedRef "lifecycle" (nativeGet data "lifecycle_id"))
+                      (typedRef "instance" (nativeGet data "instance_id")))))))
+            (t (failure "invalid_argument"))))
+        (catch djReturn1Error
+          (if (eq djReturn1Error djReturn1Token) djReturn1Value (throw djReturn1Error))))))
+  (defun executionContext
+    (base action)
+    (let
+      (
+        (principal
+          (configuredPrincipal
+            (nativeGet (nativeGet base "config") "principals")
+            (nativeGet action "principal_id"))))
+      (Object/assign
+        (js-object)
+        base
+        (js-object
+          :principal
+          principal
+          :authorization_revision
+          (nativeGet principal "authorization_revision")
+          :now
+          (utcNow base)))))
+  (defun writeAction
+    (context action)
+    (put action :revision (nextRevision (nativeGet action "revision")))
+    (must (js-call (nativeGet context "repository") :replace "lifecycle_actions" action))
+    action)
+  (defun pendingNative
+    (context instance-id own-lifecycle)
+    (let ((db (nativeGet (nativeGet context "store") "db")))
+      (+
+        (nativeGet
+          (js-call
+            (js-call
+              db
+              :query
+              "SELECT COUNT(*) AS n FROM deliveries d JOIN routes r ON r.route_id=d.route_id JOIN bindings b ON b.binding_id=r.binding_id WHERE b.instance_id=? AND d.state IN ('submitting','unknown')")
+            :get
+            instance-id)
+          "n")
+        (nativeGet
+          (js-call
+            (js-call
+              db
+              :query
+              "SELECT COUNT(*) AS n FROM lifecycle_actions WHERE instance_id=? AND lifecycle_id<>? AND state IN ('submitting','starting','unknown')")
+            :get
+            instance-id
+            own-lifecycle)
+          "n"))))
+  (defun recordUnknown
+    (context action)
+    (inTransaction
+      context
+      (lambda
+        (tx)
+        (let*
+          ((repository (nativeGet context "repository"))
+            (current
+              (js-call repository :get "lifecycle_actions" (nativeGet action "lifecycle_id")))
+            (instance (js-call repository :get "instances" (nativeGet action "instance_id"))))
+          (put current :state "unknown")
+          (put current :evidence_level "service_record")
+          (when (= (nativeGet current "action") "start")
+            (put instance :state "unknown")
+            (put instance :revision (nextRevision (nativeGet instance "revision")))
+            (must (js-call repository :replace "instances" instance))
+            (let
+              (
+                (slot
+                  (js-call repository :get "managed_slots" (nativeGet instance "profile_id"))))
+              (when slot
+                (put slot :state "unknown")
+                (must (js-call repository :replace "managed_slots" slot)))))
+          (when (nativeGet current "attempt_id")
+            (let
+              ((attempt (js-call repository :get "attempts" (nativeGet current "attempt_id"))))
+              (put attempt :state "unknown")
+              (must (js-call repository :replace "attempts" attempt))))
+          (writeAction context current)
+          (success (projectLifecycle context current))))))
+  (defun recordReady
+    (context action report)
+    (inTransaction
+      context
+      (lambda
+        (tx)
+        (let ((djReturn4Token (js-object)) (djReturn4Value nil))
+          (try
+            (let*
+              ((repository (nativeGet context "repository"))
+                (current
+                  (js-call
+                    repository
+                    :get
+                    "lifecycle_actions"
+                    (nativeGet action "lifecycle_id")))
+                (instance
+                  (js-call repository :get "instances" (nativeGet action "instance_id")))
+                (initial (nativeGet report "initial_session"))
+                (created (nativeGet report "session")))
+              (unless (= (nativeGet instance "instance_epoch") (nativeGet action "instance_epoch"))
+                (progn
+                  (setq djReturn4Value (failure "stale_reference"))
+                  (throw djReturn4Token)))
+              (when (= (nativeGet action "action") "start")
+                (unless
+                  (and
+                    (= (nativeGet report "launch_token") (nativeGet action "launch_token"))
+                    (= (nativeGet report "ownership") "managed"))
+                  (progn
+                    (setq djReturn4Value (failure "incompatible"))
+                    (throw djReturn4Token)))
+                (let
+                  (
+                    (namespace
+                      (or
+                        (nativeGet report "native_namespace")
+                        (nativeGet initial "native_namespace")
+                        (nativeGet instance "native_namespace"))))
+                  (unless
+                    (and
+                      (= (nativeTypeOf namespace) "string")
+                      (> (js-length namespace) 0))
+                    (progn
+                      (setq djReturn4Value (failure "incompatible"))
+                      (throw djReturn4Token)))
+                  (when
+                    (and
+                      (> (js-length (nativeGet instance "native_namespace" "")) 0)
+                      (not (= namespace (nativeGet instance "native_namespace"))))
+                    (progn
+                      (setq djReturn4Value (failure "incompatible"))
+                      (throw djReturn4Token)))
+                  (put instance :native_namespace namespace))
+                (when (and (= (nativeGet instance "tool") "pi") (not initial))
+                  (progn
+                    (setq djReturn4Value (failure "incompatible"))
+                    (throw djReturn4Token)))
+                (let
+                  (
+                    (gate
+                      (js-call
+                        repository
+                        :get
+                        "instance_gates"
+                        (nativeGet instance "instance_id"))))
+                  (put
+                    instance
+                    :state
+                    (if (nativeGet gate "stop_lifecycle_id") "stopping" "ready")))
+                (put instance :revision (nextRevision (nativeGet instance "revision")))
+                (put instance :checked_at (utcNow context))
+                (must (js-call repository :replace "instances" instance))
+                (let
+                  (
+                    (gate
+                      (js-call
+                        repository
+                        :get
+                        "instance_gates"
+                        (nativeGet instance "instance_id"))))
+                  ;; A stop accepted while start was in flight owns the closed gate.
+                  (unless (nativeGet gate "stop_lifecycle_id")
+                    (put gate :state "open")
+                    (put gate :reason "ready")
+                    (put gate :revision (nextRevision (nativeGet gate "revision")))
+                    (must (js-call repository :replace "instance_gates" gate))))
+                (let
+                  (
+                    (slot
+                      (js-call
+                        repository
+                        :get
+                        "managed_slots"
+                        (nativeGet instance "profile_id"))))
+                  (unless
+                    (and slot (= (nativeGet slot "launch_token") (nativeGet action "launch_token")))
+                    (progn
+                      (setq djReturn4Value (failure "profile_conflict"))
+                      (throw djReturn4Token)))
+                  (unless (= (nativeGet slot "state") "stopping") (put slot :state "ready"))
+                  (put
+                    slot
+                    :ownership_evidence_ref
+                    (nativeGet
+                      report
+                      "native_instance_id"
+                      (nativeGet report "native_ref" (nativeGet action "launch_token"))))
+                  (must (js-call repository :replace "managed_slots" slot)))
+                (when initial
+                  (unless
+                    (js-call
+                      (nativeGet instance "workspace_refs")
+                      :includes
+                      (nativeGet initial "workspace_ref"))
+                    (progn
+                      (setq djReturn4Value (failure "forbidden"))
+                      (throw djReturn4Token)))
+                  (let ((session (must (putSession context initial instance))))
+                    (put current :initial_session_key (nativeGet session "session_key")))))
+              (when (= (nativeGet action "action") "create")
+                (unless created
+                  (progn
+                    (setq djReturn4Value (failure "incompatible"))
+                    (throw djReturn4Token)))
+                (unless (= (nativeGet created "workspace_ref") (nativeGet action "workspace_ref"))
+                  (progn
+                    (setq djReturn4Value (failure "incompatible"))
+                    (throw djReturn4Token)))
+                (let ((session (must (putSession context created instance))))
+                  (put current :session_key (nativeGet session "session_key"))))
+              (put current :state "ready")
+              (put current :evidence_level "native_protocol")
+              (put current :native_ref (nativeGet report "native_ref" nil))
+              (when (nativeGet current "attempt_id")
+                (let
+                  (
+                    (attempt
+                      (js-call repository :get "attempts" (nativeGet current "attempt_id"))))
+                  (put attempt :state "accepted")
+                  (put attempt :native_ref (nativeGet report "native_ref" nil))
+                  (must (js-call repository :replace "attempts" attempt))))
+              (writeAction context current)
+              (success (projectLifecycle context current)))
+            (catch djReturn4Error
+              (if (eq djReturn4Error djReturn4Token)
+                djReturn4Value
+                (throw djReturn4Error))))))))
+  (defun recordAbsence
+    (context action report)
+    (inTransaction
+      context
+      (lambda
+        (tx)
+        (let ((djReturn5Token (js-object)) (djReturn5Value nil))
+          (try
+            (let*
+              ((repository (nativeGet context "repository"))
+                (current
+                  (js-call
+                    repository
+                    :get
+                    "lifecycle_actions"
+                    (nativeGet action "lifecycle_id")))
+                (instance
+                  (js-call repository :get "instances" (nativeGet action "instance_id"))))
+              (unless (= (nativeGet report "absence_verified") t)
+                (progn
+                  (setq djReturn5Value (failure "profile_conflict"))
+                  (throw djReturn5Token)))
+              (unless (= (nativeGet instance "instance_epoch") (nativeGet action "instance_epoch"))
+                (progn
+                  (setq djReturn5Value (failure "stale_reference"))
+                  (throw djReturn5Token)))
+              (must
+                (releaseSlot
+                  tx
+                  (nativeGet instance "profile_id")
+                  (js-object
+                    :absence_verified
+                    t
+                    :evidence_level
+                    "native_protocol"
+                    :launch_token
+                    (nativeGet instance "launch_token")
+                    :instance_id
+                    (nativeGet instance "instance_id")
+                    :instance_epoch
+                    (nativeGet instance "instance_epoch"))))
+              (put instance :state "stopped")
+              (put instance :revision (nextRevision (nativeGet instance "revision")))
+              (must (js-call repository :replace "instances" instance))
+              (let
+                (
+                  (gate
+                    (js-call
+                      repository
+                      :get
+                      "instance_gates"
+                      (nativeGet instance "instance_id"))))
+                (put gate :state "closed")
+                (put gate :reason "native_absence")
+                (put gate :revision (nextRevision (nativeGet gate "revision")))
+                (must (js-call repository :replace "instance_gates" gate)))
+              (unless
+                (js-call (js-array "resolved" "ready") :includes (nativeGet current "state"))
+                (put
+                  current
+                  :state
+                  (if (= (nativeGet current "action") "stop") "stopped" "failed")))
+              (put current :absence_verified t)
+              (when (= (nativeGet current "action") "stop")
+                (put current :evidence_level "native_protocol"))
+              (when (nativeGet current "attempt_id")
+                (let
+                  (
+                    (attempt
+                      (js-call repository :get "attempts" (nativeGet current "attempt_id"))))
+                  (put
+                    attempt
+                    :state
+                    (if (= (nativeGet current "action") "stop") "accepted" "observed_absence"))
+                  ;; Absence does not establish that an earlier create/input was unsent.
+                  (must (js-call repository :replace "attempts" attempt))))
+              (writeAction context current)
+              (success (projectLifecycle context current)))
+            (catch djReturn5Error
+              (if (eq djReturn5Error djReturn5Token)
+                djReturn5Value
+                (throw djReturn5Error))))))))
+  (defasync runLifecycle
+    (base lifecycle-id)
+    (let ((djReturn6Token (js-object)) (djReturn6Value nil))
+      (try
+        (let*
+          ((repository (nativeGet base "repository"))
+            (action (js-call repository :get "lifecycle_actions" lifecycle-id)))
+          (unless action
+            (progn (setq djReturn6Value (failure "not_found")) (throw djReturn6Token)))
+          (unless
+            (js-call (js-array "recorded" "stopping") :includes (nativeGet action "state"))
+            (progn
+              (setq
+                djReturn6Value
+                (success (projectLifecycle (executionContext base action) action)))
+              (throw djReturn6Token)))
+          (let*
+            ((context (executionContext base action))
+              (instance (js-call repository :get "instances" (nativeGet action "instance_id")))
+              (profile
+                (and
+                  (nativeGet instance "profile_id")
+                  (js-call repository :get "profiles" (nativeGet instance "profile_id"))))
+              (port (agentPort context instance))
+              (operation
+                (if (= (nativeGet action "action") "create")
+                  "session.create"
+                  (str "instance." (nativeGet action "action"))))
+              (resource
+                (if (= (nativeGet action "action") "start")
+                  profile
+                  (Object/assign
+                    (js-object)
+                    instance
+                    (js-object :workspace_ref (nativeGet action "workspace_ref" nil))))))
+            (unless (and port (nativeGet port (nativeGet action "action")))
+              (progn
+                (setq djReturn6Value (failure "unsupported"))
+                (throw djReturn6Token)))
+            (unless
+              (and
+                (can context operation resource)
+                (or
+                  (not (= (nativeGet action "action") "start"))
+                  (and profile (= (nativeGet profile "enabled") t)
+                       (= (nativeGet profile "revision") (nativeGet action "profile_revision")))))
+              (progn
+                (setq
+                  djReturn6Value
+                  (inTransaction
+                    context
+                    (lambda
+                      (tx)
+                      (put action :state "blocked")
+                      (writeAction context action)
+                      (success (projectLifecycle context action)))))
+                (throw djReturn6Token)))
+            (when
+              (and
+                (= (nativeGet action "action") "stop")
+                (> (pendingNative context (nativeGet instance "instance_id") lifecycle-id) 0))
+              (progn
+                (setq
+                  djReturn6Value
+                  (inTransaction
+                    context
+                    (lambda
+                      (tx)
+                      (put action :state "stopping")
+                      (put action :deadline_reached t)
+                      (writeAction context action)
+                      (success (projectLifecycle context action)))))
+                (throw djReturn6Token)))
+            (unless (nativeGet action "attempt_id")
+              (let
+                (
+                  (prepared
+                    (inTransaction
+                      context
+                      (lambda
+                        (tx)
+                        (let ((djReturn7Token (js-object)) (djReturn7Value nil))
+                          (try
+                            (let
+                              (
+                                (current
+                                  (js-call
+                                    repository
+                                    :get
+                                    "lifecycle_actions"
+                                    lifecycle-id)))
+                              (unless
+                                (and
+                                  (js-call
+                                    (js-array "recorded" "stopping")
+                                    :includes
+                                    (nativeGet current "state"))
+                                  (not (nativeGet current "attempt_id")))
+                                (progn
+                                  (setq djReturn7Value (failure "revision_conflict"))
+                                  (throw djReturn7Token)))
+                              (when
+                                (and
+                                  (not (= (nativeGet current "action") "stop"))
+                                  (not
+                                    (=
+                                      (nativeGet (nativeGet context "runtime") "state" "ready")
+                                      "ready")))
+                                (progn
+                                  (setq djReturn7Value (failure "unavailable"))
+                                  (throw djReturn7Token)))
+                              (unless (can context operation resource)
+                                (progn
+                                  (setq djReturn7Value (failure "forbidden"))
+                                  (throw djReturn7Token)))
+                              (when (= (nativeGet action "action") "create")
+                                (let
+                                  (
+                                    (gate
+                                      (assertGate
+                                        tx
+                                        (nativeGet instance "instance_id")
+                                        (nativeGet action "instance_epoch")
+                                        "open")))
+                                  (unless (nativeGet gate "ok")
+                                    (progn
+                                      (setq djReturn7Value gate)
+                                      (throw djReturn7Token)))))
+                              (let
+                                (
+                                  (attempt
+                                    (js-object
+                                      :attempt_id
+                                      (nextId context "attempt")
+                                      :lifecycle_id
+                                      lifecycle-id
+                                      :delivery_id
+                                      nil
+                                      :outbound_id
+                                      nil
+                                      :dispatch_key
+                                      (nativeGet action "dispatch_key")
+                                      :state
+                                      "submitting"
+                                      :definite_not_sent
+                                      false
+                                      :created_at
+                                      (utcNow context))))
+                                (js-call repository :insert "attempts" attempt)
+                                (put current :attempt_id (nativeGet attempt "attempt_id"))
+                                (put current :state "submitting")
+                                (writeAction context current)
+                                (success current)))
+                            (catch djReturn7Error
+                              (if (eq djReturn7Error djReturn7Token)
+                                djReturn7Value
+                                (throw djReturn7Error)))))))))
+                (unless (nativeGet prepared "ok")
+                  (progn (setq djReturn6Value prepared) (throw djReturn6Token)))
+                (setq action (nativeGet prepared "data"))))
+            (try
+              (let
+                (
+                  (report
+                    (cond
+                      ((= (nativeGet action "action") "start")
+                        (await
+                          (js-call
+                            port
+                            :start
+                            (Object/assign
+                              (js-object)
+                              profile
+                              (js-object
+                                :instance_id
+                                (nativeGet instance "instance_id")
+                                :instance_epoch
+                                (nativeGet instance "instance_epoch")))
+                            (nativeGet action "launch_token")
+                            (nativeCallContext context))))
+                      ((= (nativeGet action "action") "create")
+                        (await
+                          (js-call
+                            port
+                            :create
+                            instance
+                            (nativeGet action "workspace_ref")
+                            (nativeGet action "creation_key")
+                            (Object/assign
+                              (nativeCallContext context)
+                              (if (nativeGet action "title")
+                                (js-object :title (nativeGet action "title"))
+                                (js-object))))))
+                      (t
+                        (await
+                          (js-call
+                            port
+                            :stop
+                            instance
+                            (js-object
+                              :deadline
+                              (+
+                                (js-call (nativeGet (nativeGet context "ports") "clock") :monoNow)
+                                5000))
+                            (nativeCallContext context)))))))
+                (when (nativeGet (nativeGet context "ports") "faults")
+                  (when (= (nativeGet action "action") "start")
+                    (await
+                      (js-call
+                        (nativeGet (nativeGet context "ports") "faults")
+                        :hit
+                        "lifecycle.after_spawn_before_ready"
+                        action)))
+                  (when (= (nativeGet action "action") "create")
+                    (await
+                      (js-call
+                        (nativeGet (nativeGet context "ports") "faults")
+                        :hit
+                        "lifecycle.after_create_before_receipt"
+                        action))))
+                (cond
+                  (
+                    (and
+                      (= (nativeGet action "action") "stop")
+                      (= (nativeGet report "absence_verified") t))
+                    (recordAbsence context action report))
+                  (
+                    (and
+                      (not (= (nativeGet action "action") "stop"))
+                      (= (nativeGet report "state") "ready"))
+                    (let ((recorded (recordReady context action report)))
+                      (if (nativeGet recorded "ok") recorded (recordUnknown context action))))
+                  (
+                    (and
+                      (= (nativeGet action "action") "stop")
+                      (= (nativeGet report "state") "draining"))
+                    (inTransaction
+                      context
+                      (lambda
+                        (tx)
+                        (put action :state "stopping")
+                        (put
+                          action
+                          :deadline_reached
+                          (= (nativeGet report "deadline_reached") t))
+                        (writeAction context action)
+                        (success (projectLifecycle context action)))))
+                  (t (recordUnknown context action))))
+              (catch error
+                (when (eq error djReturn6Token) (throw error))
+                (recordUnknown context action)))))
+        (catch djReturn6Error
+          (if (eq djReturn6Error djReturn6Token) djReturn6Value (throw djReturn6Error))))))
+  (defasync reconcileLifecycle
+    (base lifecycle-id)
+    (let ((djReturn8Token (js-object)) (djReturn8Value nil))
+      (try
+        (let*
+          ((repository (nativeGet base "repository"))
+            (action (js-call repository :get "lifecycle_actions" lifecycle-id)))
+          (unless action
+            (progn (setq djReturn8Value (failure "not_found")) (throw djReturn8Token)))
+          (let*
+            (
+              (context
+                (executionContext
+                  base
+                  (if (nativeGet action "reconcile_principal_id")
+                    (Object/assign
+                      (js-object)
+                      action
+                      (js-object :principal_id (nativeGet action "reconcile_principal_id")))
+                    action)))
+              (instance (js-call repository :get "instances" (nativeGet action "instance_id")))
+              (port (agentPort context instance)))
+            (unless (can context "lifecycle.reconcile" action)
+              (progn (setq djReturn8Value (failure "forbidden")) (throw djReturn8Token)))
+            (try
+              (let
+                (
+                  (report
+                    (if (= (nativeGet action "action") "create")
+                      (if (nativeGet port "lookupCreate")
+                        (await
+                          (js-call
+                            port
+                            :lookupCreate
+                            instance
+                            (nativeGet action "creation_key")
+                            (nativeGet action "native_ref" nil)
+                            (nativeCallContext context)))
+                        (js-object :state "unknown"))
+                      (await
+                        (js-call
+                          port
+                          :inspectInstance
+                          instance
+                          (nativeGet action "launch_token" (nativeGet instance "launch_token"))
+                          (nativeCallContext context))))))
+                (cond
+                  (
+                    (and
+                      (not (= (nativeGet action "action") "create"))
+                      (= (nativeGet report "absence_verified") t))
+                    (recordAbsence context action report))
+                  (
+                    (and
+                      (= (nativeGet action "action") "start")
+                      (= (nativeGet report "state") "ready")
+                      (= (nativeGet report "launch_token") (nativeGet action "launch_token"))
+                      (not (= (nativeGet action "state") "resolved")))
+                    (recordReady context action report))
+                  (
+                    (and
+                      (= (nativeGet action "action") "create")
+                      (= (nativeGet report "state") "ready")
+                      (= (nativeGet report "creation_key") (nativeGet action "creation_key"))
+                      (not (= (nativeGet action "state") "resolved")))
+                    (recordReady context action report))
+                  (t (success (projectLifecycle context action)))))
+              (catch error
+                (when (eq error djReturn8Token) (throw error))
+                (success (projectLifecycle context action))))))
+        (catch djReturn8Error
+          (if (eq djReturn8Error djReturn8Token) djReturn8Value (throw djReturn8Error))))))
+  (defasync handleOperation
+    (context operation args)
+    (let ((djReturn9Token (js-object)) (djReturn9Value nil))
+      (try
+        (cond
+          (
+            (js-call
+              (js-array "instance.start" "session.create" "instance.stop")
+              :includes
+              operation)
+            (acceptLifecycle context operation args))
+          ((= operation "lifecycle.get")
+            (let
+              (
+                (action
+                  (js-call
+                    (nativeGet context "repository")
+                    :get
+                    "lifecycle_actions"
+                    (nativeGet args "lifecycle_id"))))
+              (unless (and action (can context "lifecycle.inspect" action))
+                (progn
+                  (setq djReturn9Value (failure "forbidden"))
+                  (throw djReturn9Token)))
+              (success (projectLifecycle context action))))
+          ((or (= operation "lifecycle.reconcile") (= operation "lifecycle.resolve"))
+            (let*
+              ((repository (nativeGet context "repository"))
+                (action
+                  (js-call repository :get "lifecycle_actions" (nativeGet args "lifecycle_id")))
+                (permission (requirePermission context operation action)))
+              (unless (nativeGet permission "ok")
+                (progn (setq djReturn9Value permission) (throw djReturn9Token)))
+              (unless action
+                (progn
+                  (setq djReturn9Value (failure "not_found"))
+                  (throw djReturn9Token)))
+              (let
+                (
+                  (accepted
+                    (js-call
+                      context
+                      :accept
+                      (lambda
+                        (tx operation-id)
+                        (let ((djReturn10Token (js-object)) (djReturn10Value nil))
+                          (try
+                            (let
+                              (
+                                (current
+                                  (js-call
+                                    repository
+                                    :get
+                                    "lifecycle_actions"
+                                    (nativeGet action "lifecycle_id"))))
+                              (if (= operation "lifecycle.resolve")
+                                (progn
+                                  (unless
+                                    (=
+                                      (nativeGet current "revision")
+                                      (nativeGet args "expected_revision"))
+                                    (progn
+                                      (setq
+                                        djReturn10Value
+                                        (failure "revision_conflict"))
+                                      (throw djReturn10Token)))
+                                  (unless (= (nativeGet current "state") "unknown")
+                                    (progn
+                                      (setq
+                                        djReturn10Value
+                                        (failure "revision_conflict"))
+                                      (throw djReturn10Token)))
+                                  (put current :state "resolved")
+                                  (put current :resolution "abandon_no_retry")
+                                  (put current :reason (nativeGet args "reason"))
+                                  (put current :evidence_level "manual"))
+                                (progn
+                                  (put current :reconcile_requested t)
+                                  (put
+                                    current
+                                    :reconcile_principal_id
+                                    (nativeGet (currentPrincipal context) "principal_id"))))
+                              (writeAction context current)
+                              (success (projectLifecycle context current)))
+                            (catch djReturn10Error
+                              (if (eq djReturn10Error djReturn10Token)
+                                djReturn10Value
+                                (throw djReturn10Error))))))
+                      (js-array (typedRef "lifecycle" (nativeGet action "lifecycle_id"))))))
+                accepted)))
+          (t (failure "invalid_argument")))
+        (catch djReturn9Error
+          (if (eq djReturn9Error djReturn9Token) djReturn9Value (throw djReturn9Error))))))
+  (export
+    acceptLifecycle
+    runLifecycle
+    reconcileLifecycle
+    projectLifecycle
+    pendingNative
+    handleOperation))

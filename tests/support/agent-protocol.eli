@@ -1,0 +1,581 @@
+(module dj.tests.support.agent-protocol
+  (import "../../src/core/native.eli" nativeTypeOf nativeEncodeURIComponent nativeGet)
+  (import "node:crypto" randomBytes)
+  (import "node:path" resolve)
+  (import "./fixtures.eli" createClock)
+  (import "../../src/host/bun/io.eli" createHostPorts)
+  (import "../../src/adapters/agent/opencode-http.eli" createOpenCodePort)
+  (import "../../src/adapters/agent/pi-rpc.eli" createPiChannel createPiPort)
+  (defun context
+    (clock)
+    (js-object
+      :abort_signal
+      (nativeGet (new globalThis.AbortController) "signal")
+      :deadline
+      (+ (js-call clock :monoNow) 10000)
+      :max_frame_bytes
+      1048576
+      :max_response_bytes
+      4194304))
+  ;; A loopback HTTP peer speaks native records, never the DJ AgentPort shape.
+  (defasync openCodeHarness
+    ()
+    (let*
+      ((clock (createClock))
+        (calls (js-array))
+        (events (js-array))
+        (streams (new globalThis.Set))
+        (encoder (new globalThis.TextEncoder))
+        (password (js-call (randomBytes 24) :toString "hex"))
+        (authorization
+          (str
+            "Basic "
+            (js-call (Buffer/from (str "opencode:" password)) :toString "base64")))
+        (directory (resolve ".local/tests/native-workspace"))
+        (session-id "s1/%?#")
+        (session
+          (js-object
+            :id
+            session-id
+            :projectID
+            "native-project"
+            :directory
+            directory
+            :title
+            "same title"
+            :version
+            "1.18.30"
+            :time
+            (js-object :created 1767225600000 :updated 1767225600000)))
+        (state
+          (js-object
+            :status
+            "idle"
+            :http_status
+            204
+            :drop_after_accept
+            false
+            :oversized
+            false
+            :health
+            t
+            :created
+            0
+            :disposed
+            0
+            :native_inputs
+            (js-array))))
+      (let ((emit nil))
+        (setq
+          emit
+          (lambda
+            (event)
+            (js-call events :push event)
+            (js-call
+              streams
+              :forEach
+              (lambda
+                (stream)
+                (js-call
+                  stream
+                  :enqueue
+                  (js-call encoder :encode (str "data: " (JSON/stringify event) "\n\n")))))))
+        (let*
+          (
+            (server
+              nil
+              )
+(serverInitialized (setq server (Bun/serve
+                (js-object
+                  :hostname
+                  "127.0.0.1"
+                  :port
+                  0
+                  :fetch
+                  (async
+                    (request)
+                    (let*
+                      ((url (new globalThis.URL (nativeGet request "url")))
+                        (path (nativeGet url "pathname"))
+                        (method (nativeGet request "method"))
+                        (body
+                          (if (= method "POST") (await (js-call request :json)) nil)))
+                      (js-call
+                        calls
+                        :push
+                        (js-object
+                          :path
+                          path
+                          :method
+                          method
+                          :body
+                          body
+                          :directory
+                          (js-call (nativeGet url "searchParams") :get "directory")
+                          :authenticated
+                          (=
+                            (js-call (nativeGet request "headers") :get "authorization")
+                            authorization)))
+                      (if
+                        (not
+                          (=
+                            (js-call (nativeGet request "headers") :get "authorization")
+                            authorization))
+                        (Response/json
+                          (js-object :error "Unauthorized")
+                          (js-object :status 401))
+                        (cond
+                          ((= path "/global/health")
+                            (Response/json
+                              (js-object
+                                :healthy
+                                (nativeGet state "health")
+                                :version
+                                "1.18.30")))
+                          ((= path "/project/current")
+                            (Response/json
+                              (js-object :id "native-project" :worktree directory)))
+                          ((= path "/session/status")
+                            (let ((statuses (js-object)))
+                              (put
+                                statuses
+                                session-id
+                                (js-object :type (nativeGet state "status")))
+                              (Response/json statuses)))
+                          ((and (= path "/session") (= method "GET"))
+                            (if (nativeGet state "oversized")
+                              (new
+                                globalThis.Response
+                                (str "[\"" (js-call "x" :repeat 1048577) "\"]"))
+                              (Response/json (js-array session))))
+                          ((and (= path "/session") (= method "POST"))
+                            (put state :created (1+ (nativeGet state "created")))
+                            (Response/json
+                              (Object/assign
+                                (js-object)
+                                session
+                                (js-object :id (str "empty-" (nativeGet state "created"))))))
+                          ((= path "/instance/dispose")
+                            (put state :disposed (1+ (nativeGet state "disposed")))
+                            (Response/json t))
+                          ((= path "/event")
+                            (new
+                              globalThis.Response
+                              (new
+                                globalThis.ReadableStream
+                                (js-object
+                                  :start
+                                  (lambda
+                                    (controller)
+                                    (js-call streams :add controller)
+                                    (js-call
+                                      controller
+                                      :enqueue
+                                      (js-call
+                                        encoder
+                                        :encode
+                                        "data: {\"type\":\"server.connected\",\"properties\":{}}\n\n")))
+                                  :cancel
+                                  (lambda () nil)))
+                              (js-object
+                                :headers
+                                (js-object :content-type "text/event-stream"))))
+                          (
+                            (=
+                              path
+                              (str
+                                "/session/"
+                                (nativeEncodeURIComponent session-id)
+                                "/prompt_async"))
+                            (js-call (nativeGet state "native_inputs") :push body)
+                            (when (nativeGet state "drop_after_accept")
+                              (js-call server :stop t))
+                            (new
+                              globalThis.Response
+                              nil
+                              (js-object :status (nativeGet state "http_status"))))
+                          (
+                            (=
+                              path
+                              (str
+                                "/session/"
+                                (nativeEncodeURIComponent session-id)
+                                "/message"))
+                            (if (nativeGet state "message_handler")
+                              (await (funcall (nativeGet state "message_handler") url))
+                              (Response/json
+                              (js-array
+                                (js-object
+                                  :info
+                                  (js-object
+                                    :id
+                                    "native-m1"
+                                    :sessionID
+                                    session-id
+                                    :role
+                                    "user"
+                                    :time
+                                    (js-object :created 1767225600000))
+                                  :parts
+                                  (js-array
+                                    (js-object
+                                      :id
+                                      "part-1"
+                                      :type
+                                      "text"
+                                      :text
+                                      "中文😀 native text")))))))
+                          (
+                            (=
+                              path
+                              (str "/session/" (nativeEncodeURIComponent session-id)))
+                            (Response/json session))
+                          (t
+                            (Response/json
+                              (js-object :error "Unexpected native route")
+                              (js-object :status 404)))))))))))(base-url (str "http://127.0.0.1:" (nativeGet server "port")))
+              (host (createHostPorts (js-object :root (resolve ".local/tests"))))
+              (endpoint
+                (js-object
+                  :endpoint_ref
+                  "native-oc"
+                  :base_url
+                  base-url
+                  :native_namespace
+                  "native-project"
+                  :instance_id
+                  "native-oc-instance"
+                  :instance_epoch
+                  "e1"
+                  :ownership
+                  "existing"
+                  :workspace_ref
+                  "ws-native"
+                  :directory
+                  directory
+                  :credential_ref
+                  "native-basic"))
+              (binding
+                (js-object
+                  :endpoint_ref
+                  "native-oc"
+                  :native_namespace
+                  "native-project"
+                  :native_session_id
+                  session-id
+                  :instance_id
+                  "native-oc-instance"
+                  :instance_epoch
+                  "e1")))
+            (put host :clock clock)
+            (put
+              host
+              :credentials
+              (js-object
+                :resolve
+                (async
+                  (ref)
+                  (unless (= ref "native-basic")
+                    (throw (new globalThis.Error "unknown test credential ref")))
+                  (js-object :username "opencode" :password password))))
+            (js-object
+              :clock
+              clock
+              :calls
+              calls
+              :state
+              state
+              :session
+              session
+              :binding
+              binding
+              :endpoint
+              endpoint
+              :context
+              (context clock)
+              :emit
+              emit
+              :port
+              (createOpenCodePort (js-object :endpoints (js-array endpoint)) host)
+              :close
+              (async
+                ()
+                (js-call
+                  streams
+                  :forEach
+                  (lambda
+                    (controller)
+                    (try (js-call controller :close) (catch ignored nil))))
+                (await (js-call server :stop t))))))))
+  (defun channelHarness
+    ()
+    (let*
+      ((clock (createClock))
+        (writes (js-array))
+        (kills (js-array))
+        (behavior (js-object :reject_write false))
+        (channel
+          (createPiChannel
+            (js-object
+              :clock
+              clock
+              :write
+              (async
+                (bytes)
+                (when (nativeGet behavior "reject_write")
+                  (throw (new globalThis.Error "controlled write failure")))
+                (js-call
+                  writes
+                  :push
+                  (if (= (nativeTypeOf bytes) "string")
+                    bytes
+                    (js-call (new globalThis.TextDecoder) :decode bytes))))
+              :kill
+              (lambda (signal) (js-call kills :push signal)))
+            (js-object :max_frame_bytes 1048576 :drain_timeout_ms 5000))))
+      (js-object
+        :clock
+        clock
+        :writes
+        writes
+        :kills
+        kills
+        :behavior
+        behavior
+        :channel
+        channel
+        :context
+        (context clock)
+        :reply
+        (lambda
+          (command data &optional failed)
+          (js-call
+            channel
+            :feed
+            (str
+              (JSON/stringify
+                (if failed
+                  (js-object
+                    :id
+                    (nativeGet command "id")
+                    :type
+                    "response"
+                    :command
+                    (nativeGet command "type")
+                    :success
+                    false
+                    :error
+                    "controlled native refusal")
+                  (js-object
+                    :id
+                    (nativeGet command "id")
+                    :type
+                    "response"
+                    :command
+                    (nativeGet command "type")
+                    :success
+                    t
+                    :data
+                    data)))
+              "\n"))))))
+  ;; Stream-shaped ProcessPort peer: no Pi process, model, or current session.
+  (defun piProcessHarness
+    ()
+    (let*
+      ((clock (createClock))
+        (commands (js-array))
+        (spawns (js-array))
+        (kills (js-array))
+        (controllers (js-object))
+        (resolve-exit nil)
+        (state
+          (js-object
+            :disposition
+            "started"
+            :session_id
+            "native-pi-session"
+            :streaming
+            false
+            :compacting
+            false
+            :pending
+            0
+            :stdin_closed
+            false
+            :exited
+            false))
+        (encoder (new globalThis.TextEncoder))
+        (exited
+          (new globalThis.Promise (lambda (accept reject) (setq resolve-exit accept))))
+        (stdout
+          (new
+            globalThis.ReadableStream
+            (js-object :start (lambda (c) (put controllers :out c)))))
+        (stderr
+          (new
+            globalThis.ReadableStream
+            (js-object :start (lambda (c) (put controllers :err c))))))
+      (let ((emit nil) (endProcess nil))
+        (setq
+          emit
+          (lambda
+            (record)
+            (js-call
+              (nativeGet controllers "out")
+              :enqueue
+              (js-call encoder :encode (str (JSON/stringify record) "\n")))))
+        (setq
+          endProcess
+          (lambda
+            ()
+            (unless (nativeGet state "exited")
+              (put state :exited t)
+              (js-call (nativeGet controllers "out") :close)
+              (js-call (nativeGet controllers "err") :close)
+              (funcall resolve-exit 0))))
+        (let*
+          (
+            (child
+              (js-object
+                :pid
+                990001
+                :stdout
+                stdout
+                :stderr
+                stderr
+                :exited
+                exited
+                :exitCode
+                nil
+                :stdin
+                (js-object
+                  :write
+                  (lambda
+                    (bytes)
+                    (let*
+                      (
+                        (text
+                          (if (= (nativeTypeOf bytes) "string")
+                            bytes
+                            (js-call (new globalThis.TextDecoder) :decode bytes)))
+                        (command (JSON/parse (js-call text :trim))))
+                      (js-call commands :push command)
+                      (let
+                        (
+                          (data
+                            (cond
+                              ((= (nativeGet command "type") "get_state")
+                                (js-object
+                                  :sessionId
+                                  (nativeGet state "session_id")
+                                  :sessionName
+                                  "same title"
+                                  :isStreaming
+                                  (nativeGet state "streaming")
+                                  :isCompacting
+                                  (nativeGet state "compacting")
+                                  :pendingMessageCount
+                                  (nativeGet state "pending")
+                                  :messageCount
+                                  1))
+                              ((= (nativeGet command "type") "get_messages")
+                                (js-object
+                                  :messages
+                                  (js-array
+                                    (js-object
+                                      :role
+                                      "user"
+                                      :content
+                                      "中文😀 pi text"
+                                      :timestamp
+                                      1767225600000))))
+                              ((= (nativeGet command "type") "get_entries")
+                                (js-object
+                                  :entries
+                                  (js-array
+                                    (js-object
+                                      :type
+                                      "message"
+                                      :id
+                                      "native-entry-1"
+                                      :parentId
+                                      nil
+                                      :timestamp
+                                      "2026-01-01T00:00:00.000Z"
+                                      :message
+                                      (js-object :role "user" :content "中文😀 pi text")))
+                                  :leafId
+                                  "native-entry-1"))
+                              ((= (nativeGet command "type") "prompt")
+                                (js-object :disposition (nativeGet state "disposition")))
+                              (t (js-object)))))
+                        (emit
+                          (js-object
+                            :id
+                            (nativeGet command "id")
+                            :type
+                            "response"
+                            :command
+                            (nativeGet command "type")
+                            :success
+                            t
+                            :data
+                            data)))
+                    (js-length text)))
+                :flush
+                (async () nil)
+                :end
+                (lambda () (put state :stdin_closed t) (endProcess)))
+              :kill
+              (lambda (signal) (js-call kills :push signal))))
+          (host (createHostPorts (js-object :root (resolve ".local/tests"))))
+          (profile
+            (js-object
+              :profile_id
+              "native-pi-profile"
+              :tool
+              "pi"
+              :revision
+              1
+              :argv
+              (js-array "owned-native-protocol-peer")
+              :workspace_refs
+              (js-array "ws-native")
+              :native_namespace
+              "native-pi"))
+          (process-port
+            (js-object
+              :spawn
+              (lambda
+                (argv options)
+                (js-call spawns :push (js-object :argv argv :options options))
+                child)))
+          (port nil))
+        (put host :clock clock)
+        (put host :process process-port)
+        (setq port (createPiPort (js-object :profiles (js-array profile)) host))
+        (js-object
+          :clock
+          clock
+          :commands
+          commands
+          :spawns
+          spawns
+          :kills
+          kills
+          :state
+          state
+          :profile
+          profile
+          :port
+          port
+          :emit
+          emit
+          :context
+          (context clock)
+          :child
+          child
+          :close
+          (async () (endProcess) (await exited)))))))
+  (defasync closeHarness (harness) (when harness (await (js-call harness :close))))
+  (export openCodeHarness channelHarness piProcessHarness closeHarness context))

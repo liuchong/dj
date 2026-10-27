@@ -1,0 +1,44 @@
+(module dj.tests.e2e.relay
+  (import "../support/case.eli" withCase)
+  (import "../support/real.eli" createRealFixture realRelay)
+  (defconst combinations
+    (js-array
+      (js-array "feishu" "lark" "opencode" false)
+      (js-array "feishu" "lark" "opencode" t)
+      (js-array "feishu" "lark" "pi" false)
+      (js-array "feishu" "lark" "pi" t)
+      (js-array "telegram" "telegram" "opencode" false)
+      (js-array "telegram" "telegram" "opencode" t)
+      (js-array "telegram" "telegram" "pi" false)
+      (js-array "telegram" "telegram" "pi" t)))
+  (js-call
+    combinations
+    :forEach
+    (lambda
+      (row)
+      (let
+        (
+          (id
+            (str
+              "T42."
+              (aref row 0)
+              "-"
+              (aref row 2)
+              "-"
+              (if (aref row 3) "busy" "idle")
+              ".real")))
+        (withCase
+          id
+          (async () (await (createRealFixture id)))
+          (async (f) (await (realRelay f (aref row 1) (aref row 2) (aref row 3))))
+          (lambda (f) nil)))))
+  (withCase
+    "T06.idle-wakeup.real"
+    (async () (await (createRealFixture "T06.idle-wakeup.real")))
+    (async (f) (await (realRelay f "lark" "opencode" false)))
+    (lambda (f) nil))
+  (withCase
+    "T06.idle-wakeup.pi.real"
+    (async () (await (createRealFixture "T06.idle-wakeup.pi.real")))
+    (async (f) (await (realRelay f "lark" "pi" false)))
+    (lambda (f) nil)))

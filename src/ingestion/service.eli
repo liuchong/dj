@@ -1,0 +1,381 @@
+(module dj.ingestion.service
+  (import "../core/native.eli" nativeTypeOf nativeGet)
+  (import "../core/errors.eli" success failure)
+  (import "../core/types.eli" conversationKey utf8Bytes sliceUtf8 addSeconds isUtcTime)
+  (import "../core/limits.eli" limits)
+  (import "../application/context.eli" utcNow nextId inTransaction must safeFields)
+  (defun allowedAddress
+    (connection address)
+    (and
+      (not (= (nativeGet connection "disabled") t))
+      (= (nativeGet connection "connection_id") (nativeGet address "connection_id"))
+      (cond
+        ((= (nativeGet connection "platform") "lark")
+          (or (and (= (nativeGet connection "source_delivery") "events")
+                   (= (nativeGet connection "event_scope" "all_authorized") "all_authorized"))
+          (js-call
+            (nativeGet connection "watches" (js-array))
+            :some
+            (lambda
+              (watch)
+              (and
+                (= (nativeGet watch "chat_id") (nativeGet address "native_chat_id"))
+                (= (nativeGet watch "thread_id" nil) (nativeGet address "native_thread_id" nil)))))))
+        ((= (nativeGet connection "platform") "telegram")
+          (js-call
+            (nativeGet connection "allowed_chats" (js-array))
+            :some
+            (lambda
+              (chat)
+              (if (= (nativeTypeOf chat) "string")
+                (= chat (nativeGet address "native_chat_id"))
+                (and
+                  (= (nativeGet chat "chat_id") (nativeGet address "native_chat_id"))
+                  (or
+                    (not (object-has? chat :thread_id))
+                    (= (nativeGet chat "thread_id") (nativeGet address "native_thread_id" nil))))))))
+        (t false))))
+  (defun persistProgress
+    (context connection cursor last-sequence)
+    (let*
+      ((repository (nativeGet context "repository"))
+        (id (nativeGet connection "connection_id"))
+        (old (js-call repository :get "source_progress" id))
+        (port (js-call (nativeGet (nativeGet context "ports") "im_ports") :get id))
+        (progress
+          (js-object
+            :connection_id
+            id
+            :cursor
+            (if (undefined? cursor) (nativeGet old "cursor" nil) cursor)
+            :identity_revision
+            (nativeGet connection "identity_revision" (nativeGet connection "revision"))
+            :last_ingress_seq
+            last-sequence
+            :gap_status
+            (nativeGet old "gap_status" "possible")
+            :ack_control
+            (= (nativeGet (nativeGet port "capabilities") "ack_control") t))))
+      (if old
+        (must (js-call repository :replace "source_progress" progress))
+        (js-call repository :insert "source_progress" progress))
+      progress))
+  (defun rejectIngress
+    (context connection normalized cursor reason)
+    (let ((djReturn1Token (js-object)) (djReturn1Value nil))
+      (try
+        (let*
+          ((repository (nativeGet context "repository"))
+            (db (nativeGet (nativeGet context "store") "db"))
+            (key (nativeGet normalized "source_key"))
+            (progress
+              (persistProgress
+                context
+                connection
+                cursor
+                (js-call repository :currentSequence "ingress"))))
+          (unless (and (= (nativeTypeOf key) "string") (> (js-length key) 0))
+            (progn
+              (setq djReturn1Value (failure "invalid_argument"))
+              (throw djReturn1Token)))
+          (js-call
+            (js-call
+              db
+              :query
+              "INSERT OR IGNORE INTO rejected_ingress(diagnostic_id,connection_id,source_key,reason,received_at) VALUES (?,?,?,?,?)")
+            :run
+            (nextId context "ingress_rejection")
+            (nativeGet connection "connection_id")
+            key
+            reason
+            (utcNow context))
+          (success
+            (js-object
+              :accepted
+              false
+              :diagnostic
+              t
+              :reason
+              reason
+              :source_progress
+              progress)))
+        (catch djReturn1Error
+          (if (eq djReturn1Error djReturn1Token) djReturn1Value (throw djReturn1Error))))))
+  (defun acceptEvent
+    (context connection-id normalized source-cursor)
+    (let ((djReturn2Token (js-object)) (djReturn2Value nil))
+      (try
+        (let*
+          ((repository (nativeGet context "repository"))
+            (connection (js-call repository :get "connections" connection-id)))
+          (unless connection
+            (progn (setq djReturn2Value (failure "forbidden")) (throw djReturn2Token)))
+          (inTransaction
+            context
+            (lambda
+              (tx)
+              (let ((djReturn3Token (js-object)) (djReturn3Value nil))
+                (try
+                  (let ((capacity (js-call (nativeGet context "store") :admissionStatus)))
+                    (unless (nativeGet capacity "ok")
+                      (progn (setq djReturn3Value capacity) (throw djReturn3Token))))
+                  (let*
+                    ((source-key (nativeGet normalized "source_key"))
+                      (address (nativeGet normalized "conversation"))
+                      (db (nativeGet tx "db")))
+                    (unless
+                      (and
+                        (= (nativeTypeOf source-key) "string")
+                        (> (js-length source-key) 0))
+                      (progn
+                        (setq djReturn3Value (failure "invalid_argument"))
+                        (throw djReturn3Token)))
+                    (when (= (nativeGet normalized "kind") "diagnostic")
+                      (progn
+                        (setq
+                          djReturn3Value
+                          (rejectIngress
+                            context
+                            connection
+                            normalized
+                            source-cursor
+                            (nativeGet normalized "reason" "unsupported_native_update")))
+                        (throw djReturn3Token)))
+                    (unless
+                      (and
+                        (= (nativeGet normalized "connection_id") connection-id)
+                        (allowedAddress connection address))
+                      (progn
+                        (setq
+                          djReturn3Value
+                          (rejectIngress
+                            context
+                            connection
+                            normalized
+                            source-cursor
+                            "source_not_allowed"))
+                        (throw djReturn3Token)))
+                    (unless (= (nativeGet normalized "event_kind") "message.created")
+                      (progn
+                        (setq
+                          djReturn3Value
+                          (rejectIngress
+                            context
+                            connection
+                            normalized
+                            source-cursor
+                            "unsupported_event_kind"))
+                        (throw djReturn3Token)))
+                    (unless
+                      (and
+                        (= (nativeGet (nativeGet normalized "content") "kind") "text")
+                        (=
+                          (nativeTypeOf (nativeGet (nativeGet normalized "content") "text"))
+                          "string")
+                        (= (nativeTypeOf (nativeGet normalized "native_message_id")) "string")
+                        (> (js-length (nativeGet normalized "native_message_id")) 0))
+                      (progn
+                        (setq
+                          djReturn3Value
+                          (rejectIngress
+                            context
+                            connection
+                            normalized
+                            source-cursor
+                            "unsupported_native_content"))
+                        (throw djReturn3Token)))
+                    (let
+                      (
+                        (existing
+                          (js-call
+                            (js-call
+                              db
+                              :query
+                              "SELECT payload FROM events WHERE connection_id=? AND source_key=?")
+                            :get
+                            connection-id
+                            source-key)))
+                      (when existing
+                        (let*
+                          ((event (JSON/parse (nativeGet existing "payload")))
+                            (progress
+                              (persistProgress
+                                context
+                                connection
+                                source-cursor
+                                (js-call repository :currentSequence "ingress"))))
+                          (progn
+                            (setq
+                              djReturn3Value
+                              (success
+                                (js-object
+                                  :accepted
+                                  t
+                                  :duplicate
+                                  t
+                                  :event_id
+                                  (nativeGet event "event_id")
+                                  :ingress_seq
+                                  (nativeGet event "ingress_seq")
+                                  :source_progress
+                                  progress)))
+                            (throw djReturn3Token)))))
+                    (let*
+                      ((text (nativeGet (nativeGet normalized "content") "text"))
+                        (size (utf8Bytes text))
+                        (content
+                          (js-object
+                            :kind
+                            "text"
+                            :text
+                            (if (> size (nativeGet limits "event_body_bytes"))
+                              (nativeGet
+                                (sliceUtf8 text 0 (nativeGet limits "event_body_bytes"))
+                                "text")
+                              text)
+                            :truncated
+                            (or
+                              (> size (nativeGet limits "event_body_bytes"))
+                              (= (nativeGet (nativeGet normalized "content") "truncated") t))
+                            :original_bytes
+                            (nativeGet (nativeGet normalized "content") "original_bytes" size)))
+                        (sender
+                          (safeFields
+                            (nativeGet normalized "sender" (js-object))
+                            (js-array "id" "kind" "display_name")))
+                        (sequence (js-call repository :nextSequence "ingress"))
+                        (event
+                          (js-object
+                            :event_id
+                            (nextId context "event")
+                            :source_key
+                            source-key
+                            :connection_id
+                            connection-id
+                            :conversation
+                            (safeFields
+                              address
+                              (js-array
+                                "connection_id"
+                                "native_chat_id"
+                                "native_thread_id"
+                                "thread_kind"))
+                            :conversation_key
+                            (conversationKey address)
+                            :native_message_id
+                            (nativeGet normalized "native_message_id")
+                            :event_kind
+                            "message.created"
+                            :source_revision
+                            (nativeGet normalized "source_revision" "1")
+                            :identity_revision
+                            (nativeGet
+                              connection
+                              "identity_revision"
+                              (nativeGet connection "revision"))
+                            :sender
+                            sender
+                            :content
+                            content
+                            :attachments
+                            (js-call
+                              (nativeGet normalized "attachments" (js-array))
+                              :map
+                              (lambda
+                                (attachment)
+                                (safeFields
+                                  attachment
+                                  (js-array
+                                    "attachment_id"
+                                    "kind"
+                                    "file_name"
+                                    "mime_type"
+                                    "size_bytes"
+                                    "native_handle_ref"))))
+                            :received_at
+                            (utcNow context)
+                            :body_expires_at
+                            (addSeconds
+                              (utcNow context)
+                              (nativeGet limits "body_retention_seconds"))
+                            :ingress_seq
+                            sequence
+                            :tombstone
+                            false)))
+                      (unless
+                        (js-call
+                          (js-array "human" "bot" "agent" "unknown")
+                          :includes
+                          (nativeGet sender "kind"))
+                        (put sender :kind "unknown"))
+                      (when (isUtcTime (nativeGet normalized "source_time"))
+                        (put event :source_time (nativeGet normalized "source_time")))
+                      (when (object-has? normalized :addressed_self) (put event :addressed_self (nativeGet normalized "addressed_self")))
+                      (when (object-has? normalized :chat_type) (put event :chat_type (nativeGet normalized "chat_type")))
+                      (when (object-has? normalized :addressed_bot)
+                        (put event :addressed_bot (nativeGet normalized "addressed_bot")))
+                      (when (nativeGet normalized "reply_to")
+                        (put
+                          event
+                          :reply_to
+                          (safeFields
+                            (nativeGet normalized "reply_to")
+                            (js-array "id" "sender_id"))))
+                      (js-call repository :insert "events" event)
+                      (let*
+                        (
+                          (backpressure
+                            (>=
+                              (nativeGet
+                                (js-call
+                                  (js-call
+                                    db
+                                    :query
+                                    "SELECT COUNT(*) AS n FROM routing_work WHERE state IN ('ready','held','blocked')")
+                                  :get)
+                                "n")
+                              (nativeGet limits "global_queue")))
+                          (work
+                            (js-object
+                              :event_id
+                              (nativeGet event "event_id")
+                              :ingress_seq
+                              sequence
+                              :state
+                              (if backpressure "blocked" "ready")
+                              :last_subscription_id
+                              nil
+                              :last_revision
+                              nil
+                              :reason
+                              (if backpressure "ingress_capacity" nil))))
+                        (js-call repository :insert "routing_work" work)
+                        (let
+                          (
+                            (progress
+                              (persistProgress
+                                context
+                                connection
+                                source-cursor
+                                sequence)))
+                          (success
+                            (js-object
+                              :accepted
+                              t
+                              :duplicate
+                              false
+                              :event_id
+                              (nativeGet event "event_id")
+                              :ingress_seq
+                              sequence
+                              :source_progress
+                              progress
+                              :backpressure
+                              backpressure))))))
+                  (catch djReturn3Error
+                    (if (eq djReturn3Error djReturn3Token)
+                      djReturn3Value
+                      (throw djReturn3Error))))))))
+        (catch djReturn2Error
+          (if (eq djReturn2Error djReturn2Token) djReturn2Value (throw djReturn2Error))))))
+  (export acceptEvent allowedAddress persistProgress))

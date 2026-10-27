@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "authorized": false,
+  "targets": [
+    {
+      "native_session_id": "REPLACE_WITH_AUTHORIZED_NATIVE_SESSION_ID",
+      "cwd": "REPLACE_WITH_AUTHORIZED_DIRECTORY",
+      "log_path": "REPLACE_WITH_AUTHORIZED_NATIVE_SESSION_JSONL_PATH"
+    }
+  ]
+}

@@ -1,0 +1,260 @@
+(module dj.application.schema
+  (import "../core/native.eli" nativeTypeOf nativeGet)
+  (import "ajv/dist/2020.js" :default Ajv2020)
+  (import "./operations.eli" operationCatalog)
+  (import "../core/types.eli" utf8Bytes isUtcTime stableJson)
+  (import "../core/rules.eli" validatePredicate)
+  (import "../core/instructions.eli" validateInstructionPolicy)
+  (import "../core/limits.eli" limits)
+  (import "../core/errors.eli" success failure invalidField)
+  (defconst validators (new globalThis.Map))
+  (defconst ajv
+    (new
+      Ajv2020
+      (js-object
+        :strict
+        t
+        :allErrors
+        t
+        :allowUnionTypes
+        t
+        :coerceTypes
+        false
+        :removeAdditional
+        false
+        :useDefaults
+        false)))
+  (defun validateRequest
+    (operation json)
+    (let ((djReturn1Token (js-object)) (djReturn1Value nil))
+      (try
+        (let ((descriptor (js-call operationCatalog :get operation)))
+          (unless descriptor
+            (progn
+              (setq
+                djReturn1Value
+                (invalidField "/operation" "a declared operation name"))
+              (throw djReturn1Token)))
+          (let ((validate (js-call validators :get operation)))
+            (unless validate
+              (setq validate (js-call ajv :compile (nativeGet descriptor "input_schema")))
+              (js-call validators :set operation validate))
+            (unless (funcall validate json)
+              (progn
+                (setq
+                  djReturn1Value
+                  (failure
+                    "invalid_argument"
+                    (js-object
+                      :field_errors
+                      (js-call
+                        (js-call
+                          (nativeGet validate "errors")
+                          :slice
+                          0
+                          (nativeGet limits "field_errors"))
+                        :map
+                        (lambda
+                          (error)
+                          (js-object
+                            :pointer
+                            (str
+                              (nativeGet error "instancePath")
+                              (if (= (nativeGet error "keyword") "required")
+                                (str "/" (nativeGet (nativeGet error "params") "missingProperty"))
+                                ""))
+                            :code
+                            (nativeGet error "keyword")
+                            :expected
+                            (nativeGet error "keyword")
+                            :received_type
+                            (if (= (nativeGet error "keyword") "required") "missing" "invalid")))))))
+                (throw djReturn1Token))))
+          (when (= operation "operation.get")
+            (let
+              ((id (object-has? json :operation_id))
+                (name (object-has? json :operation))
+                (key (object-has? json :idempotency_key)))
+              (unless (or (and id (not name) (not key)) (and (not id) name key))
+                (progn
+                  (setq
+                    djReturn1Value
+                    (invalidField
+                      "/operation_id"
+                      "operation_id XOR (operation and idempotency_key)"))
+                  (throw djReturn1Token)))))
+          (when (= operation "subscription.preview")
+            (let ((checked (validateInstructionPolicy (nativeGet (nativeGet json "spec") "instruction_policy"))))
+              (unless (nativeGet checked "ok")
+                (setq djReturn1Value checked) (throw djReturn1Token)))
+            (unless
+              (=
+                (object-has? json :subscription_id)
+                (object-has? json :expected_revision))
+              (progn
+                (setq
+                  djReturn1Value
+                  (invalidField
+                    "/expected_revision"
+                    "paired with subscription_id in update preview mode"))
+                (throw djReturn1Token)))
+            (let ((predicate (nativeGet (nativeGet json "spec") "predicate")))
+              (when predicate
+                (let ((checked (validatePredicate predicate)))
+                  (unless (nativeGet checked "ok")
+                    (progn (setq djReturn1Value checked) (throw djReturn1Token)))))))
+          (when (object-has? json :content)
+            (when
+              (> (utf8Bytes (nativeGet (nativeGet json "content") "text")) (nativeGet limits "text_bytes"))
+              (progn
+                (setq
+                  djReturn1Value
+                  (invalidField "/content/text" "at most 16384 UTF-8 bytes"))
+                (throw djReturn1Token))))
+          (when (object-has? json :title)
+            (when (> (utf8Bytes (nativeGet json "title")) (nativeGet limits "title_bytes"))
+              (progn
+                (setq djReturn1Value (invalidField "/title" "at most 256 UTF-8 bytes"))
+                (throw djReturn1Token))))
+          (when (object-has? json :query)
+            (let
+              (
+                (text
+                  (if (= (nativeTypeOf (nativeGet json "query")) "string")
+                    (nativeGet json "query")
+                    (nativeGet (nativeGet json "query") "text"))))
+              (when (> (utf8Bytes text) (nativeGet limits "query_bytes"))
+                (progn
+                  (setq
+                    djReturn1Value
+                    (invalidField "/query" "at most 1024 UTF-8 bytes"))
+                  (throw djReturn1Token)))))
+          (let
+            (
+              (ranges
+                (js-array (nativeGet json "time_range") (nativeGet (nativeGet json "scope") "updated_range")))
+              (index 0))
+            (while (< index (js-length ranges))
+              (let ((range (aref ranges index)))
+                (when range
+                  (unless
+                    (and
+                      (isUtcTime (nativeGet range "from"))
+                      (isUtcTime (nativeGet range "to"))
+                      (< (Date/parse (nativeGet range "from")) (Date/parse (nativeGet range "to"))))
+                    (progn
+                      (setq
+                        djReturn1Value
+                        (invalidField
+                          "/time_range"
+                          "UTC RFC3339 from < to, inclusive/exclusive"))
+                      (throw djReturn1Token)))))
+              (setq index (1+ index))))
+          (success json))
+        (catch djReturn1Error
+          (if (eq djReturn1Error djReturn1Token) djReturn1Value (throw djReturn1Error))))))
+  (defun normalizedPolicy
+    (policy)
+    (Object/assign
+      (js-object
+        :busy
+        "queue"
+        :offline
+        "hold"
+        :ttl_seconds
+        (nativeGet limits "ttl_default_seconds"))
+      policy))
+  (defun normalizeArgs
+    (operation validated)
+    ;; Validation is separate; this copies JSON and adds only declared defaults.
+    (let*
+      ((args (JSON/parse (JSON/stringify validated)))
+        (descriptor (js-call operationCatalog :get operation))
+        (properties (nativeGet (nativeGet descriptor "input_schema") "properties")))
+      (when (and (object-has? properties :limit) (not (object-has? args :limit)))
+        (put args :limit (nativeGet limits "limit_default")))
+      (when (object-has? properties :offset_bytes)
+        (unless (object-has? args :offset_bytes) (put args :offset_bytes 0))
+        (unless (object-has? args :max_bytes)
+          (put args :max_bytes (nativeGet limits "body_page_default_bytes"))))
+      (when (= operation "catalog.refresh")
+        (unless (object-has? args :include_content) (put args :include_content false))
+        (put
+          args
+          :budget
+          (Object/assign
+            (js-object
+              :max_records
+              (nativeGet limits "refresh_max_records")
+              :max_messages
+              (nativeGet limits "refresh_max_messages")
+              :max_bytes
+              (nativeGet limits "refresh_max_bytes")
+              :max_seconds
+              (nativeGet limits "refresh_max_seconds"))
+            (nativeGet args "budget"))))
+      (when (or (= operation "message.list") (= operation "message.search"))
+        (unless (object-has? args :corpus) (put args :corpus "local")))
+      (when (= operation "session.message.list")
+        (unless (object-has? args :corpus) (put args :corpus "indexed")))
+      (when (js-call (js-array "session.list" "session.search") :includes operation)
+        (unless (object-has? args :sort) (put args :sort "session_key_asc")))
+      (when (= operation "session.send")
+        (put args :delivery_policy (normalizedPolicy (nativeGet args "delivery_policy"))))
+      (when (= operation "subscription.preview")
+        (let* ((spec (nativeGet args "spec")) (selector (nativeGet spec "selector")))
+          (unless (object-has? spec :predicate)
+            (put spec :predicate (js-object :field "addressed_self" :op "eq" :value t)))
+          (unless (object-has? spec :start) (put spec :start "now"))
+          (unless (object-has? spec :delivery_mode) (put spec :delivery_mode "push"))
+          (put
+            spec
+            :context_policy
+            (Object/assign
+              (js-object
+                :mode
+                "current"
+                :max_events
+                1
+                :max_bytes
+                (nativeGet limits "text_bytes"))
+              (nativeGet spec "context_policy")))
+          (put spec :delivery_policy (normalizedPolicy (nativeGet spec "delivery_policy")))
+          (unless (object-has? selector :event_kinds)
+            (put selector :event_kinds (js-array "message.created")))
+          (put
+            selector
+            :event_kinds
+            (js-call
+              (Array/from (new globalThis.Set (nativeGet selector "event_kinds")))
+              :sort))
+          (let
+            (
+              (sources
+                (js-call
+                  (nativeGet selector "sources")
+                  :map
+                  (lambda
+                    (source)
+                    (Object/assign (js-object :include_threads false) source)))))
+            (put
+              selector
+              :sources
+              (js-call
+                (js-call
+                  sources
+                  :filter
+                  (lambda
+                    (source index rows)
+                    (=
+                      index
+                      (js-call
+                        rows
+                        :findIndex
+                        (lambda (other) (= (stableJson source) (stableJson other)))))))
+                :sort
+                (lambda
+                  (one other)
+                  (js-call (stableJson one) :localeCompare (stableJson other) "en")))))))
+      args))
+  (export validateRequest normalizeArgs normalizedPolicy))

@@ -1,0 +1,48 @@
+(module dj.host.bun.ids
+  (import "../../core/native.eli" nativeTypeOf)
+  (import "node:crypto" randomUUID)
+  (defconst entityPrefixes
+    (js-array
+      "event"
+      "delivery"
+      "attempt"
+      "receipt"
+      "binding"
+      "reply_context_record"
+      "route"
+      "agent"
+      "subscription"))
+  (defconst uuidV4Pattern
+    (new
+      globalThis.RegExp
+      "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"))
+  (defun entityUuidV7
+    (milliseconds randomUuid)
+    (unless
+      (and
+        (Number/isSafeInteger milliseconds)
+        (>= milliseconds 0)
+        (<= milliseconds 281474976710655))
+      (throw (new globalThis.RangeError "entity UUID timestamp outside unsigned 48-bit milliseconds")))
+    (unless
+      (and
+        (= (nativeTypeOf randomUuid) "string")
+        (js-call uuidV4Pattern :test randomUuid))
+      (throw (new globalThis.TypeError "entity UUID requires a lowercase UUIDv4 random source")))
+    ;; Retain all 74 random bits after the v4 version nibble; no counter state.
+    (let ((h (js-call (js-call milliseconds :toString 16) :padStart 12 "0")))
+      (str
+        (js-call h :slice 0 8)
+        "-"
+        (js-call h :slice 8 12)
+        "-7"
+        (js-call randomUuid :slice 15))))
+  (defun nextHostId
+    (prefix)
+    (str
+      prefix
+      "_"
+      (if (js-call entityPrefixes :includes prefix)
+        (entityUuidV7 (Date/now) (randomUUID))
+        (randomUUID))))
+  (export entityUuidV7 nextHostId))

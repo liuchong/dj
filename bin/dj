@@ -1,0 +1,4 @@
+#!/bin/sh
+set -eu
+DJ_BUNDLE_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
+exec bun "$DJ_BUNDLE_ROOT/dist/src/interfaces/cli.mjs" "$@"

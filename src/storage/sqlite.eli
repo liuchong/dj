@@ -1,0 +1,444 @@
+(module dj.storage.sqlite
+  (import "../core/native.eli" NativeNumber nativeBitAnd nativeTypeOf nativeGet)
+  (import "bun:sqlite" Database)
+  (import "node:fs"
+    openSync
+    closeSync
+    chmodSync
+    lstatSync
+    existsSync
+    unlinkSync
+    linkSync
+    fsyncSync
+    mkdtempSync
+    rmdirSync)
+  (import "node:path" resolve dirname)
+  (import "node:crypto" randomUUID)
+  (import "./schema.eli" migrate schemaVersion)
+  (import "../core/errors.eli" success failure)
+  (import "../core/limits.eli" limits)
+  (defun storageFailure () (failure "storage_unavailable"))
+  (defun openStore
+    (config)
+    (let ((djReturn1Token (js-object)) (djReturn1Value nil))
+      (try
+        (let ((db nil) (closed false) (active false) (sqlite-version nil))
+          (try
+            (unless
+              (and
+                (= (nativeGet config "journal_mode") "WAL")
+                (= (nativeGet config "synchronous") "FULL")
+                (= (nativeGet config "foreign_keys") t)
+                (Number/isSafeInteger (nativeGet config "busy_timeout" 0))
+                (>= (nativeGet config "busy_timeout" 0) 0)
+                (<= (nativeGet config "busy_timeout" 0) 1000))
+              (progn (setq djReturn1Value (storageFailure)) (throw djReturn1Token)))
+            (let ((path (nativeGet config "database")))
+              (unless
+                (and
+                  (= (nativeTypeOf path) "string")
+                  (> (js-length path) 0)
+                  (not (= path ":memory:")))
+                (progn (setq djReturn1Value (storageFailure)) (throw djReturn1Token)))
+              (when (existsSync path)
+                (let ((info (lstatSync path)))
+                  (unless
+                    (and
+                      (js-call info :isFile)
+                      (not (js-call info :isSymbolicLink))
+                      (= (nativeGet info "uid") (js-call globalThis.process :getuid))
+                      (= (nativeBitAnd (nativeGet info "mode") 63) 0))
+                    (progn
+                      (setq djReturn1Value (storageFailure))
+                      (throw djReturn1Token)))))
+              (js-call
+                (js-array "-wal" "-shm")
+                :forEach
+                (lambda
+                  (suffix)
+                  (let ((sidecar (str path suffix)))
+                    (when (existsSync sidecar)
+                      (let ((info (lstatSync sidecar)))
+                        (unless
+                          (and
+                            (js-call info :isFile)
+                            (not (js-call info :isSymbolicLink))
+                            (= (nativeGet info "uid") (js-call globalThis.process :getuid))
+                            (= (nativeBitAnd (nativeGet info "mode") 63) 0))
+                          (throw
+                            (new
+                              globalThis.Error
+                              "existing SQLite sidecar is not private"))))))))
+              (unless (existsSync path)
+                (let ((fd (openSync path "wx" 384))) (closeSync fd)))
+              (setq db (new Database path (js-object :strict t :create false))))
+            (setq
+              sqlite-version
+              (nativeGet
+                (js-call (js-call db :query "SELECT sqlite_version() AS version") :get)
+                "version"))
+            (let
+              ((parts (js-call (js-call sqlite-version :split ".") :map NativeNumber)))
+              (unless
+                (and
+                  (= (js-length parts) 3)
+                  (js-call parts :every Number/isSafeInteger)
+                  (>=
+                    (+
+                      (* (aref parts 0) 1000000)
+                      (* (aref parts 1) 1000)
+                      (aref parts 2))
+                    3051003))
+                (throw (new globalThis.Error "SQLite WAL-reset fix is required"))))
+            (when
+              (>
+                (nativeGet
+                  (js-call (js-call db :query "PRAGMA user_version") :get)
+                  "user_version")
+                schemaVersion)
+              (js-call db :close)
+              (progn (setq djReturn1Value (storageFailure)) (throw djReturn1Token)))
+            (js-call db :run "PRAGMA journal_mode=WAL")
+            (js-call db :run "PRAGMA synchronous=FULL")
+            (js-call db :run "PRAGMA foreign_keys=ON")
+            (js-call db :run "PRAGMA temp_store=MEMORY")
+            (js-call db :run "PRAGMA wal_autocheckpoint=0")
+            (let
+              (
+                (page-size
+                  (nativeGet (js-call (js-call db :query "PRAGMA page_size") :get) "page_size")))
+              (js-call
+                db
+                :run
+                (str
+                  "PRAGMA max_page_count="
+                  (Math/floor (/ (nativeGet limits "database_max_bytes") page-size)))))
+            (js-call db :run (str "PRAGMA busy_timeout=" (nativeGet config "busy_timeout" 0)))
+            (unless
+              (and
+                (=
+                  (nativeGet
+                    (js-call (js-call db :query "PRAGMA journal_mode") :get)
+                    "journal_mode")
+                  "wal")
+                (=
+                  (nativeGet
+                    (js-call (js-call db :query "PRAGMA synchronous") :get)
+                    "synchronous")
+                  2)
+                (=
+                  (nativeGet
+                    (js-call (js-call db :query "PRAGMA foreign_keys") :get)
+                    "foreign_keys")
+                  1)
+                (=
+                  (nativeGet
+                    (js-call (js-call db :query "PRAGMA temp_store") :get)
+                    "temp_store")
+                  2))
+              (throw
+                (new globalThis.Error "required SQLite durability settings unavailable")))
+            (migrate db)
+            ;; Sidecars inherit the private database mode; verify before exposing it.
+            (js-call
+              (js-array "-wal" "-shm")
+              :forEach
+              (lambda
+                (suffix)
+                (let ((path (str (nativeGet config "database") suffix)))
+                  (when (existsSync path)
+                    (let ((info (lstatSync path)))
+                      (unless
+                        (and
+                          (js-call info :isFile)
+                          (not (js-call info :isSymbolicLink))
+                          (= (nativeGet info "uid") (js-call globalThis.process :getuid))
+                          (= (nativeBitAnd (nativeGet info "mode") 63) 0))
+                        (throw
+                          (new
+                            globalThis.Error
+                            "SQLite sidecar ownership or privacy mismatch"))))))))
+            (let
+              (
+                (store
+                  (js-object
+                    :db
+                    db
+                    :schema_version
+                    schemaVersion
+                    :sqlite_version
+                    sqlite-version)))
+              (put
+                store
+                :transaction
+                (lambda
+                  (expected mutate)
+                  (let ((djReturn2Token (js-object)) (djReturn2Value nil))
+                    (try
+                      (when
+                        (or
+                          closed
+                          active
+                          (= (nativeGet (nativeGet mutate "constructor") "name") "AsyncFunction"))
+                        (progn
+                          (setq djReturn2Value (failure "invalid_transaction"))
+                          (throw djReturn2Token)))
+                      (try
+                        (js-call db :run "BEGIN IMMEDIATE")
+                        (setq active t)
+                        (when (nativeGet expected "validate")
+                          (let ((guard (funcall (nativeGet expected "validate") store)))
+                            (unless (= (nativeGet guard "ok") t)
+                              (js-call db :run "ROLLBACK")
+                              (setq active false)
+                              (progn (setq djReturn2Value guard) (throw djReturn2Token)))))
+                        (let ((result (funcall mutate store)))
+                          (when
+                            (and
+                              result
+                              (= (nativeTypeOf (nativeGet result "then")) "function"))
+                            (throw
+                              (new
+                                globalThis.TypeError
+                                "transaction callback returned a Future")))
+                          (unless
+                            (and result (= (nativeTypeOf (nativeGet result "ok")) "boolean"))
+                            (throw
+                              (new
+                                globalThis.TypeError
+                                "transaction callback must return a Result")))
+                          (if (= (nativeGet result "ok") t)
+                            (js-call db :run "COMMIT")
+                            (js-call db :run "ROLLBACK"))
+                          (setq active false)
+                          result)
+                        (catch error
+                          (when (eq error djReturn2Token) (throw error))
+                          (when active
+                            (try
+                              (js-call db :run "ROLLBACK")
+                              (catch ignored
+                                (when (eq ignored djReturn2Token) (throw ignored))
+                                nil)))
+                          (setq active false)
+                          (if
+                            (and
+                              (nativeGet error "domain_result")
+                              (= (nativeGet (nativeGet error "domain_result") "ok") false))
+                            (nativeGet error "domain_result")
+                            (storageFailure))))
+                      (catch djReturn2Error
+                        (if (eq djReturn2Error djReturn2Token)
+                          djReturn2Value
+                          (throw djReturn2Error)))))))
+              (put
+                store
+                :readPage
+                (lambda
+                  (query checkpoint budget)
+                  (let ((djReturn3Token (js-object)) (djReturn3Value nil))
+                    (try
+                      (when (or closed active)
+                        (progn
+                          (setq djReturn3Value (storageFailure))
+                          (throw djReturn3Token)))
+                      ;; query is a prepared, trusted internal statement; public callers
+                      ;; cannot supply SQL. Its LIMIT and stable checkpoint are explicit.
+                      (let ((maximum (nativeGet budget "max_records")))
+                        (unless
+                          (and
+                            (Number/isSafeInteger maximum)
+                            (> maximum 0)
+                            (<= maximum 1000))
+                          (progn
+                            (setq djReturn3Value (failure "limit_exceeded"))
+                            (throw djReturn3Token)))
+                        (try
+                          (let ((rows (js-call query :all checkpoint (1+ maximum))))
+                            (success
+                              (js-object
+                                :items
+                                (js-call rows :slice 0 maximum)
+                                :has_more
+                                (> (js-length rows) maximum))))
+                          (catch error
+                            (when (eq error djReturn3Token) (throw error))
+                            (storageFailure))))
+                      (catch djReturn3Error
+                        (if (eq djReturn3Error djReturn3Token)
+                          djReturn3Value
+                          (throw djReturn3Error)))))))
+              (put
+                store
+                :checkpoint
+                (lambda
+                  ()
+                  (let ((djReturn4Token (js-object)) (djReturn4Value nil))
+                    (try
+                      (when (or closed active)
+                        (progn
+                          (setq djReturn4Value (storageFailure))
+                          (throw djReturn4Token)))
+                      (let ((started (js-call globalThis.performance :now)))
+                        (try
+                          (let*
+                            (
+                              (row
+                                (js-call
+                                  (js-call db :query "PRAGMA wal_checkpoint(PASSIVE)")
+                                  :get))
+                              (observation
+                                (js-object
+                                  :mode
+                                  "PASSIVE"
+                                  :busy
+                                  (nativeGet row "busy")
+                                  :wal_frames
+                                  (nativeGet row "log")
+                                  :checkpointed_frames
+                                  (nativeGet row "checkpointed")
+                                  :duration_ms
+                                  (- (js-call globalThis.performance :now) started))))
+                            (put store :last_checkpoint observation)
+                            (success observation))
+                          (catch unavailable
+                            (when (eq unavailable djReturn4Token) (throw unavailable))
+                            (storageFailure))))
+                      (catch djReturn4Error
+                        (if (eq djReturn4Error djReturn4Token)
+                          djReturn4Value
+                          (throw djReturn4Error)))))))
+              (put
+                store
+                :admissionStatus
+                (lambda
+                  ()
+                  (let ((djReturn5Token (js-object)) (djReturn5Value nil))
+                    (try
+                      (when closed
+                        (progn
+                          (setq djReturn5Value (storageFailure))
+                          (throw djReturn5Token)))
+                      (try
+                        (let*
+                          (
+                            (page-size
+                              (nativeGet
+                                (js-call (js-call db :query "PRAGMA page_size") :get)
+                                "page_size"))
+                            (pages
+                              (nativeGet
+                                (js-call (js-call db :query "PRAGMA page_count") :get)
+                                "page_count"))
+                            (free
+                              (nativeGet
+                                (js-call
+                                  (js-call db :query "PRAGMA freelist_count")
+                                  :get)
+                                "freelist_count"))
+                            (maximum
+                              (*
+                                page-size
+                                (nativeGet
+                                  (js-call
+                                    (js-call db :query "PRAGMA max_page_count")
+                                    :get)
+                                  "max_page_count")))
+                            (live (* (- pages free) page-size))
+                            (reserve
+                              (Math/min
+                                (nativeGet limits "database_reserve_bytes")
+                                (Math/max page-size (Math/floor (/ maximum 16))))))
+                          (put
+                            store
+                            :capacity
+                            (js-object
+                              :live_bytes
+                              live
+                              :allocated_bytes
+                              (* pages page-size)
+                              :maximum_bytes
+                              maximum
+                              :reserve_bytes
+                              reserve))
+                          (if (>= live (- maximum reserve))
+                            (failure "capacity_exceeded")
+                            (success (nativeGet store "capacity"))))
+                        (catch unavailable
+                          (when (eq unavailable djReturn5Token) (throw unavailable))
+                          (storageFailure)))
+                      (catch djReturn5Error
+                        (if (eq djReturn5Error djReturn5Token)
+                          djReturn5Value
+                          (throw djReturn5Error)))))))
+              (put
+                store
+                :backup
+                (lambda
+                  (destination)
+                  (let ((djReturn6Token (js-object)) (djReturn6Value nil))
+                    (try
+                      (when (or closed active)
+                        (progn
+                          (setq djReturn6Value (storageFailure))
+                          (throw djReturn6Token)))
+                      (let*
+                        ((path (resolve destination))
+                          (temporary-directory nil)
+                          (temporary nil)
+                          (owned false))
+                        (try
+                          (when
+                            (or
+                              (= path (resolve (nativeGet config "database")))
+                              (existsSync path))
+                            (progn
+                              (setq djReturn6Value (failure "invalid_argument"))
+                              (throw djReturn6Token)))
+                          (setq temporary-directory (mkdtempSync (str path ".backup-")))
+                          (setq temporary (resolve temporary-directory "snapshot.sqlite") owned t)
+                          (js-call (js-call db :query "VACUUM INTO ?") :run temporary)
+                          (chmodSync temporary 384)
+                          (let ((fd (openSync temporary "r")))
+                            (try (fsyncSync fd) (finally (closeSync fd))))
+                          ;; linkSync publishes atomically and refuses an existing path.
+                          (linkSync temporary path)
+                          (unlinkSync temporary)
+                          (setq owned false)
+                          (let ((fd (openSync (dirname path) "r")))
+                            (try (fsyncSync fd) (finally (closeSync fd))))
+                          (success
+                            (js-object :state "created" :schema_version schemaVersion))
+                          (catch error
+                            (when (eq error djReturn6Token) (throw error))
+                            (storageFailure))
+                          (finally
+                            (when (and owned temporary (existsSync temporary)) (unlinkSync temporary))
+                            (when temporary-directory (rmdirSync temporary-directory)))))
+                      (catch djReturn6Error
+                        (if (eq djReturn6Error djReturn6Token)
+                          djReturn6Value
+                          (throw djReturn6Error)))))))
+              (put store :inTransaction (lambda () active))
+              (put
+                store
+                :close
+                (lambda
+                  ()
+                  (unless closed
+                    (when active
+                      (throw
+                        (new globalThis.Error "cannot close an active transaction")))
+                    (js-call db :close)
+                    (setq closed t))))
+              (success store))
+            (catch error
+              (when (eq error djReturn1Token) (throw error))
+              (when db
+                (try
+                  (js-call db :close)
+                  (catch ignored (when (eq ignored djReturn1Token) (throw ignored)) nil)))
+              (storageFailure))))
+        (catch djReturn1Error
+          (if (eq djReturn1Error djReturn1Token) djReturn1Value (throw djReturn1Error))))))
+  (export openStore storageFailure))

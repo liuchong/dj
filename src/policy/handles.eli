@@ -1,0 +1,122 @@
+(module dj.policy.handles
+  (import "../core/native.eli" nativeTypeOf nativeGet)
+  (import "node:crypto" randomUUID)
+  (import "../core/errors.eli" success failure)
+  (defconst handleKinds
+    (js-array
+      "conversation"
+      "candidate"
+      "session"
+      "session_message"
+      "message"
+      "preview"
+      "reply_context"
+      "cursor"
+      "continuation"))
+  (js-call handleKinds :push "inbox_claim")
+  (defun createHandleAuthority
+    (&optional options)
+    ;; An injected record store has the same synchronous get/set/delete contract
+    ;; as Map. Production supplies the current SQLite transaction repository.
+    (let
+      ((records (or (nativeGet options "records") (new globalThis.Map)))
+        (random-id (or (nativeGet options "random_id") randomUUID)))
+      (js-object
+        :issue
+        (lambda
+          (kind principal-id resource-key constraints expires-at)
+          (unless
+            (and
+              (js-call handleKinds :includes kind)
+              (= (nativeTypeOf principal-id) "string")
+              (= (nativeTypeOf resource-key) "string")
+              (Number/isSafeInteger (nativeGet constraints "authorization_revision"))
+              (> (nativeGet constraints "authorization_revision") 0)
+              (Number/isFinite (Date/parse expires-at)))
+            (throw (new globalThis.TypeError "invalid typed-reference constraints")))
+          (let*
+            ((ref (str kind "_" (funcall random-id)))
+              (record
+                (Object/assign
+                  (js-object)
+                  constraints
+                  (js-object
+                    :ref
+                    ref
+                    :kind
+                    kind
+                    :principal_id
+                    principal-id
+                    :resource_key
+                    resource-key
+                    :expires_at
+                    expires-at))))
+            (when (js-call records :get ref)
+              (throw (new globalThis.Error "typed-reference identifier collision")))
+            (js-call records :set ref record)
+            (Object/assign (js-object) record)))
+        :resolve
+        (lambda
+          (ref expected-kind principal-id authorization-revision now &optional current)
+          (let ((djReturn1Token (js-object)) (djReturn1Value nil))
+            (try
+              (let ((record (js-call records :get ref)))
+                (unless
+                  (and
+                    record
+                    (= (nativeGet record "kind") expected-kind)
+                    (= (nativeGet record "principal_id") principal-id)
+                    (= (nativeGet record "authorization_revision") authorization-revision)
+                    (Number/isFinite (Date/parse now))
+                    (> (Date/parse (nativeGet record "expires_at")) (Date/parse now)))
+                  (progn
+                    (setq djReturn1Value (failure "stale_reference"))
+                    (throw djReturn1Token)))
+                (when current
+                  (unless
+                    (js-call
+                      (js-array
+                        "resource_revision"
+                        "instance_epoch"
+                        "content_version"
+                        "identity_revision")
+                      :every
+                      (lambda
+                        (field)
+                        (or
+                          (not (object-has? record field))
+                          (= (nativeGet record field) (nativeGet current field)))))
+                    (progn
+                      (setq djReturn1Value (failure "stale_reference"))
+                      (throw djReturn1Token))))
+                (success (Object/assign (js-object) record)))
+              (catch djReturn1Error
+                (if (eq djReturn1Error djReturn1Token)
+                  djReturn1Value
+                  (throw djReturn1Error))))))
+        :revoke
+        (lambda (ref) (js-call records :delete ref)))))
+  (defun issueHandle
+    (context kind principal resource constraints expires-at)
+    (js-call
+      (nativeGet context "handles")
+      :issue
+      kind
+      (nativeGet principal "principal_id")
+      resource
+      (Object/assign
+        (js-object :authorization_revision (nativeGet principal "authorization_revision"))
+        constraints)
+      expires-at))
+  (defun resolveHandle
+    (context ref expected-kind principal now &optional current)
+    (js-call
+      (nativeGet context "handles")
+      :resolve
+      ref
+      expected-kind
+      (nativeGet principal "principal_id")
+      (nativeGet principal "authorization_revision")
+      now
+      current))
+  (export createHandleAuthority issueHandle resolveHandle handleKinds))

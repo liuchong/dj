@@ -1,0 +1,14 @@
+(module dj.library
+  (import "./service/core.eli" createCore)
+  (import "./application/operations.eli"
+    operationCatalog
+    operationCatalogDigest
+    descriptorData)
+  (import "./application/schema.eli" validateRequest normalizeArgs)
+  (export
+    createCore
+    operationCatalog
+    operationCatalogDigest
+    descriptorData
+    validateRequest
+    normalizeArgs))

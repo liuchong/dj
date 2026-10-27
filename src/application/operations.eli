@@ -1,0 +1,808 @@
+(module dj.application.operations
+  (import "../core/native.eli" NativeNumber nativeGet)
+  (import "../core/limits.eli" limits)
+  (import "../core/instructions.eli" instructionPolicySchema)
+  (import "../core/types.eli" hashValue)
+  (import "./results.eli" resultSchemaFor)
+  (import "./help.eli" operationHelp defaultValues limitReferences capabilityGuards)
+  (defun enumSchema (&rest values) (js-object :type "string" :enum values))
+  (defun objectSchema
+    (properties &optional required)
+    (js-object
+      :type
+      "object"
+      :properties
+      properties
+      :required
+      (or required (js-array))
+      :additionalProperties
+      false))
+  (defun arraySchema
+    (items maximum &optional minimum)
+    (js-object :type "array" :items items :minItems (or minimum 1) :maxItems maximum))
+  (defun integerSchema
+    (minimum maximum)
+    (js-object :type "integer" :minimum minimum :maximum maximum))
+  (defun presenceSchema (properties field)
+    (let ((declared (js-object)))
+      (put declared field (nativeGet properties field))
+      (js-object :type "object" :properties declared :required (js-array field))))
+  (defconst idSchema (js-object :type "string" :minLength 1))
+  (defconst booleanSchema (js-object :type "boolean"))
+  (defconst revisionSchema (integerSchema 1 (nativeGet NativeNumber "MAX_SAFE_INTEGER")))
+  (defconst timeRangeSchema
+    (objectSchema (js-object :from idSchema :to idSchema) (js-array "from" "to")))
+  (defconst deliveryPolicySchema
+    (objectSchema
+      (js-object
+        :busy
+        (enumSchema "queue" "steer")
+        :offline
+        (enumSchema "hold")
+        :ttl_seconds
+        (integerSchema (nativeGet limits "ttl_min_seconds") (nativeGet limits "ttl_max_seconds")))))
+  (defconst textSchema
+    (objectSchema
+      (js-object :type (js-object :const "text") :text idSchema)
+      (js-array "type" "text")))
+  (defconst scopeSchema
+    (objectSchema
+      (js-object
+        :tools
+        (arraySchema idSchema (nativeGet limits "scope_tools"))
+        :instance_ids
+        (arraySchema idSchema (nativeGet limits "scope_values"))
+        :workspace_refs
+        (arraySchema idSchema (nativeGet limits "scope_values"))
+        :agent_ids
+        (arraySchema idSchema (nativeGet limits "scope_values"))
+        :session_keys
+        (arraySchema idSchema (nativeGet limits "scope_values"))
+        :visibility
+        (arraySchema (enumSchema "history" "live" "desktop-open" "managed") 4)
+        :runtime_states
+        (arraySchema
+          (enumSchema
+            "unknown"
+            "idle"
+            "busy"
+            "waiting_permission"
+            "offline"
+            "incompatible")
+          6)
+        :registered
+        booleanSchema
+        :updated_range
+        timeRangeSchema)))
+  (defun querySchema
+    (message-only)
+    (objectSchema
+      (js-object
+        :text
+        idSchema
+        :fields
+        (arraySchema
+          (if message-only
+            (enumSchema "message.text")
+            (enumSchema "title" "native_session_id" "workspace_label" "message.text"))
+          4)
+        :mode
+        (enumSchema "literal"))
+      (js-array "text" "fields" "mode")))
+  (defconst predicateSchema
+    (js-object
+      :oneOf
+      (js-array
+        (objectSchema
+          (js-object
+            :all
+            (arraySchema
+              (js-object :$ref "#/$defs/predicate")
+              (nativeGet limits "rule_leaves")
+              0))
+          (js-array "all"))
+        (objectSchema
+          (js-object
+            :any
+            (arraySchema
+              (js-object :$ref "#/$defs/predicate")
+              (nativeGet limits "rule_leaves")))
+          (js-array "any"))
+        (objectSchema
+          (js-object :not (js-object :$ref "#/$defs/predicate"))
+          (js-array "not"))
+        (objectSchema
+          (js-object
+            :field
+            (enumSchema
+              "event_kind"
+              "sender.id"
+              "sender.kind"
+              "addressed_bot"
+              "addressed_self"
+              "chat_type"
+              "reply_to.id"
+              "text")
+            :op
+            (enumSchema "eq" "in" "contains" "prefix")
+            :value
+            (js-object
+              :oneOf
+              (js-array
+                (js-object :type "string")
+                booleanSchema
+                (arraySchema
+                  (js-object :type (js-array "string" "boolean"))
+                  (nativeGet limits "rule_in_values")))))
+          (js-array "field" "op" "value")))))
+  (defconst specSchema
+    (objectSchema
+      (js-object
+        :agent_id
+        idSchema
+        :selector
+        (objectSchema
+          (js-object
+            :sources
+            (arraySchema
+              (objectSchema
+                (js-object :conversation_ref idSchema :include_threads booleanSchema)
+                (js-array "conversation_ref"))
+              (nativeGet limits "sources"))
+            :event_kinds
+            (arraySchema
+              (enumSchema "message.created" "message.edited" "message.deleted")
+              (nativeGet limits "event_kinds")))
+          (js-array "sources"))
+        :predicate
+        (js-object :$ref "#/$defs/predicate")
+        :context_policy
+        (objectSchema
+          (js-object
+            :mode
+            (enumSchema "current" "recent")
+            :max_events
+            (integerSchema 1 20)
+            :max_bytes
+            (integerSchema 1 32768)))
+        :delivery_policy
+        deliveryPolicySchema
+        :instruction_policy
+        instructionPolicySchema
+        :delivery_mode
+        (enumSchema "push" "pull")
+        :start
+        (enumSchema "now" "backfill"))
+      (js-array "agent_id" "selector")))
+  (defconst bodyProperties
+    (js-object
+      :offset_bytes
+      (integerSchema 0 (nativeGet NativeNumber "MAX_SAFE_INTEGER"))
+      :max_bytes
+      (integerSchema 1 (nativeGet limits "body_page_max_bytes"))))
+  (defconst pagingProperties
+    (js-object :limit (integerSchema 1 (nativeGet limits "limit_max")) :cursor idSchema))
+  (defconst operationCatalog (new globalThis.Map))
+  (defun permissionAction
+    (name group)
+    (cond ((js-call (js-array "subscription.pull" "subscription.ack") :includes name) "subscription.consume")
+      ((= name "operation.get") "operation.inspect")
+      ((= group "connections") "connection.inspect")
+      ((= name "agent.discover") "agent.discover")
+      ((= group "registry") (if (= name "agent.whoami") "agent.whoami" "agent.bind"))
+      ((= group "subscriptions") "subscription.manage")
+      ((js-call name :startsWith "conversation.") "conversation.discover")
+      ((js-call (js-array "message.list" "message.get") :includes name) "message.read")
+      ((= name "message.search") "message.search")
+      ((js-call (js-array "delivery.list" "delivery.get") :includes name)
+        "delivery.inspect")
+      (
+        (and
+          (= group "delivery")
+          (not (= name "session.send"))
+          (not (= name "delivery.resolve")))
+        "delivery.manage")
+      ((= name "outbound.get") "outbound.inspect")
+      ((and (js-call name :startsWith "outbound.") (not (= name "outbound.resolve")))
+        "outbound.manage")
+      ((js-call name :startsWith "tool.") "tool.inspect")
+      ((= name "profile.list") "profile.inspect")
+      ((js-call (js-array "instance.list" "instance.get") :includes name)
+        "instance.inspect")
+      (
+        (js-call
+          (js-array "session.get" "session.resolve" "session.probe")
+          :includes
+          name)
+        "session.inspect")
+      ((js-call (js-array "session.message.list" "session.message.get") :includes name)
+        "session.read")
+      ((= name "session.message.search") "session.search")
+      ((= name "catalog.get") "catalog.refresh")
+      ((= name "lifecycle.get") "lifecycle.inspect")
+      (t name)))
+  (defun addOperation
+    (name group required properties options)
+    (let*
+      ((effect (nativeGet options "effect" "query"))
+        (mutation (= effect "accept"))
+        (input
+          (objectSchema
+            (Object/assign (js-object :request_id idSchema) properties)
+            (js-call (js-array) :concat required)))
+        (input-properties (nativeGet input "properties"))
+        (kind
+          (nativeGet
+            options
+            "result"
+            (nativeGet
+              (js-object
+                :connections
+                "connection"
+                :im_catalog
+                "conversation"
+                :registry
+                "agent"
+                :subscriptions
+                "subscription"
+                :messaging
+                "outbound")
+              group
+              group))))
+      (when mutation
+        (put input-properties :idempotency_key idSchema)
+        (js-call (nativeGet input "required") :push "idempotency_key"))
+      (when (nativeGet options "revision")
+        (put input-properties :expected_revision revisionSchema)
+        (js-call (nativeGet input "required") :push "expected_revision"))
+      (when (nativeGet options "page") (Object/assign input-properties pagingProperties))
+      (put input :$schema "https://json-schema.org/draft/2020-12/schema")
+      (put input :$defs (js-object :predicate predicateSchema))
+      (let ((exclusive (nativeGet options "exclusive")))
+        (when exclusive
+          (put
+            input
+            :oneOf
+            (js-call
+              exclusive
+              :map
+              (lambda
+                (field)
+                (let
+                  (
+                    (other
+                      (js-call exclusive :filter (lambda (value) (not (= value field))))))
+                  (Object/assign
+                    (presenceSchema input-properties field)
+                    (js-object
+                      :not
+                      (js-object
+                        :anyOf
+                        (js-call
+                          other
+                          :map
+                          (lambda (value) (presenceSchema input-properties value))))))))))))
+      (js-call
+        operationCatalog
+        :set
+        name
+        (Object/freeze
+          (js-object
+            :operation
+            name
+            :handler_group
+            group
+            :input_schema
+            input
+            :normalize
+            "explicit-domain-defaults-v1"
+            :action
+            (nativeGet options "action" (permissionAction name group))
+            :resource_resolver
+            (nativeGet options "resource_resolver" group)
+            :effect_kind
+            effect
+            :idempotency
+            (if mutation "required" (if (= name "operation.get") "lookup" "none"))
+            :revision_guard
+            (if (nativeGet options "revision")
+              "expected_revision"
+              (nativeGet
+                options
+                "guard"
+                (cond ((= name "instance.start") "expected_profile_revision")
+                  ((= name "session.create") "expected_instance_epoch")
+                  (t "none"))))
+            :capability_guard
+            (nativeGet options "capabilities" (capabilityGuards name group))
+            :limit_refs
+            (nativeGet options "limits" (limitReferences input-properties))
+            :defaults
+            (defaultValues name input-properties)
+            :result_resource_kind
+            kind
+            :help
+            (nativeGet options "help" (operationHelp name input-properties effect kind))
+            :read_only
+            (not mutation)
+            :destructive
+            (or (= name "instance.stop") (js-call name :endsWith ".delete"))
+            :output_schema
+            (resultSchemaFor name kind))))))
+  (addOperation "service.status" "service" (js-array) (js-object) (js-object))
+  (addOperation
+    "operation.get"
+    "ledger"
+    (js-array)
+    (js-object :operation_id idSchema :operation idSchema :idempotency_key idSchema)
+    (js-object :action "operation.inspect"))
+  (addOperation
+    "connection.list"
+    "connections"
+    (js-array)
+    (js-object :filters (objectSchema (js-object :platform idSchema :state idSchema)))
+    (js-object :page t))
+  (js-call
+    (js-array "get" "probe")
+    :forEach
+    (lambda
+      (suffix)
+      (addOperation
+        (str "connection." suffix)
+        "connections"
+        (js-array "connection_id")
+        (js-object :connection_id idSchema)
+        (js-object :effect (if (= suffix "probe") "observe" "query")))))
+  (addOperation
+    "conversation.list"
+    "im_catalog"
+    (js-array "connection_id")
+    (js-object :connection_id idSchema :parent_ref idSchema)
+    (js-object :page t))
+  (addOperation
+    "conversation.resolve"
+    "im_catalog"
+    (js-array "connection_id" "chat_id" "thread_id")
+    (js-object
+      :connection_id
+      idSchema
+      :chat_id
+      idSchema
+      :thread_id
+      (js-object :type (js-array "string" "null") :minLength 1))
+    (js-object))
+  (addOperation "agent.whoami" "registry" (js-array) (js-object) (js-object))
+  (addOperation
+    "agent.discover"
+    "registry"
+    (js-array "tool")
+    (js-object
+      :tool
+      idSchema
+      :surface
+      (enumSchema "desktop" "cli" "sdk")
+      :instance_ref
+      idSchema
+      :scope
+      (enumSchema "history" "live" "desktop-open" "managed"))
+    (js-object :page t))
+  (addOperation
+    "agent.register"
+    "registry"
+    (js-array "candidate_ref" "display_name" "binding_mode")
+    (js-object
+      :candidate_ref
+      idSchema
+      :display_name
+      idSchema
+      :binding_mode
+      (enumSchema "existing" "managed")
+      :recipient_principal_id
+      idSchema)
+    (js-object :effect "accept" :result "agent"))
+  (addOperation
+    "agent.list"
+    "registry"
+    (js-array)
+    (js-object
+      :filters
+      (objectSchema
+        (js-object
+          :tool
+          idSchema
+          :surface
+          (enumSchema "desktop" "cli" "sdk")
+          :state
+          (enumSchema "registered" "closed")
+          :display_name_exact
+          idSchema)))
+    (js-object :page t))
+  (js-call
+    (js-array "get" "probe" "rebind" "unregister")
+    :forEach
+    (lambda
+      (suffix)
+      (let*
+        ((mutate (js-call (js-array "rebind" "unregister") :includes suffix))
+          (properties (js-object :agent_id idSchema))
+          (required (js-array "agent_id")))
+        (when (= suffix "rebind")
+          (put properties :candidate_ref idSchema)
+          (js-call required :push "candidate_ref"))
+        (addOperation
+          (str "agent." suffix)
+          "registry"
+          required
+          properties
+          (js-object
+            :effect
+            (if mutate "accept" (if (= suffix "probe") "observe" "query"))
+            :revision
+            mutate
+            :result
+            "agent")))))
+  (addOperation "subscription.pull" "subscriptions" (js-array "subscription_id")
+    (js-object :subscription_id idSchema :lease_seconds (integerSchema 1 300))
+    (js-object :effect "accept" :result "inbox_pull"))
+  (addOperation "subscription.ack" "subscriptions" (js-array "claim_ref" "disposition")
+    (js-object :claim_ref idSchema :disposition (enumSchema "consumed" "retry"))
+    (js-object :effect "accept" :result "inbox"))
+  (addOperation
+    "subscription.preview"
+    "subscriptions"
+    (js-array "spec")
+    (js-object
+      :spec
+      specSchema
+      :sample_event_ids
+      (arraySchema idSchema (nativeGet limits "preview_samples") 0)
+      :subscription_id
+      idSchema
+      :expected_revision
+      revisionSchema)
+    (js-object :effect "preview" :result "subscription"))
+  (addOperation
+    "subscription.create"
+    "subscriptions"
+    (js-array "preview_id")
+    (js-object :preview_id idSchema)
+    (js-object :effect "accept" :result "subscription"))
+  (addOperation
+    "subscription.list"
+    "subscriptions"
+    (js-array)
+    (js-object
+      :filters
+      (objectSchema
+        (js-object :agent_id idSchema :state (enumSchema "active" "paused" "deleted"))))
+    (js-object :page t :result "subscription"))
+  (js-call
+    (js-array "get" "update" "pause" "resume" "delete")
+    :forEach
+    (lambda
+      (suffix)
+      (let
+        ((properties (js-object :subscription_id idSchema))
+          (required (js-array "subscription_id")))
+        (when (= suffix "update")
+          (put properties :preview_id idSchema)
+          (js-call required :push "preview_id"))
+        (addOperation
+          (str "subscription." suffix)
+          "subscriptions"
+          required
+          properties
+          (js-object
+            :effect
+            (if (= suffix "get") "query" "accept")
+            :revision
+            (not (= suffix "get"))
+            :result
+            "subscription")))))
+  (js-call
+    (js-array "list" "search")
+    :forEach
+    (lambda
+      (suffix)
+      (let
+        (
+          (properties
+            (js-object
+              :conversation_ref
+              idSchema
+              :time_range
+              timeRangeSchema
+              :corpus
+              (enumSchema "local" "native")))
+          (required (js-array "conversation_ref")))
+        (when (= suffix "search")
+          (put properties :query idSchema)
+          (js-call required :push "query"))
+        (addOperation
+          (str "message." suffix)
+          "im_catalog"
+          required
+          properties
+          (js-object :page t)))))
+  (addOperation
+    "message.get"
+    "im_catalog"
+    (js-array)
+    (Object/assign (js-object :event_id idSchema :message_ref idSchema) bodyProperties)
+    (js-object :exclusive (js-array "event_id" "message_ref")))
+  (addOperation
+    "message.send"
+    "messaging"
+    (js-array "destination_ref" "content")
+    (js-object :destination_ref idSchema :content textSchema)
+    (js-object :effect "accept" :result "outbound"))
+  (addOperation
+    "message.reply"
+    "messaging"
+    (js-array "reply_context_id" "content")
+    (js-object :reply_context_id idSchema :content textSchema)
+    (js-object :effect "accept" :result "outbound"))
+  (addOperation
+    "delivery.list"
+    "delivery"
+    (js-array)
+    (js-object
+      :filters
+      (objectSchema
+        (js-object
+          :agent_id
+          idSchema
+          :event_id
+          idSchema
+          :state
+          idSchema
+          :origin
+          (enumSchema "direct" "subscription_event")
+          :route_id
+          idSchema
+          :session_key
+          idSchema
+          :operation_id
+          idSchema)))
+    (js-object :page t :result "delivery"))
+  (js-call
+    (js-array "delivery" "outbound" "lifecycle")
+    :forEach
+    (lambda
+      (kind)
+      (js-call
+        (js-array "get" "reconcile" "retry" "cancel" "resolve")
+        :forEach
+        (lambda
+          (suffix)
+          (unless
+            (and
+              (= kind "lifecycle")
+              (js-call (js-array "retry" "cancel") :includes suffix))
+            (let*
+              ((field (str kind "_id"))
+                (properties (js-object))
+                (required (js-array field)))
+              (put properties field idSchema)
+              (when (= suffix "resolve")
+                (put
+                  properties
+                  :resolution
+                  (if (= kind "lifecycle")
+                    (enumSchema "abandon_no_retry")
+                    (enumSchema "assume_received_no_retry" "abandon_no_retry")))
+                (put properties :reason idSchema)
+                (js-call required :push "resolution" "reason"))
+              (addOperation
+                (str kind "." suffix)
+                (if (= kind "outbound") "messaging" kind)
+                required
+                properties
+                (js-object
+                  :effect
+                  (if (= suffix "get") "query" "accept")
+                  :revision
+                  (js-call (js-array "retry" "cancel" "resolve") :includes suffix)
+                  :result
+                  kind))))))))
+  (addOperation
+    "tool.list"
+    "catalog"
+    (js-array)
+    (js-object
+      :filters
+      (objectSchema
+        (js-object
+          :tools
+          (arraySchema idSchema (nativeGet limits "scope_tools"))
+          :adapter_state
+          idSchema)))
+    (js-object :page t :result "tool"))
+  (addOperation
+    "tool.get"
+    "catalog"
+    (js-array "tool_id")
+    (js-object :tool_id idSchema)
+    (js-object :result "tool"))
+  (addOperation
+    "profile.list"
+    "catalog"
+    (js-array)
+    (js-object :tools (arraySchema idSchema (nativeGet limits "scope_tools")))
+    (js-object :page t :result "profile"))
+  (addOperation
+    "instance.list"
+    "catalog"
+    (js-array)
+    (js-object
+      :tools
+      (arraySchema idSchema (nativeGet limits "scope_tools"))
+      :ownership
+      (enumSchema "existing" "managed"))
+    (js-object :page t :result "instance"))
+  (addOperation
+    "instance.get"
+    "catalog"
+    (js-array "instance_id")
+    (js-object :instance_id idSchema)
+    (js-object :result "instance"))
+  (addOperation
+    "catalog.refresh"
+    "refresh"
+    (js-array)
+    (js-object
+      :scope
+      scopeSchema
+      :include_content
+      booleanSchema
+      :continuation
+      idSchema
+      :budget
+      (objectSchema
+        (js-object
+          :max_records
+          (integerSchema 1 (nativeGet limits "refresh_max_records"))
+          :max_messages
+          (integerSchema 1 (nativeGet limits "refresh_max_messages"))
+          :max_bytes
+          (integerSchema 1 (nativeGet limits "refresh_max_bytes"))
+          :max_seconds
+          (integerSchema 1 (nativeGet limits "refresh_max_seconds")))))
+    (js-object :effect "accept" :result "catalog"))
+  (addOperation
+    "catalog.get"
+    "refresh"
+    (js-array "catalog_run_id")
+    (js-object :catalog_run_id idSchema)
+    (js-object :result "catalog"))
+  (addOperation
+    "session.list"
+    "catalog"
+    (js-array)
+    (js-object
+      :scope
+      scopeSchema
+      :sort
+      (enumSchema "session_key_asc" "updated_at_desc"))
+    (js-object :page t :result "session"))
+  (addOperation
+    "session.get"
+    "catalog"
+    (js-array)
+    (js-object :session_ref idSchema :session_key idSchema)
+    (js-object :exclusive (js-array "session_ref" "session_key") :result "session"))
+  (addOperation
+    "session.resolve"
+    "catalog"
+    (js-array "instance_id" "native_session_id")
+    (js-object :instance_id idSchema :native_session_id idSchema)
+    (js-object :result "session"))
+  (addOperation
+    "session.probe"
+    "catalog"
+    (js-array "session_ref")
+    (js-object :session_ref idSchema)
+    (js-object :effect "observe" :result "session"))
+  (addOperation
+    "session.search"
+    "search"
+    (js-array "query")
+    (js-object
+      :query
+      (querySchema false)
+      :scope
+      scopeSchema
+      :sort
+      (enumSchema "session_key_asc"))
+    (js-object :page t :result "session"))
+  (addOperation
+    "session.message.list"
+    "catalog"
+    (js-array "session_ref")
+    (js-object
+      :session_ref
+      idSchema
+      :time_range
+      timeRangeSchema
+      :corpus
+      (enumSchema "indexed" "native"))
+    (js-object :page t :result "session"))
+  (addOperation
+    "session.message.get"
+    "catalog"
+    (js-array "session_message_ref")
+    (Object/assign (js-object :session_message_ref idSchema) bodyProperties)
+    (js-object :result "session"))
+  (addOperation
+    "session.message.search"
+    "search"
+    (js-array "query")
+    (js-object :query (querySchema t) :scope scopeSchema :time_range timeRangeSchema)
+    (js-object :page t :result "session"))
+  (addOperation
+    "session.send"
+    "delivery"
+    (js-array "content")
+    (js-object
+      :session_ref
+      idSchema
+      :agent_id
+      idSchema
+      :content
+      textSchema
+      :delivery_policy
+      deliveryPolicySchema)
+    (js-object
+      :effect
+      "accept"
+      :exclusive
+      (js-array "session_ref" "agent_id")
+      :result
+      "delivery"))
+  (addOperation
+    "instance.start"
+    "lifecycle"
+    (js-array "profile_id" "expected_profile_revision")
+    (js-object :profile_id idSchema :expected_profile_revision revisionSchema)
+    (js-object :effect "accept" :guard "expected_profile_revision" :result "lifecycle"))
+  (addOperation
+    "session.create"
+    "lifecycle"
+    (js-array "instance_id" "expected_instance_epoch" "workspace_ref")
+    (js-object
+      :instance_id
+      idSchema
+      :expected_instance_epoch
+      idSchema
+      :workspace_ref
+      idSchema
+      :title
+      idSchema)
+    (js-object :effect "accept" :guard "expected_instance_epoch" :result "lifecycle"))
+  (addOperation
+    "instance.stop"
+    "lifecycle"
+    (js-array "instance_id")
+    (js-object :instance_id idSchema)
+    (js-object :effect "accept" :revision t :result "lifecycle"))
+  (defun descriptorData
+    ()
+    (js-call
+      (Array/from (js-call operationCatalog :values))
+      :sort
+      (lambda
+        (one other)
+        (js-call (nativeGet one "operation") :localeCompare (nativeGet other "operation") "en"))))
+  (defconst operationCatalogDigest (hashValue (descriptorData)))
+  (export
+    operationCatalog
+    operationCatalogDigest
+    descriptorData
+    objectSchema
+    enumSchema
+    arraySchema
+    idSchema
+    revisionSchema
+    predicateSchema
+    scopeSchema
+    specSchema))

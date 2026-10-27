@@ -1,0 +1,623 @@
+(module dj.tests.integration.desktop
+  (import "../../src/core/native.eli" nativeGet)
+  (import "../../src/service/config.eli" validateStructure)
+  (import "../../src/delivery/envelope.eli" encodeEnvelope)
+  (import "../../src/adapters/agent/desktop.eli" createDesktopPort)
+  (import "../../src/adapters/agent/opencode-http.eli" createOpenCodePort)
+  (import "../../src/storage/repository.eli" createRepository)
+  (import "../../src/service/core.eli" createCore)
+  (import "../../src/adapters/agent/cursor-control.eli" activateCursorControl cursorCreationId)
+  (import "../../src/adapters/agent/desktop-transport.eli" cursorRequest)
+  (import "../../src/adapters/agent/cursor-native.eli" cursorRenderer)
+  (import "node:vm" runInNewContext)
+  (import "bun:test" expect)
+  (import "bun:sqlite" Database)
+  (import "node:net" createServer)
+  (import "node:fs/promises" mkdir writeFile rm)
+  (import "node:path" resolve)
+  (import "node:crypto" randomUUID)
+  (import "../support/case.eli" withCase)
+  (import "../support/process.eli" until)
+  (import "../support/fixtures.eli" createFixture callOk subscribe createdEvent successful)
+
+  (defasync cleanupDesktop (h)
+    (when h
+      (when (nativeGet h "control")
+        (let ((control (nativeGet h "control")))
+          (await (js-call control :dispose))
+          (await (rm (js-call (nativeGet control "manifest_path") :replace ".json" ".journal.json")
+                     (js-object :force t)))))
+      (let ((fixture (nativeGet h "fixture")))
+        (when fixture (await (js-call fixture :close))))
+      (when (nativeGet h "http") (js-call (nativeGet h "http") :stop t))
+      (when (nativeGet h "connections")
+        (js-call (nativeGet h "connections") :forEach (lambda (socket) (js-call socket :destroy))))
+      (when (nativeGet h "ipc")
+        (await (new globalThis.Promise
+          (lambda (done reject) (js-call (nativeGet h "ipc") :close (lambda (error)
+            (if error (funcall reject error) (funcall done))))))))
+      (when (nativeGet h "root") (await (rm (nativeGet h "root") (js-object :recursive t :force t))))))
+  (defasync setupDesktop ()
+    (let* ((root (resolve ".local" (str "d-" (js-call (randomUUID) :slice 0 8))))
+           (workspace (resolve root "workspace"))
+           (h (js-object :root root :connections (new globalThis.Set)
+                :inputs (js-array) :created_rows (js-array) :agent_spawns 0 :cursor_requests 0
+                :cursor_status "idle" :codex_status "idle"))
+           (token (js-call "a" :repeat 64)))
+      (try
+        (await (mkdir workspace (js-object :recursive t :mode 448)))
+        (let ((db (new Database (resolve root "codex.sqlite"))))
+          (try
+            (js-call db :exec "CREATE TABLE threads(id TEXT PRIMARY KEY,title TEXT,cwd TEXT,updated_at INTEGER,archived INTEGER)")
+            (js-call (js-call db :query "INSERT INTO threads VALUES(?,?,?,?,0)") :run
+              "codex-thread" "Codex native fixture" workspace 1767225600)
+            ;; A scoped recipient must not sit behind pages of other workspaces.
+            (let ((index 0))
+              (while (< index 150)
+                (js-call (js-call db :query "INSERT INTO threads VALUES(?,?,?,?,0)") :run
+                  (str "a-foreign-" index) "Other workspace" (resolve root "other-workspace") 1767225600)
+                (setq index (1+ index))))
+            (js-call (js-call db :query "INSERT INTO threads VALUES(?,?,?,?,1)") :run
+              "a-archived" "Archived target" workspace 1767225600)
+            (finally (js-call db :close))))
+        (let ((db (new Database (resolve root "cursor.sqlite"))))
+          (try
+            (js-call db :exec "CREATE TABLE cursorDiskKV(key TEXT PRIMARY KEY,value TEXT)")
+            (js-call db :exec "CREATE TABLE ItemTable(key TEXT PRIMARY KEY,value TEXT)")
+            (js-call db :exec "INSERT INTO ItemTable VALUES('cursor.desktopBridge.enabled','true'),('cursor/desktopBridgeUserEnabled','true')")
+            (js-call (js-call db :query "INSERT INTO cursorDiskKV VALUES(?,?)") :run
+              "composerData:cursor-thread" (JSON/stringify (js-object :fullConversationHeadersOnly
+                (js-array (js-object :bubbleId "user-bubble") (js-object :bubbleId "answer-bubble")))))
+            (js-call (js-call db :query "INSERT INTO cursorDiskKV VALUES(?,?)") :run
+              "bubbleId:cursor-thread:user-bubble" (JSON/stringify
+                (js-object :bubbleId "user-bubble" :type 1 :text "native user text")))
+            (js-call (js-call db :query "INSERT INTO cursorDiskKV VALUES(?,?)") :run
+              "bubbleId:cursor-thread:answer-bubble" (JSON/stringify
+                (js-object :bubbleId "answer-bubble" :type 2 :text "native assistant text")))
+            (finally (js-call db :close))))
+        (let ((server (createServer (lambda (socket)
+          (js-call (nativeGet h "connections") :add socket)
+          (let ((buffer (Buffer/alloc 0)) (send nil))
+            (setq send (lambda (value)
+              (let* ((body (Buffer/from (JSON/stringify value))) (head (Buffer/alloc 4)))
+                (js-call head :writeUInt32LE (js-length body) 0)
+                (js-call socket :write (Buffer/concat (js-array head body))))))
+            (js-call socket :on "error" (lambda (unused) nil))
+            (js-call socket :on "close" (lambda () (js-call (nativeGet h "connections") :delete socket)))
+            (js-call socket :on "data" (lambda (chunk)
+              (setq buffer (Buffer/concat (js-array buffer chunk)))
+              (while (and (>= (js-length buffer) 4)
+                          (>= (js-length buffer) (+ 4 (js-call buffer :readUInt32LE 0))))
+                (let* ((size (js-call buffer :readUInt32LE 0))
+                       (request (JSON/parse (js-call (js-call buffer :subarray 4 (+ size 4)) :toString "utf8")))
+                       (method (nativeGet request "method")) (params (nativeGet request "params")))
+                  (setq buffer (js-call buffer :subarray (+ size 4)))
+                  (cond
+                    ((= (nativeGet request "type") "request")
+                      (when (= method "thread-follower-start-turn")
+                        (js-call (expect (nativeGet request "targetClientId")) :toBe "codex-owner")
+                        (js-call (expect (nativeGet params "conversationId")) :toBe "codex-thread")
+                        (let ((input (aref (nativeGet (nativeGet (nativeGet params "turnStart") "request") "input") 0)))
+                          (js-call (nativeGet h "inputs") :push
+                            (js-object :tool "codex" :envelope (JSON/parse (nativeGet input "text"))))))
+                      (funcall send (Object/assign
+                        (js-object :type "response" :requestId (nativeGet request "requestId")
+                          :resultType "success" :result (js-object :clientId "dj-client"))
+                        (if (= method "thread-owner-discovery")
+                          (js-object :handledByClientId "codex-owner") (js-object)))))
+                    ((and (= method "thread-stream-following-changed") (= (nativeGet params "following") t))
+                      (funcall send (js-object :type "broadcast" :method "thread-stream-state-changed"
+                        :sourceClientId "codex-owner" :version 11
+                        :params (js-object :hostId "local" :conversationId "codex-thread"
+                          :change (js-object :type "snapshot" :revision 1
+                            :conversationState (js-object :id "codex-thread" :cwd workspace
+                              :title "Codex native fixture" :resumeState "resumed" :requests (js-array)
+                              :threadRuntimeStatus (js-object :type (nativeGet h "codex_status"))
+                              :turnsPagination (js-object :hasLoadedOldest t)
+                              :turns (js-array (js-object :turnId "native-turn" :status "completed"
+                                :items (js-array (js-object :id "codex-message" :type "userMessage"
+                                  :content (js-array (js-object :type "text" :text "native user text"))))))))))))))))))))))
+          (put h :ipc server)
+          (await (new globalThis.Promise (lambda (done reject)
+            (js-call server :once "error" reject)
+            (js-call server :listen (resolve root "c") done)))))
+        (put h :http (Bun/serve (js-object :unix (resolve root "u")
+          :fetch (async (request)
+            (put h :cursor_requests (1+ (nativeGet h "cursor_requests")))
+            (unless (= (js-call (nativeGet request "headers") :get "authorization") (str "Bearer " token))
+              (throw (new globalThis.Error "Fixture bridge authorization missing")))
+            (let ((body (await (js-call request :json))))
+              (if (= (nativeGet body "type") "listThreads")
+                (Response/json (js-object :threads (js-call (js-array
+                  (js-object :id "cursor-thread" :title "Cursor native fixture" :source "local"
+                    :status (nativeGet h "cursor_status") :windowId 7)
+                  (js-object :id "remote-fixture" :title "Must not be a local target" :source "cloud"
+                    :status "idle" :windowId 7)
+                  (js-object :id "other-window" :title "Must remain outside scope" :source "local"
+                    :status "idle" :windowId 8)) :concat (nativeGet h "created_rows"))))
+                (progn
+                  (js-call (expect (nativeGet body "threadId")) :toBe "cursor-thread")
+                  (js-call (expect (nativeGet body "force")) :toBe false)
+                  (js-call (nativeGet h "inputs") :push
+                    (js-object :tool "cursor" :envelope (JSON/parse (nativeGet body "text"))))
+                  (Response/json (js-object :outcome "submitted")))))))))
+        (await (writeFile (resolve root "cursor.json")
+          (JSON/stringify (js-object :protocolVersion 1 :pid (nativeGet globalThis.process "pid")
+            :socketPath (resolve root "u") :token token)) (js-object :mode 384)))
+        (put h :fixture (await (createFixture "desktop" "one" (js-object :root root
+          :configure (lambda (config ports)
+            (put (nativeGet ports "clock") :monoNow (lambda () (performance/now)))
+            (put ports :process (Object/assign (js-object) (nativeGet ports "process") (js-object :spawn (lambda (spec)
+              (put h :agent_spawns (1+ (nativeGet h "agent_spawns")))
+              (throw (new globalThis.Error "Agent process launch is forbidden"))))))
+            (put config :managed_profiles (js-array))
+            (put config :agent_endpoints (js-array
+              (js-object :tool "codex" :instance_id "codex-native" :native_namespace "codex-local"
+                :ownership "existing" :endpoint_ref "codex-fixture" :socket_path (resolve root "c")
+                :snapshot_max_bytes 16777216
+                :history_database (resolve root "codex.sqlite") :directory workspace
+                :workspace_ref "ws-test" :workspace_refs (js-array "ws-test"))
+              (js-object :tool "cursor" :instance_id "cursor-native" :native_namespace "cursor-window"
+                :ownership "existing" :endpoint_ref "cursor-fixture" :manifest_path (resolve root "cursor.json")
+                :history_database (resolve root "cursor.sqlite") :window_id 7
+                :workspace_ref "ws-test" :workspace_refs (js-array "ws-test"))))
+            (js-call (nativeGet config "principals") :forEach (lambda (principal)
+              (cond ((= (nativeGet principal "principal_id") "A")
+                (put principal :target_constraint
+                  (js-object :tool "codex" :native_namespace "codex-local" :native_session_id "codex-thread")))
+                ((= (nativeGet principal "principal_id") "B")
+                (put principal :target_constraint
+                  (js-object :tool "cursor" :native_namespace "cursor-window" :native_session_id "cursor-thread")))))))))))
+        h
+        (catch error (await (cleanupDesktop h)) (throw error)))))
+
+  (defasync checkCursorRestore ()
+    (let* ((renderer (runInNewContext (str "(" cursorRenderer ")")
+                        (js-object :Map globalThis.Map :TextEncoder globalThis.TextEncoder :performance globalThis.performance :setTimeout globalThis.setTimeout)))
+           (loaded (new globalThis.Map)) (loads 0) (released 0) (sends 0) (trusted 0)
+           (header (js-object :source "local" :name (js-object :value "original") :status (js-object :value "done")))
+           (record (js-object :workspaceIdentifier (js-object :id "original-workspace")))
+           (data (js-object :workspaceIdentifier (js-object :id "original-workspace") :status "completed"
+                   :fullConversationHeadersOnly (js-array (js-object :bubbleId "native-old-reply"))
+                   :conversationMap (js-object :native-old-reply (js-object :type 2 :text "persisted original response"))))
+           (local (js-object :_loadedAgents loaded :agentMap (new globalThis.Map (js-array (js-array "original" record)))
+                    :loadAgent (async (id)
+                      (setq loads (1+ loads))
+                      (js-call loaded :set id (js-object :_composerDataHandle (js-object :data data)))
+                      (js-object :dispose (lambda () (setq released (1+ released)) (js-call loaded :delete id))))
+                    :ensureLocalWorkspaceTrusted (async (workspace policy)
+                      (js-call (expect policy) :toBe "require-trusted") (setq trusted (1+ trusted)))))
+           (repo (js-object :localRepo local :getAgentHeader (lambda (id) (when (= id "original") header))
+                   :getAgent (lambda (id) (js-object :dispose (lambda () nil)
+                     :submitMessage (async (text options) (setq sends (1+ sends)) (funcall (nativeGet options "onDidSendRequest")))))))
+           (host (js-array (js-object :agentRepositoryProxy (js-object :delegate repo))))
+           (request (js-object :operation "probe" :thread "original" :workspace "original-workspace" :window 1)))
+      (let ((list (await (js-call renderer :call host (Object/assign (js-object) request (js-object :operation "list"))))))
+        (js-call (expect (js-length (nativeGet list "threads"))) :toBe 0)
+        (js-call (expect loads) :toBe 0))
+      (let ((probe (await (js-call renderer :call host request))))
+        (js-call (expect (nativeGet (nativeGet probe "thread") "id")) :toBe "original")
+        (js-call (expect loads) :toBe 1) (js-call (expect released) :toBe 1)
+        (js-call (expect sends) :toBe 0))
+      (let ((page (await (js-call renderer :call host (Object/assign (js-object) request
+                      (js-object :operation "messages" :maximum 10 :bytes 10000))))))
+        (js-call (expect (nativeGet (aref (nativeGet page "items") 0) "text")) :toBe "persisted original response")
+        (js-call (expect released) :toBe 2))
+      (put header :source "nonlocal")
+      (await (js-call (nativeGet (expect (js-call renderer :call host request)) "rejects") :toThrow "cursor_native_no_owner"))
+      (put header :source "local") (put (nativeGet record "workspaceIdentifier") :id "foreign-workspace")
+      (await (js-call (nativeGet (expect (js-call renderer :call host request)) "rejects") :toThrow "cursor_native_no_owner"))
+      (put (nativeGet record "workspaceIdentifier") :id "original-workspace")
+      (await (js-call (nativeGet (expect (js-call renderer :call host
+        (Object/assign (js-object) request (js-object :thread "missing")))) "rejects") :toThrow "cursor_native_no_owner"))
+      (put header :isArchived (js-object :value t))
+      (await (js-call (nativeGet (expect (js-call renderer :call host request)) "rejects") :toThrow "cursor_native_no_owner"))
+      (put header :isArchived (js-object :value false))
+      (js-call (expect loads) :toBe 2)
+      (let ((sent (await (js-call renderer :call host (Object/assign (js-object) request
+                      (js-object :operation "submit" :text "authorized original input" :bubble "input-one" :wait 1))))))
+        (js-call (expect (nativeGet sent "status")) :toBe "submitted")
+        (js-call (expect sends) :toBe 1) (js-call (expect trusted) :toBe 1)
+        (js-call (expect released) :toBe 3))))
+  (defasync checkCursorNative (f)
+    (let ((server nil) (port nil) (native-calls 0) (sends 0)
+          (pid (nativeGet globalThis.process "pid")) (outcome "submitted")
+          (identity-pid (nativeGet globalThis.process "pid")) (expressions (js-array)))
+      (try
+        (setq server (Bun/serve (js-object :hostname "127.0.0.1" :port 0
+          :fetch (lambda (request listener)
+            (if (= (nativeGet (new globalThis.URL (nativeGet request "url")) "pathname") "/json/list")
+              (new globalThis.Response (JSON/stringify (js-array (js-object
+                :webSocketDebuggerUrl (str "ws://127.0.0.1:" (nativeGet listener "port") "/native")))))
+              (if (js-call listener :upgrade request) undefined (new globalThis.Response "not found" (js-object :status 404)))))
+          :websocket (js-object :message (lambda (ws bytes)
+            (let* ((request (JSON/parse (str bytes)))
+                   (expression (nativeGet (nativeGet request "params") "expression")) (value nil))
+              (if (= expression "({pid:process.pid,origin:performance.timeOrigin,uid:process.getuid(),type:process.type})")
+                (setq value (js-object :pid identity-pid :origin 1234 :uid (js-call globalThis.process :getuid) :type "browser"))
+                (progn
+                  (setq native-calls (1+ native-calls))
+                  (js-call expressions :push expression)
+                  (cond
+                    ((js-call expression :includes "\"operation\":\"list\"")
+                      (setq value (js-object :threads (js-array (js-object :id "native-original" :title "Original"
+                        :windowId 1 :source "local" :status "completed")) :complete t)))
+                    ((js-call expression :includes "\"operation\":\"messages\"")
+                      (setq value (js-object :items (js-array (js-object :native_message_id "native-reply"
+                        :role "assistant" :text "original receiver")) :coverage "covered" :complete t :next_cursor nil)))
+                    ((js-call expression :includes "\"operation\":\"probe\"")
+                      (setq value (js-object :thread (js-object :id "native-original" :title "Original"
+                        :windowId 1 :source "local" :status "completed"))))
+                    ((js-call expression :includes "\"operation\":\"submit\"")
+                      (setq sends (1+ sends))
+                      (setq value (js-object :status outcome :native_receipt_key "native-receipt")))
+                    (t (throw (new globalThis.Error "unexpected native operation"))))))
+              (js-call ws :send (JSON/stringify (js-object :id (nativeGet request "id")
+                :result (js-object :result (js-object :type "object" :value value)))))))))))
+        (let* ((endpoint (js-object :tool "cursor" :ownership "existing" :instance_id "native-instance"
+                 :native_namespace "native-window" :endpoint_ref "native-endpoint" :workspace_ref "ws-test"
+                 :directory (nativeGet (aref (nativeGet (nativeGet f "config") "agent_endpoints") 0) "directory")
+                 :window_id 1 :native_api (js-object :inspector_url (str "http://127.0.0.1:" (nativeGet server "port"))
+                   :process_id pid :process_origin 1234 :workspace_id "native-workspace")))
+               (ctx (lambda () (js-object :deadline (+ (performance/now) 5000))))
+               (config (JSON/parse (JSON/stringify (nativeGet f "config")))))
+          (put config :agent_endpoints (js-array endpoint))
+          (js-call (expect (nativeGet (validateStructure config) "ok")) :toBe t)
+          (setq port (createDesktopPort "cursor" (js-object :endpoints (js-array endpoint)) (nativeGet f "ports")))
+          (let* ((page (await (js-call port :listSessions (js-object) nil (js-object :max_records 10) (funcall ctx))))
+                 (target (aref (nativeGet page "items") 0))
+                 (binding (Object/assign (js-object) endpoint target))
+                 (envelope (js-object :schema_version 1 :kind "external_message" :origin "direct"
+                   :content (js-object :type "text" :text "$& REQUEST RENDERER literal") :allowed_actions (js-array))))
+            (js-call (expect (nativeGet page "complete")) :toBe t)
+            (js-call (expect (nativeGet target "native_session_id")) :toBe "native-original")
+            (js-call (expect (nativeGet target "live_receiver")) :toBe t)
+            (js-call (expect (nativeGet target "visibility")) :toEqual (js-array "live"))
+            (let ((history (await (js-call port :discover "history" (js-object :instance_id "native-instance") (funcall ctx)))))
+              (js-call (expect (nativeGet history "coverage")) :toBe "partial")
+              (js-call (expect (nativeGet history "items")) :toEqual (js-array)))
+            (js-call (expect (nativeGet (nativeGet port "capabilities") "session_create")) :toBe "unsupported")
+            (let ((messages (await (js-call port :readMessages target nil (js-object :max_records 10) (funcall ctx)))))
+              (js-call (expect (nativeGet (aref (nativeGet messages "items") 0) "text")) :toBe "original receiver"))
+            (let ((result (await (js-call port :submit binding envelope "start_idle" "native-send-one" (funcall ctx)))))
+              (js-call (expect (nativeGet result "state")) :toBe "accepted")
+              (js-call (expect (nativeGet result "native_receipt_key")) :toBe "native-receipt"))
+            (js-call (expect sends) :toBe 1)
+            (let ((last (aref expressions (1- (js-length expressions)))))
+              (js-call (expect (js-call last :includes (str "\"text\":" (JSON/stringify (encodeEnvelope envelope 250000))))) :toBe t)
+              (js-call (expect (js-call last :includes "functionDeclaration:\"async function(request)")) :toBe t))
+            (setq outcome "unknown")
+            (let ((result (await (js-call port :submit binding envelope "start_idle" "native-send-two" (funcall ctx)))))
+              (js-call (expect (nativeGet result "state")) :toBe "unknown")
+              (js-call (expect (nativeGet result "definite_not_sent")) :toBe false))
+            (js-call (expect sends) :toBe 2)
+            (setq identity-pid (1+ pid))
+            (let* ((before native-calls) (result (await (js-call port :probeInstance endpoint (funcall ctx)))))
+              (js-call (expect (nativeGet result "state")) :toBe "unknown")
+              (js-call (expect native-calls) :toBe before))
+            (setq identity-pid pid)
+            (let* ((changed (Object/assign (js-object) binding (js-object :instance_epoch "foreign-epoch")))
+                   (result (await (js-call port :submit changed envelope "start_idle" "native-stale" (funcall ctx)))))
+              (js-call (expect (nativeGet result "definite_not_sent")) :toBe t)
+              (js-call (expect sends) :toBe 2))
+            (let ((urls (js-array "https://127.0.0.1:9229" "http://198.51.100.7:9229" "http://127.0.0.1:9229/?token=x"))
+                  (index 0))
+              (while (< index (js-length urls))
+                (let ((bad (JSON/parse (JSON/stringify config))))
+                  (put (nativeGet (aref (nativeGet bad "agent_endpoints") 0) "native_api") :inspector_url (aref urls index))
+                  (let ((rejected false))
+                    (try (validateStructure bad) (catch invalid (setq rejected t)))
+                    (js-call (expect rejected) :toBe t)))
+                (setq index (1+ index))))))
+        ;; A helper can describe this test process but must never authorize
+        ;; signaling it as Cursor. Incoming DJ APIs do not touch the inspector.
+        (let* ((helper (resolve "dist/native/dj-process-info"))
+               (child (Bun/spawn (js-array helper (str (nativeGet globalThis.process "pid")))
+                        (js-object :stdout "pipe" :stderr "ignore")))
+               (info (JSON/parse (await (js-call (new globalThis.Response (nativeGet child "stdout")) :text))))
+               (signals 0) (listener (lambda () (setq signals (1+ signals))))
+               (endpoint (js-object :tool "cursor" :instance_id "bad-process" :endpoint_ref "bad-process"
+                 :native_namespace "bad-process" :workspace_ref "ws-test" :window_id 1
+                 :native_api (js-object :inspector_url "http://127.0.0.1:9229" :manage_inspector t
+                   :process_id (nativeGet globalThis.process "pid") :process_origin 1234
+                   :workspace_id "no-workspace" :process_birth (nativeGet info "birth") :process_helper_ref helper)))
+               (bad-port (createDesktopPort "cursor" (js-object :endpoints (js-array endpoint)) (nativeGet f "ports"))))
+          (js-call (expect (await (nativeGet child "exited"))) :toBe 0)
+          (js-call globalThis.process :on "SIGUSR1" listener)
+          (try
+            (await (js-call bad-port :initialize (js-object)))
+            (let ((who (await (callOk f "A" "agent.whoami" (js-object)))))
+              (js-call (expect (nativeGet who "principal_id")) :toBe "A"))
+            (let ((observation (await (js-call bad-port :probeInstance endpoint
+                      (js-object :deadline (+ (performance/now) 3000))))))
+              (js-call (expect (nativeGet observation "state")) :toBe "unknown"))
+            (js-call (expect signals) :toBe 0)
+            (finally (js-call globalThis.process :removeListener "SIGUSR1" listener)
+              (await (js-call bad-port :close)))))
+        (finally
+          (when port (await (js-call port :close)))
+          (when server (js-call server :stop t))))))
+
+  (withCase "T01.desktop-relay.integration" setupDesktop
+    (async (h)
+      (let* ((f (nativeGet h "fixture")) (core (nativeGet f "core")) (agents (js-array)))
+        (await (checkCursorRestore))
+        (await (checkCursorNative f))
+        (let* ((endpoint (aref (nativeGet (nativeGet f "config") "agent_endpoints") 0))
+               (port (createDesktopPort "codex" (js-object :endpoints (js-array endpoint)) (js-object))))
+          (try
+            (let* ((first (await (js-call port :listSessions (js-object) nil
+                            (js-object :max_records 1) (js-object :deadline (+ (performance/now) 1000)))))
+                   (last (await (js-call port :listSessions (js-object) (nativeGet first "next_cursor")
+                            (js-object :max_records 1) (js-object :deadline (+ (performance/now) 1000))))))
+              (js-call (expect (js-call (nativeGet first "items") :map
+                (lambda (row) (nativeGet row "native_session_id")))) :toEqual (js-array "codex-thread"))
+              (js-call (expect (nativeGet (aref (nativeGet first "items") 0) "live_receiver")) :toBe false)
+              (js-call (expect (js-length (nativeGet last "items"))) :toBe 0)
+              (js-call (expect (nativeGet last "complete")) :toBe t))
+            (finally (await (js-call port :close)))))
+        ;; Every legacy process profile fails before store or adapter startup,
+        ;; including explicit-only profiles that would otherwise launch on demand.
+        (let ((tools (js-array "codex" "cursor" "opencode" "pi")) (index 0))
+          (while (< index (js-length tools))
+            (let* ((config (JSON/parse (JSON/stringify (nativeGet f "config"))))
+                   (profile (js-object :profile_id "forbidden-launch" :tool (aref tools index)
+                     :revision 1 :argv (js-array "forbidden-agent") :cwd (nativeGet h "root")
+                     :native_namespace "blocked" :workspace_refs (js-array "ws-test")
+                     :auto_start false)))
+              (put config :managed_profiles (js-array profile))
+              (let* ((blocked (createCore (nativeGet f "ports") config))
+                     (result (await (js-call blocked :start))))
+                (js-call (expect (nativeGet result "ok")) :toBe false)
+                (js-call (expect (nativeGet (nativeGet result "error") "code")) :toBe "invalid_argument")))
+            (setq index (1+ index))))
+        ;; Configured native APIs and discovery remain on this machine.
+        (let ((urls (js-array "https://api.example.invalid/" "http://198.51.100.17/")) (index 0))
+          (while (< index (js-length urls))
+            (let* ((config (JSON/parse (JSON/stringify (nativeGet f "config"))))
+                   (endpoint (js-object :tool "opencode" :instance_id "remote-refused"
+                     :native_namespace "remote-refused" :ownership "existing" :endpoint_ref "remote-refused"
+                     :base_url (aref urls index) :directory (nativeGet h "root") :workspace_ref "ws-test"))
+                   (requests 0) (port nil))
+              (put config :agent_endpoints (js-array endpoint))
+              (let ((result (await (js-call (createCore (nativeGet f "ports") config) :start))))
+                (js-call (expect (nativeGet result "ok")) :toBe false)
+                (js-call (expect (nativeGet (nativeGet result "error") "code")) :toBe "invalid_argument"))
+              (setq port (createOpenCodePort (js-object :existing_only t :endpoints (js-array endpoint))
+                (Object/assign (js-object) (nativeGet f "ports") (js-object :http
+                  (js-object :fetch (async (url options) (setq requests (1+ requests))
+                    (throw (new globalThis.Error "remote API must not be contacted"))))))))
+              (try
+                (await (js-call port :probeInstance endpoint (js-object :deadline (+ (performance/now) 1000))))
+                (js-call (expect requests) :toBe 0)
+                (finally (await (js-call port :close)))))
+            (setq index (1+ index))))
+        (let* ((endpoint (aref (nativeGet (nativeGet f "config") "agent_endpoints") 1))
+               (port (createDesktopPort "cursor" (js-object :endpoints (js-array endpoint)) (nativeGet f "ports"))))
+          (try
+            (let ((page (await (js-call port :listSessions (js-object) nil
+                         (js-object :max_records 100) (js-object :deadline (+ (performance/now) 1000))))))
+              (js-call (expect (js-call (nativeGet page "items") :map
+                (lambda (row) (nativeGet row "native_session_id")))) :toEqual (js-array "cursor-thread")))
+            ;; Native renderer gates can be disabled while the UDS remains
+            ;; live. Refuse before contacting that misleading empty catalog.
+            (let ((db (new Database (nativeGet endpoint "history_database")))
+                  (before (nativeGet h "cursor_requests")))
+              (try
+                (js-call db :exec "UPDATE ItemTable SET value='false' WHERE key='cursor.desktopBridge.enabled'")
+                (let ((error-code nil))
+                  (try (await (js-call port :listSessions (js-object) nil
+                    (js-object :max_records 100) (js-object :deadline (+ (performance/now) 1000))))
+                    (catch error (setq error-code (nativeGet error "code"))))
+                  (js-call (expect error-code) :toBe "desktop_bridge_disabled"))
+                (let ((instance (await (js-call port :probeInstance endpoint
+                                  (js-object :deadline (+ (performance/now) 1000))))))
+                  (js-call (expect (nativeGet instance "state")) :toBe "unknown")
+                  (js-call (expect (nativeGet instance "reason")) :toBe "desktop_bridge_disabled"))
+                (js-call (expect (nativeGet h "cursor_requests")) :toBe before)
+                (js-call db :exec "UPDATE ItemTable SET value='true' WHERE key='cursor.desktopBridge.enabled'")
+                (js-call db :exec "DELETE FROM ItemTable WHERE key='cursor/desktopBridgeUserEnabled'")
+                (let ((result (await (js-call port :probeInstance endpoint
+                                (js-object :deadline (+ (performance/now) 1000))))))
+                  (js-call (expect (nativeGet result "state")) :toBe "unknown"))
+                (js-call (expect (nativeGet h "cursor_requests")) :toBe before)
+                (finally
+                  (js-call db :exec "INSERT OR REPLACE INTO ItemTable VALUES('cursor.desktopBridge.enabled','true'),('cursor/desktopBridgeUserEnabled','true')")
+                  (js-call db :close))))
+            (finally (await (js-call port :close)))))
+        ;; A pending action from an older database must not outlive profile
+        ;; revocation, even if a trusted embedded port still exposes start.
+        (let* ((db (new Database (nativeGet (nativeGet (nativeGet f "config") "storage") "database")))
+               (repository (createRepository (js-object :db db :inTransaction (lambda () (nativeGet db "inTransaction")))))
+               (peer (js-call (nativeGet (nativeGet f "ports") "agent_ports") :get "opencode"))
+               (original-start (nativeGet peer "start")) (starts 0))
+          (try
+            (js-call db :exec "PRAGMA foreign_keys=ON")
+            (funcall (js-call db :transaction (lambda ()
+              (js-call repository :insert "profiles" (js-object :profile_id "retired-profile"
+                :tool "opencode" :revision 1 :enabled false :argv (js-array "must-not-launch")))
+              (js-call repository :insert "instances" (js-object :instance_id "retired-instance"
+                :tool "opencode" :native_namespace "retired-ns" :instance_epoch "retired-epoch"
+                :ownership "managed" :profile_id "retired-profile" :state "starting" :revision 1))
+              (js-call repository :insert "operations" (js-object :operation_id "retired-operation"
+                :principal_id "O" :operation "instance.start" :key_hash "retired-key" :request_hash "retired-request"
+                :state "accepted" :created_at "2026-01-01T00:00:00.000Z" :result_expires_at "2030-01-01T00:00:00.000Z"))
+              (js-call repository :insert "lifecycle_actions" (js-object :lifecycle_id "retired-start"
+                :operation_id "retired-operation" :principal_id "O" :action "start" :instance_id "retired-instance"
+                :instance_epoch "retired-epoch" :launch_token "retired-token" :state "recorded" :revision 1
+                :profile_revision 1 :created_at "2026-01-01T00:00:00.000Z")))))
+            (put peer :start (async (profile token context)
+              (setq starts (1+ starts)) (throw (new globalThis.Error "retired action attempted to launch"))))
+            (successful (await (js-call f :tick)))
+            (let ((action (await (callOk f "O" "lifecycle.get" (js-object :lifecycle_id "retired-start")))))
+              (js-call (expect (nativeGet action "state")) :toBe "blocked"))
+            (js-call (expect starts) :toBe 0)
+            (finally
+              (put peer :start original-start)
+              (js-call db :exec "DELETE FROM lifecycle_actions WHERE lifecycle_id='retired-start'; DELETE FROM operations WHERE operation_id='retired-operation'; DELETE FROM instances WHERE instance_id='retired-instance'; DELETE FROM profiles WHERE profile_id='retired-profile'")
+              (js-call db :close))))
+        (let ((existing (createOpenCodePort (js-object :existing_only t) (nativeGet f "ports"))))
+          (try
+            (js-call (expect (nativeGet (nativeGet existing "capabilities") "instance_start")) :toBe "unsupported")
+            (let ((denied (await (js-call existing :start (js-object) "legacy" (js-object)))))
+              (js-call (expect (nativeGet denied "reason")) :toBe "existing_receiver_only"))
+            (let ((denied (await (js-call existing :stop (js-object) (js-object) (js-object)))))
+              (js-call (expect (nativeGet denied "absence_verified")) :toBe false)
+              (js-call (expect (nativeGet denied "reason")) :toBe "existing_receiver_only"))
+            (finally (await (js-call existing :close)))))
+        (await (callOk f "O" "catalog.refresh" (js-object :include_content t :idempotency_key "desktop-catalog")))
+        (await (until "native desktop catalog" (async ()
+          (successful (await (js-call f :tick)))
+          (= (js-length (nativeGet (await (callOk f "O" "session.list" (js-object))) "items")) 2)) 5000))
+        (let ((sessions (nativeGet (await (callOk f "O" "session.list" (js-object))) "items")))
+          (js-call (expect (js-length sessions)) :toBe 2)
+          (let ((index 0))
+            (while (< index (js-length sessions))
+              (let* ((summary (aref sessions index))
+                     (session (await (callOk f "O" "session.get"
+                               (js-object :session_key (nativeGet summary "session_key")))))
+                     (tool (nativeGet session "tool")))
+                (let* ((instance (await (callOk f "O" "instance.get"
+                                   (js-object :instance_id (nativeGet summary "instance_id")))))
+                       (create (js-object :instance_id (nativeGet summary "instance_id")
+                         :expected_instance_epoch (nativeGet instance "instance_epoch")
+                         :workspace_ref "ws-test" :idempotency_key (str "create-unsupported-" tool))))
+                  (let ((denied (await (js-call f :call (nativeGet f "S") "session.create" create))))
+                    (js-call (expect (nativeGet (nativeGet denied "error") "code")) :toBe "forbidden"))
+                  (let ((denied (await (js-call f :call (nativeGet f "O") "session.create"
+                                (Object/assign (js-object) create (js-object :workspace_ref "not-approved"
+                                  :idempotency_key (str "create-workspace-" tool)))))))
+                    (js-call (expect (nativeGet (nativeGet denied "error") "code")) :toBe "forbidden"))
+                  (let ((unsupported (await (js-call f :call (nativeGet f "O") "session.create" create))))
+                    (js-call (expect (nativeGet (nativeGet unsupported "error") "code")) :toBe "unsupported")
+                    (js-call (expect (nativeGet (nativeGet unsupported "data") "lifecycle_id" nil)) :toBe nil)))
+                (await (callOk f "O" "session.send" (js-object :session_ref (nativeGet session "session_ref")
+                  :content (js-object :type "text" :text (str "direct-" tool)) :idempotency_key (str "direct-" tool))))
+                (let* ((page (await (callOk f "O" "agent.discover" (js-object :tool tool :scope "live"))))
+                       (candidate (aref (nativeGet page "items") 0))
+                       (actor (if (= tool "codex") "A" "B"))
+                       (agent (await (callOk f "O" "agent.register" (js-object
+                         :candidate_ref (nativeGet candidate "candidate_ref") :display_name tool
+                         :binding_mode "existing" :recipient_principal_id actor :idempotency_key (str "register-" tool))))))
+                  (js-call (expect (nativeGet candidate "native_session_id")) :toBe (str tool "-thread"))
+                  (await (subscribe f agent "lark" 60 actor))
+                  (js-call agents :push agent)))
+              (setq index (1+ index)))))
+        (await (until "native desktop direct inputs" (async ()
+          (successful (await (js-call f :tick)))
+          (= (js-length (nativeGet h "inputs")) 2)) 5000))
+        (js-call (expect (js-length (nativeGet h "inputs"))) :toBe 2)
+        (successful (await (js-call f :ingest (createdEvent "lark" "desktop-event" "source for both native endpoints"))))
+        (await (until "native desktop subscription inputs" (async ()
+          (successful (await (js-call f :tick)))
+          (= (js-length (nativeGet h "inputs")) 4)) 5000))
+        (js-call (expect (js-length (nativeGet h "inputs"))) :toBe 4)
+        (let ((index 2))
+          (while (< index 4)
+            (let* ((input (aref (nativeGet h "inputs") index)) (envelope (nativeGet input "envelope"))
+                   (actor (if (= (nativeGet input "tool") "codex") "A" "B")))
+              (js-call (expect (nativeGet (nativeGet envelope "content") "text")) :toBe "source for both native endpoints")
+              (js-call (expect (nativeGet envelope "allowed_actions")) :toContain "reply")
+              (await (callOk f actor "message.reply" (js-object
+                :reply_context_id (nativeGet envelope "reply_context_id")
+                :content (js-object :type "text" :text (str "reply-" actor))
+                :idempotency_key (str "reply-" actor)))))
+            (setq index (1+ index))))
+        (successful (await (js-call f :tick)))
+        (js-call (expect (js-length (nativeGet (nativeGet f "lark") "sent"))) :toBe 2)
+        (let ((deliveries (nativeGet (await (callOk f "O" "delivery.list" (js-object))) "items")))
+          (js-call (expect (js-length deliveries)) :toBe 4)
+          (js-call deliveries :forEach (lambda (delivery)
+            (js-call (expect (nativeGet delivery "state")) :toBe "accepted"))))
+        ;; Real UDS control server + native-command fixture + existing Bridge
+        ;; readback. This does not claim that a real Cursor extension is installed.
+        (let* ((workspace (resolve (nativeGet h "root") "workspace")) (calls (js-array))
+               (fail-command false)
+               (vscode (js-object :env (js-object :appName "Cursor")
+                 :workspace (js-object :isTrusted t :workspaceFolders (js-array (js-object :uri
+                   (js-object :scheme "file" :fsPath workspace)))
+                   :getConfiguration (lambda (name) (js-object :get (lambda (key fallback)
+                     (nativeGet (js-object :enabled t :workspaceRef "ws-test") key fallback)))))
+                 :commands (js-object :getCommands (async (hidden) (js-array "composer.createNew"))
+                   :executeCommand (async (name options)
+                     (js-call calls :push options)
+                     (js-call (expect name) :toBe "composer.createNew")
+                     (js-call (expect (nativeGet options "autoSubmit")) :toBe false)
+                     (js-call (expect (nativeGet options "skipShowAndFocus")) :toBe t)
+                     (js-call (expect (nativeGet options "skipSelect")) :toBe t)
+                     (js-call (expect (nativeGet (nativeGet options "partialState") "isDraft")) :toBe false)
+                     (when fail-command (throw (new globalThis.Error "native command interrupted")))
+                     (js-call (nativeGet h "created_rows") :push (js-object
+                       :id (nativeGet (nativeGet options "partialState") "composerId")
+                       :title "Created by fixed native API" :source "local" :status "idle" :windowId 7))))))
+               (extension (js-object :subscriptions (js-array)))
+               (control (await (activateCursorControl vscode extension)))
+               (endpoint (Object/assign (js-object)
+                 (js-call (nativeGet (nativeGet f "config") "agent_endpoints") :find
+                   (lambda (row) (= (nativeGet row "tool") "cursor")))
+                 (js-object :directory workspace :control_manifest_path (nativeGet control "manifest_path"))))
+               (port (createDesktopPort "cursor" (js-object :endpoints (js-array endpoint)) (nativeGet f "ports")))
+               (instance (await (callOk f "O" "instance.get" (js-object :instance_id "cursor-native"))))
+               (context (js-object :deadline (+ (performance/now) 5000) :title "Empty DJ session")))
+          (put h :control control)
+          (try
+            (let ((first (await (js-call port :create instance "ws-test" "create-one" context))))
+              (js-call (expect (nativeGet first "state")) :toBe "ready")
+              (js-call (expect (nativeGet (nativeGet first "session") "native_session_id"))
+                :toBe (cursorCreationId "ws-test" "create-one")))
+            (await (js-call port :create instance "ws-test" "create-one" context))
+            (js-call (expect (js-length calls)) :toBe 1)
+            (let ((lookup (await (js-call port :lookupCreate instance "create-one" nil context))))
+              (js-call (expect (nativeGet lookup "state")) :toBe "ready"))
+            (js-call (expect (js-length calls)) :toBe 1)
+            (let ((rejected false))
+              (try
+                (await (cursorRequest (js-object :manifest_path (nativeGet control "manifest_path"))
+                  (js-object :type "createSession" :workspace_ref "ws-test" :creation_key "inject"
+                    :prompt "Must not cross the connector") context))
+                (catch error (setq rejected t)))
+              (js-call (expect rejected) :toBe t))
+            (js-call (expect (js-length calls)) :toBe 1)
+            (put (nativeGet vscode "workspace") :isTrusted false)
+            (let ((rejected false))
+              (try (await (js-call port :create instance "ws-test" "create-revoked" context))
+                (catch error (setq rejected t)))
+              (js-call (expect rejected) :toBe t))
+            (js-call (expect (js-length calls)) :toBe 1)
+            (put (nativeGet vscode "workspace") :isTrusted t)
+            (setq fail-command t)
+            (try (await (js-call port :create instance "ws-test" "create-unknown" context))
+              (catch expected nil))
+            (js-call (expect (js-length calls)) :toBe 2)
+            (let ((retry (await (js-call port :create instance "ws-test" "create-unknown" context))))
+              (js-call (expect (nativeGet retry "state")) :toBe "unknown"))
+            (js-call (expect (js-length calls)) :toBe 2)
+            (await (js-call control :dispose))
+            (setq control (await (activateCursorControl vscode extension)))
+            (put h :control control)
+            (let ((lookup (await (js-call port :lookupCreate instance "create-unknown" nil context))))
+              (js-call (expect (nativeGet lookup "state")) :toBe "unknown"))
+            (await (js-call port :create instance "ws-test" "create-one" context))
+            (js-call (expect (js-length calls)) :toBe 2)
+            (finally (await (js-call port :close)))))
+        (js-call (expect (nativeGet h "agent_spawns")) :toBe 0)
+        (let ((endpoints (nativeGet (nativeGet f "config") "agent_endpoints")) (index 0))
+          (while (< index (js-length endpoints))
+            (let* ((endpoint (aref endpoints index)) (tool (nativeGet endpoint "tool"))
+                   (port (createDesktopPort tool (js-object :endpoints (js-array endpoint)) (nativeGet f "ports")))
+                   (target (Object/assign (js-object) endpoint (js-object :native_session_id (str tool "-thread"))))
+                   (error-code nil))
+              (try
+                (let ((page (await (js-call port :readMessages target nil
+                    (js-object :max_records 1 :max_bytes 1024)
+                    (js-object :deadline (+ (performance/now) 5000))))))
+                  (js-call (expect (js-length (nativeGet page "items"))) :toBe 1))
+                (try
+                  (await (js-call port :readMessages target nil
+                    (js-object :max_records 1 :max_bytes 1)
+                    (js-object :deadline (+ (performance/now) 5000))))
+                  (catch error (setq error-code (nativeGet error "code"))))
+                (js-call (expect error-code) :toBe "desktop_history_limit")
+                (finally (await (js-call port :close)))))
+            (setq index (1+ index))))))
+    cleanupDesktop))

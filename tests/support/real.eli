@@ -1,0 +1,488 @@
+(module dj.tests.support.real
+  (import "../../src/core/native.eli" nativeBitAnd nativeClearTimeout nativeSetTimeout nativeGet)
+  (import "node:fs/promises" readFile stat lstat appendFile)
+  (import "node:path" resolve dirname sep)
+  (import "node:crypto" randomUUID createHash)
+  (import "../../src/interfaces/client.eli" loadClientProfile callService)
+  (import "./process.eli" until)
+  (import "./fixtures.eli" successful)
+  (defasync readRealProfile
+    ()
+    (let* ((env (nativeGet globalThis.process "env")) (path (nativeGet env "DJ_TEST_PROFILE")))
+      (unless (and (= (nativeGet env "DJ_TEST_REAL") "1") path)
+        (throw
+          (new globalThis.Error "real not_run: missing current authorized profile")))
+      (let*
+        ((info (await (stat path)))
+          (profile (JSON/parse (await (readFile path "utf8")))))
+        (unless
+          (and
+            (= (nativeGet profile "schema_version") 1)
+            (= (nativeGet profile "authorized_test_resources") t)
+            (= (nativeGet info "uid") (js-call globalThis.process :getuid))
+            (= (nativeBitAnd (nativeGet info "mode") 63) 0))
+          (throw
+            (new
+              globalThis.Error
+              "real not_run: protected explicit resource authorization required")))
+        (put profile :root (dirname (resolve path)))
+        profile)))
+  (defasync createRealFixture
+    (case-id &optional options)
+    (let*
+      ((profile (await (readRealProfile)))
+        (profile-key (nativeGet options "client_profile_key" "dj_client_profile"))
+        (client-ref (nativeGet profile profile-key))
+        (client-path
+          (if client-ref
+            (resolve (nativeGet profile "root") client-ref)
+            (throw
+              (new globalThis.Error "real not_run: requested isolated client missing"))))
+      (client (successful (await (loadClientProfile client-path))))
+      (run-id (str case-id "-" (randomUUID)))
+      (f (js-object :profile profile :run_id run-id :case_id case-id :client client)))
+    (put
+      f
+      :call
+      (async (operation args) (await (callService client operation args 30))))
+    (put
+      f
+      :ok
+      (async
+        (operation args)
+        (successful (await (callService client operation args 30)))))
+    (put
+      f
+      :evidence
+      (async
+        (facts)
+        (let
+          ((output (nativeGet (nativeGet globalThis.process "env") "DJ_TEST_NATIVE_EVIDENCE_FILE")))
+          (unless output
+            (throw
+              (new globalThis.Error "real not_run: evidence output not configured")))
+          (await
+            (appendFile
+              output
+              (str
+                (JSON/stringify
+                  (js-object
+                    :case_id
+                    case-id
+                    :run_id
+                    run-id
+                    :observed_at
+                    (js-call (new globalThis.Date) :toISOString)
+                    :facts
+                    facts))
+                "\n")
+              (js-object :mode 384))))))
+    f))
+  (defasync readDriverOutput
+    (stream maximum discard-overflow)
+    (let
+      ((reader (js-call stream :getReader))
+        (decoder (new globalThis.TextDecoder))
+        (size 0)
+        (text "")
+        (done false))
+      (while (not done)
+        (let ((part (await (js-call reader :read))))
+          (setq done (nativeGet part "done"))
+          (unless done
+            (setq size (+ size (nativeGet (nativeGet part "value") "byteLength")))
+            (if (> size maximum)
+              (unless discard-overflow
+                (throw (new globalThis.Error "driver output limit exceeded")))
+              (setq
+                text
+                (str
+                  text
+                  (js-call decoder :decode (nativeGet part "value") (js-object :stream t))))))))
+      (str text (js-call decoder :decode))))
+  (defun replyObservationParameters (platform source ids run original)
+    (let ((parameters (js-object :chat_id (nativeGet source "chat_id")
+      :thread_id (nativeGet source "thread_id") :native_message_ids ids :run_id run)))
+      (when (= platform "lark")
+        (put parameters :connection_id (nativeGet source "connection_id"))
+        (put parameters :reply_to_message_id original))
+      parameters))
+  (defun driverStdoutLimit (name) (if (= name "measure-owned-deployment") 8388608 1048576))
+  (defasync approvedDriver
+    (f name payload)
+    (let* ((profile (nativeGet f "profile")) (driver (nativeGet (nativeGet profile "drivers") name)))
+      (unless
+        (and
+          driver
+          (= (nativeGet driver "authorized") t)
+          (= (nativeGet driver "kind") "test-controller")
+          (= (nativeGet driver "safe_to_terminate") t)
+          (> (js-length (nativeGet driver "argv" (js-array))) 1)
+          (nativeGet driver "entry_ref")
+          (nativeGet driver "entry_sha256"))
+        (throw
+          (new globalThis.Error (str "real not_run: missing authorized driver " name))))
+      (let*
+        ((entry (resolve (nativeGet profile "root") (nativeGet driver "entry_ref")))
+          (info (await (lstat entry)))
+          (digest
+            (js-call
+              (js-call (createHash "sha256") :update (await (readFile entry)))
+              :digest
+              "hex")))
+        (unless
+          (and
+            (js-call entry :startsWith (str (nativeGet profile "root") sep))
+            (not (js-call info :isSymbolicLink))
+            (= (nativeGet info "uid") (js-call globalThis.process :getuid))
+            (= (nativeBitAnd (nativeGet info "mode") 63) 0)
+            (= digest (nativeGet driver "entry_sha256"))
+            (= (aref (nativeGet driver "argv") 0) (nativeGet globalThis.process "execPath"))
+            (= (resolve (nativeGet profile "root") (aref (nativeGet driver "argv") 1)) entry))
+          (throw
+            (new
+              globalThis.Error
+              "real not_run: owned digest-bound controller entry required"))))
+      ;; This is trusted deployment argv, never inferred from a message or model.
+      ;; A driver emits observations only; DJ/IM native records are checked below.
+      (let*
+        ((request-id (randomUUID))
+          (request
+            (js-object
+              :schema_version
+              1
+              :request_id
+              request-id
+              :operation
+              name
+              :run_id
+              (nativeGet f "run_id")
+              :parameters
+              payload))
+          (child
+            (Bun/spawn
+              (nativeGet driver "argv")
+              (js-object
+                :cwd
+                (nativeGet profile "root")
+                :env
+                (nativeGet globalThis.process "env")
+                :stdin
+                (new globalThis.Blob (js-array (JSON/stringify request)))
+                :stdout
+                "pipe"
+                :stderr
+                "pipe")))
+          (timer
+            (nativeSetTimeout
+              (lambda
+                ()
+                (when (= (nativeGet child "exitCode") nil) (js-call child :kill "SIGKILL")))
+              120000))
+          (values nil))
+        (try
+          (setq
+            values
+            (await
+              (Promise/all
+                (js-array
+                  (readDriverOutput (nativeGet child "stdout") (driverStdoutLimit name) false)
+                  (readDriverOutput (nativeGet child "stderr") 32768 t)
+                  (nativeGet child "exited")))))
+          (unless (= (aref values 2) 0)
+            (throw (new globalThis.Error (str "authorized driver failed: " name))))
+          (let ((result (JSON/parse (aref values 0))))
+            (unless
+              (and
+                (= (nativeGet result "schema_version") 1)
+                (= (nativeGet result "request_id") request-id)
+                (= (nativeGet result "operation") name)
+                (= (nativeGet result "run_id") (nativeGet f "run_id"))
+                (= (nativeGet result "ok") t))
+              (throw
+                (new
+                  globalThis.Error
+                  "driver observation incomplete or belongs to another request")))
+            (nativeGet result "data"))
+          (finally
+            (nativeClearTimeout timer)
+            (when (= (nativeGet child "exitCode") nil) (js-call child :kill "SIGKILL"))
+            (await (nativeGet child "exited")))))))
+  (defasync waitDelivery
+    (f source-message-id target-key)
+    (await
+      (until
+        "real source delivery"
+        (async
+          ()
+          (let
+            (
+              (page
+                (await
+                  (js-call
+                    f
+                    :ok
+                    "delivery.list"
+                    (js-object :filters (js-object :session_key target-key) :limit 200)))))
+            (js-call
+              (nativeGet page "items")
+              :find
+              (lambda
+                (delivery)
+                (=
+                  (nativeGet (nativeGet delivery "source" (js-object)) "native_message_id")
+                  source-message-id)))))
+        120000)))
+  (defasync waitStarted
+    (f delivery-id)
+    (await
+      (until
+        "native started receipt"
+        (async
+          ()
+          (let*
+            (
+              (delivery
+                (await
+                  (js-call f :ok "delivery.get" (js-object :delivery_id delivery-id))))
+              (receipt
+                (js-call
+                  (nativeGet delivery "receipts" (js-array))
+                  :find
+                  (lambda
+                    (r)
+                    (and
+                      (= (nativeGet r "kind") "started")
+                      (= (nativeGet r "evidence_level") "native_protocol"))))))
+            (if receipt (js-object :delivery delivery :receipt receipt) nil)))
+        120000)))
+  (defasync realRelay
+    (f connection tool busy)
+    (let*
+      ((profile (nativeGet f "profile"))
+        (source (nativeGet (nativeGet profile "sources") connection))
+        (target (nativeGet (nativeGet profile "targets") tool)))
+      (unless
+        (and
+          source
+          target
+          (= (nativeGet source "authorized") t)
+          (= (nativeGet target "authorized") t)
+          (= (nativeGet target "allow_model_work") t))
+        (throw
+          (new globalThis.Error "real not_run: source/target authorization missing")))
+      (let
+        (
+          (connection-state
+            (await
+              (js-call
+                f
+                :ok
+                "connection.get"
+                (js-object :connection_id (nativeGet source "connection_id"))))))
+        (when (= connection "lark")
+          (unless
+            (and
+              (= (nativeGet connection-state "brand") "lark")
+              (= (nativeGet connection-state "identity") "user"))
+            (throw
+              (new globalThis.Error "real requires Lark international user identity")))))
+      (let*
+        (
+          (resolved
+            (await
+              (js-call
+                f
+                :ok
+                "session.get"
+                (js-object :session_key (nativeGet target "session_key")))))
+          (probe
+            (await
+              (js-call
+                f
+                :ok
+                "session.probe"
+                (js-object :session_ref (nativeGet resolved "session_ref"))))))
+        (unless (= (nativeGet probe "native_session_id") (nativeGet target "native_session_id"))
+          (throw (new globalThis.Error "real receiver identity mismatch")))
+        (when busy
+          (await
+            (approvedDriver
+              f
+              "busy-target"
+              (js-object
+                :tool
+                tool
+                :session_key
+                (nativeGet target "session_key")
+                :run_id
+                (nativeGet f "run_id"))))
+          (let
+            (
+              (now
+                (await
+                  (js-call
+                    f
+                    :ok
+                    "session.probe"
+                    (js-object :session_ref (nativeGet resolved "session_ref"))))))
+            (unless (= (nativeGet now "runtime_state") "busy")
+              (throw (new globalThis.Error "real busy fixture not observed natively")))))
+        (unless busy
+          (unless (= (nativeGet probe "runtime_state") "idle")
+            (throw (new globalThis.Error "real idle fixture not observed"))))
+        (let*
+          (
+            (stimulus
+              (await
+                (approvedDriver
+                  f
+                  (str "stimulus-" connection)
+                  (js-object
+                    :connection_id
+                    (nativeGet source "connection_id")
+                    :chat_id
+                    (nativeGet source "chat_id")
+                    :thread_id
+                    (nativeGet source "thread_id")
+                    :run_id
+                    (nativeGet f "run_id")
+                    :text
+                    (str
+                      "DJ acceptance "
+                      (nativeGet f "run_id")
+                      ": use DJ message.reply to return this exact marker.")))))
+            (delivery
+              (await
+                (waitDelivery
+                  f
+                  (nativeGet stimulus "native_message_id")
+                  (nativeGet target "session_key")))))
+          (when busy
+            (unless
+              (js-call
+                (js-array "ready" "deferred" "blocked")
+                :includes
+                (nativeGet delivery "state"))
+              (throw (new globalThis.Error "busy target did not preserve queued input")))
+            (await
+              (approvedDriver
+                f
+                "release-target"
+                (js-object
+                  :tool
+                  tool
+                  :session_key
+                  (nativeGet target "session_key")
+                  :run_id
+                  (nativeGet f "run_id")))))
+          (let*
+            ((started (await (waitStarted f (nativeGet delivery "delivery_id"))))
+              (native-start
+                (await
+                  (approvedDriver
+                    f
+                    "observe-native-start"
+                    (js-object
+                      :tool
+                      tool
+                      :native_session_id
+                      (nativeGet target "native_session_id")
+                      :delivery_id
+                      (nativeGet delivery "delivery_id")
+                      :run_id
+                      (nativeGet f "run_id")))))
+              (outbound
+                (await
+                  (until
+                    "explicit real reply outbox"
+                    (async
+                      ()
+                      (let
+                        (
+                          (record
+                            (await
+                              (js-call
+                                f
+                                :ok
+                                "delivery.get"
+                                (js-object :delivery_id (nativeGet delivery "delivery_id"))))))
+                        (when (nativeGet record "reply_outbound_id")
+                          (let
+                            (
+                              (out
+                                (await
+                                  (js-call
+                                    f
+                                    :ok
+                                    "outbound.get"
+                                    (js-object
+                                      :outbound_id
+                                      (nativeGet record "reply_outbound_id"))))))
+                            (when
+                              (and
+                                (= (nativeGet out "state") "accepted")
+                                (>
+                                  (js-length (nativeGet out "native_message_ids" (js-array)))
+                                  0))
+                              out)))))
+                    120000)))
+              (native
+                (await
+                  (approvedDriver
+                    f
+                    (str "observe-reply-" connection)
+                    (replyObservationParameters connection source (nativeGet outbound "native_message_ids")
+                      (nativeGet f "run_id") (nativeGet stimulus "native_message_id"))))))
+            (unless
+              (and
+                (=
+                  (nativeGet native-start "native_session_id")
+                  (nativeGet target "native_session_id"))
+                (= (nativeGet native-start "observed_delivery_id") (nativeGet delivery "delivery_id"))
+                (nativeGet native-start "native_event_id"))
+              (throw (new globalThis.Error "native input/start correlation missing")))
+            (unless
+              (and
+                (= (nativeGet native "chat_id") (nativeGet source "chat_id"))
+                (= (nativeGet native "thread_id") (nativeGet source "thread_id"))
+                (= (nativeGet native "reply_to_message_id") (nativeGet stimulus "native_message_id")))
+              (throw (new globalThis.Error "real reply destination mismatch")))
+            (await
+              (js-call
+                f
+                :evidence
+                (js-object
+                  :connection
+                  connection
+                  :tool
+                  tool
+                  :busy
+                  busy
+                  :source_message_id
+                  (nativeGet stimulus "native_message_id")
+                  :session_key
+                  (nativeGet target "session_key")
+                  :native_session_id
+                  (nativeGet target "native_session_id")
+                  :delivery_id
+                  (nativeGet delivery "delivery_id")
+                  :started_receipt
+                  (nativeGet started "receipt")
+                  :native_start
+                  native-start
+                  :outbound_id
+                  (nativeGet outbound "outbound_id")
+                  :native_reply_ids
+                  (nativeGet outbound "native_message_ids")
+                  :native_destination
+                  native))))))))
+  (export
+    replyObservationParameters
+    driverStdoutLimit
+    readRealProfile
+    createRealFixture
+    approvedDriver
+    waitDelivery
+    waitStarted
+    realRelay))

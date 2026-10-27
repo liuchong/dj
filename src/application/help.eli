@@ -1,0 +1,315 @@
+(module dj.application.help
+  (import "../core/native.eli" nativeGet)
+  (import "../core/limits.eli" limits)
+  (defconst summaries
+    (js-object
+      :service.status
+      "读取当前服务状态、可用操作、限制和获准来源；不启动工具。"
+      :operation.get
+      "按 operation_id，或原 operation+idempotency_key 查受理台账；not_found 不证明原请求不会提交。"
+      :connection.list
+      "列出当前有权查看的 IM 连接及来源保证。"
+      :connection.get
+      "读取一个已配置 IM 连接的安全身份、能力和源健康摘要。"
+      :connection.probe
+      "只读核对已配置连接；不改变账号、OAuth、webhook 或收件所有权。"
+      :conversation.list
+      "列出配置或本地已知且获准的 IM 对话/话题；不声明整个平台全量。"
+      :conversation.resolve
+      "按明确的连接、原生 chat_id 和显式 thread_id/null 核验精确 IM 地址。"
+      :agent.whoami
+      "读取认证主体与当前登记绑定；宿主名称、cwd、标题不构成会话身份。"
+      :agent.discover
+      "在指定工具和配置实例范围机械发现会话，返回 candidate_ref；不创建或发送。"
+      :agent.register
+      "把候选精确目标登记为 AgentTarget；recipient 必须与可信 target_constraint 相符。"
+      :agent.list
+      "列举有权管理的已登记单会话目标；agent_id 不是工具父节点。"
+      :agent.get
+      "读取一个已登记目标及其绑定事实。"
+      :agent.probe
+      "只读核验已登记目标当前接收口；不发送测试消息或新建进程。"
+      :agent.rebind
+      "为同一 tool/namespace/native_session 更新已核验 Binding；不能改绑到其他会话。"
+      :agent.unregister
+      "关闭登记并撤销未提交订阅贡献；保留共享 route、unknown 和独立直发。"
+      :subscription.preview
+      "校验并冻结结构化订阅，返回固定 preview_id；样例只读，不生成投递。"
+      :subscription.create
+      "提交固定 preview_id；不接收第二份 spec，从 start_seq 起处理新事件。"
+      :subscription.list
+      "列出当前获准管理的订阅。"
+      :subscription.get
+      "读取订阅当前 revision、规则、来源和目标。"
+      :subscription.update
+      "用该对象/旧 revision 的固定票据切换规则版本；agent_id 不可变。"
+      :subscription.pause
+      "暂停新贡献并撤销本订阅未提交贡献；不撤回已提交原生输入。"
+      :subscription.resume
+      "以新 start_seq 恢复订阅；不补暂停期、不复活旧贡献。"
+      :subscription.delete
+      "删除订阅并撤销其未提交贡献；其他订阅和直发保持各自生命周期。"
+      :message.list
+      "读取获准 IM 对话的本地 created 事件；仅返回有界正文预览，native corpus 未启用。"
+      :message.search
+      "在获准本地 IM 正文中做区分大小写的字面子串检索；不是语义搜索。"
+      :message.get
+      "按 event_id 或 message_ref 读取仍可见正文，按 UTF-8 字节边界分页。"
+      :message.send
+      "向 destination_ref 固定的 IM 地址发送一条纯文本；需要独立主动发送授权。"
+      :message.reply
+      "用 recipient 的 reply_context_id 回复固定原消息/话题；不可另传目的地。"
+      :outbound.get
+      "读取 IM 出站台账、parts 和原生消息 ID；accepted 仅表示平台接受。"
+      :outbound.reconcile
+      "核对原 Outbound/attempt 的原生事实；不重发，unknown 可保持 unknown。"
+      :outbound.retry
+      "仅重试已证 definite_not_sent 且 retryable 的未接受单位；不重发已接受或未知单位。"
+      :outbound.cancel
+      "取消提交点前的 IM 出站；submitting/unknown 不能被擦除。"
+      :outbound.resolve
+      "操作员以不重发选项人工结案 unknown；manual 不伪造原生证据或解除无 ID 回声屏障。"
+      :delivery.list
+      "按 origin/route/session/operation 等精确字段列举获准投递；两 origin 共用顺序。"
+      :delivery.get
+      "读取当前可见投递、独立贡献、原生回执及可用回复引用。"
+      :delivery.reconcile
+      "核对原目标、原 attempt 和原关联键；不靠对话文本猜测、不重发。"
+      :delivery.retry
+      "只对已证未送达且 retryable 的失败投递重试；沿原 route/序号重检当前权限。"
+      :delivery.cancel
+      "取消自己的提交前直发或订阅贡献；不能越主体取消其他贡献。"
+      :delivery.resolve
+      "仅操作员可对 unknown 不重发结案；后续输入仍须重新证明目标 idle。"
+      :tool.list
+      "列出工具适配器的配置、能力和限制；不扫描全机器或启动程序。"
+      :tool.get
+      "读取指定工具的安全能力声明；可用适配器不等于已验收某个运行实例。"
+      :profile.list
+      "列出获准启动的预配 profile/revision/workspace；不暴露 argv 或秘密。"
+      :instance.list
+      "按工具和归属列举配置/托管实例；不启动实例。"
+      :instance.get
+      "读取实例当前 epoch/revision/状态；历史 lifecycle.ready 不替代当前事实。"
+      :catalog.refresh
+      "受理有预算的只读原生目录/正文采集；不启动工具、输入消息或隐式无限续扫。"
+      :catalog.get
+      "读取目录采集状态、覆盖和 continuation；不会自行继续扫描。"
+      :session.list
+      "跨获准工具/实例/工作区列举机械会话目录；不要求登记或订阅。"
+      :session.get
+      "按稳定 session_key 或有效 session_ref 重取当前短期引用。"
+      :session.resolve
+      "按已知 instance_id 与原生 native_session_id 精确定位；不按标题选择。"
+      :session.probe
+      "只读核验精确会话的接收口/epoch/运行状态；不登记、唤醒或创建。"
+      :session.search
+      "按结构化范围与字面字段查询会话；空 items 有 cursor 时尚未扫描完。"
+      :session.message.list
+      "读取已索引且获准的 Agent 消息快照；不自动刷新原生历史。"
+      :session.message.get
+      "读取绑定内容版本的 session_message_ref，按 UTF-8 边界分页。"
+      :session.message.search
+      "在指定范围的已索引 Agent 正文中做字面检索，返回受控片段与引用。"
+      :session.send
+      "向精确 Agent 会话输入纯文本；无需 IM/登记/订阅，不自动启动或新建，不自动回 IM。"
+      :instance.start
+      "显式启动获准预配 profile；先占持久 slot，unknown 不重新拉起。"
+      :session.create
+      "在支持的运行实例中显式创建空会话；不 prompt 或接线 recipient；Pi 同 RPC 不支持。"
+      :instance.stop
+      "仅停止 DJ-owned managed 实例；先关 gate 再排空，期限到不强杀、不要求队列清空。"
+      :lifecycle.get
+      "读取启动/创建/停止台账及当前实例，并为当前可见会话重签短期引用。"
+      :lifecycle.reconcile
+      "按原 launch token/创建关联键追加原生观察；不另起进程或再次创建。"
+      :lifecycle.resolve
+      "操作员对 unknown 生命周期不重发结案；没有原生 absence 不释放 slot。"))
+  (defconst referenceSources
+    (js-object
+      :conversation_ref
+      "conversation.list/resolve"
+      :destination_ref
+      "conversation.list/resolve 的 conversation_ref"
+      :candidate_ref
+      "agent.discover"
+      :preview_id
+      "subscription.preview 的固定票据"
+      :reply_context_id
+      "external_message/delivery.get，绑定 recipient 与原话题"
+      :agent_id
+      "agent.register/list/get，代表单会话"
+      :subscription_id
+      "subscription.create/list/get"
+      :delivery_id
+      "session.send/delivery.list/get"
+      :outbound_id
+      "message.send/reply"
+      :operation_id
+      "任意受理变更结果"
+      :catalog_run_id
+      "catalog.refresh"
+      :lifecycle_id
+      "instance.start/session.create/instance.stop"
+      :profile_id
+      "profile.list"
+      :expected_profile_revision
+      "profile.list 的当前 revision"
+      :instance_id
+      "instance.list/get/lifecycle.get"
+      :expected_instance_epoch
+      "instance.get 的当前 epoch"
+      :session_ref
+      "session.list/get/resolve"
+      :session_key
+      "session.list/get/lifecycle.get"
+      :session_message_ref
+      "session.message.list/search"
+      :workspace_ref
+      "profile.list/instance.get 的获准 workspace_refs"
+      :expected_revision
+      "相应对象 get 的当前 revision"
+      :cursor
+      "同操作、同范围、同主体的前一页 next_cursor"
+      :idempotency_key
+      "调用方为一次逻辑变更生成并保存，重放保持原键和原输入"))
+  (defun defaultValues
+    (name properties)
+    (let ((defaults (js-object)))
+      (when (object-has? properties :limit)
+        (put defaults :limit (nativeGet limits "limit_default")))
+      (when (object-has? properties :offset_bytes)
+        (put defaults :offset_bytes 0)
+        (put defaults :max_bytes (nativeGet limits "body_page_default_bytes")))
+      (when (js-call (js-array "message.list" "message.search") :includes name)
+        (put defaults :corpus "local"))
+      (when (= name "session.message.list") (put defaults :corpus "indexed"))
+      (when (js-call (js-array "session.list" "session.search") :includes name)
+        (put defaults :sort "session_key_asc"))
+      (when (= name "session.send")
+        (put
+          defaults
+          :delivery_policy
+          (js-object
+            :busy
+            "queue"
+            :offline
+            "hold"
+            :ttl_seconds
+            (nativeGet limits "ttl_default_seconds"))))
+      (when (= name "catalog.refresh")
+        (put defaults :include_content false)
+        (put
+          defaults
+          :budget
+          (js-object
+            :max_records
+            (nativeGet limits "refresh_max_records")
+            :max_messages
+            (nativeGet limits "refresh_max_messages")
+            :max_bytes
+            (nativeGet limits "refresh_max_bytes")
+            :max_seconds
+            (nativeGet limits "refresh_max_seconds"))))
+      (when (= name "subscription.preview")
+        (put
+          defaults
+          :spec
+          (js-object
+            :predicate
+            (js-object :all (js-array))
+            :start
+            "now"
+            :context_policy
+            (js-object
+              :mode
+              "current"
+              :max_events
+              1
+              :max_bytes
+              (nativeGet limits "text_bytes"))
+            :delivery_policy
+            (js-object
+              :busy
+              "queue"
+              :offline
+              "hold"
+              :ttl_seconds
+              (nativeGet limits "ttl_default_seconds"))
+            :selector
+            (js-object :event_kinds (js-array "message.created")))))
+      defaults))
+  (defun limitReferences
+    (properties)
+    (let ((names (js-array "request_bytes")))
+      (when (object-has? properties :limit)
+        (js-call
+          names
+          :push
+          "limit_default"
+          "limit_max"
+          "snapshot_results"
+          "active_snapshots"))
+      (when (object-has? properties :content) (js-call names :push "text_bytes"))
+      (when (object-has? properties :query)
+        (js-call names :push "query_bytes" "search_scan_records" "search_scan_bytes"))
+      (when (object-has? properties :title) (js-call names :push "title_bytes"))
+      (when (object-has? properties :max_bytes)
+        (js-call names :push "body_page_default_bytes" "body_page_max_bytes"))
+      (when (object-has? properties :delivery_policy)
+        (js-call
+          names
+          :push
+          "ttl_min_seconds"
+          "ttl_max_seconds"
+          "ttl_default_seconds"
+          "route_queue"
+          "global_queue"))
+      (when (object-has? properties :spec)
+        (js-call
+          names
+          :push
+          "rule_depth"
+          "rule_leaves"
+          "rule_in_values"
+          "sources"
+          "text_bytes"))
+      names))
+  (defun operationHelp
+    (name properties effect kind)
+    (let ((refs (js-array)))
+      (js-call
+        (Object/keys properties)
+        :forEach
+        (lambda
+          (field)
+          (when (object-has? referenceSources field)
+            (js-call refs :push (str field "←" (nativeGet referenceSources field))))))
+      (str
+        (nativeGet summaries name name)
+        (if (> (js-length refs) 0) (str " 引用来源：" (js-call refs :join "；") "。") "")
+        (if (= effect "accept")
+          (str
+            " 受理返回 operation_id 和 "
+            kind
+            " 资源；不代表外部完成。超时先按原键 operation.get，unknown 只核对原对象。")
+          " 保留 coverage/stale/complete 与 cursor 的不同含义；不推断用户意图。"))))
+  (defun capabilityGuards
+    (name group)
+    (cond
+      ((= name "session.send")
+        (js-array "start_idle" "exact_live_receiver" "native_input_frame"))
+      ((= name "session.create") (js-array "session_create" "instance_gate_open"))
+      ((= name "instance.start")
+        (js-array "instance_start" "approved_profile" "managed_slot"))
+      ((= name "instance.stop")
+        (js-array "instance_stop" "verified_managed_ownership" "native_drain"))
+      ((js-call (js-array "message.send" "message.reply") :includes name)
+        (js-array "send" "exact_thread" "single_text"))
+      ((= group "subscriptions")
+        (js-array "created" "current" "queue" "hold" "recipient_binding"))
+      ((= group "catalog") (js-array "configured_source"))
+      ((= group "search") (js-array "literal" "indexed_content"))
+      ((= group "refresh") (js-array "read_only_native_catalog" "bounded_native_frame"))
+      (t (js-array))))
+  (export operationHelp defaultValues limitReferences capabilityGuards referenceSources))

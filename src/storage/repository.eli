@@ -1,0 +1,667 @@
+(module dj.storage.repository
+  (import "../core/native.eli" nativeNullish nativeTypeOf nativeGet)
+  (import "../core/types.eli" encodeSeq stableJson)
+  (import "../core/errors.eli" success failure)
+  ;; Only these internal names can become SQL identifiers. Every value is bound.
+  (defconst tables (js-object))
+  (defconst subscriptionStateSql (js-array nil))
+  (let ((count 1) (placeholders (js-array)))
+    (while (<= count 16)
+      (js-call placeholders :push "?")
+      (js-call subscriptionStateSql :push
+        (str "SELECT subscription_id,owner_principal_id,state,revision FROM subscriptions WHERE subscription_id IN ("
+          (js-call placeholders :join ",") ")"))
+      (setq count (1+ count))))
+  (defun defineTable
+    (table key-names column-names)
+    (let* ((keys (js-call key-names :split " "))
+      (columns (js-call column-names :split " "))
+      (insert-columns (js-call (js-array) :concat columns (js-array "payload")))
+      (update-columns (js-call columns :filter
+        (lambda (column) (not (js-call keys :includes column)))))
+      (where (js-call (js-call keys :map (lambda (column) (str column "=?"))) :join " AND "))
+      (assignments (js-call
+        (js-call (js-call update-columns :map (lambda (column) (str column "=?")))
+          :concat (js-array "payload=?")) :join ","))
+      (insert-sql (str "INSERT INTO " table "(" (js-call insert-columns :join ",")
+        ") VALUES (" (js-call (js-call insert-columns :map (lambda (column) "?")) :join ",") ")"))
+      (update-sql (str "UPDATE " table " SET " assignments " WHERE " where))
+      (progress-columns (cond
+        ((= table "deliveries") (js-array "state" "revision"))
+        ((= table "attempts") (js-array "state" "definite_not_sent"))
+        ((= table "routes") (js-array "binding_id" "claim_owner" "unknown_delivery_id"))
+        (t nil)))
+      (progress-invariants (and progress-columns (js-call update-columns :filter
+        (lambda (column) (not (js-call progress-columns :includes column))))))
+      (progress-sql (and progress-columns (str "UPDATE " table " SET "
+        (js-call (js-call (js-call progress-columns :map (lambda (column) (str column "=?")))
+          :concat (js-array "payload=?")) :join ",")
+        " WHERE " where
+        (js-call (js-call progress-invariants :map (lambda (column) (str " AND " column " IS ?"))) :join ""))))
+      (batch-insert-sql (and (js-call (js-array "match_decisions" "contributions") :includes table)
+        (js-array nil)))
+      (strict-batch-insert-sql (and (= table "deliveries") (js-array nil))))
+      (when batch-insert-sql
+        (let ((count 1) (rows (js-array))
+          (row-sql (str "(" (js-call (js-call insert-columns :map (lambda (column) "?")) :join ",") ")")))
+          (while (<= count 16)
+            (js-call rows :push row-sql)
+            (js-call batch-insert-sql :push
+              (str "INSERT INTO " table "(" (js-call insert-columns :join ",") ") VALUES "
+                (js-call rows :join ",") " ON CONFLICT(" (js-call keys :join ",") ") DO NOTHING"))
+            (setq count (1+ count)))))
+      (when strict-batch-insert-sql
+        (let ((count 1) (rows (js-array))
+          (row-sql (str "(" (js-call (js-call insert-columns :map (lambda (column) "?")) :join ",") ")")))
+          (while (<= count 16)
+            (js-call rows :push row-sql)
+            (js-call strict-batch-insert-sql :push
+              (str "INSERT INTO " table "(" (js-call insert-columns :join ",") ") VALUES "
+                (js-call rows :join ",")))
+            (setq count (1+ count)))))
+      (put tables table (js-object
+        :keys keys :columns columns :update_columns update-columns
+        :select_sql (str "SELECT payload FROM " table " WHERE " where)
+        :insert_sql insert-sql
+        :insert_if_absent_sql (str insert-sql " ON CONFLICT(" (js-call keys :join ",") ") DO NOTHING")
+        :batch_insert_sql batch-insert-sql
+        :batch_insert_strict_sql strict-batch-insert-sql
+        :update_sql update-sql :update_revision_sql (str update-sql " AND revision=?")
+        :progress_columns progress-columns :progress_invariants progress-invariants
+        :progress_sql progress-sql
+        :progress_revision_sql (and progress-sql (str progress-sql " AND revision=?"))
+        :delete_sql (str "DELETE FROM " table " WHERE " where)))))
+  (defineTable "connections" "connection_id" "connection_id revision state")
+  (defineTable
+    "principal_registry"
+    "principal_id"
+    "principal_id kind authorization_revision retired")
+  (defineTable "tools" "tool_id" "tool_id")
+  (defineTable "profiles" "profile_id" "profile_id tool_id revision")
+  (defineTable
+    "instances"
+    "instance_id"
+    "instance_id tool_id native_namespace instance_epoch ownership profile_id state revision")
+  (defineTable
+    "instance_gates"
+    "instance_id"
+    "instance_id instance_epoch state revision")
+  (defineTable
+    "managed_slots"
+    "profile_id"
+    "profile_id instance_id instance_epoch launch_token state")
+  (defineTable
+    "sessions"
+    "session_key"
+    "session_key tool_id native_namespace native_session_id instance_id instance_epoch workspace_ref updated_at runtime_state tombstone catalog_seq")
+  (defineTable
+    "routes"
+    "route_id"
+    "route_id canonical_target_key session_key binding_id next_delivery_seq claim_epoch claim_owner unknown_delivery_id")
+  (defineTable
+    "agents"
+    "agent_id"
+    "agent_id route_id owner_principal_id recipient_principal_id canonical_target_key state revision")
+  (defineTable
+    "bindings"
+    "binding_id"
+    "binding_id route_id instance_id instance_epoch expires_at")
+  (defineTable
+    "handles"
+    "ref"
+    "ref kind principal_id resource_key authorization_revision expires_at")
+  (defineTable
+    "previews"
+    "preview_id"
+    "preview_id principal_id expires_at committed_operation_id")
+  (defineTable
+    "operations"
+    "operation_id"
+    "operation_id principal_id operation key_hash request_hash state created_at result_expires_at")
+  (defineTable
+    "lifecycle_actions"
+    "lifecycle_id"
+    "lifecycle_id operation_id principal_id action instance_id instance_epoch launch_token state revision")
+  (defineTable
+    "source_progress"
+    "connection_id"
+    "connection_id cursor last_ingress_seq gap_status")
+  (defineTable
+    "poll_checkpoints"
+    "connection_id conversation_key"
+    "connection_id conversation_key generation next_due_at")
+  (defineTable
+    "events"
+    "event_id"
+    "event_id connection_id source_key conversation_key native_message_id event_kind ingress_seq received_at body_expires_at tombstone")
+  (defineTable
+    "subscriptions"
+    "subscription_id"
+    "subscription_id owner_principal_id agent_id state revision")
+  (defineTable
+    "subscription_versions"
+    "subscription_id revision"
+    "subscription_id revision start_seq cutover_seq state")
+  (defineTable "inbox_entries" "inbox_id"
+    "inbox_id subscription_id revision event_id agent_id state expires_at lease_until claim_principal_id claim_ref")
+  (defineTable "inbox_pulls" "pull_id" "pull_id subscription_id principal_id")
+  (defineTable "inbox_reply_contexts" "reply_context_id" "reply_context_id inbox_id recipient_principal_id expires_at")
+  (defineTable
+    "routing_work"
+    "event_id"
+    "event_id ingress_seq state last_subscription_id last_revision")
+  (defineTable
+    "match_decisions"
+    "event_id subscription_id revision"
+    "event_id subscription_id revision result")
+  (defineTable
+    "deliveries"
+    "delivery_id"
+    "delivery_id route_id origin principal_id operation_id agent_id event_id delivery_seq state revision expires_at")
+  (defineTable
+    "contributions"
+    "delivery_id subscription_id revision"
+    "delivery_id subscription_id revision state expires_at")
+  (defineTable
+    "outbound"
+    "outbound_id"
+    "outbound_id operation_id principal_id connection_id conversation_key state revision")
+  (defineTable
+    "parts"
+    "part_id"
+    "part_id outbound_id part_index dispatch_key state native_message_id")
+  (defineTable
+    "attempts"
+    "attempt_id"
+    "attempt_id delivery_id outbound_id lifecycle_id dispatch_key state definite_not_sent")
+  (defineTable
+    "receipts"
+    "receipt_id"
+    "receipt_id attempt_id native_receipt_key kind evidence_level")
+  (defineTable "claims" "route_id" "route_id claim_owner claim_epoch")
+  (defineTable
+    "reply_contexts"
+    "reply_context_id"
+    "reply_context_id delivery_id recipient_principal_id expires_at")
+  (defineTable
+    "echo_gates"
+    "connection_id conversation_key outbound_id"
+    "connection_id conversation_key outbound_id")
+  (defineTable
+    "catalog_runs"
+    "catalog_run_id"
+    "catalog_run_id operation_id principal_id authorization_revision state")
+  (defineTable
+    "catalog_checkpoints"
+    "catalog_run_id source_id"
+    "catalog_run_id source_id")
+  (defineTable
+    "session_messages"
+    "message_key"
+    "message_key session_key native_message_id content_version catalog_seq acquired_at expires_at tombstone body_bytes")
+  (defineTable
+    "text_documents"
+    "document_id"
+    "document_id session_key message_key field content_version catalog_seq body_bytes")
+  (defineTable
+    "query_snapshots"
+    "snapshot_id"
+    "snapshot_id principal_id authorization_revision catalog_seq expires_at state")
+  (defineTable
+    "snapshot_results"
+    "snapshot_id ordinal"
+    "snapshot_id ordinal resource_key content_version")
+  (defun tableInfo
+    (name)
+    (unless (object-has? tables name)
+      (throw (new globalThis.TypeError "unknown internal repository table")))
+    (nativeGet tables name))
+  (defun sqlValue
+    (record column)
+    (let
+      (
+        (value
+          (if (and (= column "tool_id") (not (object-has? record column)))
+            (nativeGet record "tool")
+            (nativeGet record column))))
+      (cond ((undefined? value) nil)
+        ((= (nativeTypeOf value) "boolean") (if value 1 0))
+        (t value))))
+  (defun keyObject
+    (info key)
+    (if (= (nativeTypeOf key) "string")
+      (let ((record (js-object)))
+        (unless (= (js-length (nativeGet info "keys")) 1)
+          (throw (new globalThis.TypeError "composite repository key required")))
+        (put record (aref (nativeGet info "keys") 0) key)
+        record)
+      key))
+  (defun createRepository
+    (store)
+    (let ((db (nativeGet store "db")) (repository (js-object)))
+      (let
+        ((assertTransaction nil)
+          (getRecord nil)
+          (getSubscriptionState nil)
+          (getSubscriptionStates nil)
+          (insertRecord nil)
+          (insertMany nil)
+          (insertIfAbsent nil)
+          (insertManyIfAbsent nil)
+          (replaceRecord nil)
+          (replaceProgress nil)
+          (deleteRecord nil)
+          (readRecords nil))
+        (setq
+          assertTransaction
+          (lambda
+            ()
+            (unless (js-call store :inTransaction)
+              (throw
+                (new
+                  globalThis.Error
+                  "repository mutation requires the current transaction")))))
+        (setq
+          getRecord
+          (lambda
+            (table key)
+            (let* ((info (tableInfo table))
+              (record (keyObject info key))
+              (values (js-call (nativeGet info "keys") :map
+                (lambda (column) (sqlValue record column))))
+              (row (js-call (js-call db :query (nativeGet info "select_sql")) :get values)))
+              (when row (JSON/parse (nativeGet row "payload"))))))
+        (setq
+          getSubscriptionState
+          (lambda (subscription-id)
+            (unless (and (= (nativeTypeOf subscription-id) "string")
+              (> (js-length subscription-id) 0))
+              (throw (new globalThis.TypeError "subscription state requires a nonempty identifier")))
+            (or (js-call (js-call db :query
+              "SELECT subscription_id,owner_principal_id,state,revision FROM subscriptions WHERE subscription_id=?")
+              :get subscription-id) nil)))
+        (setq
+          getSubscriptionStates
+          (lambda (ids)
+            (unless (and (js-call store :inTransaction) (Array/isArray ids)
+              (<= (js-length ids) 128))
+              (throw (new globalThis.TypeError "subscription batch requires a bounded synchronous transaction")))
+            ;; Validate every requested key before executing even the first block.
+            (let ((index 0))
+              (while (< index (js-length ids))
+                (unless (and (object-has? ids index)
+                  (= (nativeTypeOf (aref ids index)) "string")
+                  (> (js-length (aref ids index)) 0))
+                  (throw (new globalThis.TypeError "subscription batch requires dense nonempty identifiers")))
+                (setq index (1+ index))))
+            (let ((keys (Array/from (new globalThis.Set ids)))
+              (start 0) (rows (js-array)))
+              (while (< start (js-length keys))
+                (let ((count (Math/min 16 (- (js-length keys) start))))
+                  (js-call
+                    (js-call (js-call db :query (aref subscriptionStateSql count))
+                      :all (js-call keys :slice start (+ start count)))
+                    :forEach (lambda (row) (js-call rows :push row)))
+                  (setq start (+ start count))))
+              rows)))
+        (setq
+          insertRecord
+          (lambda
+            (table record)
+            (assertTransaction)
+            (let* ((info (tableInfo table))
+              (values (js-call (nativeGet info "columns") :map
+                (lambda (column) (sqlValue record column)))))
+              (js-call values :push (stableJson record))
+              (js-call (js-call db :query (nativeGet info "insert_sql")) :run values)
+              record)))
+        (setq
+          insertIfAbsent
+          (lambda
+            (table record)
+            (assertTransaction)
+            (unless (js-call (js-array "match_decisions" "contributions") :includes table)
+              (throw (new globalThis.TypeError "unsupported insert-if-absent table")))
+            (let* ((info (tableInfo table))
+              (values (js-call (nativeGet info "columns") :map
+                (lambda (column) (sqlValue record column)))))
+              (js-call values :push (stableJson record))
+              ;; Only the declared primary-key conflict is a duplicate. Other
+              ;; constraints still throw and are handled by the enclosing write.
+              (= (nativeGet (js-call
+                (js-call db :query (nativeGet info "insert_if_absent_sql")) :run values) "changes") 1))))
+        (setq
+          insertMany
+          (lambda (table records)
+            (assertTransaction)
+            (unless (and (= table "deliveries") (Array/isArray records)
+              (<= (js-length records) 128))
+              (throw (new globalThis.TypeError "invalid strict delivery batch")))
+            (let ((index 0))
+              ;; Validate every block's shape before issuing the first INSERT.
+              (while (< index (js-length records))
+                (let ((record (aref records index)))
+                  (unless (and (object-has? records index)
+                    (not (nativeNullish record))
+                    (= (nativeTypeOf record) "object")
+                    (not (Array/isArray record)))
+                    (throw (new globalThis.TypeError "delivery batch requires dense object rows"))))
+                (setq index (1+ index))))
+            (let ((info (tableInfo table)) (start 0) (inserted 0))
+              (while (< start (js-length records))
+                (let ((count (Math/min 16 (- (js-length records) start)))
+                  (offset 0) (values (js-array)))
+                  (while (< offset count)
+                    (let ((record (aref records (+ start offset))))
+                      (js-call (nativeGet info "columns") :forEach
+                        (lambda (column) (js-call values :push (sqlValue record column))))
+                      (js-call values :push (stableJson record)))
+                    (setq offset (1+ offset)))
+                  ;; Strict INSERT: all uniqueness and other constraints throw.
+                  ;; Atomicity across blocks belongs to the enclosing write item.
+                  (setq inserted (+ inserted (nativeGet
+                    (js-call (js-call db :query
+                      (aref (nativeGet info "batch_insert_strict_sql") count)) :run values)
+                    "changes")))
+                  (setq start (+ start count))))
+              inserted)))
+        (setq
+          insertManyIfAbsent
+          (lambda (table records)
+            (assertTransaction)
+            (unless (and
+              (js-call (js-array "match_decisions" "contributions") :includes table)
+              (Array/isArray records)
+              (<= (js-length records) 128))
+              (throw (new globalThis.TypeError "invalid bounded insert batch")))
+            (let ((index 0))
+              ;; Validate the entire batch before the first SQL statement, even
+              ;; when a hole or malformed row belongs to a later block.
+              (while (< index (js-length records))
+                (let ((record (aref records index)))
+                  (unless (and (object-has? records index)
+                    (not (nativeNullish record))
+                    (= (nativeTypeOf record) "object")
+                    (not (Array/isArray record)))
+                    (throw (new globalThis.TypeError "insert batch requires dense object rows"))))
+                (setq index (1+ index))))
+            (let ((info (tableInfo table)) (start 0) (inserted 0))
+              (while (< start (js-length records))
+                (let ((count (Math/min 16 (- (js-length records) start)))
+                  (offset 0) (values (js-array)))
+                  (while (< offset count)
+                    (let ((record (aref records (+ start offset))))
+                      (js-call (nativeGet info "columns") :forEach
+                        (lambda (column) (js-call values :push (sqlValue record column))))
+                      (js-call values :push (stableJson record)))
+                    (setq offset (1+ offset)))
+                  (setq inserted (+ inserted (nativeGet
+                    (js-call (js-call db :query (aref (nativeGet info "batch_insert_sql") count)) :run values)
+                    "changes")))
+                  (setq start (+ start count))))
+              inserted)))
+        (setq
+          replaceRecord
+          (lambda
+            (table record &optional expected-revision)
+            (assertTransaction)
+            (let* ((info (tableInfo table))
+              (values (js-call (nativeGet info "update_columns") :map
+                (lambda (column) (sqlValue record column))))
+              (guarded (not (nativeNullish expected-revision))))
+              (js-call values :push (stableJson record))
+              (js-call (nativeGet info "keys") :forEach
+                (lambda (column) (js-call values :push (sqlValue record column))))
+              (when guarded
+                (unless (js-call (nativeGet info "columns") :includes "revision")
+                  (throw (new globalThis.TypeError "revision guard on a nonrevisioned table")))
+                (js-call values :push expected-revision))
+              (let ((result (js-call
+                (js-call db :query (nativeGet info (if guarded "update_revision_sql" "update_sql")))
+                :run values)))
+                (if (= (nativeGet result "changes") 1)
+                  (success record)
+                  (failure "revision_conflict"))))))
+        (setq
+          replaceProgress
+          (lambda (table record &optional expected-revision)
+            (assertTransaction)
+            (unless (js-call (js-array "deliveries" "attempts" "routes") :includes table)
+              (throw (new globalThis.TypeError "unsupported progress update table")))
+            (let* ((info (tableInfo table))
+              (guarded (not (nativeNullish expected-revision))))
+              (when (and guarded (not (js-call (nativeGet info "columns") :includes "revision")))
+                (throw (new globalThis.TypeError "revision guard on a nonrevisioned table")))
+              (let ((values (js-call (nativeGet info "progress_columns") :map
+                (lambda (column) (sqlValue record column)))))
+                (js-call values :push (stableJson record))
+                (js-call (nativeGet info "keys") :forEach
+                  (lambda (column) (js-call values :push (sqlValue record column))))
+                ;; Omitted typed columns must still agree with the complete payload.
+                (js-call (nativeGet info "progress_invariants") :forEach
+                  (lambda (column) (js-call values :push (sqlValue record column))))
+                (when guarded (js-call values :push expected-revision))
+                (let ((result (js-call (js-call db :query
+                  (nativeGet info (if guarded "progress_revision_sql" "progress_sql"))) :run values)))
+                  (if (= (nativeGet result "changes") 1)
+                    (success record)
+                    (failure "revision_conflict")))))))
+        (setq
+          deleteRecord
+          (lambda
+            (table key)
+            (assertTransaction)
+            (let* ((info (tableInfo table))
+              (record (keyObject info key)))
+              (js-call (js-call db :query (nativeGet info "delete_sql")) :run
+                (js-call (nativeGet info "keys") :map
+                  (lambda (column) (sqlValue record column)))))))
+        (setq
+          readRecords
+          (lambda
+            (table &optional options)
+            (let*
+              ((info (tableInfo table))
+                (columns (nativeGet info "columns"))
+                (filters (nativeGet options "filters" (js-object)))
+                (clauses (js-array))
+                (values (js-array))
+                (limit (nativeGet options "limit" 100))
+                (sort (nativeGet options "sort" (aref (nativeGet info "keys") 0))))
+              (unless
+                (and
+                  (Number/isSafeInteger limit)
+                  (> limit 0)
+                  (<= limit 1000)
+                  (js-call columns :includes sort))
+                (throw (new globalThis.TypeError "invalid internal bounded page")))
+              (js-call
+                (Object/keys filters)
+                :forEach
+                (lambda
+                  (column)
+                  (unless (js-call columns :includes column)
+                    (throw (new globalThis.TypeError "unknown internal filter column")))
+                  (let ((value (nativeGet filters column)))
+                    (cond
+                      ((nativeNullish value)
+                        (js-call clauses :push (str column " IS NULL")))
+                      ((Array/isArray value)
+                        (unless (and (> (js-length value) 0) (<= (js-length value) 100))
+                          (throw
+                            (new
+                              globalThis.TypeError
+                              "internal filter array is outside the bounded scope")))
+                        (js-call
+                          clauses
+                          :push
+                          (str
+                            column
+                            " IN ("
+                            (js-call (js-call value :map (lambda (item) "?")) :join ",")
+                            ")"))
+                        (js-call
+                          value
+                          :forEach
+                          (lambda (item) (js-call values :push item))))
+                      (t
+                        (js-call clauses :push (str column "=?"))
+                        (js-call values :push value))))))
+              (when (object-has? options :after_key)
+                (js-call clauses :push (str sort ">?"))
+                (js-call values :push (nativeGet options "after_key")))
+              (js-call values :push limit)
+              (js-call
+                (js-call
+                  (js-call
+                    db
+                    :query
+                    (str
+                      "SELECT payload FROM "
+                      table
+                      (if (> (js-length clauses) 0)
+                        (str " WHERE " (js-call clauses :join " AND "))
+                        "")
+                      " ORDER BY "
+                      sort
+                      " ASC LIMIT ?"))
+                  :all
+                  values)
+                :map
+                (lambda (row) (JSON/parse (nativeGet row "payload")))))))
+        (Object/assign
+          repository
+          (js-object
+            :get
+            getRecord
+            :getSubscriptionState
+            getSubscriptionState
+            :getSubscriptionStates
+            getSubscriptionStates
+            :insert
+            insertRecord
+            :insertMany
+            insertMany
+            :insertIfAbsent
+            insertIfAbsent
+            :insertManyIfAbsent
+            insertManyIfAbsent
+            :replace
+            replaceRecord
+            :replaceProgress
+            replaceProgress
+            :delete
+            deleteRecord
+            :page
+            readRecords
+            :store
+            store
+            :nextSequence
+            (lambda
+              (name)
+              (assertTransaction)
+              (unless (js-call (js-array "ingress" "catalog") :includes name)
+                (throw (new globalThis.TypeError "unknown exact sequence")))
+              (let
+                (
+                  (row
+                    (js-call
+                      (js-call
+                        db
+                        :query
+                        "UPDATE counters SET value=value+1 WHERE name=? AND value<9223372036854775807 RETURNING CAST(value AS TEXT) AS value")
+                      :get
+                      name)))
+                (unless row
+                  (throw (new globalThis.RangeError "durable sequence exhausted")))
+                (encodeSeq (nativeGet row "value"))))
+            :currentSequence
+            (lambda
+              (name)
+              (let
+                (
+                  (row
+                    (js-call
+                      (js-call
+                        db
+                        :query
+                        "SELECT CAST(value AS TEXT) AS value FROM counters WHERE name=?")
+                      :get
+                      name)))
+                (unless row (throw (new globalThis.TypeError "unknown exact sequence")))
+                (encodeSeq (nativeGet row "value"))))
+            :lookupOperation
+            (lambda
+              (principal operation key-hash)
+              (let
+                (
+                  (row
+                    (js-call
+                      (js-call
+                        db
+                        :query
+                        "SELECT payload FROM operations WHERE principal_id=? AND operation=? AND key_hash=?")
+                      :get
+                      principal
+                      operation
+                      key-hash)))
+                (when row (JSON/parse (nativeGet row "payload")))))
+            :recordIdempotency
+            (lambda
+              (record)
+              (assertTransaction)
+              (js-call
+                (js-call
+                  db
+                  :query
+                  "INSERT INTO idempotency(principal_id,operation,key_hash,request_hash,operation_id) VALUES (?,?,?,?,?)")
+                :run
+                (nativeGet record "principal_id")
+                (nativeGet record "operation")
+                (nativeGet record "key_hash")
+                (nativeGet record "request_hash")
+                (nativeGet record "operation_id")))
+            :handleRecords
+            (js-object
+              :get
+              (lambda (ref) (getRecord "handles" ref))
+              :set
+              (lambda (ref record) (insertRecord "handles" record))
+              :delete
+              (lambda (ref) (deleteRecord "handles" ref)))
+            :versionResource
+            (lambda
+              (kind key payload tombstone)
+              (assertTransaction)
+              (let ((sequence (js-call repository :nextSequence "catalog")))
+                (js-call
+                  (js-call
+                    db
+                    :query
+                    "UPDATE catalog_versions SET valid_to=? WHERE resource_kind=? AND resource_key=? AND valid_to IS NULL")
+                  :run
+                  sequence
+                  kind
+                  key)
+                (js-call
+                  (js-call
+                    db
+                    :query
+                    "INSERT INTO catalog_versions(resource_kind,resource_key,valid_from,valid_to,tombstone,payload) VALUES (?,?,?,NULL,?,?)")
+                  :run
+                  kind
+                  key
+                  sequence
+                  (if tombstone 1 0)
+                  (stableJson payload))
+                (when tombstone
+                  (js-call
+                    (js-call
+                      db
+                      :query
+                      "UPDATE query_snapshots SET state='invalidated' WHERE snapshot_id IN (SELECT snapshot_id FROM snapshot_results WHERE resource_key=?)")
+                    :run
+                    key))
+                sequence))))
+        repository)))
+  (export createRepository tables))

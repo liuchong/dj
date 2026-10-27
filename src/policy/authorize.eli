@@ -1,0 +1,146 @@
+(module dj.policy.authorize
+  (import "../core/native.eli" nativeTypeOf nativeGet)
+  (import "../core/types.eli" isObject)
+  (defconst operatorOnly
+    (js-array
+      "delivery.resolve"
+      "outbound.resolve"
+      "lifecycle.resolve"
+      "connection.manage"
+      "service.manage"))
+  (defun isOwnResource
+    (principal resource)
+    (let ((djReturn1Token (js-object)) (djReturn1Value nil))
+      (try
+        (unless (isObject resource)
+          (progn (setq djReturn1Value false) (throw djReturn1Token)))
+        (let ((id (nativeGet principal "principal_id")))
+          (or
+            (= (nativeGet resource "principal_id") id)
+            (= (nativeGet resource "owner_principal_id") id)
+            (and
+              (= (nativeGet resource "origin") "subscription_event")
+              (= (nativeGet resource "recipient_principal_id") id))))
+        (catch djReturn1Error
+          (if (eq djReturn1Error djReturn1Token) djReturn1Value (throw djReturn1Error))))))
+  (defun resourceIds
+    (resource)
+    (if (= (nativeTypeOf resource) "string")
+      (js-array resource)
+      (let ((ids (js-array)))
+        (js-call
+          (js-array
+            "id"
+            "resource_key"
+            "connection_id"
+            "conversation_key"
+            "agent_id"
+            "subscription_id"
+            "delivery_id"
+            "outbound_id"
+            "operation_id"
+            "session_key"
+            "instance_id"
+            "profile_id"
+            "tool_id"
+            "tool"
+            "workspace_ref"
+            "native_namespace"
+            "lifecycle_id")
+          :forEach
+          (lambda
+            (field)
+            (let ((value (nativeGet resource field)))
+              (when (= (nativeTypeOf value) "string") (js-call ids :push value)))))
+        ids)))
+  (defun matchesConstraint
+    (constraint resource)
+    (let ((djReturn2Token (js-object)) (djReturn2Value nil))
+      (try
+        (unless (and (isObject constraint) (isObject resource))
+          (progn (setq djReturn2Value false) (throw djReturn2Token)))
+        (let ((keys (Object/keys constraint)))
+          (and
+            (> (js-length keys) 0)
+            (js-call
+              keys
+              :every
+              (lambda
+                (field)
+                (and
+                  (js-call
+                    (js-array
+                      "tool"
+                      "native_namespace"
+                      "native_session_id"
+                      "instance_id"
+                      "workspace_ref"
+                      "session_key"
+                      "connection_id"
+                      "native_chat_id"
+                      "native_thread_id")
+                    :includes
+                    field)
+                  (object-has? resource field)
+                  (if (Array/isArray (nativeGet constraint field))
+                    (js-call (nativeGet constraint field) :includes (nativeGet resource field))
+                    (= (nativeGet constraint field) (nativeGet resource field))))))))
+        (catch djReturn2Error
+          (if (eq djReturn2Error djReturn2Token) djReturn2Value (throw djReturn2Error))))))
+  (defun authorize
+    (principal action resource authorization-revision)
+    (let ((djReturn3Token (js-object)) (djReturn3Value nil))
+      (try
+        (let ((denied (js-object :allowed false :code "forbidden")))
+          (unless
+            (and
+              principal
+              (not (= (nativeGet principal "disabled") t))
+              (= (nativeGet principal "authorization_revision") authorization-revision)
+              (or
+                (not (js-call operatorOnly :includes action))
+                (= (nativeGet principal "kind") "operator")))
+            (progn (setq djReturn3Value denied) (throw djReturn3Token)))
+          (let
+            ((grants (nativeGet principal "grants" (js-array)))
+              (ids (resourceIds resource))
+              (index 0))
+            (while (< index (js-length grants))
+              (let ((grant (aref grants index)))
+                (when (or (= (nativeGet grant "action") action) (= (nativeGet grant "action") "*"))
+                  (let ((resources (nativeGet grant "resources" (js-array))))
+                    (when
+                      (js-call
+                        resources
+                        :some
+                        (lambda
+                          (scope)
+                          (or
+                            (= scope "*")
+                            (and (= scope "self") (isOwnResource principal resource))
+                            (and
+                              (= (nativeTypeOf scope) "string")
+                              (not (= scope "self"))
+                              (js-call ids :includes scope))
+                            (and (isObject scope) (matchesConstraint scope resource)))))
+                      (progn
+                        (setq
+                          djReturn3Value
+                          (js-object
+                            :allowed
+                            t
+                            :authorization_revision
+                            authorization-revision
+                            :grant_index
+                            index))
+                        (throw djReturn3Token))))))
+              (setq index (1+ index))))
+          denied)
+        (catch djReturn3Error
+          (if (eq djReturn3Error djReturn3Token) djReturn3Value (throw djReturn3Error))))))
+  (defun targetAllowed
+    (principal target)
+    (and
+      (nativeGet principal "target_constraint")
+      (matchesConstraint (nativeGet principal "target_constraint") target)))
+  (export authorize matchesConstraint isOwnResource resourceIds targetAllowed operatorOnly))

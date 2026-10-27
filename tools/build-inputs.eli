@@ -1,0 +1,134 @@
+(module dj.tools.build-inputs
+  (import "../src/core/native.eli" nativeGet)
+  (import "node:fs/promises" readdir readFile)
+  (import "node:crypto" createHash)
+  (defun sha256
+    (bytes)
+    (js-call (js-call (createHash "sha256") :update bytes) :digest "hex"))
+  (defasync requiredBuildInputs
+    ()
+    (let
+      (
+        (paths
+          (js-array
+            "src/host/darwin/process-info.c"
+            "package.json"
+            "bun.lock"
+            "eliscript.json"
+            "eliscript.tests.json"
+            "eliscript.tools.json"
+            "tests/cases.json"
+            "tests/operation-vectors.json"
+            "config/toolchain.lock.json"
+            "config/compiler-source-inputs.json"
+            "config/compiler-provenance.json"
+            "bin/dj"
+            "config/service.example.json"
+            "config/client.example.json"
+            "packaging/runtime.md"
+            "packaging/launchd.example.plist"
+            "connectors/pi/extension.mjs"
+            "connectors/pi/README.md"
+            "connectors/cursor/package.json"
+            "connectors/cursor/extension.cjs"
+            "connectors/cursor/README.md"
+            "connectors/cursor/extension.vsixmanifest"
+            "connectors/cursor/[Content_Types].xml")))
+      (let ((visit nil))
+        (setq
+          visit
+          (async
+            (directory)
+            (let
+              ((entries (await (readdir directory (js-object :withFileTypes t))))
+                (index 0))
+              (while (< index (js-length entries))
+                (let*
+                  ((entry (aref entries index))
+                    (path (str directory "/" (nativeGet entry "name"))))
+                  (when (js-call entry :isSymbolicLink)
+                    (throw
+                      (new
+                        globalThis.Error
+                        "build source tree contains an unexpected symlink")))
+                  (cond ((js-call entry :isDirectory) (await (visit path)))
+                    (
+                      (and
+                        (js-call entry :isFile)
+                        (or
+                          (js-call path :endsWith ".eli")
+                          (js-call directory :startsWith "skills/dj")))
+                      (js-call paths :push path))))
+                (setq index (1+ index))))))
+        (await (visit "src"))
+        (await (visit "tests"))
+        (await (visit "tools"))
+        (await (visit "skills/dj"))
+        (js-call paths :sort))))
+  (defasync assertBuildBinding
+    (build)
+    (unless (= (nativeGet build "schema_version") 1)
+      (throw (new globalThis.Error "build manifest absent or incompatible")))
+    (let
+      ((expected (await (requiredBuildInputs)))
+        (declared (nativeGet build "sources"))
+        (seen (new globalThis.Set)))
+      (unless (= (js-length expected) (js-length declared))
+        (throw (new globalThis.Error "build source inventory changed")))
+      (let ((index 0))
+        (while (< index (js-length declared))
+          (let* ((row (aref declared index)) (path (nativeGet row "path")))
+            (unless
+              (and
+                (js-call expected :includes path)
+                (not (js-call seen :has path))
+                (= (sha256 (await (readFile path))) (nativeGet row "sha256")))
+              (throw (new globalThis.Error "build source binding changed")))
+            (js-call seen :add path))
+          (setq index (1+ index))))
+      (let ((outputs (nativeGet build "outputs")) (index 0))
+        (unless (> (js-length outputs) 0)
+          (throw (new globalThis.Error "compiled output inventory is empty")))
+        (let
+          (
+            (config-names
+              (js-array "eliscript.json" "eliscript.tests.json" "eliscript.tools.json"))
+            (config-index 0))
+          (while (< config-index (js-length config-names))
+            (let*
+              (
+                (config
+                  (JSON/parse
+                    (await (readFile (aref config-names config-index) "utf8"))))
+                (entries (nativeGet config "entries"))
+                (entry-index 0))
+              (while (< entry-index (js-length entries))
+                (let
+                  (
+                    (path
+                      (str
+                        (nativeGet config "outDir")
+                        "/"
+                        (js-call (aref entries entry-index) :replace ".eli" ".mjs"))))
+                  (unless
+                    (js-call outputs :some (lambda (row) (= (nativeGet row "path") path)))
+                    (throw
+                      (new
+                        globalThis.Error
+                        "required compiled entry missing from build manifest"))))
+                (setq entry-index (1+ entry-index))))
+            (setq config-index (1+ config-index))))
+        (while (< index (js-length outputs))
+          (let* ((row (aref outputs index)) (path (nativeGet row "path")))
+            (unless
+              (and
+                (js-call
+                  (js-array "dist/" "dist-tests/" "dist-tools/")
+                  :some
+                  (lambda (prefix) (js-call path :startsWith prefix)))
+                (not (js-call (js-call path :split "/") :includes ".."))
+                (= (sha256 (await (readFile path))) (nativeGet row "sha256")))
+              (throw (new globalThis.Error "compiled output binding changed"))))
+          (setq index (1+ index))))
+      t))
+  (export sha256 requiredBuildInputs assertBuildBinding))

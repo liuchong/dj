@@ -1,0 +1,528 @@
+(module dj.application.execute
+  (import "../core/native.eli" nativeTypeOf nativeGet)
+  (import "./operations.eli" operationCatalog)
+  (import "./schema.eli" validateRequest normalizeArgs)
+  (import "../core/types.eli" isObject hashValue addSeconds)
+  (import "../core/errors.eli" success failure)
+  (import "../core/limits.eli" limits)
+  (import "../policy/principals.eli" configuredPrincipal)
+  (import "../policy/authorize.eli" authorize)
+  (defconst resourceKinds
+    (js-array
+      "inbox"
+      "inbox_pull"
+      "subscription"
+      "delivery"
+      "outbound"
+      "catalog"
+      "lifecycle"
+      "instance"
+      "session"
+      "agent"))
+  (defun businessRequestHash
+    (args)
+    (let ((copy (Object/assign (js-object) args)))
+      (Reflect/deleteProperty copy "request_id")
+      (Reflect/deleteProperty copy "idempotency_key")
+      (hashValue copy)))
+  (defun withRequestId
+    (result request-id)
+    (Object/assign (js-object) result (js-object :request_id request-id)))
+  (defun visibleOperation
+    (context record)
+    (let ((djReturn1Token (js-object)) (djReturn1Value nil))
+      (try
+        (let*
+          (
+            (principal
+              (configuredPrincipal
+                (nativeGet (nativeGet context "config") "principals")
+                (nativeGet (nativeGet context "principal") "principal_id")))
+            (permission
+              (authorize
+                principal
+                "operation.inspect"
+                record
+                (nativeGet principal "authorization_revision"))))
+          (unless (nativeGet permission "allowed")
+            (progn (setq djReturn1Value (failure "forbidden")) (throw djReturn1Token)))
+          (let
+            (
+              (projection
+                (js-object
+                  :operation_id
+                  (nativeGet record "operation_id")
+                  :operation
+                  (nativeGet record "operation")
+                  :principal_id
+                  (nativeGet record "principal_id")
+                  :state
+                  (nativeGet record "state")
+                  :created_at
+                  (nativeGet record "created_at")
+                  :result_expires_at
+                  (nativeGet record "result_expires_at")
+                  :resource_refs
+                  (js-array)
+                  :safe_result
+                  nil)))
+            ;; Domain projection rechecks each referenced resource under current
+            ;; grants. Without it, only the caller's minimal ledger state is visible.
+            (when (nativeGet context "projectOperation")
+              (let
+                ((projected (funcall (nativeGet context "projectOperation") principal record)))
+                (when (nativeGet projected "ok")
+                  (put
+                    projection
+                    :resource_refs
+                    (nativeGet (nativeGet projected "data") "resource_refs" (js-array)))
+                  (put
+                    projection
+                    :safe_result
+                    (nativeGet (nativeGet projected "data") "safe_result" nil)))))
+            (success projection)))
+        (catch djReturn1Error
+          (if (eq djReturn1Error djReturn1Token) djReturn1Value (throw djReturn1Error))))))
+  (defun replayOperation
+    (context record request-hash)
+    (let ((djReturn2Token (js-object)) (djReturn2Value nil))
+      (try
+        (unless (= (nativeGet record "request_hash") request-hash)
+          (progn
+            (setq djReturn2Value (failure "idempotency_conflict"))
+            (throw djReturn2Token)))
+        (let ((visible (visibleOperation context record)))
+          (unless (nativeGet visible "ok")
+            (progn (setq djReturn2Value visible) (throw djReturn2Token)))
+          (when
+            (<=
+              (Date/parse (nativeGet record "result_expires_at"))
+              (Date/parse (nativeGet context "now")))
+            (progn
+              (setq
+                djReturn2Value
+                (failure
+                  "result_expired"
+                  (js-object
+                    :effect_state
+                    "recorded"
+                    :evidence_level
+                    "service_record"
+                    :details
+                    (js-object
+                      :operation_id
+                      (nativeGet record "operation_id")
+                      :resource_refs
+                      (nativeGet (nativeGet visible "data") "resource_refs")))))
+              (throw djReturn2Token)))
+          (let ((safe-result (nativeGet (nativeGet visible "data") "safe_result")))
+            (if safe-result
+              (Object/assign
+                (js-object)
+                safe-result
+                (js-object :operation_id (nativeGet record "operation_id")))
+              (success
+                (js-object
+                  :operation_id
+                  (nativeGet record "operation_id")
+                  :state
+                  (nativeGet record "state"))
+                (js-object
+                  :operation_id
+                  (nativeGet record "operation_id")
+                  :effect_state
+                  "recorded"
+                  :warnings
+                  (js-array "result_redacted_by_current_authorization"))))))
+        (catch djReturn2Error
+          (if (eq djReturn2Error djReturn2Token) djReturn2Value (throw djReturn2Error))))))
+  (defun handleLedger
+    (context args)
+    (let*
+      ((repository (nativeGet context "repository"))
+        (record
+          (if (object-has? args :operation_id)
+            (js-call repository :get "operations" (nativeGet args "operation_id"))
+            (js-call
+              repository
+              :lookupOperation
+              (nativeGet (nativeGet context "principal") "principal_id")
+              (nativeGet args "operation")
+              (hashValue (nativeGet args "idempotency_key"))))))
+      (if record
+        (visibleOperation context record)
+        (failure
+          "not_found"
+          (js-object :warnings (js-array "absence_does_not_prove_non_submission"))))))
+  (defasync executeOperation
+    (base operation args)
+    (let ((djReturn3Token (js-object)) (djReturn3Value nil))
+      (try
+        (let*
+          ((clock (nativeGet (nativeGet base "ports") "clock"))
+            (request-id
+              (if
+                (and (isObject args) (= (nativeTypeOf (nativeGet args "request_id")) "string"))
+                (nativeGet args "request_id")
+                (js-call (nativeGet (nativeGet base "ports") "ids") :next "req")))
+            (descriptor (js-call operationCatalog :get operation))
+            (principal
+              (configuredPrincipal
+                (nativeGet (nativeGet base "config") "principals")
+                (nativeGet (nativeGet base "principal") "principal_id")))
+            (context
+              (Object/assign
+                (js-object)
+                base
+                (js-object
+                  :principal
+                  principal
+                  :request_id
+                  request-id
+                  :operation
+                  operation
+                  :authorization_revision
+                  (nativeGet principal "authorization_revision")
+                  :now
+                  (js-call clock :utcNow))))
+            (repository (nativeGet context "repository"))
+            (request-hash nil)
+            (guards (js-array))
+            (accepted-id nil))
+          (unless (and principal (not (= (nativeGet principal "disabled") t)))
+            (progn
+              (setq
+                djReturn3Value
+                (withRequestId (failure "unauthenticated") request-id))
+              (throw djReturn3Token)))
+          (unless descriptor
+            (progn
+              (setq
+                djReturn3Value
+                (withRequestId (failure "invalid_argument") request-id))
+              (throw djReturn3Token)))
+          (try
+            ;; Inspect the original key before tickets/revisions expire or are
+            ;; consumed. Replays never call the business handler a second time.
+            (when
+              (and
+                (= (nativeGet descriptor "idempotency") "required")
+                (isObject args)
+                (= (nativeTypeOf (nativeGet args "idempotency_key")) "string"))
+              (setq request-hash (businessRequestHash args))
+              (let
+                (
+                  (existing
+                    (js-call
+                      repository
+                      :lookupOperation
+                      (nativeGet principal "principal_id")
+                      operation
+                      (hashValue (nativeGet args "idempotency_key")))))
+                (when existing
+                  (when (= (nativeGet existing "request_hash") request-hash)
+                    (setq accepted-id (nativeGet existing "operation_id")))
+                  (progn
+                    (setq
+                      djReturn3Value
+                      (withRequestId
+                        (replayOperation context existing request-hash)
+                        request-id))
+                    (throw djReturn3Token)))))
+            (let ((checked (validateRequest operation args)))
+              (unless (nativeGet checked "ok")
+                (progn
+                  (setq djReturn3Value (withRequestId checked request-id))
+                  (throw djReturn3Token))))
+            (let ((normalized (normalizeArgs operation args)))
+              (when (= operation "operation.get")
+                (progn
+                  (setq
+                    djReturn3Value
+                    (withRequestId (handleLedger context normalized) request-id))
+                  (throw djReturn3Token)))
+              (put
+                context
+                :can
+                (lambda
+                  (action resource)
+                  (let
+                    (
+                      (current
+                        (configuredPrincipal
+                          (nativeGet (nativeGet context "config") "principals")
+                          (nativeGet principal "principal_id"))))
+                    (nativeGet
+                      (authorize
+                        current
+                        action
+                        resource
+                        (nativeGet context "authorization_revision"))
+                      "allowed"))))
+              (put
+                context
+                :requirePermission
+                (lambda
+                  (action resource)
+                  (let ((allowed (js-call context :can action resource)))
+                    (when allowed
+                      (js-call
+                        guards
+                        :push
+                        (js-object :action action :resource resource)))
+                    (if allowed (success nil) (failure "forbidden")))))
+              (put
+                context
+                :accept
+                (lambda
+                  (mutate resource-refs)
+                  (let ((djReturn4Token (js-object)) (djReturn4Value nil))
+                    (try
+                      (unless (= (nativeGet descriptor "idempotency") "required")
+                        (progn
+                          (setq djReturn4Value (failure "invalid_transaction"))
+                          (throw djReturn4Token)))
+                      (unless (> (js-length guards) 0)
+                        (progn
+                          (setq djReturn4Value (failure "forbidden"))
+                          (throw djReturn4Token)))
+                      (let
+                        (
+                          (accepted
+                            (js-call
+                              (nativeGet context "store")
+                              :transaction
+                              (js-object)
+                              (lambda
+                                (tx)
+                                (let ((djReturn5Token (js-object)) (djReturn5Value nil))
+                                  (try
+                                    (put context :now (js-call clock :utcNow))
+                                    (let
+                                      (
+                                        (existing
+                                          (js-call
+                                            repository
+                                            :lookupOperation
+                                            (nativeGet principal "principal_id")
+                                            operation
+                                            (hashValue (nativeGet args "idempotency_key")))))
+                                      (when existing
+                                        (progn
+                                          (setq
+                                            djReturn5Value
+                                            (replayOperation
+                                              context
+                                              existing
+                                              request-hash))
+                                          (throw djReturn5Token))))
+                                    (when (nativeGet context "admissionGuard")
+                                      (let
+                                        (
+                                          (admitted
+                                            (js-call context :admissionGuard descriptor)))
+                                        (unless (nativeGet admitted "ok")
+                                          (progn
+                                            (setq djReturn5Value admitted)
+                                            (throw djReturn5Token)))))
+                                    (unless
+                                      (js-call
+                                        guards
+                                        :every
+                                        (lambda
+                                          (guard)
+                                          (js-call
+                                            context
+                                            :can
+                                            (nativeGet guard "action")
+                                            (nativeGet guard "resource"))))
+                                      (progn
+                                        (setq djReturn5Value (failure "forbidden"))
+                                        (throw djReturn5Token)))
+                                    (let*
+                                      (
+                                        (operation-id
+                                          (js-call
+                                            (nativeGet (nativeGet context "ports") "ids")
+                                            :next
+                                            "op"))
+                                        (record
+                                          (js-object
+                                            :operation_id
+                                            operation-id
+                                            :principal_id
+                                            (nativeGet principal "principal_id")
+                                            :operation
+                                            operation
+                                            :key_hash
+                                            (hashValue (nativeGet args "idempotency_key"))
+                                            :request_hash
+                                            (or request-hash (businessRequestHash args))
+                                            :state
+                                            "recorded"
+                                            :authorization_revision
+                                            (nativeGet context "authorization_revision")
+                                            :created_at
+                                            (nativeGet context "now")
+                                            :result_expires_at
+                                            (addSeconds
+                                              (nativeGet context "now")
+                                              (nativeGet limits "audit_retention_seconds"))
+                                            :resource_refs
+                                            (js-array)
+                                            :safe_result
+                                            nil)))
+                                      (js-call repository :insert "operations" record)
+                                      (let
+                                        (
+                                          (result
+                                            (funcall
+                                              mutate
+                                              (Object/assign
+                                                (js-object)
+                                                tx
+                                                (js-object :context context))
+                                              operation-id)))
+                                        (unless (= (nativeGet result "ok") t)
+                                          (progn
+                                            (setq djReturn5Value result)
+                                            (throw djReturn5Token)))
+                                        (let
+                                          (
+                                            (refs
+                                              (if
+                                                (=
+                                                  (nativeTypeOf resource-refs)
+                                                  "function")
+                                                (funcall
+                                                  resource-refs
+                                                  (nativeGet result "data"))
+                                                resource-refs)))
+                                          (unless
+                                            (and
+                                              (Array/isArray refs)
+                                              (> (js-length refs) 0)
+                                              (js-call
+                                                refs
+                                                :every
+                                                (lambda
+                                                  (ref)
+                                                  (and
+                                                    (= (js-length (Object/keys ref)) 2)
+                                                    (js-call
+                                                      resourceKinds
+                                                      :includes
+                                                      (nativeGet ref "kind"))
+                                                    (=
+                                                      (nativeTypeOf (nativeGet ref "id"))
+                                                      "string")
+                                                    (> (js-length (nativeGet ref "id")) 0)))))
+                                            (progn
+                                              (setq
+                                                djReturn5Value
+                                                (failure "invalid_transaction"))
+                                              (throw djReturn5Token)))
+                                          (put record :resource_refs refs))
+                                        (setq
+                                          result
+                                          (Object/assign
+                                            (js-object)
+                                            result
+                                            (js-object
+                                              :operation_id
+                                              operation-id
+                                              :request_id
+                                              request-id
+                                              :effect_state
+                                              "recorded")))
+                                        (put record :state "done")
+                                        (put record :safe_result result)
+                                        (let
+                                          (
+                                            (updated
+                                              (js-call
+                                                repository
+                                                :replace
+                                                "operations"
+                                                record)))
+                                          (unless (nativeGet updated "ok")
+                                            (progn
+                                              (setq djReturn5Value updated)
+                                              (throw djReturn5Token))))
+                                        (js-call repository :recordIdempotency record)
+                                        (let
+                                          (
+                                            (resource
+                                              (aref (nativeGet record "resource_refs") 0)))
+                                          (js-call
+                                            (js-call
+                                              (nativeGet tx "db")
+                                              :query
+                                              "INSERT INTO audit(at,principal_id,operation_id,resource_kind,resource_id,code,state) VALUES (?,?,?,?,?,'operation_accepted','recorded')")
+                                            :run
+                                            (nativeGet context "now")
+                                            (nativeGet principal "principal_id")
+                                            operation-id
+                                            (nativeGet resource "kind")
+                                            (nativeGet resource "id")))
+                                        result))
+                                    (catch djReturn5Error
+                                      (if (eq djReturn5Error djReturn5Token)
+                                        djReturn5Value
+                                        (throw djReturn5Error)))))))))
+                        (when (and (nativeGet accepted "ok") (nativeGet accepted "operation_id"))
+                          (setq accepted-id (nativeGet accepted "operation_id")))
+                        accepted)
+                      (catch djReturn4Error
+                        (if (eq djReturn4Error djReturn4Token)
+                          djReturn4Value
+                          (throw djReturn4Error)))))))
+              (let
+                (
+                  (handler
+                    (js-call
+                      (nativeGet context "handlers")
+                      :get
+                      (nativeGet descriptor "handler_group"))))
+                (when
+                  (and
+                    (= (nativeGet descriptor "effect_kind") "accept")
+                    (nativeGet context "admissionGuard"))
+                  (let ((admitted (js-call context :admissionGuard descriptor)))
+                    (unless (nativeGet admitted "ok")
+                      (progn
+                        (setq djReturn3Value (withRequestId admitted request-id))
+                        (throw djReturn3Token)))))
+                (unless handler
+                  (progn
+                    (setq
+                      djReturn3Value
+                      (withRequestId (failure "unavailable") request-id))
+                    (throw djReturn3Token)))
+                (withRequestId
+                  (await (funcall handler context operation normalized))
+                  request-id)))
+            (catch error
+              (when (eq error djReturn3Token) (throw error))
+              (withRequestId
+                (failure
+                  "internal_error"
+                  (js-object
+                    :effect_state
+                    (if accepted-id "recorded" "none")
+                    :details
+                    (if accepted-id (js-object :operation_id accepted-id) (js-object))))
+                request-id))))
+        (catch djReturn3Error
+          (if (eq djReturn3Error djReturn3Token) djReturn3Value (throw djReturn3Error))))))
+  (defasync handleOperation
+    (context operation args)
+    (if (= operation "operation.get")
+      (handleLedger context args)
+      (failure "invalid_argument")))
+  (export
+    executeOperation
+    businessRequestHash
+    handleOperation
+    replayOperation
+    visibleOperation))

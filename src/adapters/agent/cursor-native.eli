@@ -1,0 +1,262 @@
+(module dj.adapters.agent.cursor-native
+  (import "../../core/native.eli" nativeGet nativeFetch nativeSetTimeout nativeClearTimeout)
+  (import "../../core/types.eli" hashValue)
+  (import "./desktop-transport.eli" desktopDeadline desktopError)
+  (import "node:crypto" randomUUID)
+  (import "../im/telegram.eli" readJson)
+  (import "./cursor-inspector.eli" cursorProcessInfo cursorInspectorListening openCursorInspector)
+
+  ;; Fixed protocol glue executes inside the existing native client, never a
+  ;; new Agent process. Only the fixed operations below reach the repository.
+  (defconst cursorRenderer
+    (str
+      "async function(request) {\n"
+      " if (this.length !== 1) throw Error('cursor_native_window');\n"
+      " const repo=this[0].agentRepositoryProxy?.delegate, local=repo?.localRepo;\n"
+      " if (!local || !(local._loadedAgents instanceof Map)) throw Error('cursor_native_shape');\n"
+      " const loaded=local._loadedAgents;\n"
+      " if (loaded.size>5000) throw Error('cursor_native_bound');\n"
+      " const get=(id)=>{\n"
+      "  const a=loaded.get(id), h=repo.getAgentHeader(id), data=a?._composerDataHandle?.data;\n"
+      "  if (!a || h?.source!=='local' || data?.workspaceIdentifier?.id!==request.workspace) return null;\n"
+      "  const status=h.status?.value;\n"
+      "  return {a,h,data,row:{id,title:(h.name?.value??'').slice(0,512),source:'local',windowId:request.window,\n"
+      "   status:status==='in_progress'?'running':status==='done'?'completed':status==='needs_attention'?'idle':'unknown'}};\n"
+      " };\n"
+      " if (request.operation==='list') {\n"
+      "  const rows=[];\n"
+      "  for (const id of loaded.keys()) { const x=get(id); if(x) rows.push(x.row); if(rows.length>200)break; }\n"
+      "  return {threads:rows.slice(0,200),complete:rows.length<=200};\n"
+      " }\n"
+      " if(typeof request.thread!=='string'||!request.thread||request.thread.length>1024)throw Error('cursor_native_target');\n"
+      " let retained;\n"
+      " try {\n"
+      " let x=get(request.thread);\n"
+      " if(!x) {\n"
+      "  const h=repo.getAgentHeader(request.thread),record=local.agentMap?.get(request.thread);\n"
+      "  if(!h||h.source!=='local'||h.isArchived?.value===true||!record||record.isArchived===true||record.workspaceIdentifier?.id!==request.workspace)throw Error('cursor_native_no_owner');\n"
+      "  if(typeof local.loadAgent!=='function')throw Error('cursor_native_shape');\n"
+      "  retained=await local.loadAgent(request.thread);\n"
+      "  x=get(request.thread);\n"
+      " }\n"
+      " if(!x) throw Error('cursor_native_no_owner');\n"
+      " if(request.operation==='probe')return {thread:x.row};\n"
+      " if(request.operation==='messages') {\n"
+      "  const headers=x.data.fullConversationHeadersOnly;\n"
+      "  if(!Array.isArray(headers)||headers.length>10000) throw Error('cursor_native_bound');\n"
+      "  let index=0;\n"
+      "  if(request.after) {index=headers.findIndex(h=>h.bubbleId===request.after);if(index<0)throw Error('cursor_native_cursor');index++;}\n"
+      "  const rows=[];let bytes=0,complete=true,last=null;\n"
+      "  while(index<headers.length && rows.length<request.maximum) {\n"
+      "   const id=headers[index].bubbleId, raw=x.data.conversationMap?.[id], b=raw?.bubble??raw;\n"
+      "   if(!b || ![1,2].includes(b.type) || typeof b.text!=='string') {complete=false;index++;last=id;continue;}\n"
+      "   const row={native_message_id:id,role:b.type===1?'user':'assistant',text:b.text};\n"
+      "   const size=new TextEncoder().encode(JSON.stringify(row)).length;\n"
+      "   if(bytes+size>request.bytes) {if(rows.length===0)throw Error('cursor_native_bound');break;}\n"
+      "   rows.push(row);bytes+=size;index++;last=id;\n"
+      "  }\n"
+      "  return {items:rows,complete:complete&&index===headers.length,coverage:complete?'covered':'partial',\n"
+      "   next_cursor:last&&index<headers.length?{after_id:last}:null};\n"
+      " }\n"
+      " if(request.operation!=='submit') throw Error('cursor_native_operation');\n"
+      " if(x.h.status.value!=='done' || x.data.status==='generating') return {status:'not-sendable'};\n"
+      " await local.ensureLocalWorkspaceTrusted(x.data.workspaceIdentifier,'require-trusted');\n"
+      " if(x.h.status.value!=='done') return {status:'not-sendable'};\n"
+      " const ref=repo.getAgent(request.thread);\n"
+      " if(typeof ref?.submitMessage!=='function') {ref?.dispose();throw Error('cursor_native_shape');}\n"
+      " let sent=false,settled=false,error=false;\n"
+      " try {\n"
+      "  Promise.resolve(ref.submitMessage(request.text,{skipFocusAfterSubmission:true,forceBubbleId:request.bubble,\n"
+      "   onDidSendRequest:()=>{sent=true;}})).then(()=>{settled=true;},()=>{settled=true;error=true;}).finally(()=>ref.dispose());\n"
+      " } catch(e) {ref.dispose();throw e;}\n"
+      " const end=performance.now()+request.wait;\n"
+      " while(!sent && !settled && performance.now()<end) await new Promise(r=>setTimeout(r,10));\n"
+      " return {status:sent?'submitted':'unknown',native_receipt_key:request.bubble,settled,error};\n"
+      " } finally {retained?.dispose();}\n"
+      "}\n"
+    ))
+  (defconst cursorMain
+    (str
+      "(async()=>{\n"
+      " const require=process.getBuiltinModule('module').createRequire(process.resourcesPath+'/app/package.json');\n"
+      " const electron=require('electron');\n"
+      " if(electron.app.getVersion()!=='3.27.14')throw Error('cursor_native_version');\n"
+      " const w=electron.webContents.fromId(REQUEST.window);\n"
+      " if(!w||w.getType()!=='window')throw Error('cursor_native_window');\n"
+      " const d=w.debugger;\n"
+      " if(d.isAttached())throw Error('cursor_native_debugger_busy');\n"
+      " d.attach('1.3');\n"
+      " const group='dj-native-'+REQUEST.call;\n"
+      " const cmd=(method,params)=>d.sendCommand(method,params);\n"
+      " const props=async id=>await cmd('Runtime.getProperties',{objectId:id,ownProperties:true});\n"
+      " try {\n"
+      "  const uri='vscode-file://vscode-app'+encodeURI(process.resourcesPath+'/app/out/vs/workbench/workbench.glass.main.js');\n"
+      "  const m=await cmd('Runtime.evaluate',{expression:'import('+JSON.stringify(uri)+')',awaitPromise:true,objectGroup:group});\n"
+      "  if(m.exceptionDetails)throw Error('cursor_native_module');\n"
+      "  const exp=await props(m.result.objectId),entry=exp.result.find(x=>x.name==='main');\n"
+      "  if(!entry)throw Error('cursor_native_shape');\n"
+      "  const p=await props(entry.value.objectId),scopes=p.internalProperties?.find(x=>x.name==='[[Scopes]]');\n"
+      "  if(!scopes)throw Error('cursor_native_shape');\n"
+      "  const list=await props(scopes.value.objectId);let ctor;\n"
+      "  for(const x of list.result.filter(x=>/^\\d+$/.test(x.name))) {\n"
+      "   const scope=await props(x.value.objectId),v=scope.result.find(y=>y.name==='De2');\n"
+      "   if(v)ctor=v.value.objectId;\n"
+      "  }\n"
+      "  if(!ctor)throw Error('cursor_native_shape');\n"
+      "  const proto=await cmd('Runtime.callFunctionOn',{objectId:ctor,functionDeclaration:'function(){return this.prototype}',objectGroup:group});\n"
+      "  const instances=await cmd('Runtime.queryObjects',{prototypeObjectId:proto.result.objectId,objectGroup:group});\n"
+      "  const out=await cmd('Runtime.callFunctionOn',{objectId:instances.objects.objectId,functionDeclaration:RENDERER,\n"
+      "   arguments:[{value:REQUEST}],returnByValue:true,awaitPromise:true,objectGroup:group});\n"
+      "  if(out.exceptionDetails)throw Error('cursor_native_operation_failed');\n"
+      "  return out.result.value;\n"
+      " } finally {try{await cmd('Runtime.releaseObjectGroup',{objectGroup:group});}finally{d.detach();}}\n"
+      "})()\n"
+    ))
+
+  (defconst cursorQueues (new globalThis.Map))
+  (defun cursorNativeUrl (value)
+    (let ((url (new globalThis.URL value)))
+      (unless (and (= (nativeGet url "protocol") "http:")
+                   (= (nativeGet url "hostname") "127.0.0.1")
+                   (= (nativeGet url "pathname") "/")
+                   (= (nativeGet url "username") "") (= (nativeGet url "password") "")
+                   (= (nativeGet url "search") "") (= (nativeGet url "hash") "")
+                   (not (= (nativeGet url "port") "")))
+        (throw (desktopError "cursor_native_endpoint")))
+      (nativeGet url "origin")))
+  (defasync cursorNativeWire (endpoint payload context)
+    (let* ((api (nativeGet endpoint "native_api"))
+           (origin (cursorNativeUrl (nativeGet api "inspector_url")))
+           (milliseconds (desktopDeadline context))
+           (signal (nativeGet context "abort_signal"))
+           (response (await (funcall nativeFetch (str origin "/json/list")
+             (js-object :redirect "error" :signal
+               (js-call globalThis.AbortSignal :any (js-array (js-call globalThis.AbortSignal :timeout (Math/ceil milliseconds))
+                 (or signal (nativeGet (new globalThis.AbortController) "signal"))))))))
+           (targets (await (readJson response 65536))))
+      (unless (= (nativeGet response "status") 200)
+        (throw (desktopError "cursor_native_discovery")))
+      (let* ((url (and (Array/isArray targets) (= (js-length targets) 1)
+                    (new globalThis.URL (nativeGet (aref targets 0) "webSocketDebuggerUrl")))))
+        (unless (and url (= (nativeGet url "protocol") "ws:")
+                     (= (nativeGet url "hostname") "127.0.0.1")
+                     (= (nativeGet url "port") (nativeGet (new globalThis.URL origin) "port"))
+                     (= (nativeGet url "username") "") (= (nativeGet url "password") "")
+                     (= (nativeGet url "search") "") (= (nativeGet url "hash") ""))
+          (throw (desktopError "cursor_native_discovery")))
+        (let* ((connect-ms (desktopDeadline context))
+               (ws (new globalThis.WebSocket (str url))) (pending (new globalThis.Map))
+               (sequence 0) (broken nil) (timer nil) (open-reject nil) (fail nil) (call nil)
+               (abort nil) (identity nil))
+          (setq fail (lambda (error)
+            (unless broken (setq broken error))
+            (when open-reject (funcall open-reject broken))
+            (js-call pending :forEach (lambda (entry) (funcall (nativeGet entry "reject") broken)))
+            (js-call pending :clear)))
+          (setq abort (lambda () (funcall fail (desktopError "desktop_cancelled"))))
+          (setq call (lambda (method params)
+            (new globalThis.Promise (lambda (resolve reject)
+              (if broken (funcall reject broken)
+                (let ((id (setq sequence (1+ sequence))))
+                  (js-call pending :set id (js-object :resolve resolve :reject reject))
+                  (js-call ws :send (JSON/stringify (js-object :id id :method method :params params)))))))))
+          (js-call ws :addEventListener "message" (lambda (event)
+            (try
+              (let ((body (str (nativeGet event "data"))))
+                (when (> (Buffer/byteLength body) 8388608) (throw (desktopError "desktop_frame_limit")))
+                (let* ((frame (JSON/parse body)) (entry (js-call pending :get (nativeGet frame "id"))))
+                  (when entry
+                    (js-call pending :delete (nativeGet frame "id"))
+                    (if (nativeGet frame "error")
+                      (funcall (nativeGet entry "reject") (desktopError "cursor_native_protocol"))
+                      (funcall (nativeGet entry "resolve") (nativeGet frame "result"))))))
+              (catch invalid (funcall fail (desktopError "cursor_native_protocol"))))))
+          (js-call ws :addEventListener "error" (lambda (event) (funcall fail (desktopError "desktop_transport"))))
+          (js-call ws :addEventListener "close" (lambda (event) (funcall fail (desktopError "desktop_eof"))))
+          (setq timer (nativeSetTimeout (lambda () (funcall fail (desktopError "desktop_timeout")))
+                        connect-ms))
+          (when signal (js-call signal :addEventListener "abort" abort (js-object :once t)))
+          (try
+            (when (nativeGet signal "aborted") (funcall abort))
+            (await (new globalThis.Promise (lambda (resolve reject)
+              (setq open-reject reject)
+              (cond (broken (funcall reject broken))
+                ((= (nativeGet ws "readyState") 1) (funcall resolve))
+                (t (js-call ws :addEventListener "open" (lambda (event) (funcall resolve)) (js-object :once t)))))))
+            (setq open-reject nil)
+            (desktopDeadline context)
+            (let ((result (await (funcall call "Runtime.evaluate"
+                (js-object :expression "({pid:process.pid,origin:performance.timeOrigin,uid:process.getuid(),type:process.type})"
+                  :returnByValue t)))))
+              (setq identity (nativeGet (nativeGet result "result") "value"))
+              (unless (and (= (nativeGet identity "pid") (nativeGet api "process_id"))
+                           (or (= (nativeGet payload "operation") "close_owned_inspector")
+                               (= (nativeGet identity "origin") (nativeGet api "process_origin")))
+                           (= (nativeGet identity "uid") (js-call globalThis.process :getuid))
+                           (= (nativeGet identity "type") "browser"))
+                (throw (desktopError "desktop_target_changed"))))
+            (if (= (nativeGet payload "operation") "close_owned_inspector")
+              (progn
+                (await (funcall call "Runtime.evaluate" (js-object :returnByValue t
+                  :expression "(()=>{setTimeout(()=>process.getBuiltinModule('inspector').close(),25);return true})()")))
+                (js-object :closed_requested t))
+            (let* ((epoch (str "cursor_native_" (hashValue (js-array identity
+                            (nativeGet endpoint "window_id") (nativeGet api "workspace_id")))))
+                   (request (Object/assign (js-object) payload
+                     (js-object :window (nativeGet endpoint "window_id") :workspace (nativeGet api "workspace_id")
+                       :call (randomUUID) :wait (Math/min 5000 (Math/max 1 (- (desktopDeadline context) 1000))))))
+                   (expression (js-call (js-call cursorMain :replace "RENDERER" (lambda () (JSON/stringify cursorRenderer)))
+                                   :replaceAll "REQUEST" (lambda () (JSON/stringify request)))))
+              (when (and (nativeGet context "expected_epoch")
+                         (not (= epoch (nativeGet context "expected_epoch"))))
+                (throw (desktopError "desktop_target_changed")))
+              (let* ((result (await (funcall call "Runtime.evaluate"
+                         (js-object :expression expression :returnByValue t :awaitPromise t))))
+                     (value (nativeGet (nativeGet result "result") "value")))
+                (when (or (nativeGet result "exceptionDetails") (not value))
+                  (throw (desktopError "cursor_native_operation")))
+                (js-object :data value :instance_epoch epoch))))
+            (finally
+              (when timer (nativeClearTimeout timer))
+              (when signal (js-call signal :removeEventListener "abort" abort))
+              (js-call ws :close)
+              (funcall fail (desktopError "desktop_closed"))))))))
+  (defasync cursorNativeRequest (endpoint payload context)
+    (let* ((key (cursorNativeUrl (nativeGet (nativeGet endpoint "native_api") "inspector_url")))
+           (queue (or (js-call cursorQueues :get key)
+                    (js-object :tail (Promise/resolve) :depth 0))))
+      (desktopDeadline context)
+      (unless (and (js-call (js-array "list" "probe" "messages" "submit") :includes (nativeGet payload "operation"))
+                   (<= (Buffer/byteLength (JSON/stringify payload)) 300000))
+        (throw (desktopError "desktop_frame_limit")))
+      (when (>= (nativeGet queue "depth") 64) (throw (desktopError "cursor_native_busy")))
+      (js-call cursorQueues :set key queue)
+      (put queue :depth (1+ (nativeGet queue "depth")))
+      (let ((operation (js-call (nativeGet queue "tail") :then (async ()
+              (desktopDeadline context)
+              (let ((ownership (js-object :issued false)))
+                (try
+                  (await (openCursorInspector endpoint context ownership))
+                  (await (cursorNativeWire endpoint payload context))
+                  (finally
+                    (when (nativeGet ownership "issued")
+                      ;; Cleanup has its own short budget: an aborted caller
+                      ;; must not leave a debugger it opened running forever.
+                      (let ((cleanup (js-object :deadline (+ (performance/now) 3000))))
+                        (await (cursorProcessInfo endpoint cleanup))
+                        (when (await (cursorInspectorListening endpoint))
+                          (await (cursorNativeWire endpoint
+                            (js-object :operation "close_owned_inspector") cleanup)))
+                        (let ((attempt 0) (listening t))
+                          (while (and listening (< attempt 30))
+                            (setq listening (await (cursorInspectorListening endpoint)))
+                            (when listening (await (new globalThis.Promise
+                              (lambda (resolve) (nativeSetTimeout resolve 25)))))
+                            (setq attempt (1+ attempt)))
+                          (when listening (throw (desktopError "cursor_inspector_close")))))))))))))
+        (put queue :tail (js-call operation :catch (lambda (error) nil)))
+        (try (await operation)
+          (finally
+            (put queue :depth (1- (nativeGet queue "depth")))
+            (when (= (nativeGet queue "depth") 0) (js-call cursorQueues :delete key)))))))
+  (export cursorNativeRequest cursorNativeUrl cursorRenderer))

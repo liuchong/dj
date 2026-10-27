@@ -1,0 +1,26 @@
+(module dj.storage.inbox
+  (import "../core/native.eli" nativeGet)
+  (import "../core/errors.eli" success failure)
+  (import "../core/limits.eli" limits)
+  (import "../application/context.eli" utcNow nextId)
+  (defun planPullEntry (context event contribution agent)
+    (let* ((repository (nativeGet context "repository")) (db (nativeGet (nativeGet context "store") "db"))
+           (subscription-id (nativeGet contribution "subscription_id")) (revision (nativeGet contribution "revision"))
+           (existing (js-call (js-call db :query
+             "SELECT payload FROM inbox_entries WHERE subscription_id=? AND revision=? AND event_id=?")
+             :get subscription-id revision (nativeGet event "event_id"))))
+      (if existing (success (JSON/parse (nativeGet existing "payload")))
+        (let* ((now (utcNow context))
+               (capacity (js-call (js-call db :query
+                 "SELECT COUNT(*) AS total,COALESCE(SUM(i.subscription_id=?),0) AS own FROM inbox_entries i JOIN subscriptions s ON s.subscription_id=i.subscription_id AND s.revision=i.revision AND s.state='active' WHERE i.state IN ('ready','claimed') AND i.expires_at>?")
+                 :get subscription-id now)))
+          (if (or (>= (nativeGet capacity "total") (nativeGet limits "global_queue"))
+                  (>= (nativeGet capacity "own") (nativeGet limits "route_queue")))
+            (failure "limit_exceeded")
+            (let ((entry (js-object :inbox_id (nextId context "inbox") :subscription_id subscription-id
+                     :revision revision :event_id (nativeGet event "event_id") :agent_id (nativeGet agent "agent_id")
+                     :state "ready" :expires_at (nativeGet contribution "expires_at")
+                     :lease_until nil :claim_principal_id nil :claim_ref nil :contribution contribution)))
+              (js-call repository :insert "inbox_entries" entry)
+              (success entry)))))))
+  (export planPullEntry))

@@ -1,0 +1,34 @@
+(module dj.ingestion.visibility
+  (import "../core/native.eli" nativeGet)
+  (import "../application/context.eli" can utcNow)
+  (import "./service.eli" allowedAddress)
+  (defun eventContentAvailable
+    (context event &optional known-connection)
+    (let
+      (
+        (connection
+          (and
+            event
+            (or known-connection
+              (js-call
+                (nativeGet context "repository")
+                :get
+                "connections"
+                (nativeGet event "connection_id"))))))
+      (and
+        event
+        connection
+        (= (nativeGet connection "connection_id") (nativeGet event "connection_id"))
+        (allowedAddress connection (nativeGet event "conversation"))
+        (=
+          (nativeGet event "identity_revision")
+          (nativeGet connection "identity_revision" (nativeGet connection "revision")))
+        (not (= (nativeGet event "tombstone") t))
+        (not (= (nativeGet (nativeGet event "content") "kind") "tombstone"))
+        (> (Date/parse (nativeGet event "body_expires_at")) (Date/parse (utcNow context))))))
+  (defun eventReadable
+    (context event)
+    (and
+      (eventContentAvailable context event)
+      (can context "message.read" (nativeGet event "conversation"))))
+  (export eventContentAvailable eventReadable))

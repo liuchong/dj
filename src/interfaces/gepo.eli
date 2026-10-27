@@ -1,0 +1,64 @@
+(module dj.interfaces.gepo
+  (import "../core/native.eli" nativeGet nativeTypeOf)
+  (import "../core/errors.eli" failure)
+  (import "../application/operations.eli" operationCatalog operationCatalogDigest)
+  (import "./api.eli" handleApiRequest jsonResponse)
+  (import "eliscript/runtime/wire/http-rpc.mjs" createService)
+
+  (defconst activeRequests (new globalThis.WeakMap))
+  (defun operationPath (name) (str "/" (js-call name :replaceAll "." "/")))
+  (defasync handleGepoRequest (request core)
+    (let ((count (or (js-call activeRequests :get core) 0)))
+      (if (>= count 32) (jsonResponse (failure "limit_exceeded") 503)
+        (progn
+          (js-call activeRequests :set core (1+ count))
+          (try
+            (let* ((headers (nativeGet request "headers"))
+                   (authorization (or (js-call headers :get "authorization") ""))
+                   (identity (js-call core :authenticate
+                     (if (js-call authorization :startsWith "Bearer ") (js-call authorization :slice 7) "")))
+                   (digest (js-call headers :get "x-dj-operation-catalog-digest")))
+              (cond
+                ((js-call headers :get "origin") (jsonResponse (failure "forbidden") 403))
+                ((not (nativeGet identity "ok")) (jsonResponse identity 401))
+                ((not (js-call (js-array "ready" "draining") :includes (js-call core :transportState)))
+                  (jsonResponse (failure "unavailable") 503))
+                ((and digest (not (= digest operationCatalogDigest))) (jsonResponse (failure "incompatible") 400))
+                (t
+                  (let* ((status (await (js-call core :execute (nativeGet identity "data") "service.status" (js-object))))
+                         (names (nativeGet (nativeGet status "data") "visible_operations")))
+                    (if (not (and (nativeGet status "ok") (Array/isArray names)))
+                      (jsonResponse (failure "unavailable") 503)
+                      (let ((visible (new globalThis.Set names)) (operations (js-array)))
+                        (js-call operationCatalog :forEach (lambda (descriptor name)
+                          (js-call operations :push (js-object :path (operationPath name) :title name
+                            :dj_operation name :summary (nativeGet descriptor "help")
+                            :contentType "application/json"
+                            :request (str "JSON object matching " (JSON/stringify (nativeGet descriptor "input_schema"))
+                              "; Bearer credential from the caller's private client profile. No GEPO wrapper.")
+                            :success (str "DJ Result matching " (JSON/stringify (nativeGet descriptor "output_schema")))
+                            :failures (js-array "HTTP 401/403 authentication/authorization; 400 malformed input or incompatible catalog; 413 byte limit."
+                              "A business error may use HTTP 200 with ok=false; inspect effect_state and the original operation.")
+                            :effect (nativeGet descriptor "effect_kind")
+                            :retry (if (= (nativeGet descriptor "idempotency") "required")
+                              "Reuse the original idempotency_key and arguments; inspect operation.get after uncertainty. Never retry POST automatically."
+                              "No automatic POST retry. This read does not create subscriptions or start Agents.")
+                            :execute (async (incoming) (await (handleApiRequest incoming core name)))))))
+                        (let* ((serve (createService (js-object :title "DJ" :operations operations
+                                 :visible (lambda (incoming operation)
+                                   (js-call visible :has (nativeGet operation "dj_operation"))))))
+                               (response (await (funcall serve request))))
+                          (js-call (nativeGet response "headers") :set "x-dj-api-version" "1")
+                          (js-call (nativeGet response "headers") :set "x-dj-operation-catalog-digest" operationCatalogDigest)
+                          response)))))))
+            (catch unavailable (jsonResponse (failure "internal_error" (js-object
+              :effect_state (if (= (nativeGet request "method") "POST") "unknown" "none")
+              :warnings (if (= (nativeGet request "method") "POST")
+                (js-array "inspect_original_operation_before_retry") (js-array)))) 500))
+            (finally (js-call activeRequests :set core
+              (Math/max 0 (1- (or (js-call activeRequests :get core) 1))))))))))
+  (defasync handleServiceRequest (request core)
+    (if (= (nativeGet (new globalThis.URL (nativeGet request "url")) "pathname") "/v1/operations")
+      (await (handleApiRequest request core))
+      (await (handleGepoRequest request core))))
+  (export operationPath handleGepoRequest handleServiceRequest))

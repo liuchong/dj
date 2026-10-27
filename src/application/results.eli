@@ -1,0 +1,1030 @@
+(module dj.application.results
+  (import "../core/native.eli" NativeNumber nativeTypeOf nativeGet)
+  (import "../core/limits.eli" limits)
+  (import "../core/instructions.eli" instructionPolicySchema)
+  ;; Wire schemas describe safe projections. Storage records are never returned
+  ;; wholesale; each business handler must independently project current grants.
+  (defconst stringSchema (js-object :type "string"))
+  (defconst nullableString (js-object :type (js-array "string" "null")))
+  (defconst integerSchema
+    (js-object :type "integer" :minimum 0 :maximum (nativeGet NativeNumber "MAX_SAFE_INTEGER")))
+  (defconst boolSchema (js-object :type "boolean"))
+  (defun arr (item) (js-object :type "array" :items item))
+  (defun ref (name) (js-object :$ref (str "#/$defs/" name)))
+  (defun obj
+    (properties &optional required)
+    (js-object
+      :type
+      "object"
+      :properties
+      properties
+      :additionalProperties
+      false
+      :required
+      (or required (js-array))))
+  (defun nullable
+    (schema)
+    (js-object :anyOf (js-array schema (js-object :type "null"))))
+  (defun strings
+    (names &optional properties)
+    (let ((result (or properties (js-object))))
+      (js-call
+        (js-call names :split " ")
+        :forEach
+        (lambda (name) (when (> (js-length name) 0) (put result name stringSchema))))
+      result))
+  (defun addTypedFields
+    (properties names schema)
+    (js-call
+      (js-call names :split " ")
+      :forEach
+      (lambda (name) (when (> (js-length name) 0) (put properties name schema))))
+    properties)
+  (defconst definitions (js-object))
+  (put definitions :resource (obj (strings "kind id") (js-array "kind" "id")))
+  (put
+    definitions
+    :field_error
+    (obj
+      (strings "pointer code expected received_type")
+      (js-array "pointer" "code" "expected" "received_type")))
+  (put
+    definitions
+    :address
+    (obj
+      (js-object
+        :connection_id
+        stringSchema
+        :native_chat_id
+        stringSchema
+        :native_thread_id
+        nullableString
+        :thread_kind
+        stringSchema
+        :include_threads
+        boolSchema
+        :source_revision
+        (js-object :type (js-array "string" "integer")))))
+  (put
+    definitions
+    :delivery_source
+    (obj
+      (strings
+        "kind connection_id native_chat_id thread_kind native_message_id"
+        (js-object :native_thread_id nullableString))))
+  (put
+    definitions
+    :content
+    (obj
+      (js-object
+        :message_ref stringSchema
+        :type
+        stringSchema
+        :kind
+        stringSchema
+        :text
+        stringSchema
+        :truncated
+        boolSchema
+        :original_bytes
+        integerSchema)))
+  (put
+    definitions
+    :sender
+    (obj (strings "id kind display_name principal_id principal_kind")))
+  (put
+    definitions
+    :capability
+    (obj
+      (js-object
+        :status
+        stringSchema
+        :evidence_kind
+        stringSchema
+        :checked_at
+        stringSchema
+        :limitations
+        (arr stringSchema))))
+  (let ((properties (js-object)))
+    (js-call
+      (js-call
+        "receive_events send reply_thread replay native_history session_create session_send session_list session_messages session_probe instance_start instance_stop native_idempotency lookup_send lookup_create observe live_receiver managed_rpc start_idle"
+        :split
+        " ")
+      :forEach
+      (lambda
+        (name)
+        (put
+          properties
+          name
+          (js-object :anyOf (js-array stringSchema (ref "capability"))))))
+    (put properties :ack_control boolSchema)
+    (js-call
+      (js-array "max_text_bytes" "max_text_characters" "max_input_frame_bytes")
+      :forEach
+      (lambda (name) (put properties name integerSchema)))
+    (put definitions :capabilities (obj properties)))
+  (put
+    definitions
+    :source_health
+    (obj
+      (addTypedFields
+        (addTypedFields
+          (strings
+            "state gap_status last_success_at next_due_at identity_revision completed_until window_start window_end reason")
+          "pending_watches active_reads retry_count watch_count lag_seconds"
+          integerSchema)
+        "ack_control ready"
+        boolSchema)))
+  (put
+    (nativeGet (nativeGet definitions "source_health") "properties")
+    :reason_codes
+    (arr stringSchema))
+  (put
+    definitions
+    :coverage
+    (obj
+      (js-object
+        :source_id
+        stringSchema
+        :instance_id
+        stringSchema
+        :connection_id
+        stringSchema
+        :tool
+        stringSchema
+        :coverage
+        stringSchema
+        :state
+        stringSchema
+        :reason
+        stringSchema
+        :last_observed_at
+        nullableString
+        :fields
+        (arr stringSchema)
+        :limitations
+        (arr stringSchema)
+        :include_content
+        boolSchema
+        :complete
+        boolSchema
+        :checked_at
+        nullableString
+        :content_range
+        (nullable (obj (strings "from to"))))))
+  (put
+    definitions
+    :receipt
+    (obj
+      (strings
+        "receipt_id kind evidence_level native_ref attempt_id received_at"
+        (js-object :definite_not_sent boolSchema :retryable boolSchema))))
+  (put
+    definitions
+    :attachment
+    (obj
+      (strings
+        "attachment_id kind file_name mime_type native_handle_ref"
+        (js-object :size_bytes integerSchema))))
+  (put
+    definitions
+    :part
+    (obj
+      (strings
+        "part_id dispatch_key state native_message_id"
+        (js-object
+          :revision
+          integerSchema
+          :native_ref
+          nullableString
+          :definite_not_sent
+          boolSchema))))
+  (put
+    definitions
+    :contribution
+    (obj
+      (strings
+        "delivery_id subscription_id expires_at state"
+        (js-object
+          :revision
+          integerSchema
+          :subscription_revision
+          integerSchema
+          :context_policy
+          (ref "context_policy")
+          :delivery_policy
+          (ref "delivery_policy")))))
+  (put
+    definitions
+    :context_policy
+    (obj
+      (js-object :mode stringSchema :max_events integerSchema :max_bytes integerSchema)))
+  (put
+    definitions
+    :delivery_policy
+    (obj
+      (js-object :busy stringSchema :offline stringSchema :ttl_seconds integerSchema)))
+  (put
+    definitions
+    :source
+    (obj (js-object :conversation_ref stringSchema :include_threads boolSchema)))
+  (put
+    definitions
+    :selector
+    (obj (js-object :sources (arr (ref "source")) :event_kinds (arr stringSchema))))
+  (put
+    definitions
+    :predicate
+    (js-object
+      :oneOf
+      (js-array
+        (obj (js-object :all (arr (ref "predicate"))) (js-array "all"))
+        (obj (js-object :any (arr (ref "predicate"))) (js-array "any"))
+        (obj (js-object :not (ref "predicate")) (js-array "not"))
+        (obj
+          (js-object
+            :field
+            stringSchema
+            :op
+            stringSchema
+            :value
+            (js-object
+              :anyOf
+              (js-array
+                stringSchema
+                boolSchema
+                (arr (js-object :type (js-array "string" "boolean"))))))
+          (js-array "field" "op" "value")))))
+  (put
+    definitions
+    :spec
+    (obj
+      (js-object
+        :agent_id
+        stringSchema
+        :selector
+        (ref "selector")
+        :predicate
+        (ref "predicate")
+        :context_policy
+        (ref "context_policy")
+        :delivery_policy
+        (ref "delivery_policy")
+        :instruction_policy
+        instructionPolicySchema
+        :delivery_mode stringSchema
+        :start
+        stringSchema)))
+  (put definitions :issue (obj (strings "code pointer message")))
+  (put
+    definitions
+    :sample
+    (obj (strings "event_id result" (js-object :reason_codes (arr stringSchema)))))
+  (put
+    definitions
+    :refresh_budget
+    (obj
+      (js-object
+        :max_records
+        integerSchema
+        :max_messages
+        integerSchema
+        :max_bytes
+        integerSchema
+        :max_seconds
+        integerSchema)))
+  (put
+    definitions
+    :scope
+    (obj
+      (js-object
+        :tools
+        (arr stringSchema)
+        :instance_ids
+        (arr stringSchema)
+        :workspace_refs
+        (arr stringSchema)
+        :agent_ids
+        (arr stringSchema)
+        :session_keys
+        (arr stringSchema)
+        :visibility
+        (arr stringSchema)
+        :runtime_states
+        (arr stringSchema)
+        :registered
+        boolSchema
+        :updated_range
+        (obj (strings "from to")))))
+  (put
+    definitions
+    :progress
+    (obj
+      (addTypedFields
+        (js-object)
+        "consumed_records consumed_messages consumed_bytes metadata_count content_index_bytes pending_native_work held_deliveries queued ready deferred blocked unknown deliveries events subscriptions targets connections"
+        integerSchema)))
+  (let ((properties (js-object)))
+    (js-call
+      (Object/keys limits)
+      :forEach
+      (lambda (name) (put properties name integerSchema)))
+    (put definitions :limits (obj properties)))
+  (put
+    definitions
+    :snippet
+    (obj
+      (strings
+        "field text session_message_ref content_version"
+        (js-object
+          :offset_bytes
+          integerSchema
+          :end_offset_bytes
+          integerSchema
+          :truncated
+          boolSchema))))
+  (put
+    definitions
+    :binding
+    (obj
+      (strings
+        "binding_id route_id adapter_id adapter_version instance_id instance_epoch verified_at expires_at runtime_state"
+        (js-object :agent_id nullableString :capabilities (ref "capabilities")))))
+  (put
+    definitions
+    :session
+    (obj
+      (addTypedFields
+        (addTypedFields
+          (strings
+            "session_key session_ref tool native_namespace native_session_id instance_id instance_epoch title workspace_ref workspace_label runtime_state created_at updated_at observed_at expires_at created_by coverage"
+            (js-object
+              :agent_id
+              nullableString
+              :visibility
+              (arr stringSchema)
+              :capabilities
+              (ref "capabilities")
+              :observations
+              (arr (ref "coverage"))
+              :matched_fields
+              (arr stringSchema)
+              :snippets
+              (arr (ref "snippet"))))
+          "registered live_receiver stale coverage_complete"
+          boolSchema)
+        "revision"
+        integerSchema)))
+  (put
+    definitions
+    :instance
+    (obj
+      (strings
+        "instance_id tool tool_id native_namespace instance_epoch ownership profile_id state created_at checked_at"
+        (js-object
+          :revision
+          integerSchema
+          :profile_revision
+          integerSchema
+          :workspace_refs
+          (arr stringSchema)
+          :capabilities
+          (ref "capabilities")
+          :sources
+          (arr (ref "coverage"))
+          :live_receiver
+          boolSchema))))
+  (put
+    definitions
+    :profile
+    (obj
+      (strings
+        "profile_id tool display_name"
+        (js-object
+          :revision
+          integerSchema
+          :workspace_refs
+          (arr stringSchema)
+          :actions
+          (arr stringSchema)
+          :auto_start
+          boolSchema))))
+  (put
+    definitions
+    :tool
+    (obj
+      (strings
+        "tool_id adapter_id adapter_version adapter_state version"
+        (js-object
+          :configured
+          boolSchema
+          :installed
+          boolSchema
+          :capabilities
+          (ref "capabilities")
+          :limitations
+          (arr stringSchema)))))
+  (put
+    definitions
+    :connection
+    (obj
+      (strings
+        "connection_id platform tenant_ref account_ref display_name brand identity source_delivery state"
+        (js-object
+          :revision
+          integerSchema
+          :source_health
+          (ref "source_health")
+          :capabilities
+          (ref "capabilities")
+          :event_source
+          (obj (js-object :state stringSchema :reason nullableString :identity stringSchema :send_identity stringSchema :native_code integerSchema :transport stringSchema :coverage stringSchema :last_received_at nullableString :missing_scopes (arr stringSchema) :console_url nullableString :required_events (arr stringSchema)))
+          :credential_state
+          stringSchema
+          :checked_at
+          stringSchema))))
+  (put
+    definitions
+    :conversation
+    (obj
+      (strings
+        "conversation_ref display_name expires_at"
+        (js-object
+          :address
+          (ref "address")
+          :source_revision
+          (js-object :type (js-array "integer" "string"))))))
+  (put
+    definitions
+    :candidate
+    (obj
+      (strings
+        "candidate_ref tool surface native_namespace native_session_id scope runtime_state expires_at instance_id instance_epoch"
+        (js-object
+          :live_receiver
+          boolSchema
+          :capabilities
+          (ref "capabilities")
+          :target_summary
+          (ref "session")))))
+  (put
+    definitions
+    :agent
+    (obj
+      (strings
+        "agent_id route_id owner_principal_id recipient_principal_id tool surface display_name native_namespace native_session_id canonical_target_key binding_mode state runtime_state"
+        (js-object
+          :revision
+          integerSchema
+          :binding
+          (nullable (ref "binding"))
+          :capabilities
+          (ref "capabilities")
+          :live_receiver
+          boolSchema
+          :closed
+          boolSchema
+          :revoked_contributions
+          integerSchema
+          :paused_subscriptions
+          integerSchema))))
+  (put
+    definitions
+    :subscription
+    (obj
+      (strings
+        "subscription_id owner_principal_id agent_id start_seq state"
+        (js-object
+          :cutover_seq nullableString
+          :revision
+          integerSchema
+          :selector
+          (ref "selector")
+          :resolved_sources
+          (arr (ref "address"))
+          :predicate
+          (ref "predicate")
+          :context_policy
+          (ref "context_policy")
+          :delivery_policy
+          (ref "delivery_policy")
+          :instruction_policy
+          instructionPolicySchema
+          :delivery_mode stringSchema
+          :submitted_count
+          integerSchema))))
+  (put definitions :inbox_envelope (obj (js-object
+    :schema_version integerSchema :kind stringSchema :origin stringSchema
+    :delivery_id nullableString :inbox_id stringSchema :event_id stringSchema
+    :source (ref "delivery_source") :sender (ref "sender") :content (ref "content")
+    :attachments (arr (ref "attachment")) :reply_context_id nullableString :allowed_actions (arr stringSchema)
+    :matched (arr (obj (js-object :subscription_id stringSchema :subscription_revision integerSchema :result stringSchema)))
+    :instructions (arr (obj (js-object :subscription_id stringSchema :subscription_revision integerSchema
+      :prompt stringSchema :task_template stringSchema :task stringSchema))))))
+  (put definitions :inbox (obj (strings "operation_id inbox_id subscription_id event_id state expires_at claim_ref lease_until"
+    (js-object :envelope (ref "inbox_envelope")))))
+  (put definitions :inbox_pull (obj (strings "operation_id state pull_id subscription_id"
+    (js-object :empty boolSchema :more boolSchema :item (ref "inbox")))))
+  (put
+    definitions
+    :preview
+    (obj
+      (strings
+        "preview_id expires_at subscription_id spec_hash"
+        (js-object
+          :expected_revision
+          integerSchema
+          :normalized_spec
+          (ref "spec")
+          :resolved_sources
+          (arr (ref "address"))
+          :target
+          (ref "agent")
+          :warnings
+          (arr (ref "issue"))
+          :blocking_issues
+          (arr (ref "issue"))
+          :samples
+          (arr (ref "sample"))))))
+  (put
+    definitions
+    :message
+    (obj
+      (strings
+        "event_id message_ref session_message_ref native_message_id native_session_id session_key content_version event_kind source_revision connection_id received_at source_time text role created_at"
+        (js-object
+          :conversation
+          (ref "address")
+          :sender
+          (ref "sender")
+          :content
+          (ref "content")
+          :attachments
+          (arr (ref "attachment"))
+          :ingress_seq
+          stringSchema
+          :deleted
+          boolSchema
+          :expired
+          boolSchema
+          :truncated
+          boolSchema
+          :original_bytes
+          integerSchema
+          :offset_bytes
+          integerSchema
+          :next_offset_bytes
+          integerSchema
+          :total_bytes
+          integerSchema
+          :complete
+          boolSchema
+          :corpus
+          stringSchema
+          :matched_fields
+          (arr stringSchema)
+          :snippets
+          (arr (ref "snippet"))))))
+  (put
+    definitions
+    :delivery
+    (obj
+      (strings
+        "delivery_id route_id origin delivery_seq state expires_at operation_id principal_id"
+        (js-object
+          :agent_id
+          nullableString
+          :event_id
+          nullableString
+          :session_key
+          nullableString
+          :revision
+          integerSchema
+          :native_ref
+          nullableString
+          :reply_context_id
+          nullableString
+          :allowed_actions
+          (arr stringSchema)
+          :contributions
+          (arr (ref "contribution"))
+          :receipts
+          (arr (ref "receipt"))
+          :warnings
+          (arr (ref "issue"))
+          :content
+          (ref "content")
+          :source
+          (ref "delivery_source")
+          :delivery_policy
+          (ref "delivery_policy")
+          :retryable
+          boolSchema
+          :definite_not_sent
+          boolSchema
+          :partial
+          boolSchema
+          :resolution
+          stringSchema
+          :evidence_level
+          stringSchema))))
+  (put
+    definitions
+    :outbound
+    (obj
+      (strings
+        "outbound_id principal_id state operation_id created_at"
+        (js-object
+          :revision
+          integerSchema
+          :reply_context_id
+          nullableString
+          :destination
+          (ref "address")
+          :content
+          (ref "content")
+          :parts
+          (arr (ref "part"))
+          :native_message_ids
+          (arr stringSchema)
+          :receipts
+          (arr (ref "receipt"))
+          :retryable
+          boolSchema
+          :definite_not_sent
+          boolSchema
+          :partial
+          boolSchema
+          :resolution
+          stringSchema))))
+  (put
+    definitions
+    :catalog
+    (obj
+      (strings
+        "catalog_run_id state created_at completed_at coverage"
+        (js-object
+          :revision
+          integerSchema
+          :scope
+          (ref "scope")
+          :include_content
+          boolSchema
+          :budget
+          (ref "refresh_budget")
+          :continuation
+          nullableString
+          :progress
+          (ref "progress")
+          :consumed_records
+          integerSchema
+          :consumed_messages
+          integerSchema
+          :consumed_bytes
+          integerSchema
+          :sources
+          (arr (ref "coverage"))
+          :coverage_complete
+          boolSchema
+          :capacity_exceeded
+          boolSchema
+          :reason
+          nullableString))))
+  (put
+    definitions
+    :lifecycle
+    (obj
+      (strings
+        "lifecycle_id action kind state instance_id instance_epoch profile_id created_at operation_id"
+        (js-object
+          :revision
+          integerSchema
+          :initial_session_key
+          nullableString
+          :session_key
+          nullableString
+          :session_ref
+          nullableString
+          :instance
+          (ref "instance")
+          :current_instance
+          (ref "instance")
+          :receipts
+          (arr (ref "receipt"))
+          :deadline_reached
+          boolSchema
+          :absence_verified
+          boolSchema
+          :evidence_level
+          stringSchema
+          :resolution
+          stringSchema))))
+  (put
+    definitions
+    :principal
+    (obj
+      (strings
+        "principal_id kind binding_state"
+        (js-object :bound_agent_id nullableString :authorization_revision integerSchema))))
+  (put
+    definitions
+    :operation
+    (obj
+      (strings
+        "operation_id principal_id operation state created_at result_expires_at"
+        (js-object
+          :resource_refs
+          (arr (ref "resource"))
+          :safe_result
+          (nullable (ref "result"))))))
+  (put
+    definitions
+    :routing_metrics
+    (obj
+      (js-object
+        :lost_routing_work
+        integerSchema
+        :samples
+        integerSchema
+        :max_candidates_observed
+        integerSchema
+        :max_match_batch_candidates
+        integerSchema
+        :bounded_candidate_cpu_p95_ms
+        (js-object :type "number" :minimum 0)
+        :batch_wall_p50_ms
+        (js-object :type "number" :minimum 0)
+        :batch_wall_p95_ms
+        (js-object :type "number" :minimum 0)
+        :batch_wall_p99_ms
+        (js-object :type "number" :minimum 0))))
+  (put
+    definitions
+    :catalog_metrics
+    (obj
+      (js-object
+        :metadata_count
+        integerSchema
+        :body_and_index_bytes
+        integerSchema
+        :active_snapshots
+        integerSchema)))
+  (put
+    definitions
+    :storage_metrics
+    (obj
+      (strings
+        "sqlite_version"
+        (js-object
+          :live_bytes
+          integerSchema
+          :allocated_bytes
+          integerSchema
+          :maximum_bytes
+          integerSchema
+          :reserve_bytes
+          integerSchema
+          :checkpoint
+          (obj
+            (strings
+              "mode"
+              (js-object
+                :busy
+                integerSchema
+                :wal_frames
+                (js-object :type "integer")
+                :checkpointed_frames
+                (js-object :type "integer")
+                :duration_ms
+                (js-object :type "number" :minimum 0))))))))
+  (put
+    definitions
+    :status
+    (obj
+      (strings
+        "api_version build_id operation_catalog_digest service_id state"
+        (js-object
+          :visible_operations
+          (arr stringSchema)
+          :ai_enabled
+          boolSchema
+          :model_requests
+          integerSchema
+          :embedding_requests
+          integerSchema
+          :limits
+          (ref "limits")
+          :sources
+          (arr (ref "connection"))
+          :targets
+          (arr (ref "agent"))
+          :queues
+          (ref "progress")
+          :catalog
+          (ref "progress")
+          :pending_native_work
+          integerSchema
+          :held_deliveries
+          integerSchema
+          :deadline_reached
+          boolSchema
+          :unknown_refs
+          (arr (ref "resource"))
+          :routing_metrics
+          (ref "routing_metrics")
+          :catalog_metrics
+          (ref "catalog_metrics")
+          :storage_metrics
+          (ref "storage_metrics")))))
+  (put
+    definitions
+    :action
+    (obj
+      (strings
+        "operation"
+        (js-object
+          :arguments
+          (obj
+            (strings
+              "operation_id delivery_id outbound_id lifecycle_id subscription_id agent_id session_key session_ref catalog_run_id"))
+          :requires_user_decision
+          boolSchema))))
+  (put
+    definitions
+    :error
+    (obj
+      (js-object
+        :code
+        stringSchema
+        :message
+        stringSchema
+        :retryable
+        boolSchema
+        :details
+        (obj
+          (strings
+            "reason state operation_id delivery_id outbound_id lifecycle_id expected_kind capability"
+            (js-object
+              :resource_refs
+              (arr (ref "resource"))
+              :expected_revision
+              integerSchema
+              :current_revision
+              integerSchema)))
+        :field_errors
+        (arr (ref "field_error"))
+        :next_actions
+        (arr (ref "action")))
+      (js-array "code" "message" "retryable" "details" "field_errors" "next_actions")))
+  (defun pageSchema
+    (name)
+    (obj
+      (js-object
+        :items
+        (arr (ref name))
+        :next_cursor
+        nullableString
+        :complete
+        boolSchema
+        :snapshot_id
+        stringSchema
+        :as_of
+        stringSchema
+        :coverage_complete
+        boolSchema
+        :sources
+        (arr (ref "coverage"))
+        :stale
+        boolSchema)
+      (js-array "items" "next_cursor" "complete")))
+  (defun dataSchemaFor
+    (operation kind)
+    (cond ((= operation "service.status") (ref "status"))
+      ((= operation "operation.get") (ref "operation"))
+      ((= operation "agent.whoami") (ref "principal"))
+      ((= operation "subscription.preview") (ref "preview"))
+      ((= operation "agent.discover") (pageSchema "candidate"))
+      (
+        (js-call
+          (js-array
+            "message.list"
+            "message.search"
+            "session.message.list"
+            "session.message.search")
+          :includes
+          operation)
+        (pageSchema "message"))
+      ((js-call (js-array "message.get" "session.message.get") :includes operation)
+        (ref "message"))
+      ((or (js-call operation :endsWith ".list") (= operation "session.search"))
+        (pageSchema kind))
+      (t (ref kind))))
+  (defun envelopeSchema
+    (data)
+    (let*
+      (
+        (common
+          (js-object
+            :request_id
+            nullableString
+            :operation_id
+            stringSchema
+            :warnings
+            (arr (js-object :anyOf (js-array stringSchema (ref "issue"))))
+            :evidence_level
+            (js-object
+              :enum
+              (js-array
+                "none"
+                "service_record"
+                "native_protocol"
+                "agent_report"
+                "manual"))
+            :effect_state
+            (js-object :enum (js-array "none" "recorded" "external_accepted" "unknown"))))
+        (required
+          (js-array "ok" "request_id" "warnings" "evidence_level" "effect_state")))
+      (js-object
+        :type
+        "object"
+        :oneOf
+        (js-array
+          (obj
+            (Object/assign (js-object :ok (js-object :const t) :data data) common)
+            (js-call required :concat (js-array "data")))
+          (obj
+            (Object/assign
+              (js-object :ok (js-object :const false) :error (ref "error"))
+              common)
+            (js-call required :concat (js-array "error")))))))
+  (put
+    definitions
+    :result
+    (envelopeSchema
+      (js-object
+        :anyOf
+        (js-call
+          (js-array
+            "session"
+            "instance"
+            "profile"
+            "tool"
+            "connection"
+            "conversation"
+            "candidate"
+            "agent"
+            "subscription"
+            "preview"
+            "message"
+            "delivery"
+            "outbound"
+            "catalog"
+            "lifecycle"
+            "principal"
+            "operation"
+            "status")
+          :map
+          ref))))
+  (defun reachableDefinitions
+    (root)
+    (let ((queue (js-array)) (seen (new globalThis.Set)) (result (js-object)) (index 0))
+      (let ((visit nil))
+        (setq
+          visit
+          (lambda
+            (value)
+            (when (and value (= (nativeTypeOf value) "object"))
+              (if (Array/isArray value)
+                (js-call value :forEach visit)
+                (progn
+                  (let ((reference (nativeGet value "$ref")))
+                    (when
+                      (and
+                        (= (nativeTypeOf reference) "string")
+                        (js-call reference :startsWith "#/$defs/"))
+                      (let ((name (js-call reference :slice 8)))
+                        (unless (js-call seen :has name)
+                          (js-call seen :add name)
+                          (js-call queue :push name)))))
+                  (js-call (Object/values value) :forEach visit))))))
+        (visit root)
+        (while (< index (js-length queue))
+          (let* ((name (aref queue index)) (definition (nativeGet definitions name)))
+            (unless definition
+              (throw (new globalThis.TypeError "unknown result-schema definition")))
+            (put result name definition)
+            (visit definition))
+          (setq index (1+ index)))
+        result)))
+  (defun resultSchemaFor
+    (operation kind)
+    (let ((root (envelopeSchema (dataSchemaFor operation kind))))
+      (Object/assign
+        (js-object
+          :$schema
+          "https://json-schema.org/draft/2020-12/schema"
+          :$defs
+          (reachableDefinitions root))
+        root)))
+  (export resultSchemaFor))

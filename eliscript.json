@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 2,
+  "sourceRoot": ".",
+  "entries": [
+    "src/service/main.eli",
+    "src/interfaces/cli.eli",
+    "src/interfaces/mcp.eli",
+    "src/library.eli",
+    "src/connectors/pi.eli"
+  ],
+  "outDir": "dist"
+}

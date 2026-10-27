@@ -1,0 +1,507 @@
+(module
+  dj.tests.integration.pi-observer
+  (import "../../src/core/native.eli" nativeGet)
+  (import "../../tools/pi-observer.eli" observePiLog)
+  (import
+    "../../tools/native-observer-controller.eli"
+    loadPiObserverBinding
+    loadNativeObserverBinding
+    readPiSnapshot
+    readNativeObserverRequest)
+  (import
+    "../support/pi-observer.eli"
+    piTestBinding
+    piTestRequest
+    piTestEnvelope
+    piTestUser
+    piTestAssistant
+    piTestSnapshot
+    piTestNoise
+    nativeTestBinding)
+  (import "../support/case.eli" withCase)
+  (import "node:fs" mkdirSync writeFileSync readFileSync appendFileSync chmodSync symlinkSync renameSync truncateSync rmSync)
+  (import "node:fs/promises" lstat open)
+  (import "node:path" resolve)
+  (import "node:crypto" randomUUID)
+  (import "bun:test" expect)
+  (defasync
+    poReject
+    (thunk)
+    (let* ((failed false)) (try (await (funcall thunk)) (catch failure (setq failed t))) failed))
+  (defasync
+    poCli
+    (root input)
+    (let*
+      ((child
+        (Bun/spawn
+          (js-array
+            (nativeGet globalThis.process "execPath")
+            (resolve "dist-tools/tools/native-observer-controller.mjs")
+            "native.json")
+          (js-object :cwd root :stdin (new globalThis.Blob (js-array input)) :stdout "pipe" :stderr "pipe")))
+        (values
+          (await
+            (Promise/all
+              (js-array
+                (js-call (new globalThis.Response (nativeGet child "stdout")) :text)
+                (js-call (new globalThis.Response (nativeGet child "stderr")) :text)
+                (nativeGet child "exited"))))))
+      (js-object :stdout (aref values 0) :stderr (aref values 1) :code (aref values 2))))
+  (withCase
+    "T38.pi-observer.integration"
+    (lambda () nil)
+    (async
+      (unused)
+      (let*
+        ((root (resolve ".local/tests" (str "pi-observer-" (randomUUID))))
+          (pi-binding (piTestBinding root))
+          (target (aref (nativeGet pi-binding "targets") 0))
+          (log (nativeGet target "log_path"))
+          (request (piTestRequest "observe-native-start"))
+          (user (piTestUser "user-1" nil "subscription_event"))
+          (assistant (piTestAssistant "assistant-1" "user-1"))
+          (snapshot (piTestSnapshot (js-array user assistant) root))
+          (server nil)
+          (http-calls (js-array)))
+        (try
+          (mkdirSync root (js-object :mode 448))
+          (writeFileSync
+            log
+            (str (nativeGet snapshot "header_text") "\n" (nativeGet snapshot "entries_text"))
+            (js-object :mode 420))
+          (writeFileSync (resolve root "pi.json") (JSON/stringify pi-binding) (js-object :mode 384))
+          (writeFileSync (resolve root "native.json") (JSON/stringify (nativeTestBinding)) (js-object :mode 384))
+          (let*
+            ((b (await (loadPiObserverBinding root "pi.json")))
+              (n (await (loadNativeObserverBinding root "native.json")))
+              (loaded (await (readPiSnapshot target)))
+              (response (observePiLog request b loaded)))
+            (js-call (expect (nativeGet response "ok")) :toBe t)
+            (js-call (expect (nativeGet loaded "prefix_truncated")) :toBe false)
+            (js-call (expect (nativeGet loaded "trailing_fragment_discarded")) :toBe false)
+            (js-call (expect (nativeGet n "pi_binding_ref")) :toBe "pi.json")
+            (js-call (expect (Object/isFrozen (nativeGet b "targets"))) :toBe t))
+          (let*
+            ((result (await (poCli root (JSON/stringify request)))) (response (JSON/parse (nativeGet result "stdout"))))
+            (js-call (expect (nativeGet result "code")) :toBe 0)
+            (js-call (expect (nativeGet result "stderr")) :toBe "")
+            (js-call (expect (nativeGet response "request_id")) :toBe "req-po")
+            (js-call (expect (nativeGet response "operation")) :toBe "observe-native-start")
+            (js-call (expect (nativeGet (nativeGet response "data") "native_event_id")) :toBe "assistant-1")
+            (js-call (expect (js-call (nativeGet result "stdout") :includes root)) :toBe false)
+            (js-call (expect (js-call (nativeGet result "stdout") :includes "body-hidden")) :toBe false))
+          (appendFileSync log (Buffer/from (js-array 230 177)))
+          (let*
+            ((loaded (await (readPiSnapshot target))))
+            (js-call (expect (nativeGet loaded "trailing_fragment_discarded")) :toBe t)
+            (js-call (expect (nativeGet (observePiLog request pi-binding loaded) "ok")) :toBe t))
+          (writeFileSync
+            log
+            (str (nativeGet snapshot "header_text") "\n" (nativeGet snapshot "entries_text"))
+            (js-object :mode 420))
+          (appendFileSync log (Buffer/from (js-array 255 10)))
+          (js-call (expect (await (poReject (lambda () (readPiSnapshot target))))) :toBe t)
+          (let*
+            ((first (str (JSON/stringify user) "\n"))
+              (last (str (JSON/stringify assistant) "\n"))
+              (padding (Array/from (js-object :length 9) (lambda (unused i) (piTestNoise (str "large_" i)))))
+              (overhead
+                (Buffer/byteLength
+                  (str first last (js-call (js-call padding :map (lambda (row) (str (JSON/stringify row) "\n"))) :join ""))
+                  "utf8"))
+              (remaining (- 8388608 overhead))
+              (each (Math/floor (/ remaining 9))))
+            (js-call
+              padding
+              :forEach
+              (lambda (row i) (put row :data (js-call "x" :repeat (+ each (if (= i 8) (- remaining (* each 9)) 0))))))
+            (let*
+              ((tail (str first (js-call (js-call padding :map (lambda (row) (str (JSON/stringify row) "\n"))) :join "") last))
+              )
+              (js-call (expect (Buffer/byteLength tail "utf8")) :toBe 8388608)
+              (writeFileSync
+                log
+                (str (nativeGet snapshot "header_text") "\n" (JSON/stringify (piTestNoise "old-prefix")) "\n" tail)
+                (js-object :mode 420))
+              (let*
+                ((loaded (await (readPiSnapshot target))))
+                (js-call (expect (nativeGet loaded "prefix_truncated")) :toBe t)
+                (js-call (expect (js-call (nativeGet loaded "entries_text") :startsWith first)) :toBe t)
+                (js-call (expect (nativeGet (observePiLog request pi-binding loaded) "ok")) :toBe t))))
+          (let*
+            ((old (piTestNoise "old-unicode")))
+            (put old :data (js-call (String/fromCodePoint 27721) :repeat 3000000))
+            (let* ((raw (Buffer/from (str (nativeGet snapshot "header_text") "\n" (JSON/stringify old) "\n" (nativeGet snapshot "entries_text")) "utf8"))
+                   (tail-start (- (nativeGet raw "length") 8388608)))
+              (js-call (expect (> tail-start (Buffer/byteLength (nativeGet snapshot "header_text") "utf8"))) :toBe t)
+              (js-call (expect (= (aref raw (- tail-start 1)) 10)) :toBe false)
+              (writeFileSync log raw (js-object :mode 420)))
+            (let*
+              ((loaded (await (readPiSnapshot target))))
+              (js-call (expect (nativeGet loaded "prefix_truncated")) :toBe t)
+              (js-call (expect (nativeGet loaded "entries_text")) :toBe (nativeGet snapshot "entries_text"))
+              (js-call (expect (nativeGet (observePiLog request pi-binding loaded) "ok")) :toBe t)))
+          (writeFileSync
+            log
+            (str (nativeGet snapshot "header_text") "\n" (nativeGet snapshot "entries_text"))
+            (js-object :mode 420))
+          (chmodSync log 438)
+          (js-call (expect (await (poReject (lambda () (readPiSnapshot target))))) :toBe t)
+          (chmodSync log 420)
+          (symlinkSync log (resolve root "link.jsonl"))
+          (let*
+            ((bad (Object/assign (js-object) target (js-object :log_path (resolve root "link.jsonl")))))
+            (js-call (expect (await (poReject (lambda () (readPiSnapshot bad))))) :toBe t))
+          (writeFileSync
+            log
+            (str (nativeGet snapshot "header_text") "\n" (nativeGet snapshot "entries_text"))
+            (js-object :mode 420))
+          (let*
+            ((closed false)
+              (opened false)
+              (reads 0)
+              (times 0)
+              (ports
+                (js-object
+                  :lstat
+                  lstat
+                  :open
+                  (async
+                    (path flags)
+                    (let*
+                      ((h (await (open path flags))))
+                      (setq opened t)
+                      (js-object
+                        :stat
+                        (async (options) (js-call h :stat options))
+                        :read
+                        (async
+                          (buffer offset length position)
+                          (let*
+                            ((part (await (js-call h :read buffer offset length position))))
+                            (setq reads (1+ reads))
+                            (when (= reads 2) (appendFileSync path (str (JSON/stringify (piTestNoise "race")) "\n")))
+                            part))
+                        :close
+                        (async () (setq closed t) (await (js-call h :close))))))
+                  :now
+                  (lambda () 0))))
+            (js-call (expect (await (poReject (lambda () (readPiSnapshot target ports))))) :toBe t)
+            (js-call (expect closed) :toBe t))
+          (writeFileSync
+            log
+            (str (nativeGet snapshot "header_text") "\n" (nativeGet snapshot "entries_text"))
+            (js-object :mode 420))
+          (let*
+            ((closed false)
+              (opened false)
+              (reads 0)
+              (times 0)
+              (ports
+                (js-object
+                  :lstat
+                  lstat
+                  :open
+                  (async
+                    (path flags)
+                    (let*
+                      ((h (await (open path flags))))
+                      (setq opened t)
+                      (js-object
+                        :stat
+                        (async (options) (js-call h :stat options))
+                        :read
+                        (async
+                          (buffer offset length position)
+                          (let*
+                            ((part (await (js-call h :read buffer offset length position))))
+                            (setq reads (1+ reads))
+                            (when (= reads 2) (truncateSync path 0))
+                            part))
+                        :close
+                        (async () (setq closed t) (await (js-call h :close))))))
+                  :now
+                  (lambda () 0))))
+            (js-call (expect (await (poReject (lambda () (readPiSnapshot target ports))))) :toBe t)
+            (js-call (expect closed) :toBe t))
+          (writeFileSync
+            log
+            (str (nativeGet snapshot "header_text") "\n" (nativeGet snapshot "entries_text"))
+            (js-object :mode 420))
+          (let*
+            ((closed false)
+              (opened false)
+              (reads 0)
+              (times 0)
+              (ports
+                (js-object
+                  :lstat
+                  lstat
+                  :open
+                  (async
+                    (path flags)
+                    (let*
+                      ((h (await (open path flags))))
+                      (setq opened t)
+                      (js-object
+                        :stat
+                        (async (options) (js-call h :stat options))
+                        :read
+                        (async
+                          (buffer offset length position)
+                          (let*
+                            ((part (await (js-call h :read buffer offset length position))))
+                            (setq reads (1+ reads))
+                            (when
+                              (= reads 2)
+                              (progn (renameSync path (str path ".old")) (writeFileSync path "replacement" (js-object :mode 420))))
+                            part))
+                        :close
+                        (async () (setq closed t) (await (js-call h :close))))))
+                  :now
+                  (lambda () 0))))
+            (js-call (expect (await (poReject (lambda () (readPiSnapshot target ports))))) :toBe t)
+            (js-call (expect closed) :toBe t))
+          (writeFileSync
+            log
+            (str (nativeGet snapshot "header_text") "\n" (nativeGet snapshot "entries_text"))
+            (js-object :mode 420))
+          (let*
+            ((closed false)
+              (opened false)
+              (reads 0)
+              (times 0)
+              (ports
+                (js-object
+                  :lstat
+                  lstat
+                  :open
+                  (async
+                    (path flags)
+                    (let*
+                      ((h (await (open path flags))))
+                      (setq opened t)
+                      (js-object
+                        :stat
+                        (async (options) (js-call h :stat options))
+                        :read
+                        (async
+                          (buffer offset length position)
+                          (let*
+                            ((part (await (js-call h :read buffer offset length position))))
+                            (setq reads (1+ reads))
+                            (when (= reads 2) nil)
+                            part))
+                        :close
+                        (async () (setq closed t) (await (js-call h :close))))))
+                  :now
+                  (lambda () (if opened 26000 0)))))
+            (js-call (expect (await (poReject (lambda () (readPiSnapshot target ports))))) :toBe t)
+            (js-call (expect closed) :toBe t))
+          (writeFileSync
+            log
+            (str (nativeGet snapshot "header_text") "\n" (nativeGet snapshot "entries_text"))
+            (js-object :mode 420))
+          (chmodSync (resolve root "pi.json") 420)
+          (js-call (expect (await (poReject (lambda () (loadPiObserverBinding root "pi.json"))))) :toBe t)
+          (chmodSync (resolve root "pi.json") 384)
+          (let* ((closed false) (read-count 0) (actual-read 0) (requested-read 0)
+                 (before (await (lstat log (js-object :bigint t))))
+                 (ports (js-object :lstat lstat :now (lambda () 0)
+                   :open (async (path flags)
+                     (let ((h (await (open path flags))))
+                       (js-object :stat (async (options) (js-call h :stat options))
+                         :read (async (buffer offset length position)
+                           (setq read-count (1+ read-count)) (setq requested-read length)
+                           (let ((part (await (js-call h :read buffer offset (- length 1) position))))
+                             (setq actual-read (nativeGet part "bytesRead")) part))
+                         :close (async () (setq closed t) (await (js-call h :close)))))))))
+            (js-call (expect (await (poReject (lambda () (readPiSnapshot target ports))))) :toBe t)
+            (js-call (expect closed) :toBe t)
+            (js-call (expect read-count) :toBe 1)
+            (js-call (expect (> actual-read 0)) :toBe t)
+            (js-call (expect (< actual-read requested-read)) :toBe t)
+            (let ((after (await (lstat log (js-object :bigint t)))))
+              (js-call (js-array "dev" "ino" "size" "mtimeNs" "ctimeNs") :forEach (lambda (key)
+                (js-call (expect (str (nativeGet after key))) :toBe (str (nativeGet before key)))))))
+          (js-call (js-array "native.json" "pi.json") :forEach (lambda (ref)
+            (let* ((path (resolve root ref)) (original (readFileSync path)) (oversized (JSON/parse (js-call original :toString "utf8"))))
+              (put oversized :padding (js-call "x" :repeat 65537))
+              (writeFileSync path (JSON/stringify oversized) (js-object :mode 384))
+              ;; Both loaders are exercised below with the same valid-but-oversized binding content.
+              )))
+          (js-call (expect (await (poReject (lambda () (loadNativeObserverBinding root "native.json"))))) :toBe t)
+          (js-call (expect (await (poReject (lambda () (loadPiObserverBinding root "pi.json"))))) :toBe t)
+          (writeFileSync (resolve root "native.json") (JSON/stringify (nativeTestBinding)) (js-object :mode 384))
+          (writeFileSync (resolve root "pi.json") (JSON/stringify pi-binding) (js-object :mode 384))
+          (symlinkSync (resolve root "pi.json") (resolve root "pi-link.json"))
+          (js-call (expect (await (poReject (lambda () (loadPiObserverBinding root "pi-link.json"))))) :toBe t)
+          (js-call (expect (await (poReject (lambda () (loadPiObserverBinding root "../outside.json"))))) :toBe t)
+          (let*
+            ((cancelled false)
+              (stream
+                (new
+                  globalThis.ReadableStream
+                  (js-object
+                    :start
+                    (lambda (controller) (js-call controller :enqueue (new globalThis.Uint8Array 65537)))
+                    :cancel
+                    (lambda () (setq cancelled t))))))
+            (js-call (expect (await (poReject (lambda () (readNativeObserverRequest stream))))) :toBe t)
+            (js-call (expect cancelled) :toBe t))
+          (let*
+            ((result (await (poCli root "{} {}"))) (response (JSON/parse (nativeGet result "stdout"))))
+            (js-call (expect (nativeGet result "code")) :toBe 1)
+            (js-call (expect (nativeGet result "stderr")) :toBe "native_observer_failed\n")
+            (js-call (expect (nativeGet response "ok")) :toBe false)
+            (js-call (expect (nativeGet (nativeGet response "error") "code")) :toBe "native_observation_unavailable")
+            (js-call (expect (nativeGet response "request_id")) :toBe nil)
+            (js-call (expect (nativeGet response "operation")) :toBe nil)
+            (js-call (expect (nativeGet response "run_id")) :toBe nil)
+            (js-call (expect (js-call (nativeGet result "stdout") :includes "PRIVATE_BODY")) :toBe false)
+            (js-call (expect (js-call (nativeGet result "stdout") :includes "private-path-marker")) :toBe false))
+          (let*
+            ((result (await (poCli root "DO_NOT_ECHO_PRIVATE_BODY private-path-marker")))
+              (response (JSON/parse (nativeGet result "stdout"))))
+            (js-call (expect (nativeGet result "code")) :toBe 1)
+            (js-call (expect (nativeGet result "stderr")) :toBe "native_observer_failed\n")
+            (js-call (expect (nativeGet response "ok")) :toBe false)
+            (js-call (expect (nativeGet (nativeGet response "error") "code")) :toBe "native_observation_unavailable")
+            (js-call (expect (nativeGet response "request_id")) :toBe nil)
+            (js-call (expect (nativeGet response "operation")) :toBe nil)
+            (js-call (expect (nativeGet response "run_id")) :toBe nil)
+            (js-call (expect (js-call (nativeGet result "stdout") :includes "PRIVATE_BODY")) :toBe false)
+            (js-call (expect (js-call (nativeGet result "stdout") :includes "private-path-marker")) :toBe false))
+          (let*
+            ((result (await (poCli root (Buffer/from (js-array 255))))) (response (JSON/parse (nativeGet result "stdout"))))
+            (js-call (expect (nativeGet result "code")) :toBe 1)
+            (js-call (expect (nativeGet result "stderr")) :toBe "native_observer_failed\n")
+            (js-call (expect (nativeGet response "ok")) :toBe false)
+            (js-call (expect (nativeGet (nativeGet response "error") "code")) :toBe "native_observation_unavailable")
+            (js-call (expect (nativeGet response "request_id")) :toBe nil)
+            (js-call (expect (nativeGet response "operation")) :toBe nil)
+            (js-call (expect (nativeGet response "run_id")) :toBe nil)
+            (js-call (expect (js-call (nativeGet result "stdout") :includes "PRIVATE_BODY")) :toBe false)
+            (js-call (expect (js-call (nativeGet result "stdout") :includes "private-path-marker")) :toBe false))
+          (let*
+            ((result (await (poCli root (js-call "x" :repeat 65537)))) (response (JSON/parse (nativeGet result "stdout"))))
+            (js-call (expect (nativeGet result "code")) :toBe 1)
+            (js-call (expect (nativeGet result "stderr")) :toBe "native_observer_failed\n")
+            (js-call (expect (nativeGet response "ok")) :toBe false)
+            (js-call (expect (nativeGet (nativeGet response "error") "code")) :toBe "native_observation_unavailable")
+            (js-call (expect (nativeGet response "request_id")) :toBe nil)
+            (js-call (expect (nativeGet response "operation")) :toBe nil)
+            (js-call (expect (nativeGet response "run_id")) :toBe nil)
+            (js-call (expect (js-call (nativeGet result "stdout") :includes "PRIVATE_BODY")) :toBe false)
+            (js-call (expect (js-call (nativeGet result "stdout") :includes "private-path-marker")) :toBe false))
+          (let*
+            ((bad (nativeTestBinding)))
+            (put bad :authorized false)
+            (writeFileSync (resolve root "native.json") (JSON/stringify bad) (js-object :mode 384))
+            (let*
+              ((result (await (poCli root (JSON/stringify request)))) (response (JSON/parse (nativeGet result "stdout"))))
+              (js-call (expect (nativeGet result "code")) :toBe 1)
+              (js-call (expect (nativeGet response "request_id")) :toBe "req-po")
+              (js-call (expect (nativeGet response "operation")) :toBe "observe-native-start")
+              (js-call (expect (nativeGet result "stderr")) :toBe "native_observer_failed\n"))
+            (writeFileSync (resolve root "native.json") (JSON/stringify (nativeTestBinding)) (js-object :mode 384)))
+          (setq
+            server
+            (Bun/serve
+              (js-object
+                :hostname
+                "127.0.0.1"
+                :port
+                0
+                :fetch
+                (lambda
+                  (req)
+                  (let*
+                    ((url (new globalThis.URL (nativeGet req "url"))) (path (nativeGet url "pathname")))
+                    (js-call http-calls :push (nativeGet req "method"))
+                    (unless
+                      (= (js-call (nativeGet url "searchParams") :get "directory") root)
+                      (throw (new globalThis.Error "wrong native directory")))
+                    (cond
+                      ((= path "/global/health") (Response/json (js-object :healthy t :version "1.18.30")))
+                      ((= path "/session/o-session")
+                        (Response/json (js-object :id "o-session" :projectID "project-po" :directory root)))
+                      ((= path "/session/o-session/message")
+                        (Response/json
+                          (js-array
+                            (js-object
+                              :info
+                              (js-object :id "msg-user" :role "user" :sessionID "o-session")
+                              :parts
+                              (js-array
+                                (js-object
+                                  :id
+                                  "part-user"
+                                  :type
+                                  "text"
+                                  :sessionID
+                                  "o-session"
+                                  :messageID
+                                  "msg-user"
+                                  :text
+                                  (JSON/stringify (piTestEnvelope "subscription_event")))))
+                            (js-object
+                              :info
+                              (js-object :id "msg-assistant" :role "assistant" :sessionID "o-session" :parentID "msg-user")
+                              :parts
+                              (js-array
+                                (js-object
+                                  :id
+                                  "part-assistant"
+                                  :type
+                                  "text"
+                                  :sessionID
+                                  "o-session"
+                                  :messageID
+                                  "msg-assistant"
+                                  :text
+                                  "native fixture answer"))))))
+                      (t (new globalThis.Response "missing" (js-object :status 404)))))))))
+          (writeFileSync
+            (resolve root "o.json")
+            (JSON/stringify
+              (js-object
+                :schema_version
+                1
+                :authorized
+                t
+                :endpoint
+                (js-object
+                  :base_url
+                  (str "http://127.0.0.1:" (nativeGet server "port") "/")
+                  :directory
+                  root
+                  :native_namespace
+                  "project-po"
+                  :instance_id
+                  "instance-po"
+                  :native_instance_id
+                  "fixture-endpoint")
+                :auth
+                (js-object :type "none")
+                :targets
+                (js-array "o-session")))
+            (js-object :mode 384))
+          (renameSync (resolve root "pi.json") (resolve root "pi.saved"))
+          (try
+            (let*
+              ((r (piTestRequest "observe-native-start")))
+              (put (nativeGet r "parameters") :tool "opencode")
+              (put (nativeGet r "parameters") :native_session_id "o-session")
+              (let*
+                ((result (await (poCli root (JSON/stringify r)))) (response (JSON/parse (nativeGet result "stdout"))))
+                (js-call (expect (nativeGet result "code")) :toBe 0)
+                (js-call (expect (nativeGet result "stderr")) :toBe "")
+                (js-call (expect (nativeGet (nativeGet response "data") "observation_source")) :toBe "opencode_http_v1")
+                (js-call (expect (nativeGet (nativeGet response "data") "native_message_id")) :toBe "msg-user")
+                (js-call (expect (nativeGet (nativeGet response "data") "native_event_id")) :toBe "msg-assistant")
+                (js-call (expect (nativeGet http-calls "length")) :toBe 4)
+                (js-call (expect (js-call http-calls :every (lambda (method) (= method "GET")))) :toBe t)))
+            (finally (renameSync (resolve root "pi.saved") (resolve root "pi.json"))))
+          (finally (when server (js-call server :stop t)) (rmSync root (js-object :recursive t :force t))))))
+    (lambda (unused) nil)))

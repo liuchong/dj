@@ -1,0 +1,55 @@
+{
+  "name": "dispatch-junction",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Deterministic local IM and coding-agent dispatch component",
+  "packageManager": "bun@1.4.4",
+  "engines": {
+    "bun": "1.4.4"
+  },
+  "bin": {
+    "dj": "bin/dj"
+  },
+  "exports": {
+    ".": "./dist/src/library.mjs"
+  },
+  "files": [
+    "bin/dj",
+    "dist",
+    "packaging",
+    "skills/dj",
+    "config/*.example.json",
+    "connectors/pi"
+  ],
+  "scripts": {
+    "build": "bun dist-tools/tools/build.mjs --scope all",
+    "build:tools": "rm -rf -- dist-tools && ELISCRIPT_BOOTSTRAP_MODULE_DIR=.local/toolchains/eliscript-b1c7741/source/dist/bootstrap ELISCRIPT_JS_RUNTIME=bun .local/toolchains/eliscript-b1c7741/source/bin/eliscript-build --json --config eliscript.tools.json",
+    "build:test": "bun dist-tools/tools/build.mjs --scope all",
+    "package:directory": "bun dist-tools/tools/package.mjs",
+    "test": "bun dist-tools/tools/verify.mjs --suite unit",
+    "test:unit": "bun dist-tools/tools/verify.mjs --suite unit",
+    "test:integration": "bun dist-tools/tools/verify.mjs --suite integration",
+    "test:system": "bun dist-tools/tools/verify.mjs --suite system",
+    "test:e2e": "bun dist-tools/tools/verify.mjs --suite e2e --real",
+    "test:performance": "bun dist-tools/tools/verify.mjs --suite performance",
+    "test:performance:real": "bun dist-tools/tools/verify.mjs --suite performance --real",
+    "package:cursor": "bun dist-tools/tools/package-cursor.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.3.1",
+    "ajv": "8.20.0",
+    "eliscript": "0.1.0"
+  },
+  "devDependencies": {
+    "@oven/bun-darwin-aarch64": "1.4.4"
+  },
+  "overrides": {
+    "@modelcontextprotocol/core": "2.3.1",
+    "zod": "4.6.7",
+    "fast-uri": "3.1.0",
+    "fast-deep-equal": "3.1.3",
+    "require-from-string": "2.0.2",
+    "json-schema-traverse": "1.0.0"
+  }
+}

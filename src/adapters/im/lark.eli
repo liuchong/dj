@@ -1,0 +1,910 @@
+(module dj.adapters.im.lark
+  (import "../../core/native.eli"
+    NativeNumber
+    nativeNullish
+    nativeTypeOf
+    nativeClearTimeout
+    nativeSetTimeout nativeGet)
+  (import "../../core/errors.eli" success failure)
+  (import "../../core/types.eli"
+    conversationKey
+    hashValue
+    addSeconds
+    nextRevision
+    utf8Bytes
+    isUtcTime)
+  (import "../../core/limits.eli" limits)
+  (import "../../application/context.eli"
+    utcNow
+    nextId
+    inTransaction
+    must
+    nativeCallContext)
+  (import "../../ingestion/service.eli" acceptEvent allowedAddress)
+  (import "./lark-http.eli" createLarkHttpTransport)
+  (defun watchAddress
+    (config watch)
+    (js-object
+      :connection_id
+      (nativeGet config "connection_id")
+      :native_chat_id
+      (nativeGet watch "chat_id")
+      :native_thread_id
+      (nativeGet watch "thread_id" nil)
+      :thread_kind
+      (if (nativeGet watch "thread_id") "thread" "main")))
+  (defun createReadLimiter
+    (clock)
+    (let
+      ((active 0)
+        (tokens (nativeGet limits "lark_read_launch_burst"))
+        (last (js-call clock :monoNow)))
+      (js-object
+        :acquire
+        (lambda
+          ()
+          (let ((now (js-call clock :monoNow)))
+            (setq
+              tokens
+              (Math/min
+                (nativeGet limits "lark_read_launch_burst")
+                (+
+                  tokens
+                  (*
+                    (/ (Math/max 0 (- now last)) 1000)
+                    (nativeGet limits "lark_read_launches_per_second")))))
+            (setq last now)
+            (if (and (< active (nativeGet limits "lark_read_concurrency")) (>= tokens 1))
+              (progn (setq active (1+ active) tokens (- tokens 1)) t)
+              false)))
+        :release
+        (lambda () (setq active (Math/max 0 (1- active))))
+        :status
+        (lambda () (js-object :active active :tokens tokens)))))
+  (defun planPollWindow
+    (checkpoint now)
+    (let ((djReturn1Token (js-object)) (djReturn1Value nil))
+      (try
+        (when (and (nativeGet checkpoint "window_start") (nativeGet checkpoint "window_end"))
+          (progn (setq djReturn1Value (success checkpoint)) (throw djReturn1Token)))
+        (let*
+          ((copy (Object/assign (js-object) checkpoint))
+            (end-ms
+              (*
+                1000
+                (Math/floor
+                  (/
+                    (-
+                      (Date/parse now)
+                      (* 1000 (nativeGet limits "lark_poll_visibility_delay_seconds")))
+                    1000))))
+            (completed (nativeGet copy "completed_until"))
+            (start-ms
+              (Math/max
+                (Date/parse (nativeGet copy "activation_at"))
+                (if completed
+                  (-
+                    (Date/parse completed)
+                    (* 1000 (nativeGet limits "lark_poll_overlap_seconds")))
+                  0))))
+          (when (and completed (<= end-ms (Date/parse completed)))
+            (progn
+              (setq
+                djReturn1Value
+                (failure
+                  "unavailable"
+                  (js-object :details (js-object :reason "clock_regressed"))))
+              (throw djReturn1Token)))
+          (when (< end-ms start-ms)
+            (progn (setq djReturn1Value (success nil)) (throw djReturn1Token)))
+          (put copy :window_start (js-call (new globalThis.Date start-ms) :toISOString))
+          (put copy :window_end (js-call (new globalThis.Date end-ms) :toISOString))
+          (put copy :page_token nil)
+          (put copy :seen_page_tokens (js-array))
+          (success copy))
+        (catch djReturn1Error
+          (if (eq djReturn1Error djReturn1Token) djReturn1Value (throw djReturn1Error))))))
+  (defun nativeTime
+    (value)
+    (let ((djReturn2Token (js-object)) (djReturn2Value nil))
+      (try
+        (when
+          (and
+            (= (nativeTypeOf value) "string")
+            (js-call (new globalThis.RegExp "^[0-9]+$") :test value))
+          (let ((milliseconds (NativeNumber value)))
+            (when (Number/isSafeInteger milliseconds)
+              (let ((date (new globalThis.Date milliseconds)))
+                (when (Number/isFinite (js-call date :getTime))
+                  (progn
+                    (setq djReturn2Value (js-call date :toISOString))
+                    (throw djReturn2Token)))))))
+        (when (isUtcTime value) (js-call (new globalThis.Date value) :toISOString))
+        (catch djReturn2Error
+          (if (eq djReturn2Error djReturn2Token) djReturn2Value (throw djReturn2Error))))))
+  (defun normalizePollPage
+    (config watch checkpoint wire now)
+    (let ((djReturn3Token (js-object)) (djReturn3Value nil))
+      (try
+        (unless
+          (and
+            (= (nativeGet wire "ok") t)
+            (= (nativeGet wire "identity") (nativeGet config "identity" "user"))
+            (Array/isArray (nativeGet (nativeGet wire "data") "messages"))
+            (= (nativeTypeOf (nativeGet (nativeGet wire "data") "has_more")) "boolean")
+            (<= (js-length (nativeGet (nativeGet wire "data") "messages")) 50))
+          (progn (setq djReturn3Value (failure "incompatible")) (throw djReturn3Token)))
+        (let*
+          ((data (nativeGet wire "data"))
+            (more (nativeGet data "has_more"))
+            (token (nativeGet data "page_token" nil))
+            (messages (js-array))
+            (address (watchAddress config watch))
+            (old false)
+            (index 0))
+          (when
+            (and
+              more
+              (or
+                (not (= (nativeTypeOf token) "string"))
+                (= (js-length token) 0)
+                (= token (nativeGet checkpoint "page_token"))
+                (js-call (nativeGet checkpoint "seen_page_tokens" (js-array)) :includes token)))
+            (progn
+              (setq
+                djReturn3Value
+                (failure
+                  "incompatible"
+                  (js-object
+                    :details
+                    (js-object :reason "repeated_or_missing_page_token"))))
+              (throw djReturn3Token)))
+          (js-call
+            (nativeGet data "messages")
+            :forEach
+            (lambda
+              (message)
+              (let ((djReturn4Token (js-object)) (djReturn4Value nil))
+                (try
+                  (let*
+                    ((id (nativeGet message "message_id"))
+                      (time (nativeTime (nativeGet message "create_time")))
+                      (diagnostic
+                        (js-object
+                          :kind
+                          "diagnostic"
+                          :connection_id
+                          (nativeGet config "connection_id")
+                          :source_key
+                          (str
+                            (or id (nativeGet checkpoint "generation"))
+                            ":created:diagnostic:"
+                            index)
+                          :reason
+                          "unsupported_native_content")))
+                    (setq index (1+ index))
+                    (unless
+                      (and (= (nativeTypeOf id) "string") (> (js-length id) 0) time)
+                      (put diagnostic :reason "missing_message_identity_or_time")
+                      (js-call messages :push diagnostic)
+                      (progn (setq djReturn4Value nil) (throw djReturn4Token)))
+                    (when
+                      (< (Date/parse time) (Date/parse (nativeGet checkpoint "window_start")))
+                      (when (nativeGet watch "thread_id") (setq old t))
+                      (progn (setq djReturn4Value nil) (throw djReturn4Token)))
+                    (when
+                      (or
+                        (<
+                          (Date/parse time)
+                          (Date/parse (nativeGet checkpoint "activation_at")))
+                        (> (Date/parse time) (Date/parse (nativeGet checkpoint "window_end"))))
+                      (progn (setq djReturn4Value nil) (throw djReturn4Token)))
+                    (unless
+                      (and
+                        (= (nativeGet message "chat_id") (nativeGet watch "chat_id"))
+                        (if (nativeGet watch "thread_id")
+                          (= (nativeGet message "thread_id") (nativeGet watch "thread_id"))
+                          (nativeNullish (nativeGet message "thread_id"))))
+                      (put diagnostic :reason "out_of_watch_address")
+                      (js-call messages :push diagnostic)
+                      (progn (setq djReturn4Value nil) (throw djReturn4Token)))
+                    (when
+                      (or
+                        (= (nativeGet message "deleted") t)
+                        (not (= (nativeGet message "msg_type") "text"))
+                        (not (= (nativeTypeOf (nativeGet message "content")) "string")))
+                      (js-call messages :push diagnostic)
+                      (progn (setq djReturn4Value nil) (throw djReturn4Token)))
+                    (let*
+                      ((sender (nativeGet message "sender"))
+                        (kind (nativeGet sender "sender_type"))
+                        (event
+                          (js-object
+                            :connection_id
+                            (nativeGet config "connection_id")
+                            :source_key
+                            (str id ":created")
+                            :native_message_id
+                            id
+                            :event_kind
+                            "message.created"
+                            :source_revision
+                            "1"
+                            :conversation
+                            address
+                            :sender
+                            (js-object
+                              :id
+                              (nativeGet sender "id" "unknown")
+                              :kind
+                              (cond ((= kind "user") "human")
+                                ((js-call (js-array "app" "bot") :includes kind) "bot")
+                                (t "unknown")))
+                            :source_time
+                            time
+                            :content
+                            (js-object
+                              :kind
+                              "text"
+                              :text
+                              (nativeGet message "content")
+                              :truncated
+                              false)
+                            :attachments
+                            (js-array))))
+                      ;; HTTP transport returns normalized text; do not decode it twice.
+                      (when (nativeGet sender "name")
+                        (put (nativeGet event "sender") :display_name (nativeGet sender "name")))
+                      (js-call messages :push event)))
+                  (catch djReturn4Error
+                    (if (eq djReturn4Error djReturn4Token)
+                      djReturn4Value
+                      (throw djReturn4Error)))))))
+          (success
+            (js-object
+              :messages
+              messages
+              :has_more
+              (and more (not old))
+              :next_page_token
+              (if (and more (not old)) token nil)
+              :observed_at
+              now
+              :window_start
+              (nativeGet checkpoint "window_start")
+              :window_end
+              (nativeGet checkpoint "window_end")
+              :identity_revision
+              (nativeGet checkpoint "identity_revision")
+              :generation
+              (nativeGet checkpoint "generation"))))
+        (catch djReturn3Error
+          (if (eq djReturn3Error djReturn3Token) djReturn3Value (throw djReturn3Error))))))
+  (defun createLarkPort
+    (config host)
+    (let* ((active (new globalThis.Map))
+        (http (createLarkHttpTransport config host))
+        (closed false)
+        (watch-busy (new globalThis.Set))
+        (local-limiter (createReadLimiter (nativeGet host "clock")))
+        (next-launch (new globalThis.Map))
+        (watch-after "")
+        (capabilities
+          (js-object
+            :receive_events
+            "supported"
+            :send
+            "supported"
+            :reply_thread
+            "supported"
+            :ack_control
+            false
+            :replay
+            "bounded_history"
+            :native_history
+            "unsupported"
+            :native_idempotency
+            "unknown"
+            :lookup_send
+            "unsupported"
+            :max_text_bytes
+            (nativeGet limits "text_bytes"))))
+(let ((readPollPage nil) (commitPollPage nil) (ensureWatch nil) (pollDueSources nil) (send nil))
+(setq readPollPage (async
+                      (watch checkpoint cancel &optional call-context)
+                      (let ((djReturn7Token (js-object)) (djReturn7Value nil))
+                        (try
+                          (let* ((parameters (js-object :chat_id (nativeGet watch "chat_id")
+                                  :thread_id (nativeGet watch "thread_id")
+                                  :order (if (nativeGet watch "thread_id") "desc" "asc")
+                                  :start (nativeGet checkpoint "window_start") :end (nativeGet checkpoint "window_end")
+                                  :page_token (nativeGet checkpoint "page_token")))
+                                (context (or call-context (js-object :abort_signal cancel
+                                  :deadline (+ (js-call (nativeGet host "clock") :monoNow) 15000)))))
+                            (let ((response (await (js-call http :perform "list" parameters context))))
+                              (unless (nativeGet response "ok")
+                                (progn
+                                  (setq djReturn7Value response)
+                                  (throw djReturn7Token)))
+                              (normalizePollPage
+                                config
+                                watch
+                                checkpoint
+                                (nativeGet response "data")
+                                (js-call (nativeGet host "clock") :utcNow))))
+                          (catch djReturn7Error
+                            (if (eq djReturn7Error djReturn7Token)
+                              djReturn7Value
+                              (throw djReturn7Error)))))))
+(setq commitPollPage (lambda
+                      (context watch expected-generation page)
+                      (inTransaction
+                        context
+                        (lambda
+                          (tx)
+                          (let ((djReturn8Token (js-object)) (djReturn8Value nil))
+                            (try
+                              (let* ((repository (nativeGet context "repository")) (key
+                                    (js-object
+                                      :connection_id
+                                      (nativeGet config "connection_id")
+                                      :conversation_key
+                                      (conversationKey (watchAddress config watch)))) (checkpoint
+                                    (js-call repository :get "poll_checkpoints" key)) (connection
+                                    (js-call
+                                      repository
+                                      :get
+                                      "connections"
+                                      (nativeGet config "connection_id"))) (revision
+                                    (nativeGet
+                                      connection
+                                      "identity_revision"
+                                      (nativeGet connection "revision"))))
+                                (unless
+                                  (and
+                                    checkpoint
+                                    (= (nativeGet checkpoint "generation") expected-generation)
+                                    (= (nativeGet page "generation") expected-generation)
+                                    (= (nativeGet page "identity_revision") revision)
+                                    (= (nativeGet checkpoint "identity_revision") revision)
+                                    (=
+                                      (nativeGet checkpoint "window_start")
+                                      (nativeGet page "window_start"))
+                                    (=
+                                      (nativeGet checkpoint "window_end")
+                                      (nativeGet page "window_end"))
+                                    (allowedAddress
+                                      connection
+                                      (watchAddress config watch)))
+                                  (progn
+                                    (setq djReturn8Value (failure "stale_reference"))
+                                    (throw djReturn8Token)))
+                                (js-call
+                                  (nativeGet page "messages")
+                                  :forEach
+                                  (lambda
+                                    (event)
+                                    (must
+                                      (acceptEvent
+                                        context
+                                        (nativeGet config "connection_id")
+                                        event
+                                        nil))))
+                                (put
+                                  checkpoint
+                                  :last_success_at
+                                  (nativeGet page "observed_at"))
+                                (put checkpoint :retry_count 0)
+                                (put checkpoint :reason_codes (js-array))
+                                (if (nativeGet page "has_more")
+                                  (progn
+                                    (put
+                                      checkpoint
+                                      :page_token
+                                      (nativeGet page "next_page_token"))
+                                    (let ((tokens
+                                          (nativeGet checkpoint "seen_page_tokens" (js-array))))
+                                      (js-call tokens :push (nativeGet page "next_page_token"))
+                                      (put
+                                        checkpoint
+                                        :seen_page_tokens
+                                        (js-call tokens :slice -1000))))
+                                  (progn
+                                    (put
+                                      checkpoint
+                                      :completed_until
+                                      (nativeGet checkpoint "window_end"))
+                                    (put checkpoint :window_start nil)
+                                    (put checkpoint :window_end nil)
+                                    (put checkpoint :page_token nil)
+                                    (put checkpoint :seen_page_tokens (js-array))))
+                                (put
+                                  checkpoint
+                                  :next_due_at
+                                  (if (nativeGet page "has_more")
+                                    (utcNow context)
+                                    (addSeconds
+                                      (utcNow context)
+                                      (nativeGet watch "poll_interval_seconds" 5))))
+                                (put checkpoint :gap_status "possible")
+                                (must
+                                  (js-call
+                                    repository
+                                    :replace
+                                    "poll_checkpoints"
+                                    checkpoint))
+                                (success checkpoint))
+                              (catch djReturn8Error
+                                (if (eq djReturn8Error djReturn8Token)
+                                  djReturn8Value
+                                  (throw djReturn8Error)))))))))
+(setq ensureWatch (lambda
+                      (context watch)
+                      (inTransaction
+                        context
+                        (lambda
+                          (tx)
+                          (let ((djReturn9Token (js-object)) (djReturn9Value nil))
+                            (try
+                              (let* ((repository (nativeGet context "repository")) (connection
+                                    (js-call
+                                      repository
+                                      :get
+                                      "connections"
+                                      (nativeGet config "connection_id"))) (key
+                                    (js-object
+                                      :connection_id
+                                      (nativeGet config "connection_id")
+                                      :conversation_key
+                                      (conversationKey (watchAddress config watch)))) (checkpoint
+                                    (js-call repository :get "poll_checkpoints" key)) (revision
+                                    (nativeGet
+                                      connection
+                                      "identity_revision"
+                                      (nativeGet connection "revision"))))
+                                (when
+                                  (and
+                                    checkpoint
+                                    (= (nativeGet checkpoint "identity_revision") revision))
+                                  (progn
+                                    (setq djReturn9Value (success checkpoint))
+                                    (throw djReturn9Token)))
+                                (let ((fresh
+                                      (Object/assign
+                                        (js-object)
+                                        key
+                                        (js-object
+                                          :identity_revision
+                                          revision
+                                          :activation_at
+                                          (utcNow context)
+                                          :generation
+                                          (if checkpoint
+                                            (nextRevision (nativeGet checkpoint "generation"))
+                                            1)
+                                          :retry_count
+                                          0
+                                          :next_due_at
+                                          (utcNow context)
+                                          :gap_status
+                                          "possible"
+                                          :reason_codes
+                                          (js-array "not_observed")))))
+                                  (if checkpoint
+                                    (must
+                                      (js-call
+                                        repository
+                                        :replace
+                                        "poll_checkpoints"
+                                        fresh))
+                                    (js-call
+                                      repository
+                                      :insert
+                                      "poll_checkpoints"
+                                      fresh))
+                                  (success fresh)))
+                              (catch djReturn9Error
+                                (if (eq djReturn9Error djReturn9Token)
+                                  djReturn9Value
+                                  (throw djReturn9Error)))))))))
+(setq pollDueSources (async
+                      (context now budget)
+                      (let* ((limiter (nativeGet budget "limiter" local-limiter)) (repository (nativeGet context "repository")) (watches (js-call (nativeGet config "watches" (js-array)) :slice)) (pages 0) (bytes 0) (scanned 0) (start (js-call (nativeGet host "clock") :monoNow)) (ordered
+                            (js-call
+                              watches
+                              :sort
+                              (lambda
+                                (a b)
+                                (let ((left (conversationKey (watchAddress config a))) (right (conversationKey (watchAddress config b))))
+                                  (if (< left right) -1 (if (= left right) 0 1)))))))
+                        ;; One page per watch per turn ensures catalog, routing and other
+                        ;; sources receive a scheduling opportunity between native reads.
+                        (setq
+                          ordered
+                          (js-call
+                            (js-call
+                              ordered
+                              :filter
+                              (lambda
+                                (watch)
+                                (>
+                                  (conversationKey (watchAddress config watch))
+                                  watch-after)))
+                            :concat
+                            (js-call
+                              ordered
+                              :filter
+                              (lambda
+                                (watch)
+                                (<=
+                                  (conversationKey (watchAddress config watch))
+                                  watch-after)))))
+                        (let ((djLoop1Break (js-object)) (djLoop1Continue (js-object)))
+                          (try
+                            (while
+                              (and
+                                (< scanned (js-length ordered))
+                                (< pages (nativeGet limits "lark_poll_pages_per_turn"))
+                                (<
+                                  (- (js-call (nativeGet host "clock") :monoNow) start)
+                                  (nativeGet limits "lark_poll_turn_ms")))
+                              (try
+                                (let* ((watch (aref ordered scanned)) (key (conversationKey (watchAddress config watch))) (checkpoint (must (ensureWatch context watch))) (due (nativeGet checkpoint "next_due_at")) (retry-due (js-call next-launch :get key)))
+                                  (setq scanned (1+ scanned) watch-after key)
+                                  (when
+                                    (or
+                                      (js-call watch-busy :has key)
+                                      (and
+                                        retry-due
+                                        (<
+                                          (js-call (nativeGet host "clock") :monoNow)
+                                          retry-due))
+                                      (and due (> (Date/parse due) (Date/parse now))))
+                                    (throw djLoop1Continue))
+                                  (let ((planned (planPollWindow checkpoint now)))
+                                    (unless (nativeGet planned "ok")
+                                      (inTransaction
+                                        context
+                                        (lambda
+                                          (tx)
+                                          (put
+                                            checkpoint
+                                            :reason_codes
+                                            (js-array "clock_regressed"))
+                                          (must
+                                            (js-call
+                                              repository
+                                              :replace
+                                              "poll_checkpoints"
+                                              checkpoint))
+                                          (success nil)))
+                                      (throw djLoop1Continue))
+                                    (unless (nativeGet planned "data") (throw djLoop1Continue))
+                                    (setq checkpoint (nativeGet planned "data")))
+                                  (unless (js-call limiter :acquire)
+                                    (throw djLoop1Break))
+                                  (js-call watch-busy :add key)
+                                  (try
+                                    ;; Persist the frozen window before launching the helper.
+                                    (must
+                                      (inTransaction
+                                        context
+                                        (lambda
+                                          (tx)
+                                          (let ((djReturn10Token (js-object)) (djReturn10Value nil))
+                                            (try
+                                              (let ((current
+                                                    (js-call
+                                                      repository
+                                                      :get
+                                                      "poll_checkpoints"
+                                                      (js-object
+                                                        :connection_id
+                                                        (nativeGet config "connection_id")
+                                                        :conversation_key
+                                                        key))))
+                                                (unless
+                                                  (and
+                                                    (=
+                                                      (nativeGet current "generation")
+                                                      (nativeGet checkpoint "generation"))
+                                                    (=
+                                                      (nativeGet current "identity_revision")
+                                                      (nativeGet
+                                                        checkpoint
+                                                        "identity_revision")))
+                                                  (progn
+                                                    (setq
+                                                      djReturn10Value
+                                                      (failure "stale_reference"))
+                                                    (throw djReturn10Token)))
+                                                (must
+                                                  (js-call
+                                                    repository
+                                                    :replace
+                                                    "poll_checkpoints"
+                                                    checkpoint))
+                                                (success nil))
+                                              (catch djReturn10Error
+                                                (if (eq djReturn10Error djReturn10Token)
+                                                  djReturn10Value
+                                                  (throw djReturn10Error))))))))
+                                    (let* ((call (nativeCallContext context)) (response
+                                          (await
+                                            (readPollPage
+                                              watch
+                                              checkpoint
+                                              (nativeGet call "abort_signal")
+                                              call))))
+                                      (setq pages (1+ pages))
+                                      (if (nativeGet response "ok")
+                                        (let ((page (nativeGet response "data")))
+                                          (when (nativeGet (nativeGet context "ports") "faults")
+                                            (await
+                                              (js-call
+                                                (nativeGet (nativeGet context "ports") "faults")
+                                                :hit
+                                                "poll.before_page_commit"
+                                                page)))
+                                          (must
+                                            (commitPollPage
+                                              context
+                                              watch
+                                              (nativeGet checkpoint "generation")
+                                              page))
+                                          (setq
+                                            bytes
+                                            (+ bytes (utf8Bytes (JSON/stringify page))))
+                                          (js-call next-launch :delete key)
+                                          (when (nativeGet (nativeGet context "ports") "faults")
+                                            (await
+                                              (js-call
+                                                (nativeGet (nativeGet context "ports") "faults")
+                                                :hit
+                                                "poll.after_page_commit"
+                                                page))))
+                                        (let* ((reason
+                                              (nativeGet
+                                                (nativeGet (nativeGet response "error") "details")
+                                                "reason"
+                                                (nativeGet (nativeGet response "error") "code"))) (retry
+                                              (Math/max
+                                                (nativeGet
+                                                  (nativeGet (nativeGet response "error") "details")
+                                                  "retry_after_seconds"
+                                                  0)
+                                                (Math/min
+                                                  60
+                                                  (Math/pow
+                                                    2
+                                                    (Math/min
+                                                      6
+                                                      (nativeGet checkpoint "retry_count" 0)))))))
+                                          (inTransaction
+                                            context
+                                            (lambda
+                                              (tx)
+                                              (let ((djReturn11Token (js-object)) (djReturn11Value nil))
+                                                (try
+                                                  (let ((current
+                                                        (js-call
+                                                          repository
+                                                          :get
+                                                          "poll_checkpoints"
+                                                          (js-object
+                                                            :connection_id
+                                                            (nativeGet config "connection_id")
+                                                            :conversation_key
+                                                            key))))
+                                                    (unless
+                                                      (=
+                                                        (nativeGet current "generation")
+                                                        (nativeGet checkpoint "generation"))
+                                                      (progn
+                                                        (setq
+                                                          djReturn11Value
+                                                          (success nil))
+                                                        (throw djReturn11Token)))
+                                                    (put
+                                                      current
+                                                      :retry_count
+                                                      (1+ (nativeGet current "retry_count" 0)))
+                                                    (put
+                                                      current
+                                                      :reason_codes
+                                                      (js-array reason))
+                                                    (when
+                                                      (= reason "invalid_page_token")
+                                                      (put current :page_token nil)
+                                                      (put
+                                                        current
+                                                        :seen_page_tokens
+                                                        (js-array))
+                                                      (put
+                                                        current
+                                                        :generation
+                                                        (nextRevision
+                                                          (nativeGet current "generation"))))
+                                                    (put
+                                                      current
+                                                      :next_due_at
+                                                      (addSeconds now retry))
+                                                    (must
+                                                      (js-call
+                                                        repository
+                                                        :replace
+                                                        "poll_checkpoints"
+                                                        current))
+                                                    (success nil))
+                                                  (catch djReturn11Error
+                                                    (if
+                                                      (eq
+                                                        djReturn11Error
+                                                        djReturn11Token)
+                                                      djReturn11Value
+                                                      (throw djReturn11Error)))))))
+                                          (js-call
+                                            next-launch
+                                            :set
+                                            key
+                                            (+
+                                              (js-call (nativeGet host "clock") :monoNow)
+                                              (* 1000 retry))))))
+                                    (finally
+                                      (js-call watch-busy :delete key)
+                                      (js-call limiter :release))))
+                                (catch djLoop1Error
+                                  (unless (eq djLoop1Error djLoop1Continue)
+                                    (throw djLoop1Error)))))
+                            (catch djLoop1Error
+                              (unless (eq djLoop1Error djLoop1Break)
+                                (throw djLoop1Error)))))
+                        (js-object
+                          :pages
+                          pages
+                          :bytes
+                          bytes
+                          :pending_watches
+                          (Math/max 0 (- (js-length ordered) scanned))))
+                      ))
+(setq send (async
+                            (outbound key context)
+                            (let ((djReturn12Token (js-object)) (djReturn12Value nil))
+                              (try
+                                (let* ((destination (nativeGet outbound "destination")) (original (nativeGet outbound "native_reply_to")) (thread (nativeGet destination "native_thread_id")) (text (nativeGet (nativeGet outbound "content") "text")) (parameters (js-object :text text :idempotency_key key :chat_id (nativeGet destination "native_chat_id")
+                                      :message_id original :reply_in_thread (not (not thread)))))
+                                  (unless
+                                    (and
+                                      (=
+                                        (nativeGet destination "connection_id")
+                                        (nativeGet config "connection_id"))
+                                      (<=
+                                        (utf8Bytes text)
+                                        (nativeGet capabilities "max_text_bytes"))
+                                      (or (not thread) original))
+                                    (progn
+                                      (setq
+                                        djReturn12Value
+                                        (js-object
+                                          :state
+                                          "failed"
+                                          :definite_not_sent
+                                          t
+                                          :retryable
+                                          false
+                                          :evidence_level
+                                          "service_record"))
+                                      (throw djReturn12Token)))
+                                  (let ((response (await (js-call http :perform (if original "reply" "send") parameters context))))
+                                    (if (nativeGet response "ok")
+                                      (let ((message (nativeGet (nativeGet response "data") "data")))
+                                        (if
+                                          (and
+                                            (=
+                                              (nativeTypeOf (nativeGet message "message_id"))
+                                              "string")
+                                            (> (js-length (nativeGet message "message_id")) 0)
+                                            (=
+                                              (nativeGet message "chat_id")
+                                              (nativeGet destination "native_chat_id")))
+                                          (js-object
+                                            :state
+                                            "accepted"
+                                            :native_message_id
+                                            (nativeGet message "message_id")
+                                            :evidence_level
+                                            "native_protocol")
+                                          (js-object
+                                            :state
+                                            "unknown"
+                                            :definite_not_sent
+                                            false
+                                            :evidence_level
+                                            "none")))
+                                      ;; An HTTP request can lose the post-send response. It cannot
+                                      ;; supply a blanket definite-not-sent guarantee from exit status.
+                                      (js-object
+                                        :state
+                                        "unknown"
+                                        :definite_not_sent
+                                        false
+                                        :retryable
+                                        false
+                                        :evidence_level
+                                        "none"))))
+                                (catch djReturn12Error
+                                  (if (eq djReturn12Error djReturn12Token)
+                                    djReturn12Value
+                                    (throw djReturn12Error)))))))
+(js-object
+                          :connection_id
+                          (nativeGet config "connection_id")
+                          :capabilities
+                          capabilities
+                          :initialize
+                          (lambda
+                            (context)
+                            (when (= (nativeGet active "size") 0) (setq closed false))
+                            (when http (js-call http :initialize))
+                            (js-call
+                              (nativeGet config "watches" (js-array))
+                              :forEach
+                              (lambda (watch) (must (ensureWatch context watch)))))
+                          :pollDueSources
+                          pollDueSources
+                          :readPollPage
+                          readPollPage
+                          :commitPollPage
+                          commitPollPage
+                          :send
+                          send
+                          :resolveConversation
+                          (async (address call-context application)
+                            (let ((connection (js-call (nativeGet application "repository") :get "connections" (nativeGet config "connection_id"))))
+                              (if (not (and connection (allowedAddress connection address)))
+                                (js-object :ok false :reason "outside_configured_scope")
+                                (let ((response (await (js-call http :perform "list"
+                                  (js-object :chat_id (nativeGet address "native_chat_id") :thread_id (nativeGet address "native_thread_id")
+                                    :order "desc" :start (addSeconds (utcNow application) -60) :end (utcNow application)) call-context))))
+                                  (if (nativeGet response "ok")
+                                    (js-object :ok t :address address :evidence_level "native_protocol"
+                                      :coverage "authorized_exact_history_query" :checked_at (utcNow application))
+                                    (js-object :ok false :reason "native_api_unavailable"))))))
+                          :probe
+                          (async
+                            (connection context)
+                            (js-object
+                              :ok
+                              t
+                              :credential_state
+                              "unknown"
+                              :capabilities
+                              capabilities
+                              :reason
+                              "read_result_required"))
+                          :lookup
+                          (async
+                            (outbound context)
+                            (js-object
+                              :state
+                              "unknown"
+                              :status
+                              "unsupported"
+                              :definite_not_sent
+                              false))
+                          :pendingWork
+                          (lambda () (+ (nativeGet active "size")
+                            (if http (js-call http :pendingWork) 0)))
+                          :close
+                          (async
+                            ()
+                            (setq closed t)
+                            (when http (js-call http :close))
+                            (js-call
+                              active
+                              :forEach
+                              (lambda (entry) (funcall (nativeGet entry "abort"))))
+                            (js-object
+                              :state
+                              (if (= (nativeGet active "size") 0) "stopped" "draining")))))))
+  (export createLarkPort createReadLimiter planPollWindow normalizePollPage))

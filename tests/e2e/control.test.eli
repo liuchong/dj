@@ -1,0 +1,306 @@
+(module dj.tests.e2e.control
+  (import "../../src/core/native.eli" nativeGet)
+  (import "bun:test" expect)
+  (import "../support/case.eli" withCase)
+  (import "../support/real.eli" createRealFixture approvedDriver)
+  (import "../support/direct-control.eli" runDirectControl)
+  (import "../support/process.eli" until)
+  (defasync setup (case-id) (await (createRealFixture case-id)))
+  (defasync waitLifecycle
+    (f id)
+    (await
+      (until
+        "real lifecycle settled"
+        (async
+          ()
+          (let
+            (
+              (action
+                (await (js-call f :ok "lifecycle.get" (js-object :lifecycle_id id)))))
+            (when
+              (js-call
+                (js-array "ready" "failed" "unknown")
+                :includes
+                (nativeGet action "state"))
+              action)))
+        120000)))
+  (defun controlConfig
+    (f key)
+    (let ((value (nativeGet (nativeGet (nativeGet f "profile") "controls") key)))
+      (unless value
+        (throw
+          (new globalThis.Error (str "real not_run: missing control resource " key))))
+      value))
+  (withCase
+    "T51.empty-create.real"
+    (async () (await (setup "T51.empty-create.real")))
+    (async
+      (f)
+      (let*
+        ((instance-id (controlConfig f "opencode_instance_id"))
+          (instance
+            (await (js-call f :ok "instance.get" (js-object :instance_id instance-id))))
+          (accepted
+            (await
+              (js-call
+                f
+                :ok
+                "session.create"
+                (js-object
+                  :instance_id
+                  instance-id
+                  :expected_instance_epoch
+                  (nativeGet instance "instance_epoch")
+                  :workspace_ref
+                  (controlConfig f "workspace_ref")
+                  :title
+                  (nativeGet f "run_id")
+                  :idempotency_key
+                  (str (nativeGet f "run_id") "-create")))))
+          (action (await (waitLifecycle f (nativeGet accepted "lifecycle_id"))))
+          (created-session
+            (await
+              (js-call
+                f
+                :ok
+                "session.get"
+                (js-object :session_key (nativeGet action "session_key")))))
+          (native
+            (await
+              (approvedDriver
+                f
+                "observe-empty-opencode"
+                (js-object
+                  :instance_id
+                  instance-id
+                  :session_key
+                  (nativeGet action "session_key")
+                  :native_session_id
+                  (nativeGet created-session "native_session_id")
+                  :run_id
+                  (nativeGet f "run_id"))))))
+        (js-call (expect (nativeGet action "state")) :toBe "ready")
+        (js-call (expect (nativeGet native "session_key")) :toBe
+          (nativeGet action "session_key"))
+        (js-call (expect (nativeGet native "prompt_count")) :toBe 0)
+        (js-call
+          (expect (nativeGet native "native_instance_id"))
+          :toBe
+          (nativeGet instance "native_instance_id"))
+        (await
+          (js-call
+            f
+            :evidence
+            (js-object
+              :lifecycle_id
+              (nativeGet accepted "lifecycle_id")
+              :session_key
+              (nativeGet action "session_key")
+              :native_observation
+              native)))))
+    (lambda (f) nil))
+  (withCase
+    "T43.pi-same-session.real"
+    (async () (await (setup "T43.pi-same-session.real")))
+    (async
+      (f)
+      (let*
+        ((profile-id (controlConfig f "pi_profile_id"))
+          (profiles
+            (nativeGet
+              (await (js-call f :ok "profile.list" (js-object :tools (js-array "pi"))))
+              "items"))
+          (profile
+            (js-call profiles :find (lambda (p) (= (nativeGet p "profile_id") profile-id))))
+          (first
+            (await
+              (js-call
+                f
+                :ok
+                "instance.start"
+                (js-object
+                  :profile_id
+                  profile-id
+                  :expected_profile_revision
+                  (nativeGet profile "revision")
+                  :idempotency_key
+                  (str (nativeGet f "run_id") "-start")))))
+          (ready (await (waitLifecycle f (nativeGet first "lifecycle_id"))))
+          (key (nativeGet ready "initial_session_key"))
+          (before (await (js-call f :ok "session.get" (js-object :session_key key))))
+          (instance
+            (await
+              (js-call
+                f
+                :ok
+                "instance.get"
+                (js-object :instance_id (nativeGet ready "instance_id"))))))
+        (js-call (expect key) :toBeDefined)
+        (let
+          (
+            (stop
+              (await
+                (js-call
+                  f
+                  :ok
+                  "instance.stop"
+                  (js-object
+                    :instance_id
+                    (nativeGet instance "instance_id")
+                    :expected_revision
+                    (nativeGet instance "revision")
+                    :idempotency_key
+                    (str (nativeGet f "run_id") "-stop"))))))
+          (let ((settled (await (waitLifecycle f (nativeGet stop "lifecycle_id")))))
+            (js-call (expect (nativeGet settled "state")) :toBe "ready")
+            (js-call
+              (expect (nativeGet (nativeGet settled "current_instance") "state"))
+              :toBe
+              "stopped")))
+        (let*
+          (
+            (second
+              (await
+                (js-call
+                  f
+                  :ok
+                  "instance.start"
+                  (js-object
+                    :profile_id
+                    profile-id
+                    :expected_profile_revision
+                    (nativeGet profile "revision")
+                    :idempotency_key
+                    (str (nativeGet f "run_id") "-resume")))))
+            (resumed (await (waitLifecycle f (nativeGet second "lifecycle_id"))))
+            (after
+              (await
+                (js-call
+                  f
+                  :ok
+                  "session.get"
+                  (js-object :session_key (nativeGet resumed "initial_session_key"))))))
+          (js-call
+            (expect (nativeGet after "native_session_id"))
+            :toBe
+            (nativeGet before "native_session_id"))
+          (js-call (expect (nativeGet after "session_key")) :toBe key)
+          (await
+            (js-call
+              f
+              :evidence
+              (js-object
+                :before_key
+                key
+                :after_key
+                (nativeGet after "session_key")
+                :before_native_session_id
+                (nativeGet before "native_session_id")
+                :after_native_session_id
+                (nativeGet after "native_session_id")
+                :start_lifecycle_id
+                (nativeGet first "lifecycle_id")
+                :resume_lifecycle_id
+                (nativeGet second "lifecycle_id")))))))
+    (lambda (f) nil))
+  (withCase
+    "T58.owned-stop.real"
+    (async () (await (setup "T58.owned-stop.real")))
+    (async
+      (f)
+      (let*
+        ((id (controlConfig f "owned_instance_id"))
+          (instance (await (js-call f :ok "instance.get" (js-object :instance_id id)))))
+        (js-call (expect (nativeGet instance "ownership")) :toBe "managed")
+        (await
+          (approvedDriver
+            f
+            "busy-target"
+            (js-object :instance_id id :run_id (nativeGet f "run_id"))))
+        (let*
+          (
+            (stop
+              (await
+                (js-call
+                  f
+                  :ok
+                  "instance.stop"
+                  (js-object
+                    :instance_id
+                    id
+                    :expected_revision
+                    (nativeGet instance "revision")
+                    :idempotency_key
+                    (str (nativeGet f "run_id") "-stop")))))
+            (pending
+              (await
+                (js-call
+                  f
+                  :ok
+                  "lifecycle.get"
+                  (js-object :lifecycle_id (nativeGet stop "lifecycle_id"))))))
+          (js-call
+            (expect (nativeGet (nativeGet pending "current_instance") "state"))
+            :toBe
+            "stopping")
+          (await
+            (approvedDriver
+              f
+              "release-target"
+              (js-object :instance_id id :run_id (nativeGet f "run_id"))))
+          (let ((settled (await (waitLifecycle f (nativeGet stop "lifecycle_id")))))
+            (js-call (expect (nativeGet settled "state")) :toBe "ready")
+            (js-call
+              (expect (nativeGet (nativeGet settled "current_instance") "state"))
+              :toBe
+              "stopped")
+            (await
+              (js-call
+                f
+                :evidence
+                (js-object
+                  :lifecycle_id
+                  (nativeGet stop "lifecycle_id")
+                  :instance_id
+                  id
+                  :launch_token
+                  (nativeGet instance "launch_token")
+                  :settled
+                  settled)))))))
+    (lambda (f) nil))
+  (withCase
+    "T68.safe-drain.real"
+    (async () (await (setup "T68.safe-drain.real")))
+    (async
+      (f)
+      (unless (= (controlConfig f "allow_service_stop") t)
+        (throw (new globalThis.Error "real not_run: dedicated DJ stop not authorized")))
+      (let*
+        ((status (await (js-call f :ok "service.status" (js-object))))
+          (observed
+            (await
+              (approvedDriver
+                f
+                "stop-dj-with-active-target"
+                (js-object :service_id (nativeGet status "service_id") :run_id (nativeGet f "run_id"))))))
+        (js-call (expect (nativeGet observed "state_at_deadline")) :toBe "draining")
+        (js-call (expect (nativeGet observed "native_pipes_open_at_deadline")) :toBe t)
+        (js-call (expect (nativeGet observed "forced_agent_kill")) :toBe false)
+        (await (js-call f :evidence observed))))
+    (lambda (f) nil))
+  (import "../support/real.eli" waitStarted)
+  (withCase
+  "T49.direct-control.real"
+  (async
+    ()
+    (await (createRealFixture "T49.direct-control.real" (js-object :client_profile_key "no_im_client_profile"))))
+  (async (f) (await (runDirectControl f "opencode")))
+  (lambda (f) nil))
+  (withCase
+  "T49.direct-control.pi.real"
+  (async
+    ()
+    (await (createRealFixture "T49.direct-control.pi.real" (js-object :client_profile_key "no_im_client_profile"))))
+  (async (f) (await (runDirectControl f "pi")))
+  (lambda (f) nil))
+)

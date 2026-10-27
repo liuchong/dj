@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 2,
+  "sourceRoot": ".",
+  "entries": [
+    "tests/unit/contract.test.eli",
+    "tests/unit/identity.test.eli",
+    "tests/unit/rules.test.eli",
+    "tests/unit/state.test.eli",
+    "tests/integration/storage.test.eli",
+    "tests/integration/query.test.eli",
+    "tests/integration/lifecycle.test.eli",
+    "tests/integration/delivery.test.eli",
+    "tests/integration/im.test.eli",
+    "tests/integration/agent.test.eli",
+    "tests/integration/interfaces.test.eli",
+    "tests/system/recovery.test.eli",
+    "tests/system/flows.test.eli",
+    "tests/system/ownership.test.eli",
+    "tests/e2e/relay.test.eli",
+    "tests/e2e/control.test.eli",
+    "tests/e2e/skill.test.eli",
+    "tests/performance/router.test.eli",
+    "tests/performance/catalog.test.eli",
+    "tests/unit/lark-acceptance.test.eli",
+    "tests/integration/lark-acceptance.test.eli",
+    "tests/unit/pi-observer.test.eli",
+    "tests/integration/pi-observer.test.eli",
+    "tests/integration/desktop.test.eli",
+    "tests/integration/cli.test.eli",
+    "tests/unit/native-inboxes.test.eli"
+  ],
+  "outDir": "dist-tests"
+}

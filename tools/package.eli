@@ -1,0 +1,413 @@
+(module dj.tools.package
+  (import "../src/core/native.eli" nativeBitAnd nativeGet)
+  (import "node:fs/promises"
+    readFile
+    writeFile
+    mkdir
+    readdir
+    lstat
+    realpath
+    rename
+    chmod)
+  (import "node:path" resolve dirname relative isAbsolute)
+  (import "node:crypto" randomUUID)
+  (import "./build.eli" bindCompiler)
+  (import "./build-inputs.eli" sha256 assertBuildBinding)
+  (defun within
+    (root path)
+    (let ((name (relative root path)))
+      (and
+        (not (isAbsolute name))
+        (not (= name ".."))
+        (not (js-call name :startsWith "../")))))
+  (defasync privateDirectory
+    (path)
+    (await (mkdir path (js-object :recursive t :mode 448)))
+    (let ((info (await (lstat path))))
+      (unless
+        (and
+          (js-call info :isDirectory)
+          (not (js-call info :isSymbolicLink))
+          (= (await (realpath path)) (resolve path))
+          (= (nativeGet info "uid") (js-call globalThis.process :getuid))
+          (= (nativeBitAnd (nativeGet info "mode") 63) 0))
+        (throw
+          (new
+            globalThis.Error
+            "package directory must be private, owned and without symlinks")))))
+  (defasync copyAsset
+    (source root name &optional executable)
+    (let ((info (await (lstat source))) (path (resolve root name)))
+      (unless
+        (and
+          (within root path)
+          (js-call info :isFile)
+          (not (js-call info :isSymbolicLink)))
+        (throw (new globalThis.Error "invalid package asset")))
+      (await (mkdir (dirname path) (js-object :recursive t :mode 448)))
+      (await
+        (writeFile
+          path
+          (await (readFile source))
+          (js-object :flag "wx" :mode (if executable 448 384))))))
+  (defasync copyTree
+    (source root destination)
+    (let ((entries (await (readdir source (js-object :withFileTypes t)))) (index 0))
+      (while (< index (js-length entries))
+        (let*
+          ((entry (aref entries index))
+            (name (nativeGet entry "name"))
+            (from (str source "/" name))
+            (to (str destination "/" name)))
+          (cond ((js-call entry :isDirectory) (await (copyTree from root to)))
+            ((and (js-call entry :isFile) (not (js-call entry :isSymbolicLink)))
+              (await (copyAsset from root to)))
+            (t
+              (throw
+                (new globalThis.Error "unsupported file in maintained package assets")))))
+        (setq index (1+ index)))))
+  (defun fixedRuntimePlugin
+    (compiler-root)
+    (js-object
+      :name
+      "dj-fixed-eliscript-runtime"
+      :setup
+      (lambda
+        (builder)
+        (js-call
+          builder
+          :onResolve
+          (js-object :filter (new globalThis.RegExp "^eliscript/"))
+          (lambda
+            (args)
+            (let*
+              ((name (js-call (nativeGet args "path") :slice (js-length "eliscript/")))
+                (path
+                  (resolve
+                    compiler-root
+                    (if (js-call name :endsWith ".mjs") name (str name ".mjs")))))
+              (unless
+                (and
+                  (or
+                    (js-call name :startsWith "runtime/")
+                    (js-call name :startsWith "dist/stdlib/"))
+                  (not (js-call (js-call name :split "/") :includes ".."))
+                  (within compiler-root path))
+                (throw
+                  (new
+                    globalThis.Error
+                    "production import must name only the fixed language runtime")))
+              (js-object :path path)))))))
+  (defasync normalizeSourceMaps
+    (directory compiler-root checkout)
+    (let ((entries (await (readdir directory (js-object :withFileTypes t)))) (index 0))
+      (while (< index (js-length entries))
+        (let*
+          ((entry (aref entries index)) (path (resolve directory (nativeGet entry "name"))))
+          (cond
+            ((js-call entry :isDirectory)
+              (await (normalizeSourceMaps path compiler-root checkout)))
+            ((js-call (nativeGet entry "name") :endsWith ".map")
+              (let*
+                ((map (JSON/parse (await (readFile path "utf8"))))
+                  (sources (nativeGet map "sources"))
+                  (i 0))
+                (while (< i (js-length sources))
+                  (let*
+                    ((source (aref sources i))
+                      (full (resolve directory (or (nativeGet map "sourceRoot") "") source))
+                      (safe
+                        (cond
+                          ((within compiler-root full)
+                            (str "eliscript-runtime/" (relative compiler-root full)))
+                          ((within (resolve checkout "node_modules") full)
+                            (str
+                              "dependencies/"
+                              (relative (resolve checkout "node_modules") full)))
+                          ((within (resolve checkout "dist") full)
+                            (relative (resolve checkout "dist") full))
+                          (t (str "bundled/source-" i ".mjs")))))
+                    (put sources i safe))
+                  (setq i (1+ i)))
+                (Reflect/deleteProperty map "sourceRoot")
+                (await
+                  (writeFile path (str (JSON/stringify map) "\n") (js-object :mode 384)))))))
+        (setq index (1+ index)))))
+  (defasync licenseInventory
+    (staging compiler)
+    (let*
+      (
+        (names
+          (js-array
+            "@modelcontextprotocol/server"
+            "@modelcontextprotocol/core"
+            "ajv"
+            "zod"
+            "fast-uri"
+            "fast-deep-equal"
+            "require-from-string"
+            "json-schema-traverse"
+            "eliscript"))
+        (records (js-array))
+        (index 0))
+      (while (< index (js-length names))
+        (let*
+          ((name (aref names index))
+            (root (resolve "node_modules" name))
+            (metadata
+              (JSON/parse (await (readFile (resolve root "package.json") "utf8"))))
+            (files (await (readdir root)))
+            (copied (js-array))
+            (i 0))
+          (while (< i (js-length files))
+            (let* ((file (aref files i)) (upper (js-call file :toUpperCase)))
+              (when
+                (or
+                  (= upper "LICENSE")
+                  (js-call upper :startsWith "LICENSE.")
+                  (= upper "COPYING")
+                  (= upper "NOTICE")
+                  (js-call upper :startsWith "NOTICE."))
+                (let ((destination (str "licenses/" name "/" file)))
+                  (await (copyAsset (resolve root file) staging destination))
+                  (js-call copied :push destination))))
+            (setq i (1+ i)))
+          (unless (> (js-length copied) 0)
+            (throw (new globalThis.Error "bundled dependency license text is missing")))
+          (js-call
+            records
+            :push
+            (js-object
+              :name
+              name
+              :version
+              (nativeGet metadata "version")
+              :license
+              (nativeGet metadata "license")
+              :notices
+              copied
+              :source_commit
+              (if (= name "eliscript") (nativeGet compiler "source_commit") nil))))
+        (setq index (1+ index)))
+      records))
+  (defasync packageFiles
+    (root)
+    (let ((files (js-array)))
+      (let ((visit nil))
+        (setq
+          visit
+          (async
+            (directory)
+            (let
+              ((entries (await (readdir directory (js-object :withFileTypes t))))
+                (index 0))
+              (while (< index (js-length entries))
+                (let*
+                  ((entry (aref entries index))
+                    (path (resolve directory (nativeGet entry "name"))))
+                  (cond ((js-call entry :isDirectory) (await (visit path)))
+                    ((and (js-call entry :isFile) (not (js-call entry :isSymbolicLink)))
+                      (await
+                        (chmod path (if (js-call (js-array "bin/dj" "libexec/dj-process-info")
+                          :includes (relative root path)) 448 384)))
+                      (js-call
+                        files
+                        :push
+                        (js-object
+                          :path
+                          (relative root path)
+                          :sha256
+                          (sha256 (await (readFile path))))))
+                    (t
+                      (throw
+                        (new globalThis.Error "package contains a non-regular artifact")))))
+                (setq index (1+ index))))))
+        (await (visit root))
+        (js-call
+          files
+          :sort
+          (lambda (a b) (js-call (nativeGet a "path") :localeCompare (nativeGet b "path")))))))
+  (defasync buildPackage
+    (&optional options)
+    (let*
+      ((checkout (resolve "."))
+        (build (JSON/parse (await (readFile ".local/build/manifest.json" "utf8"))))
+        (compiler (await (bindCompiler)))
+        (identity
+          (js-object
+            :sources
+            (nativeGet build "sources")
+            :outputs
+            (nativeGet build "outputs")
+            :compiler
+            (nativeGet build "compiler")
+            :bun_version
+            (nativeGet build "bun_version")))
+        (build-id (str "dj-" (sha256 (JSON/stringify identity))))
+        (output (resolve (or (nativeGet options "output") (str ".local/packages/" build-id))))
+        (parent (dirname output))
+        (staging nil))
+      (await (assertBuildBinding build))
+      (unless
+        (or
+          (within (resolve ".local/packages") output)
+          (within (resolve ".local/tests") output))
+        (throw
+          (new
+            globalThis.Error
+            "package output must be within the owned local package or test directory")))
+      (await (privateDirectory parent))
+      (try
+        (await (lstat output))
+        (throw
+          (new
+            globalThis.Error
+            "package output already exists; choose a fresh directory"))
+        (catch absent (unless (= (nativeGet absent "code") "ENOENT") (throw absent))))
+      (setq staging (resolve parent (str ".build-" (randomUUID))))
+      (await (mkdir staging (js-object :mode 448)))
+      ;; Failures retain this private staging directory for diagnosis. No existing
+      ;; package, checkout, service state or caller-owned path is ever removed.
+      (let*
+        ((config (JSON/parse (await (readFile "eliscript.json" "utf8"))))
+          (entries
+            (js-call
+              (nativeGet config "entries")
+              :map
+              (lambda (path) (resolve "dist" (js-call path :replace ".eli" ".mjs")))))
+          (result
+            (await
+              (Bun/build
+                (js-object
+                  :entrypoints
+                  entries
+                  :root
+                  (resolve "dist")
+                  :outdir
+                  (resolve staging "dist")
+                  :target
+                  "bun"
+                  :format
+                  "esm"
+                  :packages
+                  "bundle"
+                  :splitting
+                  t
+                  :sourcemap
+                  "external"
+                  :minify
+                  false
+                  :naming
+                  (js-object
+                    :entry
+                    "[dir]/[name].mjs"
+                    :chunk
+                    "chunks/[name]-[hash].mjs"
+                    :asset
+                    "assets/[name]-[hash].[ext]")
+                  :plugins
+                  (js-array (fixedRuntimePlugin (nativeGet compiler "root"))))))))
+        (unless (nativeGet result "success")
+          (throw
+            (new
+              globalThis.Error
+              "production ESM bundling failed; no package published"))))
+      (await
+        (normalizeSourceMaps (resolve staging "dist") (nativeGet compiler "root") checkout))
+      (await
+        (writeFile
+          (resolve staging "dist/build-identity.json")
+          (str (JSON/stringify (js-object :schema_version 1 :build_id build-id)) "\n")
+          (js-object :mode 384)))
+      (await (copyAsset "bin/dj" staging "bin/dj" t))
+      (await (copyAsset "dist/native/dj-process-info" staging "libexec/dj-process-info" t))
+      (await (copyTree "skills/dj" staging "skills/dj"))
+      (await (copyTree "connectors/pi" staging "connectors/pi"))
+      (await
+        (copyAsset "config/service.example.json" staging "config/service.example.json"))
+      (await
+        (copyAsset "config/client.example.json" staging "config/client.example.json"))
+      (await
+        (copyAsset
+          "packaging/launchd.example.plist"
+          staging
+          "packaging/launchd.example.plist"))
+      (await (copyAsset "packaging/runtime.md" staging "runtime.md"))
+      (let*
+        ((dependencies (await (licenseInventory staging compiler)))
+          (metadata (JSON/parse (await (readFile "package.json" "utf8"))))
+          (manifest
+            (js-object
+              :schema_version
+              1
+              :name
+              (nativeGet metadata "name")
+              :version
+              (nativeGet metadata "version")
+              :build_id
+              build-id
+              :api_version
+              "1"
+              :compiler_required_at_runtime
+              false
+              :runtime
+              (js-object
+                :name
+                "bun"
+                :version
+                (nativeGet build "bun_version")
+                :platform
+                "darwin"
+                :arch
+                "arm64")
+              :compiler
+              (nativeGet build "compiler")
+              :source_identity_sha256
+              (sha256 (JSON/stringify (nativeGet build "sources")))
+              :dependencies
+              dependencies
+              :files
+              (await (packageFiles staging)))))
+        (await (assertBuildBinding build))
+        (await
+          (writeFile
+            (resolve staging "package-manifest.json")
+            (str (JSON/stringify manifest nil 2) "\n")
+            (js-object :mode 384)))
+        (await (rename staging output))
+        (js-object
+          :directory
+          output
+          :build_id
+          build-id
+          :compiler_required_at_runtime
+          false))))
+  (when
+    (js-call
+      (or (aref (nativeGet globalThis.process "argv") 1) "")
+      :endsWith
+      "/tools/package.mjs")
+    (funcall (async ()
+(try
+      (let*
+        ((args (js-call (nativeGet globalThis.process "argv") :slice 2)) (options (js-object)))
+        (unless
+          (or
+            (= (js-length args) 0)
+            (and (= (js-length args) 2) (= (aref args 0) "--output")))
+          (throw
+            (new
+              globalThis.Error
+              "usage: package [--output .local/packages/new-directory]")))
+        (when (= (js-length args) 2) (put options :output (aref args 1)))
+        (js-call
+          (nativeGet globalThis.process "stdout")
+          :write
+          (str (JSON/stringify (await (buildPackage options))) "\n")))
+      (catch invalid
+        (js-call
+          (nativeGet globalThis.process "stderr")
+          :write
+          "DJ package failed; no runnable artifact claimed.\n")
+        (put globalThis.process :exitCode 1))))))
+  (export buildPackage))

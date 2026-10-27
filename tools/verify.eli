@@ -1,0 +1,464 @@
+(module dj.tools.verify
+  (import "../src/core/native.eli" nativeBitAnd nativeTypeOf nativeGet)
+  (import "node:fs/promises" mkdir readFile writeFile stat)
+  (import "node:path" resolve)
+  (import "node:crypto" randomUUID createHash)
+  (import "./build-inputs.eli" sha256 assertBuildBinding)
+  (defun parseSelection
+    (argv)
+    (let ((selection (js-object :suite "unit" :real false)) (index 0))
+      (while (< index (js-length argv))
+        (let ((arg (aref argv index)))
+          (cond ((= arg "--real") (put selection :real t))
+            ((or (= arg "--suite") (= arg "--case"))
+              (setq index (1+ index))
+              (when (>= index (js-length argv))
+                (throw (new globalThis.Error "missing selector value")))
+              (put selection (if (= arg "--suite") "suite" "case_id") (aref argv index)))
+            (t (throw (new globalThis.Error "unknown verification selector")))))
+        (setq index (1+ index)))
+      (unless
+        (js-call
+          (js-array "unit" "integration" "system" "e2e" "performance")
+          :includes
+          (nativeGet selection "suite"))
+        (throw (new globalThis.Error "unknown suite")))
+      selection))
+  (defun selectCases
+    (manifest selection)
+    (let ((seen (new globalThis.Set)) (wanted (js-array)))
+      (js-call
+        (nativeGet manifest "cases")
+        :forEach
+        (lambda
+          (item)
+          (let ((id (nativeGet item "case_id")))
+            (when (js-call seen :has id)
+              (throw (new globalThis.Error (str "duplicate manifest ID: " id))))
+            (js-call seen :add id)
+            (when
+              (and
+                (= (nativeGet item "suite") (nativeGet selection "suite"))
+                (not (= (nativeGet item "applicability") "deferred"))
+                (not
+                  (and
+                    (= (nativeGet selection "suite") "performance")
+                    (= (nativeGet item "required_profile") "real")
+                    (not (nativeGet selection "real"))
+                    (not (nativeGet selection "case_id"))))
+                (or
+                  (undefined? (nativeGet selection "case_id"))
+                  (= id (nativeGet selection "case_id"))))
+              (js-call wanted :push item)))))
+      (when (= (js-length wanted) 0)
+        (throw (new globalThis.Error "no matching executable case")))
+      wanted))
+  (defasync authorizeReal
+    (selection &optional wanted)
+    (when
+      (or
+        (= (nativeGet selection "suite") "e2e")
+        (and
+          wanted
+          (js-call wanted :some (lambda (item) (= (nativeGet item "required_profile") "real")))))
+      (let ((env (nativeGet globalThis.process "env")))
+        (unless
+          (and
+            (= (nativeGet selection "real") t)
+            (= (nativeGet env "DJ_TEST_REAL") "1")
+            (nativeGet env "DJ_TEST_PROFILE"))
+          (throw
+            (new
+              globalThis.Error
+              "real suite not_run: requires --real, DJ_TEST_REAL=1 and authorized profile")))
+        (let*
+          ((path (nativeGet env "DJ_TEST_PROFILE"))
+            (info (await (stat path)))
+            (profile (JSON/parse (await (readFile path "utf8")))))
+          (unless
+            (and
+              (= (nativeGet info "uid") (js-call globalThis.process :getuid))
+              (= (nativeBitAnd (nativeGet info "mode") 63) 0)
+              (= (nativeGet profile "authorized_test_resources") t))
+            (throw
+              (new
+                globalThis.Error
+                "real suite not_run: protected authorized test profile required")))))))
+  (defun validateManifest
+    (manifest entries)
+    (unless (= (nativeGet manifest "schema_version") 1)
+      (throw (new globalThis.Error "unsupported case manifest")))
+    (let ((parents (new globalThis.Set)) (seen (new globalThis.Set)))
+      (js-call
+        (nativeGet manifest "cases")
+        :forEach
+        (lambda
+          (item)
+          (let
+            ((id (nativeGet item "case_id"))
+              (parent (nativeGet item "parent_id"))
+              (file (nativeGet item "file")))
+            (unless
+              (and
+                (= (nativeTypeOf id) "string")
+                (js-call id :startsWith (str parent "."))
+                (js-call
+                  (new globalThis.RegExp "^T(0[1-9]|[1-6][0-9]|7[0-2])$")
+                  :test
+                  parent)
+                (js-call entries :includes file)
+                (not (js-call seen :has id))
+                (js-call
+                  (js-array "enabled-positive" "required-rejection" "deferred")
+                  :includes
+                  (nativeGet item "applicability"))
+                (js-call
+                  (js-array "unit" "integration" "system" "e2e" "performance")
+                  :includes
+                  (nativeGet item "suite"))
+                (js-call file :startsWith (str "tests/" (nativeGet item "suite") "/"))
+                (Number/isSafeInteger (nativeGet item "timeout_ms"))
+                (> (nativeGet item "timeout_ms") 0)
+                (> (js-length (nativeGet item "acceptance_ids" (js-array))) 0))
+              (throw (new globalThis.Error (str "invalid case declaration: " id))))
+            (js-call parents :add parent)
+            (js-call seen :add id))))
+      (unless (= (nativeGet parents "size") 72)
+        (throw (new globalThis.Error "case manifest omits a required parent scenario")))
+      t))
+  (defun summarizeResults
+    (wanted rows exit-code)
+    (let
+      ((actual (new globalThis.Map))
+        (expected (new globalThis.Set))
+        (duplicates (js-array))
+        (unexpected (js-array))
+        (missing (js-array))
+        (failed (js-array)))
+      (js-call
+        wanted
+        :forEach
+        (lambda (item) (js-call expected :add (nativeGet item "case_id"))))
+      (js-call
+        rows
+        :forEach
+        (lambda
+          (row)
+          (let ((id (nativeGet row "case_id")))
+            (unless (js-call expected :has id) (js-call unexpected :push id))
+            (when (js-call actual :has id) (js-call duplicates :push id))
+            (js-call actual :set id row))))
+      (js-call
+        wanted
+        :forEach
+        (lambda
+          (item)
+          (let* ((id (nativeGet item "case_id")) (row (js-call actual :get id)))
+            (if (undefined? row)
+              (js-call missing :push id)
+              (unless (= (nativeGet row "status") "passed") (js-call failed :push id))))))
+      (js-object
+        :test_exit_code
+        exit-code
+        :required
+        (js-length wanted)
+        :observed
+        (nativeGet actual "size")
+        :missing
+        missing
+        :duplicates
+        duplicates
+        :unexpected
+        unexpected
+        :failed
+        failed
+        :passed
+        (and
+          (= exit-code 0)
+          (= (js-length missing) 0)
+          (= (js-length duplicates) 0)
+          (= (js-length unexpected) 0)
+          (= (js-length failed) 0)))))
+  (defun escapedPattern
+    (id)
+    (let ((result id))
+      (js-call
+        (js-array "\\" "." "*" "+" "?" "^" "$" "{" "}" "(" ")" "|" "[" "]")
+        :forEach
+        (lambda
+          (character)
+          (setq result (js-call result :replaceAll character (str "\\" character)))))
+      result))
+  (defasync recordAuthorizationGate
+    (selection wanted directory timing-path)
+    (try
+      (await (authorizeReal selection wanted))
+      t
+      (catch failure
+        (let
+          ((reason "authorized real resource profile unavailable")
+            (rows
+              (js-call
+                wanted
+                :map
+                (lambda
+                  (item)
+                  (js-object
+                    :case_id
+                    (nativeGet item "case_id")
+                    :parent_id
+                    (nativeGet item "parent_id")
+                    :suite
+                    (nativeGet item "suite")
+                    :status
+                    "not_run"
+                    :attempt
+                    1
+                    :setup_ms
+                    0
+                    :exercise_ms
+                    0
+                    :teardown_ms
+                    0
+                    :wall_ms
+                    0
+                    :clock
+                    "not_started")))))
+          (await
+            (writeFile
+              timing-path
+              (str
+                (js-call
+                  (js-call rows :map (lambda (row) (JSON/stringify row)))
+                  :join
+                  "\n")
+                "\n")
+              (js-object :mode 384)))
+          (await
+            (writeFile
+              (resolve directory "summary.json")
+              (JSON/stringify
+                (Object/assign
+                  (js-object
+                    :suite
+                    (nativeGet selection "suite")
+                    :status
+                    "not_run"
+                    :reason
+                    reason)
+                  (summarizeResults wanted rows 2))
+                nil
+                2)
+              (js-object :mode 384)))
+          false))))
+  (defasync runSuite
+    (argv)
+    (let*
+      ((selection (parseSelection argv))
+        (manifest (JSON/parse (await (readFile "tests/cases.json" "utf8"))))
+        (wanted (selectCases manifest selection)))
+      (validateManifest
+        manifest
+        (nativeGet (JSON/parse (await (readFile "eliscript.tests.json" "utf8"))) "entries"))
+      (let ((build (JSON/parse (await (readFile ".local/build/manifest.json" "utf8")))))
+        (await (assertBuildBinding build)))
+      (let*
+        ((run-id (str (js-call (new globalThis.Date) :toISOString) "-" (randomUUID)))
+          (directory (resolve ".local/acceptance" (js-call run-id :replaceAll ":" "-")))
+          (timing-path (resolve directory "timing.ndjson"))
+          (junit-path (resolve directory "junit.xml"))
+          (native-path (resolve directory "native-evidence.ndjson"))
+          (performance-path (resolve directory "performance.ndjson"))
+          (files (new globalThis.Set))
+          (names (js-array)))
+        (await (mkdir directory (js-object :recursive t :mode 448)))
+        (await (writeFile timing-path "" (js-object :mode 384)))
+        (await (writeFile native-path "" (js-object :mode 384)))
+        (await (writeFile performance-path "" (js-object :mode 384)))
+        (let*
+          (
+            (git-head
+              (Bun/spawn
+                (js-array "git" "rev-parse" "HEAD")
+                (js-object :stdout "pipe" :stderr "ignore")))
+            (git-diff
+              (Bun/spawn
+                (js-array "git" "diff" "HEAD")
+                (js-object :stdout "pipe" :stderr "ignore")))
+            (head
+              (js-call
+                (await (js-call (new globalThis.Response (nativeGet git-head "stdout")) :text))
+                :trim))
+            (diff
+              (await (js-call (new globalThis.Response (nativeGet git-diff "stdout")) :text)))
+            (environment
+              (js-object
+                :source_commit
+                head
+                :dirty_diff_sha256
+                (js-call (js-call (createHash "sha256") :update diff) :digest "hex")
+                :bun_version
+                (nativeGet globalThis.Bun "version")
+                :platform
+                (nativeGet globalThis.process "platform")
+                :arch
+                (nativeGet globalThis.process "arch")
+                :suite
+                (nativeGet selection "suite")
+                :real
+                (= (nativeGet selection "real") t)
+                :started_at
+                (js-call (new globalThis.Date) :toISOString))))
+          (put
+            environment
+            :build_manifest_sha256
+            (sha256 (await (readFile ".local/build/manifest.json"))))
+          (put environment :lock_sha256 (sha256 (await (readFile "bun.lock"))))
+          (put
+            environment
+            :compiler_source_record_sha256
+            (sha256 (await (readFile "config/compiler-source-inputs.json"))))
+          (when
+            (and
+              (nativeGet selection "real")
+              (nativeGet (nativeGet globalThis.process "env") "DJ_TEST_PROFILE"))
+            (put
+              environment
+              :real_profile_sha256
+              (sha256
+                (await (readFile (nativeGet (nativeGet globalThis.process "env") "DJ_TEST_PROFILE"))))))
+          (await (nativeGet git-head "exited"))
+          (await (nativeGet git-diff "exited"))
+          (await
+            (writeFile
+              (resolve directory "environment.json")
+              (JSON/stringify environment nil 2)
+              (js-object :mode 384))))
+        (await
+          (writeFile
+            (resolve directory "manifest-snapshot.json")
+            (JSON/stringify manifest nil 2)
+            (js-object :mode 384)))
+        (js-call
+          wanted
+          :forEach
+          (lambda
+            (item)
+            (js-call
+              files
+              :add
+              (str "./dist-tests/" (js-call (nativeGet item "file") :replace ".eli" ".mjs")))
+            (js-call names :push (escapedPattern (nativeGet item "case_id")))))
+        (if (await (recordAuthorizationGate selection wanted directory timing-path))
+          (let*
+            (
+              (command
+                (js-call
+                  (js-array (nativeGet globalThis.process "execPath") "test")
+                  :concat
+                  (Array/from files)
+                  (js-array
+                    "--test-name-pattern"
+                    (str "^(" (js-call names :join "|") ")$")
+                    "--reporter=junit"
+                    (str "--reporter-outfile=" junit-path))))
+              (started (performance/now))
+              (child
+                (Bun/spawn
+                  command
+                  (js-object
+                    :cwd
+                    (js-call globalThis.process :cwd)
+                    :env
+                    (Object/assign
+                      (js-object)
+                      (nativeGet globalThis.process "env")
+                      (js-object
+                        :DJ_TEST_TIMING_FILE
+                        timing-path
+                        :DJ_TEST_NATIVE_EVIDENCE_FILE
+                        native-path
+                        :DJ_TEST_PERFORMANCE_FILE
+                        performance-path))
+                    :stdin
+                    "ignore"
+                    :stdout
+                    "inherit"
+                    :stderr
+                    "inherit")))
+              (exit-code (await (nativeGet child "exited")))
+              (records
+                (js-call
+                  (js-call (await (readFile timing-path "utf8")) :split "\n")
+                  :filter
+                  (lambda (line) (> (js-length line) 0))))
+              (rows (js-call records :map (lambda (line) (JSON/parse line)))))
+            (let*
+              (
+                (excluded
+                  (js-call
+                    (nativeGet manifest "cases")
+                    :filter
+                    (lambda
+                      (item)
+                      (and
+                        (= (nativeGet item "suite") (nativeGet selection "suite"))
+                        (= (nativeGet item "required_profile") "real")
+                        (not (nativeGet selection "real"))
+                        (not (nativeGet selection "case_id"))
+                        (not (= (nativeGet item "applicability") "deferred"))))))
+                (summary
+                  (Object/assign
+                    (js-object
+                      :run_id
+                      run-id
+                      :suite
+                      (nativeGet selection "suite")
+                      :excluded_required_case_ids
+                      (js-call excluded :map (lambda (item) (nativeGet item "case_id")))
+                      :wall_ms
+                      (- (performance/now) started))
+                    (summarizeResults wanted rows exit-code))))
+              (put
+                summary
+                :suite_complete
+                (and (nativeGet summary "passed") (= (js-length excluded) 0)))
+              (await
+                (writeFile
+                  (resolve directory "summary.json")
+                  (JSON/stringify summary nil 2)
+                  (js-object :mode 384)))
+              (js-call
+                (nativeGet globalThis.process "stderr")
+                :write
+                (str (JSON/stringify summary) "\n"))
+              (if (nativeGet summary "passed") 0 1)))
+          2))))
+  (defasync main
+    ()
+    (try
+      (put
+        globalThis.process
+        :exitCode
+        (await (runSuite (js-call (nativeGet globalThis.process "argv") :slice 2))))
+      (catch failure
+        (js-call
+          (nativeGet globalThis.process "stderr")
+          :write
+          (str (nativeGet failure "message" "verification not_run") "\n"))
+        (put globalThis.process :exitCode 2))))
+  (when
+    (and
+      (not (= (nativeGet (nativeGet globalThis.process "env") "DJ_VERIFY_LIBRARY") "1"))
+      (js-call
+        (or (aref (nativeGet globalThis.process "argv") 1) "")
+        :endsWith
+        "/tools/verify.mjs"))
+    (main))
+  (export
+    parseSelection
+    selectCases
+    validateManifest
+    summarizeResults
+    authorizeReal
+    runSuite))

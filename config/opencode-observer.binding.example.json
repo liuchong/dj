@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "authorized": false,
+  "endpoint": {
+    "base_url": "http://127.0.0.1:4096/",
+    "directory": "REPLACE_WITH_AUTHORIZED_DIRECTORY",
+    "native_namespace": "REPLACE_WITH_NATIVE_PROJECT_ID",
+    "instance_id": "REPLACE_WITH_DJ_INSTANCE_ID",
+    "native_instance_id": "REPLACE_WITH_AUTHORIZED_NATIVE_INSTANCE_ID"
+  },
+  "auth": {
+    "type": "none"
+  },
+  "targets": []
+}

@@ -1,0 +1,147 @@
+(module dj.host.bun.process
+  (import "../../core/native.eli" nativeTypeOf nativeGet)
+  (import "node:crypto" randomUUID)
+  (defun createProcessPort
+    (clock)
+    (let ((owned (new globalThis.Map)))
+      (js-object
+        :currentIdentity
+        (lambda
+          ()
+          (js-object
+            :pid
+            (nativeGet globalThis.process "pid")
+            :process_birth
+            (str
+              (nativeGet globalThis.process "pid")
+              ":"
+              (nativeGet globalThis.performance "timeOrigin"))))
+        :inspectServiceOwner
+        (async
+          (record)
+          ;; A timestamp or heartbeat never licenses stealing a live owner.
+          ;; PID reuse is conservative: a live PID remains a conflict.
+          (let ((djReturn1Token (js-object)) (djReturn1Value nil))
+            (try
+              (let ((pid (nativeGet record "pid")))
+                (unless (and (Number/isSafeInteger pid) (> pid 0))
+                  (progn
+                    (setq
+                      djReturn1Value
+                      (js-object :absence_verified false :evidence_level "none"))
+                    (throw djReturn1Token)))
+                (try
+                  (js-call globalThis.process :kill pid 0)
+                  (js-object :absence_verified false :evidence_level "native_protocol")
+                  (catch error
+                    (when (eq error djReturn1Token) (throw error))
+                    (js-object
+                      :absence_verified
+                      (= (nativeGet error "code") "ESRCH")
+                      :evidence_level
+                      (if (= (nativeGet error "code") "ESRCH") "native_protocol" "none")))))
+              (catch djReturn1Error
+                (if (eq djReturn1Error djReturn1Token)
+                  djReturn1Value
+                  (throw djReturn1Error))))))
+        :spawn
+        (lambda
+          (argv options)
+          (unless
+            (and
+              (Array/isArray argv)
+              (> (js-length argv) 0)
+              (js-call
+                argv
+                :every
+                (lambda
+                  (part)
+                  (and
+                    (= (nativeTypeOf part) "string")
+                    (not (js-call part :includes "\u0000"))))))
+            (throw
+              (new
+                globalThis.TypeError
+                "process argv must be a nonempty string array without NUL")))
+          (when
+            (and (nativeGet options "abort_signal") (nativeGet (nativeGet options "abort_signal") "aborted"))
+            (throw (new globalThis.Error "process request cancelled before spawn")))
+          (let*
+            ((token (or (nativeGet options "launch_token") (randomUUID)))
+              (child
+                (Bun/spawn
+                  argv
+                  (js-object
+                    :cwd
+                    (nativeGet options "cwd")
+                    :env
+                    (nativeGet options "env")
+                    :stdin
+                    (nativeGet options "stdin" "pipe")
+                    :stdout
+                    (nativeGet options "stdout" "pipe")
+                    :stderr
+                    (nativeGet options "stderr" "pipe"))))
+              (record
+                (js-object
+                  :pid
+                  (nativeGet child "pid")
+                  :launch_token
+                  token
+                  :child
+                  child
+                  :spawned_at
+                  (js-call clock :utcNow)
+                  :state
+                  "running"
+                  :exit_code
+                  nil)))
+            (js-call owned :set token record)
+            ;; Observing exit never kills a child or interprets an Agent answer.
+            (js-call
+              (nativeGet child "exited")
+              :then
+              (lambda (code) (put record :state "exited") (put record :exit_code code)))
+            child))
+        :describeOwned
+        (lambda
+          (pid token)
+          (let ((record (js-call owned :get token)))
+            (when (and record (= pid (nativeGet record "pid")))
+              (js-object
+                :pid
+                pid
+                :launch_token
+                token
+                :state
+                (nativeGet record "state")
+                :spawned_at
+                (nativeGet record "spawned_at")
+                :exit_code
+                (nativeGet record "exit_code")))))
+        :ownedProcesses
+        (lambda
+          ()
+          (js-call
+            (Array/from (js-call owned :values))
+            :map
+            (lambda
+              (record)
+              (js-object
+                :pid
+                (nativeGet record "pid")
+                :launch_token
+                (nativeGet record "launch_token")
+                :state
+                (nativeGet record "state")
+                :spawned_at
+                (nativeGet record "spawned_at")
+                :exit_code
+                (nativeGet record "exit_code")))))
+        :releaseOwned
+        (lambda
+          (token)
+          (let ((record (js-call owned :get token)))
+            (when (and record (= (nativeGet record "state") "exited"))
+              (js-call owned :delete token)))))))
+  (export createProcessPort))

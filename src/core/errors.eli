@@ -1,0 +1,149 @@
+(module dj.core.errors
+  (import "./native.eli" nativeGet)
+  (defconst messages
+    (Object/freeze
+      (js-object
+        :invalid_argument
+        "The request does not satisfy the operation contract."
+        :limit_exceeded
+        "The request exceeds a fixed service or native limit."
+        :unauthenticated
+        "A valid transport credential is required."
+        :forbidden
+        "The current principal is not authorized for this operation."
+        :not_found
+        "The resource is not present in the currently visible scope."
+        :stale_reference
+        "The reference is expired or no longer matches the current resource."
+        :revision_conflict
+        "The expected revision does not match the current resource."
+        :unsupported
+        "This known capability is not supported by this release or target."
+        :incompatible
+        "The configured protocol or catalog identity is incompatible."
+        :unavailable
+        "The service or configured source is unavailable."
+        :capacity_exceeded
+        "The service cannot admit additional work within its storage budget."
+        :idempotency_conflict
+        "This key is already bound to a different request."
+        :idempotency_expired
+        "The original response expired; inspect the original operation."
+        :delivery_unknown
+        "The original input may have been submitted; reconcile that delivery."
+        :outbound_unknown
+        "The original message may have been sent; reconcile that outbound."
+        :target_offline
+        "The exact target has no confirmed live receiver."
+        :target_busy
+        "The exact target is not confirmed idle."
+        :permission_pending
+        "The target is waiting for native permission."
+        :target_unbound
+        "No authorized recipient is bound to this exact target."
+        :ambiguous_target
+        "The request does not identify one exact target."
+        :preview_invalid
+        "The preview contains blocking issues."
+        :preview_stale
+        "The preview no longer matches current resources or authorization."
+        :preview_expired
+        "The fixed preview ticket has expired."
+        :already_committed
+        "The fixed preview was already committed."
+        :reply_context_expired
+        "The fixed reply context expired."
+        :result_expired
+        "The original safe result expired; the action will not be repeated."
+        :content_unavailable
+        "The requested content is not available in the current scope."
+        :rate_limited
+        "The native service temporarily limited this request."
+        :instance_stopping
+        "The instance gate is closed for stop or recovery."
+        :storage_unavailable
+        "The durable store is unavailable; no alternate database will be created."
+        :invalid_transaction
+        "A durable mutation requires a bounded synchronous Result callback."
+        :owner_conflict
+        "Another service owner already controls this state."
+        :internal_error
+        "The service could not complete the request.")))
+  (defun success
+    (data &optional options)
+    (let
+      (
+        (result
+          (js-object
+            :ok
+            t
+            :request_id
+            (nativeGet options "request_id" nil)
+            :data
+            data
+            :warnings
+            (nativeGet options "warnings" (js-array))
+            :evidence_level
+            (nativeGet options "evidence_level" "service_record")
+            :effect_state
+            (nativeGet options "effect_state" "none"))))
+      (when (nativeGet options "operation_id")
+        (put result :operation_id (nativeGet options "operation_id")))
+      result))
+  (defun failure
+    (code &optional options)
+    ;; Raw exceptions, native bodies, credentials and rejected argument values
+    ;; are never used as a public error message.
+    (js-object
+      :ok
+      false
+      :request_id
+      (nativeGet options "request_id" nil)
+      :warnings
+      (nativeGet options "warnings" (js-array))
+      :evidence_level
+      (nativeGet options "evidence_level" "none")
+      :effect_state
+      (nativeGet options "effect_state" "none")
+      :error
+      (js-object
+        :code
+        code
+        :message
+        (nativeGet messages code (nativeGet messages "internal_error"))
+        :retryable
+        (= (nativeGet options "retryable") t)
+        :details
+        (nativeGet options "details" (js-object))
+        :field_errors
+        (nativeGet options "field_errors" (js-array))
+        :next_actions
+        (nativeGet options "next_actions" (js-array)))))
+  (defun invalidField
+    (path expected)
+    (failure
+      "invalid_argument"
+      (js-object
+        :field_errors
+        (js-array
+          (js-object
+            :pointer
+            path
+            :code
+            "invalid_argument"
+            :expected
+            expected
+            :received_type
+            "invalid")))))
+  (defun mapStorageError
+    (error &optional effect)
+    (let ((code (nativeGet error "code" "")))
+      (cond
+        ((js-call (js-array "SQLITE_FULL" "ENOSPC" "EDQUOT") :includes code)
+          (failure "capacity_exceeded" (js-object :effect_state (or effect "none"))))
+        ((js-call (js-array "SQLITE_BUSY" "SQLITE_LOCKED") :includes code)
+          (failure
+            "unavailable"
+            (js-object :effect_state (or effect "none") :retryable t)))
+        (t (failure "internal_error" (js-object :effect_state (or effect "none")))))))
+  (export success failure invalidField mapStorageError messages))

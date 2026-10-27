@@ -1,0 +1,1523 @@
+(module dj.catalog.refresh
+  (import "../core/native.eli" nativeTypeOf nativeGet)
+  (import "../core/errors.eli" success failure)
+  (import "../core/types.eli" hashValue utf8Bytes addSeconds stableJson isUtcTime)
+  (import "../core/limits.eli" limits)
+  (import "../application/context.eli"
+    utcNow
+    nextId
+    currentPrincipal
+    can
+    requirePermission
+    inTransaction
+    must
+    typedRef
+    nativeCallContext
+    agentPort
+    safeFields
+    issueResourceHandle
+    resolveResourceHandle)
+  (import "../policy/principals.eli" configuredPrincipal)
+  (import "./service.eli" sourceRecords matchesSessionScope)
+  (import "./records.eli"
+    normalizeSession
+    createMetadataQuota
+    writeSessionVersion
+    messageKey
+    isSessionVisible)
+  (import "./search.eli" textDocumentId)
+  (defun projectRun
+    (record)
+    (safeFields
+      record
+      (js-array
+        "catalog_run_id"
+        "state"
+        "revision"
+        "scope"
+        "include_content"
+        "budget"
+        "created_at"
+        "completed_at"
+        "continuation"
+        "consumed_records"
+        "consumed_messages"
+        "consumed_bytes"
+        "coverage_complete"
+        "capacity_exceeded"
+        "reason")))
+  (defun acceptRefresh
+    (context args)
+    (let ((djReturn1Token (js-object)) (djReturn1Value nil))
+      (try
+        (let*
+          ((scope (nativeGet args "scope" (js-object)))
+            (content (= (nativeGet args "include_content") t))
+            (selected (sourceRecords context scope "catalog.refresh" content))
+            (continuation nil)
+            (previous nil))
+          (unless (nativeGet selected "ok")
+            (progn (setq djReturn1Value selected) (throw djReturn1Token)))
+          (js-call
+            (nativeGet (nativeGet selected "data") "instances")
+            :forEach
+            (lambda
+              (instance)
+              (must (requirePermission context "catalog.refresh" instance))))
+          (when (= (js-length (nativeGet (nativeGet selected "data") "instances")) 0)
+            (let
+              (
+                (permission
+                  (requirePermission
+                    context
+                    "catalog.refresh"
+                    (js-object :kind "catalog"))))
+              (unless (nativeGet permission "ok")
+                (progn (setq djReturn1Value permission) (throw djReturn1Token)))))
+          (when (nativeGet args "continuation")
+            (let
+              (
+                (resolved
+                  (resolveResourceHandle
+                    context
+                    (nativeGet args "continuation")
+                    "continuation")))
+              (unless (nativeGet resolved "ok")
+                (progn (setq djReturn1Value resolved) (throw djReturn1Token)))
+              (setq
+                continuation
+                (nativeGet resolved "data")
+                previous
+                (js-call
+                  (nativeGet context "repository")
+                  :get
+                  "catalog_runs"
+                  (nativeGet continuation "resource_key")))
+              (unless
+                (and
+                  previous
+                  (= (nativeGet previous "state") "partial")
+                  (not (nativeGet previous "continued_by"))
+                  (= (hashValue scope) (hashValue (nativeGet previous "scope")))
+                  (= content (nativeGet previous "include_content")))
+                (progn
+                  (setq djReturn1Value (failure "stale_reference"))
+                  (throw djReturn1Token)))))
+          (js-call
+            context
+            :accept
+            (lambda
+              (tx operation-id)
+              (let ((djReturn2Token (js-object)) (djReturn2Value nil))
+                (try
+                  (let*
+                    ((repository (nativeGet context "repository"))
+                      (principal (currentPrincipal context))
+                      (id (nextId context "catalog"))
+                      (record
+                        (js-object
+                          :catalog_run_id
+                          id
+                          :operation_id
+                          operation-id
+                          :principal_id
+                          (nativeGet principal "principal_id")
+                          :authorization_revision
+                          (nativeGet principal "authorization_revision")
+                          :state
+                          "recorded"
+                          :revision
+                          1
+                          :scope
+                          scope
+                          :include_content
+                          content
+                          :budget
+                          (nativeGet args "budget")
+                          :created_at
+                          (utcNow context)
+                          :consumed_records
+                          0
+                          :consumed_messages
+                          0
+                          :consumed_bytes
+                          0
+                          :elapsed_ms
+                          0
+                          :source_index
+                          0
+                          :sources
+                          (js-array)
+                          :coverage_complete
+                          false
+                          :continuation
+                          nil)))
+                    (if previous
+                      (let
+                        (
+                          (old
+                            (js-call
+                              repository
+                              :get
+                              "catalog_runs"
+                              (nativeGet previous "catalog_run_id"))))
+                        (unless
+                          (and
+                            (= (nativeGet old "state") "partial")
+                            (not (nativeGet old "continued_by")))
+                          (progn
+                            (setq djReturn2Value (failure "stale_reference"))
+                            (throw djReturn2Token)))
+                        (put record :scan_id (nativeGet old "scan_id"))
+                        (put record :sources (nativeGet old "sources"))
+                        (put record :source_index (nativeGet old "source_index"))
+                        (put old :continued_by id)
+                        (put
+                          old
+                          :sources
+                          (js-call
+                            (nativeGet old "sources")
+                            :map
+                            (lambda
+                              (source)
+                              (safeFields
+                                source
+                                (js-array
+                                  "source_id"
+                                  "instance_id"
+                                  "instance_epoch"
+                                  "phase"
+                                  "coverage")))))
+                        (must (js-call repository :replace "catalog_runs" old)))
+                      (progn
+                        (put record :scan_id id)
+                        (put
+                          record
+                          :sources
+                          (js-call
+                            (nativeGet (nativeGet selected "data") "instances")
+                            :map
+                            (lambda
+                              (instance)
+                              (js-object
+                                :source_id
+                                (nativeGet instance "instance_id")
+                                :instance_id
+                                (nativeGet instance "instance_id")
+                                :instance_epoch
+                                (nativeGet instance "instance_epoch")
+                                :phase
+                                "metadata"
+                                :native_cursor
+                                nil
+                                :pending_sessions
+                                (js-array)
+                                :pending_body
+                                (js-array)
+                                :metadata_complete
+                                false
+                                :metadata_authoritative
+                                false
+                                :body_partial
+                                false
+                                :delete_after_key
+                                ""
+                                :coverage
+                                "partial"))))))
+                    (js-call repository :insert "catalog_runs" record)
+                    (success (projectRun record)))
+                  (catch djReturn2Error
+                    (if (eq djReturn2Error djReturn2Token)
+                      djReturn2Value
+                      (throw djReturn2Error))))))
+            (lambda (data) (js-array (typedRef "catalog" (nativeGet data "catalog_run_id"))))))
+        (catch djReturn1Error
+          (if (eq djReturn1Error djReturn1Token) djReturn1Value (throw djReturn1Error))))))
+  (defun nativePage
+    (page)
+    (unless
+      (and
+        (not (= (nativeGet page "ok") false))
+        (Array/isArray (nativeGet page "items"))
+        (<= (utf8Bytes (JSON/stringify page)) (nativeGet limits "native_response_max_bytes")))
+      (let
+        (
+          (error
+            (new
+              globalThis.Error
+              "catalog page violates the bounded native port contract")))
+        (put error :domain_result (failure "limit_exceeded"))
+        (throw error)))
+    page)
+  (defun indexText
+    (context field key version sequence text session-key &optional message-key)
+    (let*
+      ((repository (nativeGet context "repository"))
+        (db (nativeGet (nativeGet context "store") "db"))
+        (id (textDocumentId field key version)))
+      (unless (js-call repository :get "text_documents" id)
+        (js-call
+          repository
+          :insert
+          "text_documents"
+          (js-object
+            :document_id
+            id
+            :session_key
+            session-key
+            :message_key
+            message-key
+            :field
+            field
+            :content_version
+            version
+            :catalog_seq
+            sequence
+            :body_bytes
+            (utf8Bytes text)))
+        (let
+          (
+            (row
+              (js-call
+                (js-call
+                  db
+                  :query
+                  "SELECT rowid AS id FROM text_documents WHERE document_id=?")
+                :get
+                id)))
+          (js-call
+            (js-call
+              db
+              :query
+              "INSERT INTO text_index(rowid,document_id,body) VALUES (?,?,?)")
+            :run
+            (nativeGet row "id")
+            id
+            text)))))
+  (defun normalizeMessage
+    (context session native)
+    (unless
+      (and
+        (= (nativeTypeOf (nativeGet native "native_message_id")) "string")
+        (> (js-length (nativeGet native "native_message_id")) 0)
+        (= (nativeTypeOf (nativeGet native "text")) "string"))
+      (throw
+        (new
+          globalThis.TypeError
+          "native catalog message requires an exact ID and text")))
+    (let*
+      ((text (nativeGet native "text"))
+        (id (nativeGet native "native_message_id"))
+        (version
+          (hashValue
+            (js-object
+              :text
+              text
+              :role
+              (nativeGet native "role" "unknown")
+              :source_revision
+              (nativeGet native "source_revision" nil))))
+        (record
+          (js-object
+            :message_key
+            (messageKey (nativeGet session "session_key") id)
+            :session_key
+            (nativeGet session "session_key")
+            :native_message_id
+            id
+            :content_version
+            version
+            :role
+            (nativeGet native "role" "unknown")
+            :body_bytes
+            (utf8Bytes text)
+            :acquired_at
+            (utcNow context)
+            :expires_at
+            (addSeconds (utcNow context) (nativeGet limits "body_retention_seconds"))
+            :tombstone
+            false
+            :truncated
+            (= (nativeGet native "truncated") t)
+            :text
+            text)))
+      (when (isUtcTime (nativeGet native "created_at"))
+        (put
+          record
+          :created_at
+          (js-call (new globalThis.Date (nativeGet native "created_at")) :toISOString)))
+      record))
+  (defun writeMessage
+    (context record)
+    (let*
+      ((repository (nativeGet context "repository"))
+        (db (nativeGet (nativeGet context "store") "db"))
+        (key (nativeGet record "message_key"))
+        (old (js-call repository :get "session_messages" key))
+        (metadata (Object/assign (js-object) record))
+        (text (nativeGet record "text")))
+      (Reflect/deleteProperty metadata "text")
+      (if
+        (and
+          old
+          (= (nativeGet old "content_version") (nativeGet record "content_version"))
+          (not (= (nativeGet old "tombstone") t)))
+        (progn
+          (put metadata :catalog_seq (nativeGet old "catalog_seq"))
+          (must (js-call repository :replace "session_messages" metadata)))
+        (let
+          (
+            (sequence
+              (js-call repository :versionResource "session_message" key metadata false)))
+          (put metadata :catalog_seq sequence)
+          (js-call
+            (js-call
+              db
+              :query
+              "UPDATE message_versions SET valid_to=? WHERE message_key=? AND valid_to IS NULL")
+            :run
+            sequence
+            key)
+          (js-call
+            (js-call
+              db
+              :query
+              "INSERT INTO message_versions(message_key,content_version,session_key,valid_from,valid_to,body,body_bytes,payload) VALUES (?,?,?,?,NULL,?,?,?)")
+            :run
+            key
+            (nativeGet metadata "content_version")
+            (nativeGet metadata "session_key")
+            sequence
+            text
+            (nativeGet metadata "body_bytes")
+            (stableJson metadata))
+          (if old
+            (must (js-call repository :replace "session_messages" metadata))
+            (js-call repository :insert "session_messages" metadata))
+          (indexText
+            context
+            "message.text"
+            key
+            (nativeGet metadata "content_version")
+            sequence
+            text
+            (nativeGet metadata "session_key")
+            key)))
+      metadata))
+  (defun contentIndexBytes
+    (context)
+    (nativeGet
+      (js-call
+        (js-call
+          (nativeGet (nativeGet context "store") "db")
+          :query
+          "SELECT COALESCE(SUM(d.pgsize),0) AS bytes FROM sqlite_schema AS s CROSS JOIN dbstat AS d WHERE (s.name='message_versions' OR s.name GLOB 'message_versions_*' OR s.name='session_messages' OR s.name='messages_session_key' OR s.name='text_documents' OR s.name='text_documents_session' OR s.name GLOB 'text_index*') AND d.name=s.name AND d.aggregate=TRUE")
+        :get)
+      "bytes"))
+  (defun catalogMetrics
+    (context)
+    (let ((db (nativeGet (nativeGet context "store") "db")))
+      (js-object
+        :metadata_count
+        (nativeGet
+          (js-call
+            (js-call db :query "SELECT COUNT(*) AS n FROM sessions WHERE tombstone=0")
+            :get)
+          "n")
+        :content_index_bytes
+        (contentIndexBytes context)
+        :active_snapshots
+        (nativeGet
+          (js-call
+            (js-call
+              db
+              :query
+              "SELECT COUNT(*) AS n FROM query_snapshots WHERE state='active' AND expires_at>?")
+            :get
+            (utcNow context))
+          "n"))))
+  (defun invalidateSnapshots
+    (context session)
+    (let*
+      ((repository (nativeGet context "repository"))
+        (rows
+          (js-call
+            (js-call
+              (js-call
+                (nativeGet (nativeGet context "store") "db")
+                :query
+                "SELECT payload FROM query_snapshots WHERE state='active' AND expires_at>? LIMIT 33")
+              :all
+              (utcNow context))
+            :map
+            (lambda (row) (JSON/parse (nativeGet row "payload"))))))
+      (js-call
+        rows
+        :forEach
+        (lambda
+          (snapshot)
+          (let*
+            (
+              (principal
+                (configuredPrincipal
+                  (nativeGet (nativeGet context "config") "principals")
+                  (nativeGet snapshot "principal_id")))
+              (actor
+                (Object/assign (js-object) context (js-object :principal principal)))
+              (scope (nativeGet snapshot "scope" (js-object))))
+            (when
+              (and
+                principal
+                (or
+                  (can actor "session.list" session)
+                  (can actor "session.search" session)
+                  (can actor "session.read" session))
+                (or
+                  (not (nativeGet scope "session_keys"))
+                  (js-call
+                    (nativeGet scope "session_keys")
+                    :includes
+                    (nativeGet session "session_key")))
+                (or
+                  (not (nativeGet scope "tools"))
+                  (js-call (nativeGet scope "tools") :includes (nativeGet session "tool")))
+                (or
+                  (not (nativeGet scope "instance_ids"))
+                  (js-call
+                    (nativeGet scope "instance_ids")
+                    :includes
+                    (nativeGet session "instance_id"))))
+              (put snapshot :state "invalidated")
+              (must (js-call repository :replace "query_snapshots" snapshot))))))))
+  (defun invalidateSourceSnapshots
+    (context instance scope)
+    (let*
+      ((repository (nativeGet context "repository"))
+        (db (nativeGet (nativeGet context "store") "db"))
+        (rows
+          (js-call
+            (js-call
+              db
+              :query
+              "SELECT payload FROM query_snapshots WHERE state='active' AND expires_at>? LIMIT 33")
+            :all
+            (utcNow context))))
+      (js-call
+        rows
+        :forEach
+        (lambda
+          (row)
+          (let*
+            ((snapshot (JSON/parse (nativeGet row "payload")))
+              (query-scope (nativeGet snapshot "scope" (js-object)))
+              (principal
+                (configuredPrincipal
+                  (nativeGet (nativeGet context "config") "principals")
+                  (nativeGet snapshot "principal_id")))
+              (actor
+                (Object/assign (js-object) context (js-object :principal principal)))
+              (permitted
+                (and
+                  principal
+                  (or
+                    (can actor "session.list" instance)
+                    (can actor "session.search" instance)
+                    (can actor "session.read" instance)))))
+            (unless permitted
+              (js-call
+                (nativeGet query-scope "session_keys" (js-array))
+                :forEach
+                (lambda
+                  (key)
+                  (let ((session (js-call repository :get "sessions" key)))
+                    (when
+                      (and
+                        session
+                        (= (nativeGet session "instance_id") (nativeGet instance "instance_id"))
+                        (or
+                          (can actor "session.list" session)
+                          (can actor "session.search" session)
+                          (can actor "session.read" session))
+                        (not (isSessionVisible context session)))
+                      (setq permitted t))))))
+            (when
+              (and
+                permitted
+                (or
+                  (not (nativeGet query-scope "instance_ids"))
+                  (js-call
+                    (nativeGet query-scope "instance_ids")
+                    :includes
+                    (nativeGet instance "instance_id")))
+                (or
+                  (not (nativeGet query-scope "tools"))
+                  (js-call
+                    (nativeGet query-scope "tools")
+                    :includes
+                    (nativeGet instance "tool" (nativeGet instance "tool_id"))))
+                (or
+                  (not (nativeGet query-scope "workspace_refs"))
+                  (not (nativeGet scope "workspace_refs"))
+                  (js-call
+                    (nativeGet query-scope "workspace_refs")
+                    :some
+                    (lambda (ref) (js-call (nativeGet scope "workspace_refs") :includes ref)))))
+              (put snapshot :state "invalidated")
+              (must (js-call repository :replace "query_snapshots" snapshot))))))))
+  (defun removeTextDocuments
+    (context session-key &optional message-key)
+    (let ((db (nativeGet (nativeGet context "store") "db")))
+      (if message-key
+        (progn
+          (js-call
+            (js-call
+              db
+              :query
+              "DELETE FROM text_index WHERE rowid IN (SELECT rowid FROM text_documents WHERE message_key=?)")
+            :run
+            message-key)
+          (js-call
+            (js-call db :query "DELETE FROM text_documents WHERE message_key=?")
+            :run
+            message-key))
+        (progn
+          (js-call
+            (js-call
+              db
+              :query
+              "DELETE FROM text_index WHERE rowid IN (SELECT rowid FROM text_documents WHERE session_key=?)")
+            :run
+            session-key)
+          (js-call
+            (js-call db :query "DELETE FROM text_documents WHERE session_key=?")
+            :run
+            session-key)))))
+  (defun tombstoneSession
+    (context session)
+    (let*
+      ((repository (nativeGet context "repository"))
+        (db (nativeGet (nativeGet context "store") "db"))
+        (key (nativeGet session "session_key"))
+        (record
+          (Object/assign
+            (js-object)
+            session
+            (js-object :tombstone t :live_receiver false :runtime_state "offline"))))
+      (let ((sequence (js-call repository :versionResource "session" key record t)))
+        (put record :catalog_seq sequence)
+        (js-call
+          (js-call
+            db
+            :query
+            "UPDATE session_versions SET valid_to=? WHERE session_key=? AND valid_to IS NULL")
+          :run
+          sequence
+          key)
+        (must (js-call repository :replace "sessions" record))
+        (js-call
+          (js-call
+            db
+            :query
+            "UPDATE session_messages SET tombstone=1,payload=json_set(payload,'$.tombstone',json('true')) WHERE session_key=?")
+          :run
+          key)
+        (removeTextDocuments context key)
+        (invalidateSnapshots context session))))
+  (defun tombstoneMessage
+    (context record session)
+    (let*
+      ((repository (nativeGet context "repository"))
+        (copy (Object/assign (js-object) record (js-object :tombstone t)))
+        (sequence
+          (js-call
+            repository
+            :versionResource
+            "session_message"
+            (nativeGet record "message_key")
+            copy
+            t)))
+      (put copy :catalog_seq sequence)
+      (must (js-call repository :replace "session_messages" copy))
+      (removeTextDocuments context (nativeGet session "session_key") (nativeGet record "message_key"))
+      (invalidateSnapshots context session)))
+  (defun finishPartial
+    (context run reason &optional capacity)
+    (let ((repository (nativeGet context "repository")))
+      (js-call
+        (nativeGet run "sources")
+        :forEach
+        (lambda
+          (source)
+          (unless (= (nativeGet source "phase") "done")
+            (let
+              (
+                (instance
+                  (js-call repository :get "instances" (nativeGet source "instance_id"))))
+              (when
+                (and
+                  instance
+                  (= (nativeGet instance "instance_epoch") (nativeGet source "instance_epoch")))
+                (let
+                  (
+                    (coverage
+                      (Object/assign
+                        (js-object)
+                        (nativeGet instance "catalog_coverage" (js-object))
+                        (js-object :metadata "partial" :reason reason))))
+                  (when (nativeGet run "include_content") (put coverage :content "partial"))
+                  (when (nativeGet source "last_observed_at")
+                    (put coverage :observed_at (nativeGet source "last_observed_at")))
+                  (put instance :catalog_coverage coverage)
+                  (must (js-call repository :replace "instances" instance)))))))))
+    (put run :state "partial")
+    (put run :reason reason)
+    (put run :capacity_exceeded (= capacity t))
+    (put run :coverage_complete false)
+    (put run :completed_at (utcNow context))
+    (let
+      (
+        (handle
+          (must
+            (issueResourceHandle
+              context
+              "continuation"
+              (nativeGet run "catalog_run_id")
+              (js-object
+                :scope_hash
+                (hashValue (nativeGet run "scope"))
+                :include_content
+                (nativeGet run "include_content"))
+              (nativeGet limits "handle_ttl_seconds")))))
+      (put run :continuation (nativeGet handle "ref")))
+    (put run :revision (1+ (nativeGet run "revision")))
+    (must (js-call (nativeGet context "repository") :replace "catalog_runs" run))
+    (success (projectRun run)))
+  (defun budgetExhausted
+    (run)
+    (let ((budget (nativeGet run "budget")))
+      (or
+        (>= (nativeGet run "consumed_records") (nativeGet budget "max_records"))
+        (and
+          (nativeGet run "include_content")
+          (or
+            (>= (nativeGet run "consumed_messages") (nativeGet budget "max_messages"))
+            (>= (nativeGet run "consumed_bytes") (nativeGet budget "max_bytes"))))
+        (>= (nativeGet run "elapsed_ms") (* 1000 (nativeGet budget "max_seconds"))))))
+  (defun deletionScope
+    (scope)
+    (js-call
+      (Object/keys scope)
+      :every
+      (lambda
+        (key)
+        (js-call (js-array "tools" "instance_ids" "workspace_refs") :includes key))))
+  (defasync runCatalogBatch
+    (base run-id &optional supplied-budget)
+    (let ((djReturn3Token (js-object)) (djReturn3Value nil))
+      (try
+        (let*
+          ((repository (nativeGet base "repository"))
+            (current (js-call repository :get "catalog_runs" run-id)))
+          (unless current
+            (progn (setq djReturn3Value (failure "not_found")) (throw djReturn3Token)))
+          (unless
+            (js-call (js-array "recorded" "running") :includes (nativeGet current "state"))
+            (progn
+              (setq djReturn3Value (success (projectRun current)))
+              (throw djReturn3Token)))
+          (let*
+            (
+              (principal
+                (configuredPrincipal
+                  (nativeGet (nativeGet base "config") "principals")
+                  (nativeGet current "principal_id")))
+              (context
+                (Object/assign
+                  (js-object)
+                  base
+                  (js-object :principal principal :operation "catalog.refresh")))
+              (run (JSON/parse (JSON/stringify current)))
+              (clock (nativeGet (nativeGet context "ports") "clock"))
+              (started (js-call clock :monoNow))
+              (sessions (js-array))
+              (messages (js-array))
+              (seen-sessions (js-array))
+              (finished-bodies (js-array))
+              (source (aref (nativeGet run "sources") (nativeGet run "source_index")))
+              (instance
+                (and
+                  source
+                  (js-call repository :get "instances" (nativeGet source "instance_id"))))
+              (turn-bytes 0)
+              (turn-messages 0)
+              (reason nil)
+              (new-size nil))
+            (unless
+              (and
+                principal
+                (=
+                  (nativeGet principal "authorization_revision")
+                  (nativeGet run "authorization_revision")))
+              (progn
+                (setq
+                  djReturn3Value
+                  (inTransaction
+                    context
+                    (lambda
+                      (tx)
+                      (put run :state "failed")
+                      (put run :reason "authorization_changed")
+                      (must (js-call repository :replace "catalog_runs" run))
+                      (success (projectRun run)))))
+                (throw djReturn3Token)))
+            (when (budgetExhausted run)
+              (progn
+                (setq
+                  djReturn3Value
+                  (inTransaction
+                    context
+                    (lambda (tx) (finishPartial context run "budget_exhausted"))))
+                (throw djReturn3Token)))
+            (unless source
+              (progn
+                (setq
+                  djReturn3Value
+                  (inTransaction
+                    context
+                    (lambda
+                      (tx)
+                      (put run :state "done")
+                      (put run :coverage_complete t)
+                      (put run :completed_at (utcNow context))
+                      (must (js-call repository :replace "catalog_runs" run))
+                      (success (projectRun run)))))
+                (throw djReturn3Token)))
+            (unless
+              (and
+                instance
+                (= (nativeGet instance "instance_epoch") (nativeGet source "instance_epoch"))
+                (can context "catalog.refresh" instance))
+              (progn
+                (setq
+                  djReturn3Value
+                  (inTransaction
+                    context
+                    (lambda (tx) (finishPartial context run "source_changed"))))
+                (throw djReturn3Token)))
+            (let ((port (agentPort context instance)))
+              (unless port
+                (progn
+                  (setq
+                    djReturn3Value
+                    (inTransaction
+                      context
+                      (lambda (tx) (finishPartial context run "unsupported"))))
+                  (throw djReturn3Token)))
+              (try
+                (when (= (nativeGet source "phase") "metadata")
+                  (when (= (js-length (nativeGet source "pending_sessions")) 0)
+                    (unless (object-has? source :scan_start_seq)
+                      (put
+                        source
+                        :scan_start_seq
+                        (js-call repository :currentSequence "catalog")))
+                    (let*
+                      (
+                        (page
+                          (nativePage
+                            (await
+                              (js-call
+                                port
+                                :listSessions
+                                (Object/assign
+                                  (js-object)
+                                  (nativeGet run "scope")
+                                  (js-object
+                                    :instance_ids
+                                    (js-array (nativeGet instance "instance_id"))))
+                                (nativeGet source "native_cursor")
+                                (js-object
+                                  :max_records
+                                  (nativeGet limits "refresh_turn_records")
+                                  :max_bytes
+                                  (nativeGet limits "native_response_max_bytes"))
+                                (nativeCallContext context)))))
+                        (pending (js-array)))
+                      (js-call
+                        (nativeGet page "items")
+                        :forEach
+                        (lambda
+                          (native)
+                          (let ((record (normalizeSession context native instance)))
+                            (js-call seen-sessions :push (nativeGet record "session_key"))
+                            (when
+                              (and
+                                (or
+                                  (can context "session.list" record)
+                                  (can context "session.inspect" record))
+                                (matchesSessionScope
+                                  context
+                                  record
+                                  (nativeGet run "scope")
+                                  (if (can context "session.list" record)
+                                    "session.list"
+                                    "session.inspect")
+                                  t))
+                              (js-call pending :push record)))))
+                      (put source :pending_sessions pending)
+                      (put source :native_cursor (nativeGet page "next_cursor" nil))
+                      (put source :last_observed_at (utcNow context))
+                      (put source :metadata_complete (= (nativeGet page "complete") t))
+                      (put
+                        source
+                        :metadata_authoritative
+                        (and
+                          (= (nativeGet page "complete") t)
+                          (= (nativeGet page "coverage" "partial") "covered")))
+                      (when
+                        (and
+                          (not (nativeGet source "metadata_complete"))
+                          (not (nativeGet source "native_cursor")))
+                        (setq reason "native_coverage_partial"))))
+                  (let
+                    (
+                      (maximum
+                        (Math/min
+                          (nativeGet limits "refresh_turn_records")
+                          (-
+                            (nativeGet (nativeGet run "budget") "max_records")
+                            (nativeGet run "consumed_records")))))
+                    (while
+                      (and
+                        (> (js-length (nativeGet source "pending_sessions")) 0)
+                        (< (js-length sessions) maximum))
+                      (let ((record (js-call (nativeGet source "pending_sessions") :shift)))
+                        (js-call sessions :push record)
+                        (when (nativeGet run "include_content")
+                          (if (can context "session.read" record)
+                            (js-call
+                              (nativeGet source "pending_body")
+                              :push
+                              (js-object
+                                :session_key
+                                (nativeGet record "session_key")
+                                :session
+                                record
+                                :native_cursor
+                                nil
+                                :pending
+                                (js-array)
+                                :complete
+                                false
+                                :authoritative
+                                false))
+                            (put source :body_partial t))))))
+                  (when (> (js-length (nativeGet source "pending_body")) 0)
+                    (put source :phase "body")))
+                (when (= (nativeGet source "phase") "body")
+                  (let ((reads 0))
+                    (let ((djLoop1Break (js-object)))
+                      (try
+                        (while
+                          (and
+                            (> (js-length (nativeGet source "pending_body")) 0)
+                            (< reads 4)
+                            (< turn-messages (nativeGet limits "refresh_turn_messages"))
+                            (<
+                              (+ (nativeGet run "consumed_messages") turn-messages)
+                              (nativeGet (nativeGet run "budget") "max_messages"))
+                            (< turn-bytes (nativeGet limits "refresh_turn_bytes")))
+                          (let*
+                            ((task (aref (nativeGet source "pending_body") 0))
+                              (session (nativeGet task "session")))
+                            (unless (can context "session.read" session)
+                              (setq reason "authorization_changed")
+                              (throw djLoop1Break))
+                            (when (= (js-length (nativeGet task "pending")) 0)
+                              (unless (object-has? task :scan_start_seq)
+                                (put
+                                  task
+                                  :scan_start_seq
+                                  (js-call repository :currentSequence "catalog")))
+                              (setq reads (1+ reads))
+                              (let
+                                (
+                                  (page
+                                    (nativePage
+                                      (await
+                                        (js-call
+                                          port
+                                          :readMessages
+                                          session
+                                          (nativeGet task "native_cursor")
+                                          (js-object
+                                            :max_records
+                                            (nativeGet limits "refresh_turn_messages")
+                                            :max_bytes
+                                            (nativeGet limits "refresh_turn_bytes"))
+                                          (nativeCallContext context))))))
+                                (put
+                                  task
+                                  :pending
+                                  (js-call
+                                    (nativeGet page "items")
+                                    :map
+                                    (lambda
+                                      (native)
+                                      (normalizeMessage context session native))))
+                                (put task :native_cursor (nativeGet page "next_cursor" nil))
+                                (put task :complete (= (nativeGet page "complete") t))
+                                (put
+                                  task
+                                  :authoritative
+                                  (and
+                                    (= (nativeGet page "complete") t)
+                                    (not (= (nativeGet page "coverage") "partial"))))
+                                (when
+                                  (and
+                                    (not (nativeGet task "complete"))
+                                    (not (nativeGet task "native_cursor")))
+                                  (setq reason "native_coverage_partial"))))
+                            (let ((djLoop2Break (js-object)))
+                              (try
+                                (while
+                                  (and
+                                    (> (js-length (nativeGet task "pending")) 0)
+                                    (<
+                                      turn-messages
+                                      (nativeGet limits "refresh_turn_messages"))
+                                    (<
+                                      (+ (nativeGet run "consumed_messages") turn-messages)
+                                      (nativeGet (nativeGet run "budget") "max_messages")))
+                                  (let*
+                                    ((message (aref (nativeGet task "pending") 0))
+                                      (size (nativeGet message "body_bytes")))
+                                    (when
+                                      (or
+                                        (>
+                                          (+ turn-bytes size)
+                                          (nativeGet limits "refresh_turn_bytes"))
+                                        (>
+                                          (+ (nativeGet run "consumed_bytes") turn-bytes size)
+                                          (nativeGet (nativeGet run "budget") "max_bytes")))
+                                      (when
+                                        (>
+                                          (+ (nativeGet run "consumed_bytes") turn-bytes size)
+                                          (nativeGet (nativeGet run "budget") "max_bytes"))
+                                        (setq reason "budget_exhausted"))
+                                      (setq reads 4)
+                                      (throw djLoop2Break))
+                                    (js-call (nativeGet task "pending") :shift)
+                                    (js-call messages :push message)
+                                    (setq
+                                      turn-messages
+                                      (1+ turn-messages)
+                                      turn-bytes
+                                      (+ turn-bytes size))))
+                                (catch djLoop2Error
+                                  (unless (eq djLoop2Error djLoop2Break)
+                                    (throw djLoop2Error)))))
+                            (when
+                              (and
+                                (= (js-length (nativeGet task "pending")) 0)
+                                (nativeGet task "complete"))
+                              (js-call
+                                finished-bodies
+                                :push
+                                (js-object
+                                  :session
+                                  session
+                                  :authoritative
+                                  (nativeGet task "authoritative")
+                                  :cutoff_seq
+                                  (nativeGet task "scan_start_seq")))
+                              (js-call (nativeGet source "pending_body") :shift))
+                            (when reason (throw djLoop1Break))))
+                        (catch djLoop1Error
+                          (unless (eq djLoop1Error djLoop1Break) (throw djLoop1Error))))))
+                  (when (= (js-length (nativeGet source "pending_body")) 0)
+                    (put source :phase "metadata")))
+                (when
+                  (and
+                    (= (nativeGet source "phase") "metadata")
+                    (= (js-length (nativeGet source "pending_sessions")) 0)
+                    (= (js-length (nativeGet source "pending_body")) 0)
+                    (nativeGet source "metadata_complete"))
+                  (put
+                    source
+                    :phase
+                    (if
+                      (and
+                        (nativeGet source "metadata_authoritative")
+                        (deletionScope (nativeGet run "scope")))
+                      "delete"
+                      "done")))
+                (when (nativeGet (nativeGet context "ports") "faults")
+                  (await
+                    (js-call
+                      (nativeGet (nativeGet context "ports") "faults")
+                      :hit
+                      "catalog.after_batch_before_checkpoint"
+                      run)))
+                (put
+                  run
+                  :elapsed_ms
+                  (+ (nativeGet run "elapsed_ms") (- (js-call clock :monoNow) started)))
+                (let
+                  (
+                    (committed
+                      (inTransaction
+                        context
+                        (lambda
+                          (tx)
+                          (let ((djReturn4Token (js-object)) (djReturn4Value nil))
+                            (try
+                              (let
+                                ((fresh (js-call repository :get "catalog_runs" run-id))
+                                  (db (nativeGet tx "db"))
+                                  (metadata-quota (createMetadataQuota context)))
+                                (unless
+                                  (and
+                                    (= (nativeGet fresh "revision") (nativeGet current "revision"))
+                                    (=
+                                      (nativeGet
+                                        (currentPrincipal context)
+                                        "authorization_revision")
+                                      (nativeGet run "authorization_revision"))
+                                    (=
+                                      (nativeGet
+                                        (js-call
+                                          repository
+                                          :get
+                                          "instances"
+                                          (nativeGet instance "instance_id"))
+                                        "instance_epoch")
+                                      (nativeGet source "instance_epoch")))
+                                  (progn
+                                    (setq djReturn4Value (failure "stale_reference"))
+                                    (throw djReturn4Token)))
+                                (js-call
+                                  seen-sessions
+                                  :forEach
+                                  (lambda
+                                    (key)
+                                    (js-call
+                                      (js-call
+                                        db
+                                        :query
+                                        "INSERT OR IGNORE INTO catalog_seen_sessions(scan_id,source_id,session_key) VALUES (?,?,?)")
+                                      :run
+                                      (nativeGet run "scan_id")
+                                      (nativeGet source "source_id")
+                                      key)))
+                                (js-call sessions :forEach (lambda (record)
+                                  (must (writeSessionVersion context record metadata-quota))))
+                                (js-call
+                                  messages
+                                  :forEach
+                                  (lambda
+                                    (record)
+                                    (writeMessage context record)
+                                    (js-call
+                                      (js-call
+                                        db
+                                        :query
+                                        "INSERT OR IGNORE INTO catalog_seen_messages(scan_id,session_key,message_key) VALUES (?,?,?)")
+                                      :run
+                                      (nativeGet run "scan_id")
+                                      (nativeGet record "session_key")
+                                      (nativeGet record "message_key"))))
+                                (js-call
+                                  finished-bodies
+                                  :forEach
+                                  (lambda
+                                    (finished)
+                                    (when (nativeGet finished "authoritative")
+                                      (let*
+                                        ((session (nativeGet finished "session"))
+                                          (missing
+                                            (js-call
+                                              (js-call
+                                                db
+                                                :query
+                                                "SELECT 1 AS missing FROM session_messages m WHERE session_key=? AND catalog_seq<=? AND tombstone=0 AND NOT EXISTS (SELECT 1 FROM catalog_seen_messages x WHERE x.scan_id=? AND x.session_key=m.session_key AND x.message_key=m.message_key) LIMIT 1")
+                                              :get
+                                              (nativeGet session "session_key")
+                                              (nativeGet finished "cutoff_seq")
+                                              (nativeGet run "scan_id"))))
+                                        (js-call
+                                          (js-call
+                                            db
+                                            :query
+                                            "INSERT INTO catalog_body_barriers(session_key,scan_id,cutoff_seq) VALUES (?,?,?) ON CONFLICT(session_key) DO UPDATE SET scan_id=excluded.scan_id,cutoff_seq=excluded.cutoff_seq")
+                                          :run
+                                          (nativeGet session "session_key")
+                                          (nativeGet run "scan_id")
+                                          (nativeGet finished "cutoff_seq"))
+                                        (when missing
+                                          (invalidateSnapshots context session)
+                                          (unless (nativeGet source "pending_body_deletes")
+                                            (put
+                                              source
+                                              :pending_body_deletes
+                                              (js-array)))
+                                          (js-call
+                                            (nativeGet source "pending_body_deletes")
+                                            :push
+                                            (js-object
+                                              :session
+                                              session
+                                              :cutoff_seq
+                                              (nativeGet finished "cutoff_seq")
+                                              :after_key
+                                              "")))))))
+                                (let
+                                  ((remaining 100)
+                                    (deletes
+                                      (nativeGet source "pending_body_deletes" (js-array))))
+                                  (while (and (> remaining 0) (> (js-length deletes) 0))
+                                    (let*
+                                      ((task (aref deletes 0))
+                                        (session (nativeGet task "session"))
+                                        (missing
+                                          (js-call
+                                            (js-call
+                                              db
+                                              :query
+                                              "SELECT payload FROM session_messages m WHERE session_key=? AND catalog_seq<=? AND message_key>? AND tombstone=0 AND NOT EXISTS (SELECT 1 FROM catalog_seen_messages x WHERE x.scan_id=? AND x.session_key=m.session_key AND x.message_key=m.message_key) ORDER BY message_key LIMIT ?")
+                                            :all
+                                            (nativeGet session "session_key")
+                                            (nativeGet task "cutoff_seq")
+                                            (nativeGet task "after_key")
+                                            (nativeGet run "scan_id")
+                                            (1+ remaining))))
+                                      (js-call
+                                        (js-call missing :slice 0 remaining)
+                                        :forEach
+                                        (lambda
+                                          (row)
+                                          (let
+                                            ((message (JSON/parse (nativeGet row "payload"))))
+                                            (put
+                                              task
+                                              :after_key
+                                              (nativeGet message "message_key"))
+                                            (tombstoneMessage context message session))))
+                                      (if (<= (js-length missing) remaining)
+                                        (progn
+                                          (setq
+                                            remaining
+                                            (- remaining (js-length missing)))
+                                          (js-call deletes :shift))
+                                        (setq remaining 0))))
+                                  (when
+                                    (and
+                                      (> (js-length deletes) 0)
+                                      (js-call
+                                        (js-array "metadata" "delete" "done")
+                                        :includes
+                                        (nativeGet source "phase")))
+                                    (put source :phase "body_delete"))
+                                  (when
+                                    (and
+                                      (= (js-length deletes) 0)
+                                      (= (nativeGet source "phase") "body_delete"))
+                                    (put
+                                      source
+                                      :phase
+                                      (if
+                                        (and
+                                          (nativeGet source "metadata_complete")
+                                          (=
+                                            (js-length (nativeGet source "pending_sessions"))
+                                            0))
+                                        (if
+                                          (and
+                                            (nativeGet source "metadata_authoritative")
+                                            (deletionScope (nativeGet run "scope")))
+                                          "delete"
+                                          "done")
+                                        "metadata"))))
+                                (when (= (nativeGet source "phase") "delete")
+                                  (unless (nativeGet source "barrier_installed")
+                                    (js-call
+                                      (js-call
+                                        db
+                                        :query
+                                        "INSERT INTO catalog_source_barriers(barrier_id,instance_id,source_id,scan_id,cutoff_seq,scope) VALUES (?,?,?,?,?,?) ON CONFLICT(barrier_id) DO UPDATE SET scan_id=excluded.scan_id,cutoff_seq=excluded.cutoff_seq,scope=excluded.scope")
+                                      :run
+                                      (hashValue
+                                        (js-array
+                                          (nativeGet instance "instance_id")
+                                          (nativeGet run "scope")))
+                                      (nativeGet instance "instance_id")
+                                      (nativeGet source "source_id")
+                                      (nativeGet run "scan_id")
+                                      (nativeGet source "scan_start_seq")
+                                      (stableJson (nativeGet run "scope")))
+                                    (put source :barrier_installed t))
+                                  (let*
+                                    (
+                                      (missing
+                                        (js-call
+                                          (js-call
+                                            db
+                                            :query
+                                            "SELECT payload FROM sessions s WHERE instance_id=? AND catalog_seq<=? AND tombstone=0 AND session_key>? AND NOT EXISTS (SELECT 1 FROM catalog_seen_sessions x WHERE x.scan_id=? AND x.source_id=? AND x.session_key=s.session_key) ORDER BY session_key LIMIT 101")
+                                          :all
+                                          (nativeGet instance "instance_id")
+                                          (nativeGet source "scan_start_seq")
+                                          (nativeGet source "delete_after_key")
+                                          (nativeGet run "scan_id")
+                                          (nativeGet source "source_id"))))
+                                    (when (> (js-length missing) 0)
+                                      (invalidateSourceSnapshots
+                                        context
+                                        instance
+                                        (nativeGet run "scope")))
+                                    (js-call
+                                      (js-call missing :slice 0 100)
+                                      :forEach
+                                      (lambda
+                                        (row)
+                                        (let ((session (JSON/parse (nativeGet row "payload"))))
+                                          (put
+                                            source
+                                            :delete_after_key
+                                            (nativeGet session "session_key"))
+                                          (when
+                                            (matchesSessionScope
+                                              context
+                                              session
+                                              (nativeGet run "scope")
+                                              (if (can context "session.list" session)
+                                                "session.list"
+                                                "session.inspect")
+                                              t)
+                                            (tombstoneSession context session)))))
+                                    (when (<= (js-length missing) 100)
+                                      (put source :phase "done"))))
+                                (let ((size (contentIndexBytes context)))
+                                  (when (> size (nativeGet limits "catalog_body_index_bytes"))
+                                    (progn
+                                      (setq
+                                        djReturn4Value
+                                        (failure "capacity_exceeded"))
+                                      (throw djReturn4Token)))
+                                  (setq new-size size))
+                                (put
+                                  run
+                                  :consumed_records
+                                  (+ (nativeGet run "consumed_records") (js-length sessions)))
+                                (put
+                                  run
+                                  :consumed_messages
+                                  (+ (nativeGet run "consumed_messages") turn-messages))
+                                (put
+                                  run
+                                  :consumed_bytes
+                                  (+ (nativeGet run "consumed_bytes") turn-bytes))
+                                (when (= (nativeGet source "phase") "done")
+                                  (put
+                                    source
+                                    :coverage
+                                    (if
+                                      (and
+                                        (nativeGet source "metadata_authoritative")
+                                        (not (nativeGet source "body_partial")))
+                                      "covered"
+                                      "partial"))
+                                  (put run :source_index (1+ (nativeGet run "source_index")))
+                                  (let
+                                    (
+                                      (latest-instance
+                                        (js-call
+                                          repository
+                                          :get
+                                          "instances"
+                                          (nativeGet instance "instance_id"))))
+                                    (put
+                                      latest-instance
+                                      :catalog_coverage
+                                      (js-object
+                                        :metadata
+                                        (if (nativeGet source "metadata_authoritative")
+                                          "covered"
+                                          "partial")
+                                        :content
+                                        (if
+                                          (and
+                                            (nativeGet run "include_content")
+                                            (not (nativeGet source "body_partial")))
+                                          "covered"
+                                          "partial")
+                                        :scope
+                                        (nativeGet run "scope")
+                                        :observed_at
+                                        (nativeGet source "last_observed_at" (utcNow context))))
+                                    (must
+                                      (js-call
+                                        repository
+                                        :replace
+                                        "instances"
+                                        latest-instance))))
+                                (let
+                                  (
+                                    (checkpoint
+                                      (js-object
+                                        :catalog_run_id
+                                        run-id
+                                        :source_id
+                                        (nativeGet source "source_id")
+                                        :native_cursor
+                                        (nativeGet source "native_cursor")
+                                        :phase
+                                        (nativeGet source "phase")
+                                        :state_hash
+                                        (hashValue source)
+                                        :consumed_records
+                                        (nativeGet run "consumed_records")
+                                        :consumed_messages
+                                        (nativeGet run "consumed_messages")
+                                        :consumed_bytes
+                                        (nativeGet run "consumed_bytes"))))
+                                  (if
+                                    (js-call
+                                      repository
+                                      :get
+                                      "catalog_checkpoints"
+                                      (js-object
+                                        :catalog_run_id
+                                        run-id
+                                        :source_id
+                                        (nativeGet source "source_id")))
+                                    (must
+                                      (js-call
+                                        repository
+                                        :replace
+                                        "catalog_checkpoints"
+                                        checkpoint))
+                                    (js-call
+                                      repository
+                                      :insert
+                                      "catalog_checkpoints"
+                                      checkpoint)))
+                                (cond (reason (finishPartial context run reason))
+                                  (
+                                    (>=
+                                      (nativeGet run "source_index")
+                                      (js-length (nativeGet run "sources")))
+                                    (put run :state "done")
+                                    (put
+                                      run
+                                      :coverage_complete
+                                      (js-call
+                                        (nativeGet run "sources")
+                                        :every
+                                        (lambda
+                                          (item)
+                                          (= (nativeGet item "coverage") "covered"))))
+                                    (put run :completed_at (utcNow context))
+                                    (put run :revision (1+ (nativeGet run "revision")))
+                                    (must
+                                      (js-call repository :replace "catalog_runs" run))
+                                    (success (projectRun run)))
+                                  ((budgetExhausted run)
+                                    (finishPartial context run "budget_exhausted"))
+                                  (t
+                                    (put run :state "running")
+                                    (put run :revision (1+ (nativeGet run "revision")))
+                                    (must
+                                      (js-call repository :replace "catalog_runs" run))
+                                    (success (projectRun run)))))
+                              (catch djReturn4Error
+                                (if (eq djReturn4Error djReturn4Token)
+                                  djReturn4Value
+                                  (throw djReturn4Error)))))))))
+                  (when (and (nativeGet committed "ok") new-size (nativeGet context "runtime"))
+                    (put (nativeGet context "runtime") :content_index_bytes new-size))
+                  (if
+                    (and
+                      (not (nativeGet committed "ok"))
+                      (= (nativeGet (nativeGet committed "error") "code") "capacity_exceeded"))
+                    (inTransaction
+                      context
+                      (lambda
+                        (tx)
+                        (finishPartial context current "capacity_exceeded" t)))
+                    committed))
+                (catch error
+                  (when (eq error djReturn3Token) (throw error))
+                  (inTransaction
+                    context
+                    (lambda
+                      (tx)
+                      (finishPartial
+                        context
+                        current
+                        (if
+                          (=
+                            (nativeGet
+                              (nativeGet (nativeGet error "domain_result") "error" (js-object))
+                              "code")
+                            "limit_exceeded")
+                          "oversized"
+                          "native_source_unavailable")))))))))
+        (catch djReturn3Error
+          (if (eq djReturn3Error djReturn3Token) djReturn3Value (throw djReturn3Error))))))
+  (defasync handleOperation
+    (context operation args)
+    (let ((djReturn5Token (js-object)) (djReturn5Value nil))
+      (try
+        (cond ((= operation "catalog.refresh") (acceptRefresh context args))
+          ((= operation "catalog.get")
+            (let
+              (
+                (run
+                  (js-call
+                    (nativeGet context "repository")
+                    :get
+                    "catalog_runs"
+                    (nativeGet args "catalog_run_id"))))
+              (unless
+                (and
+                  run
+                  (or
+                    (=
+                      (nativeGet run "principal_id")
+                      (nativeGet (currentPrincipal context) "principal_id"))
+                    (= (nativeGet (currentPrincipal context) "kind") "operator"))
+                  (if (> (js-length (nativeGet run "sources")) 0)
+                    (js-call
+                      (nativeGet run "sources")
+                      :every
+                      (lambda
+                        (source)
+                        (let
+                          (
+                            (instance
+                              (js-call
+                                (nativeGet context "repository")
+                                :get
+                                "instances"
+                                (nativeGet source "instance_id"))))
+                          (and instance (can context "catalog.refresh" instance)))))
+                    (can
+                      context
+                      "catalog.refresh"
+                      (js-object :principal_id (nativeGet run "principal_id")))))
+              (progn (setq djReturn5Value (failure "forbidden")) (throw djReturn5Token)))
+            (success (projectRun run))))
+        (t (failure "invalid_argument")))
+        (catch djReturn5Error
+          (if (eq djReturn5Error djReturn5Token) djReturn5Value (throw djReturn5Error))))))
+  (export
+    acceptRefresh
+    runCatalogBatch
+    projectRun
+    catalogMetrics
+    contentIndexBytes
+    writeMessage
+    tombstoneSession
+    tombstoneMessage
+    handleOperation))

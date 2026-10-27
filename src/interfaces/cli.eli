@@ -1,0 +1,550 @@
+(module dj.interfaces.cli
+  (import "../core/native.eli" NativeNumber nativeTypeOf NativeBun nativeGet)
+  (import "node:fs/promises" open)
+  (import "node:path" resolve dirname)
+  (import "./skill.eli" runSkillCommand)
+  (import "./hooks.eli" runHookCommand)
+  (import "./native.eli" runNativeCommand)
+  (import "../core/errors.eli" success failure invalidField)
+  (import "../core/types.eli" utf8Bytes)
+  (import "../core/limits.eli" limits)
+  (import "../application/operations.eli" operationCatalog descriptorData)
+  (import "./client.eli" loadClientProfile callService)
+  (import "./mcp.eli" runMcp)
+  (import "../service/main.eli" runService)
+  (defconst flags
+    (js-object
+      :--connection
+      "connection_id"
+      :--agent
+      "agent_id"
+      :--subscription
+      "subscription_id"
+      :--delivery
+      "delivery_id"
+      :--outbound
+      "outbound_id"
+      :--conversation-ref
+      "conversation_ref"
+      :--destination-ref
+      "destination_ref"
+      :--candidate-ref
+      "candidate_ref"
+      :--preview-id
+      "preview_id"
+      :--reply-context-id
+      "reply_context_id"
+      :--session-ref
+      "session_ref"
+      :--session-key
+      "session_key"
+      :--session-message-ref
+      "session_message_ref"
+      :--instance
+      "instance_id"
+      :--profile
+      "profile_id"
+      :--catalog-run
+      "catalog_run_id"
+      :--lifecycle
+      "lifecycle_id"
+      :--operation-id
+      "operation_id"
+      :--operation
+      "operation"
+      :--idempotency-key
+      "idempotency_key"
+      :--expected-revision
+      "expected_revision"
+      :--expected-profile-revision
+      "expected_profile_revision"
+      :--expected-instance-epoch
+      "expected_instance_epoch"
+      :--workspace-ref
+      "workspace_ref"
+      :--native-session-id
+      "native_session_id"
+      :--tool
+      "tool"
+      :--surface
+      "surface"
+      :--scope
+      "scope"
+      :--binding-mode
+      "binding_mode"
+      :--display-name
+      "display_name"
+      :--recipient-principal-id
+      "recipient_principal_id"
+      :--chat-id
+      "chat_id"
+      :--thread-id
+      "thread_id"
+      :--limit
+      "limit"
+      :--cursor
+      "cursor"
+      :--request-id
+      "request_id"
+      :--offset-bytes
+      "offset_bytes"
+      :--max-bytes
+      "max_bytes"
+      :--corpus
+      "corpus"
+      :--sort
+      "sort"
+      :--title
+      "title"
+      :--resolution
+      "resolution"
+      :--reason
+      "reason"))
+  (defconst integerFields
+    (js-array
+      "expected_revision"
+      "expected_profile_revision"
+      "limit"
+      "offset_bytes"
+      "max_bytes"))
+  (defun parseCli
+    (argv)
+    (let ((djReturn1Token (js-object)) (djReturn1Value nil))
+      (try
+        (let
+          ((words (js-array))
+            (options (js-object :json false :help false :timeout_seconds 30))
+            (business (js-object))
+            (seen (new globalThis.Set))
+            (index 0))
+          (while (< index (js-length argv))
+            (let ((word (aref argv index)))
+              (if (not (js-call word :startsWith "--"))
+                (js-call words :push word)
+                (progn
+                  (when (js-call seen :has word)
+                    (progn
+                      (setq
+                        djReturn1Value
+                        (invalidField word "one occurrence of each option"))
+                      (throw djReturn1Token)))
+                  (js-call seen :add word)
+                  (if (js-call (js-array "--json" "--help") :includes word)
+                    (put options (if (= word "--json") "json" "help") t)
+                    (progn
+                      (setq index (1+ index))
+                      (when (>= index (js-length argv))
+                        (progn
+                          (setq djReturn1Value (invalidField word "option value"))
+                          (throw djReturn1Token)))
+                      (let ((value (aref argv index)))
+                        (cond
+                          (
+                            (js-call
+                              (js-array
+                                "--input"
+                                "--endpoint"
+                                "--config"
+                                "--transport"
+                                "--client-profile")
+                              :includes
+                              word)
+                            (put
+                              options
+                              (js-call (js-call word :slice 2) :replaceAll "-" "_")
+                              value))
+                          ((= word "--timeout-seconds")
+                            (unless
+                              (js-call (new globalThis.RegExp "^[0-9]+$") :test value)
+                              (progn
+                                (setq
+                                  djReturn1Value
+                                  (invalidField word "integer seconds from 1 to 300"))
+                                (throw djReturn1Token)))
+                            (put options :timeout_seconds (NativeNumber value)))
+                          ((object-has? flags word)
+                            (let ((field (nativeGet flags word)))
+                              (when (js-call integerFields :includes field)
+                                (unless
+                                  (js-call
+                                    (new globalThis.RegExp "^[0-9]+$")
+                                    :test
+                                    value)
+                                  (progn
+                                    (setq
+                                      djReturn1Value
+                                      (invalidField word "exact nonnegative integer"))
+                                    (throw djReturn1Token)))
+                                (setq value (NativeNumber value))
+                                (unless (Number/isSafeInteger value)
+                                  (progn
+                                    (setq
+                                      djReturn1Value
+                                      (invalidField word "safe integer"))
+                                    (throw djReturn1Token))))
+                              (put business field value)))
+                          (t
+                            (progn
+                              (setq
+                                djReturn1Value
+                                (invalidField word "declared option"))
+                              (throw djReturn1Token))))))))))
+            (setq index (1+ index)))
+        (unless
+          (and
+            (Number/isSafeInteger (nativeGet options "timeout_seconds"))
+            (>= (nativeGet options "timeout_seconds") 1)
+            (<= (nativeGet options "timeout_seconds") 300))
+          (progn
+            (setq
+              djReturn1Value
+              (invalidField "--timeout-seconds" "integer seconds from 1 to 300"))
+            (throw djReturn1Token)))
+        (when (and (nativeGet options "input") (> (js-length (Object/keys business)) 0))
+          (progn
+            (setq
+              djReturn1Value
+              (invalidField
+                "--input"
+                "complete JSON input without business field flags"))
+            (throw djReturn1Token)))
+        (let*
+          ((name (js-call words :join "."))
+            (operation (if (= name "status") "service.status" name)))
+          (unless
+            (or
+              (= operation "serve")
+              (= operation "mcp.serve")
+              (js-call operationCatalog :has operation)
+              (and (= (js-length words) 0) (nativeGet options "help")))
+            (progn
+              (setq
+                djReturn1Value
+                (invalidField "/operation" "declared command words; use --help"))
+              (throw djReturn1Token)))
+          (cond
+            ((= operation "serve")
+              (when
+                (or
+                  (> (js-length (Object/keys business)) 0)
+                  (nativeGet options "input")
+                  (nativeGet options "endpoint")
+                  (nativeGet options "transport")
+                  (nativeGet options "client_profile"))
+                (progn
+                  (setq djReturn1Value (failure "invalid_argument"))
+                  (throw djReturn1Token))))
+            ((= operation "mcp.serve")
+              (when
+                (or
+                  (> (js-length (Object/keys business)) 0)
+                  (nativeGet options "input")
+                  (nativeGet options "config")
+                  (nativeGet options "endpoint")
+                  (not (= (nativeGet options "transport" "stdio") "stdio")))
+                (progn
+                  (setq djReturn1Value (failure "invalid_argument"))
+                  (throw djReturn1Token))))
+            (t
+              (when (or (nativeGet options "config") (nativeGet options "transport"))
+                (progn
+                  (setq djReturn1Value (failure "invalid_argument"))
+                  (throw djReturn1Token)))
+              (let ((descriptor (js-call operationCatalog :get operation)))
+                (when descriptor
+                  (let ((properties (nativeGet (nativeGet descriptor "input_schema") "properties")))
+                    (unless
+                      (js-call
+                        (Object/keys business)
+                        :every
+                        (lambda (field) (object-has? properties field)))
+                      (progn
+                        (setq djReturn1Value (failure "invalid_argument"))
+                        (throw djReturn1Token))))))))
+          (success
+            (js-object :operation operation :options options :arguments business)))
+        )(catch djReturn1Error
+          (if (eq djReturn1Error djReturn1Token) djReturn1Value (throw djReturn1Error))))))
+  (defasync readInput
+    (reference io)
+    (if (= reference "-")
+      (let*
+        ((stream (nativeGet io "stdin"))
+          (reader (js-call stream :getReader))
+          (chunks (js-array))
+          (size 0)
+          (done false))
+        (try
+          (while (not done)
+            (let ((part (await (js-call reader :read))))
+              (setq done (nativeGet part "done"))
+              (unless done
+                (setq size (+ size (js-length (nativeGet part "value"))))
+                (when (> size (nativeGet limits "request_bytes"))
+                  (throw (new globalThis.RangeError "input limit")))
+                (js-call chunks :push (Buffer/from (nativeGet part "value"))))))
+          (JSON/parse
+            (js-call
+              (new globalThis.TextDecoder "utf-8" (js-object :fatal t))
+              :decode
+              (Buffer/concat chunks size)))
+          (finally
+            (try (await (js-call reader :cancel)) (catch ignored nil))
+            (js-call reader :releaseLock))))
+      (let ((file (await (open reference "r"))))
+        (try
+          (let ((info (await (js-call file :stat))))
+            (unless
+              (and
+                (js-call info :isFile)
+                (<= (nativeGet info "size") (nativeGet limits "request_bytes")))
+              (throw (new globalThis.RangeError "input limit"))))
+          (let*
+            ((maximum (nativeGet limits "request_bytes"))
+              (buffer (Buffer/alloc (1+ maximum)))
+              (size 0)
+              (done false))
+            (while (and (not done) (<= size maximum))
+              (let
+                (
+                  (part
+                    (await
+                      (js-call file :read buffer size (- (js-length buffer) size) nil))))
+                (if (= (nativeGet part "bytesRead") 0)
+                  (setq done t)
+                  (setq size (+ size (nativeGet part "bytesRead"))))))
+            (when (> size maximum) (throw (new globalThis.RangeError "input limit")))
+            (JSON/parse
+              (js-call
+                (new globalThis.TextDecoder "utf-8" (js-object :fatal t))
+                :decode
+                (js-call buffer :subarray 0 size))))
+          (finally (await (js-call file :close)))))))
+  (defun exitCode
+    (result)
+    (let ((djReturn2Token (js-object)) (djReturn2Value nil))
+      (try
+        (when (nativeGet result "ok") (progn (setq djReturn2Value 0) (throw djReturn2Token)))
+        (when (= (nativeGet result "effect_state") "unknown")
+          (progn (setq djReturn2Value 5) (throw djReturn2Token)))
+        (let ((code (nativeGet (nativeGet result "error") "code")))
+          (cond ((js-call (js-array "unauthenticated" "forbidden") :includes code) 3)
+            ((js-call (js-array "delivery_unknown" "outbound_unknown") :includes code)
+              5)
+            (
+              (js-call
+                (js-array
+                  "revision_conflict"
+                  "idempotency_conflict"
+                  "already_committed"
+                  "owner_conflict"
+                  "profile_conflict")
+                :includes
+                code)
+              6)
+            ((js-call (js-array "unsupported" "incompatible") :includes code) 7)
+            (
+              (js-call
+                (js-array "internal_error" "storage_unavailable" "invalid_transaction")
+                :includes
+                code)
+              8)
+            (
+              (js-call
+                (js-array
+                  "unavailable"
+                  "capacity_exceeded"
+                  "target_offline"
+                  "target_busy"
+                  "permission_pending"
+                  "rate_limited"
+                  "instance_not_ready"
+                  "instance_stopping")
+                :includes
+                code)
+              4)
+            (t 2)))
+        (catch djReturn2Error
+          (if (eq djReturn2Error djReturn2Token) djReturn2Value (throw djReturn2Error))))))
+  (defun commandHelp
+    (operation)
+    (cond
+      ((= operation "serve")
+        "dj serve [--config FILE]\nForeground service; default ~/.dj/service.json. Startup recovers durable state before intake. Stop may remain draining while native work is unresolved.\n")
+      ((= operation "mcp.serve")
+        "dj mcp serve --transport stdio [--client-profile FILE]\nThin authenticated proxy to the configured DJ service. It does not start another Core.\n")
+      ((= operation "")
+        (str
+          "DJ: deterministic IM and Agent gateway\n\ndj skill targets|install|check|config --help\n\n"
+          (js-call
+            (js-call
+              (descriptorData)
+              :map
+              (lambda
+                (descriptor)
+                (str
+                  "dj "
+                  (if (= (nativeGet descriptor "operation") "service.status")
+                    "status"
+                    (js-call (nativeGet descriptor "operation") :replaceAll "." " ")))))
+            :join
+            "\n")
+          "\n\nUse <command> --help. Model/script input: --json --input FILE, or --input - for stdin.\n"))
+      (t
+        (let*
+          ((descriptor (js-call operationCatalog :get operation))
+            (schema (nativeGet descriptor "input_schema")))
+          (str
+            "dj "
+            (js-call operation :replaceAll "." " ")
+            " --json --input FILE\n"
+            (nativeGet descriptor "help")
+            "\nPermission: "
+            (nativeGet descriptor "action")
+            "\nEffect: "
+            (nativeGet descriptor "effect_kind")
+            "; idempotency: "
+            (nativeGet descriptor "idempotency")
+            "; revision guard: "
+            (nativeGet descriptor "revision_guard")
+            "\nRequired: "
+            (js-call (nativeGet schema "required") :join ", ")
+            "\nResult resource: "
+            (nativeGet descriptor "result_resource_kind")
+            "\nDefaults: "
+            (JSON/stringify (nativeGet descriptor "defaults" (js-object)))
+            "\nLimits: "
+            (JSON/stringify (nativeGet descriptor "limit_refs" (js-array)))
+            "\nInput schema:\n"
+            (JSON/stringify schema nil 2)
+            "\nAcceptance is not native completion. On transport uncertainty, inspect operation.get using the original operation and idempotency_key; then follow typed resource_refs.\n")))))
+  (defun humanResult
+    (result)
+    (let* ((data (nativeGet result "data")) (items (nativeGet data "items")))
+      (if (Array/isArray items)
+        (str
+          (js-call
+            (js-call
+              items
+              :map
+              (lambda
+                (item)
+                (let
+                  (
+                    (fields
+                      (js-call
+                        (Object/entries item)
+                        :filter
+                        (lambda
+                          (entry)
+                          (or
+                            (= (nativeTypeOf (aref entry 1)) "string")
+                            (= (nativeTypeOf (aref entry 1)) "number")
+                            (= (nativeTypeOf (aref entry 1)) "boolean"))))))
+                  (js-call
+                    (js-call
+                      fields
+                      :map
+                      (lambda
+                        (entry)
+                        (str (aref entry 0) "=" (JSON/stringify (aref entry 1)))))
+                    :join
+                    "\t"))))
+            :join
+            "\n")
+          "\ncomplete="
+          (nativeGet data "complete")
+          " next_cursor="
+          (or (nativeGet data "next_cursor") "null")
+          "\n")
+        (str (JSON/stringify data nil 2) "\n"))))
+  (defasync runCli
+    (argv io)
+    (let ((djReturn3Token (js-object)) (djReturn3Value nil))
+      (try
+        (when (= (aref argv 0) "native")
+          (setq djReturn3Value (await (runNativeCommand argv io)))
+          (throw djReturn3Token))
+        (when (= (aref argv 0) "hook")
+          (setq djReturn3Value (await (runHookCommand argv io)))
+          (throw djReturn3Token))
+        (when (= (aref argv 0) "skill")
+          (setq djReturn3Value (await (runSkillCommand argv io
+            (resolve (dirname (aref (nativeGet globalThis.process "argv") 1)) "../../.."))))
+          (throw djReturn3Token))
+        (let* ((parsed (parseCli argv)) (result parsed) (json t))
+          (when (nativeGet parsed "ok")
+            (let*
+              ((command (nativeGet parsed "data"))
+                (operation (nativeGet command "operation"))
+                (options (nativeGet command "options"))
+                (args (nativeGet command "arguments")))
+              (setq json (nativeGet options "json"))
+              (when (nativeGet options "help")
+                (funcall (nativeGet io "stdout") (commandHelp operation))
+                (progn (setq djReturn3Value 0) (throw djReturn3Token)))
+              (cond
+                ((= operation "serve")
+                  (setq result (await (runService (nativeGet options "config")))))
+                ((= operation "mcp.serve")
+                  (setq result (await (runMcp (nativeGet options "client_profile")))))
+                (t
+                  (try
+                    (when (nativeGet options "input")
+                      (setq args (await (readInput (nativeGet options "input") io))))
+                    (let
+                      (
+                        (profile
+                          (await (loadClientProfile (nativeGet options "client_profile")))))
+                      (setq
+                        result
+                        (if (nativeGet profile "ok")
+                          (await
+                            (callService
+                              (nativeGet profile "data")
+                              operation
+                              args
+                              (nativeGet options "timeout_seconds")
+                              (nativeGet options "endpoint")))
+                          profile)))
+                    (catch invalid
+                      (when (eq invalid djReturn3Token) (throw invalid))
+                      (setq result (failure "invalid_argument"))))))))
+          (if (nativeGet result "ok")
+            (unless (= (nativeGet (nativeGet parsed "data") "operation") "mcp.serve")
+              (funcall
+                (nativeGet io "stdout")
+                (if json (str (JSON/stringify result) "\n") (humanResult result))))
+            (funcall (nativeGet io "stderr") (str (JSON/stringify result) "\n")))
+          (exitCode result))
+        (catch djReturn3Error
+          (if (eq djReturn3Error djReturn3Token) djReturn3Value (throw djReturn3Error))))))
+  (defasync main
+    ()
+    (try
+      (put
+        globalThis.process
+        :exitCode
+        (await
+          (runCli
+            (js-call (nativeGet globalThis.process "argv") :slice 2)
+            (js-object
+              :stdin
+              (js-call (nativeGet NativeBun "stdin") :stream)
+              :stdout
+              (lambda (text) (js-call (nativeGet globalThis.process "stdout") :write text))
+              :stderr
+              (lambda (text) (js-call (nativeGet globalThis.process "stderr") :write text))))))
+      (catch unavailable
+        (js-call
+          (nativeGet globalThis.process "stderr")
+          :write
+          (str (JSON/stringify (failure "internal_error")) "\n"))
+        (put globalThis.process :exitCode 8))))
+  (when
+    (js-call
+      (or (aref (nativeGet globalThis.process "argv") 1) "")
+      :endsWith
+      "/interfaces/cli.mjs")
+    (main))
+  (export runCli parseCli commandHelp exitCode readInput))

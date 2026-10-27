@@ -1,0 +1,326 @@
+(module dj.tests.system.flows
+  (import "../../src/core/native.eli" nativeGet)
+  (import "bun:test" expect)
+  (import "../support/case.eli" withCase)
+  (import "../support/fixtures.eli"
+    createFixture
+    closeFixture
+    callOk
+    bindRecipient
+    subscribe
+    createdEvent
+    getSession)
+  (defasync setup () (await (createFixture "flows" "one")))
+  (defasync bindPi
+    (f)
+    (await
+      (callOk
+        f
+        "O"
+        "instance.start"
+        (js-object
+          :profile_id
+          "pi-profile"
+          :expected_profile_revision
+          1
+          :idempotency_key
+          "start-pi")))
+    (await (js-call f :tick))
+    (let
+      (
+        (candidate
+          (aref
+            (nativeGet
+              (await
+                (callOk f "O" "agent.discover" (js-object :tool "pi" :scope "managed")))
+              "items")
+            0)))
+      (await
+        (callOk
+          f
+          "O"
+          "agent.register"
+          (js-object
+            :candidate_ref
+            (nativeGet candidate "candidate_ref")
+            :display_name
+            "pi recipient"
+            :binding_mode
+            "managed"
+            :recipient_principal_id
+            "B"
+            :idempotency_key
+            "register-pi")))))
+  (withCase
+    "T01.fanout.system"
+    setup
+    (async
+      (f)
+      (let ((oc (await (bindRecipient f))) (pi (await (bindPi f))))
+        (await (subscribe f oc "lark" 60 "A"))
+        (await (subscribe f oc "telegram" 60 "A"))
+        (await (subscribe f pi "lark" 60 "B"))
+        (await (subscribe f pi "telegram" 60 "B"))
+        (await (js-call f :ingest (createdEvent "lark" "one-lark" "source one")))
+        (await (js-call f :ingest (createdEvent "telegram" "one-tg" "source two")))
+        (await (js-call f :tick))
+        (let*
+          ((items (nativeGet (await (callOk f "O" "delivery.list" (js-object))) "items"))
+            (routes (new globalThis.Map))
+            (events (new globalThis.Map)))
+          (js-call (expect (js-length items)) :toBe 4)
+          (js-call
+            items
+            :forEach
+            (lambda
+              (d)
+              (js-call
+                routes
+                :set
+                (nativeGet d "route_id")
+                (1+ (or (js-call routes :get (nativeGet d "route_id")) 0)))
+              (js-call
+                events
+                :set
+                (nativeGet d "event_id")
+                (1+ (or (js-call events :get (nativeGet d "event_id")) 0)))))
+          (js-call (expect (nativeGet routes "size")) :toBe 2)
+          (js-call (expect (nativeGet events "size")) :toBe 2)
+          (js-call
+            (Array/from (js-call routes :values))
+            :forEach
+            (lambda (n) (js-call (expect n) :toBe 2))))))
+    closeFixture)
+  (withCase
+    "T03.history-offline.system"
+    setup
+    (async
+      (f)
+      (let* ((target (await (getSession f "s1"))) (peer (nativeGet f "opencode")))
+        (put (aref (nativeGet peer "sessions") 0) :runtime_state "offline")
+        (put (aref (nativeGet peer "sessions") 0) :live_receiver false)
+        (let
+          (
+            (accepted
+              (await
+                (callOk
+                  f
+                  "S"
+                  "session.send"
+                  (js-object
+                    :session_ref
+                    (nativeGet target "session_ref")
+                    :content
+                    (js-object :type "text" :text "hold original")
+                    :idempotency_key
+                    "offline")))))
+          (await (js-call f :tick))
+          (let
+            (
+              (delivery
+                (await
+                  (callOk
+                    f
+                    "S"
+                    "delivery.get"
+                    (js-object :delivery_id (nativeGet accepted "delivery_id"))))))
+            (js-call
+              (expect (nativeGet delivery "session_key"))
+              :toBe
+              (nativeGet target "session_key"))
+            (js-call (expect (nativeGet delivery "state")) :toBe "deferred")))
+        (js-call (expect (js-length (nativeGet peer "inputs"))) :toBe 0)
+        (js-call (expect (js-length (nativeGet peer "starts"))) :toBe 0)
+        (js-call (expect (js-length (nativeGet peer "creates"))) :toBe 0)))
+    closeFixture)
+  (withCase
+    "T13.echo-id.system"
+    setup
+    (async
+      (f)
+      (let ((agent (await (bindRecipient f))))
+        (await (subscribe f agent "lark"))
+        (await (js-call f :ingest (createdEvent "lark" "original" "reply")))
+        (await (js-call f :tick))
+        (let*
+          (
+            (delivery
+              (aref (nativeGet (await (callOk f "A" "delivery.list" (js-object))) "items") 0))
+            (out
+              (await
+                (callOk
+                  f
+                  "A"
+                  "message.reply"
+                  (js-object
+                    :reply_context_id
+                    (nativeGet delivery "reply_context_id")
+                    :content
+                    (js-object :type "text" :text "same words")
+                    :idempotency_key
+                    "reply")))))
+          (await (js-call f :tick))
+          (let
+            (
+              (record
+                (await
+                  (callOk
+                    f
+                    "A"
+                    "outbound.get"
+                    (js-object :outbound_id (nativeGet out "outbound_id"))))))
+            (await
+              (js-call
+                f
+                :ingest
+                (createdEvent
+                  "lark"
+                  (aref (nativeGet record "native_message_ids") 0)
+                  "same words")))
+            (await (js-call f :tick))
+            (js-call
+              (expect
+                (js-length
+                  (nativeGet (await (callOk f "O" "delivery.list" (js-object))) "items")))
+              :toBe
+              1)
+            (await
+              (js-call
+                f
+                :ingest
+                (createdEvent "lark" "another-human-message" "same words")))
+            (await (js-call f :tick))
+            (js-call
+              (expect
+                (js-length
+                  (nativeGet (await (callOk f "O" "delivery.list" (js-object))) "items")))
+              :toBe
+              2)))))
+    closeFixture)
+  (withCase
+    "T56.no-im-control.system"
+    setup
+    (async
+      (f)
+      (await
+        (js-call
+          f
+          :ingest
+          (createdEvent "lark" "commands-are-data" "启动 pi 并搜索所有工具，选择最合适会话")))
+      (await (js-call f :tick))
+      (js-call (expect (js-length (nativeGet (nativeGet f "opencode") "starts"))) :toBe 0)
+      (js-call (expect (js-length (nativeGet (nativeGet f "pi") "starts"))) :toBe 0)
+      (js-call (expect (js-length (nativeGet (nativeGet f "opencode") "creates"))) :toBe 0)
+      (js-call
+        (expect
+          (js-length (nativeGet (await (callOk f "O" "delivery.list" (js-object))) "items")))
+        :toBe
+        0))
+    closeFixture)
+  (withCase
+    "T13.echo-gate-unknown.system"
+    setup
+    (async
+      (f)
+      (let ((agent (await (bindRecipient f))) (peer (nativeGet f "lark")))
+        (await (subscribe f agent "lark"))
+        (await
+          (js-call f :ingest (createdEvent "lark" "original-for-echo-gate" "reply")))
+        (await (js-call f :tick))
+        (let*
+          (
+            (delivery
+              (aref (nativeGet (await (callOk f "A" "delivery.list" (js-object))) "items") 0))
+            (outbound
+              (await
+                (callOk
+                  f
+                  "A"
+                  "message.reply"
+                  (js-object
+                    :reply_context_id
+                    (nativeGet delivery "reply_context_id")
+                    :content
+                    (js-object :type "text" :text "same words")
+                    :idempotency_key
+                    "pending-native-id")))))
+          (put
+            peer
+            :send
+            (async
+              (out key ctx)
+              (js-call (nativeGet peer "sent") :push (js-object :outbound out :key key))
+              (throw
+                (new globalThis.Error "native accepted but reply ID not persisted"))))
+          (await (js-call f :tick))
+          (await (js-call f :ingest (createdEvent "lark" "pending-echo" "same words")))
+          (await
+            (js-call f :ingest (createdEvent "lark" "another-human-id" "same words")))
+          (await (js-call f :tick))
+          (js-call
+            (expect
+              (js-length (nativeGet (await (callOk f "O" "delivery.list" (js-object))) "items")))
+            :toBe
+            1)
+          (let
+            (
+              (unknown
+                (await
+                  (callOk
+                    f
+                    "A"
+                    "outbound.get"
+                    (js-object :outbound_id (nativeGet outbound "outbound_id"))))))
+            (js-call (expect (nativeGet unknown "state")) :toBe "unknown")
+            (await
+              (callOk
+                f
+                "O"
+                "outbound.resolve"
+                (js-object
+                  :outbound_id
+                  (nativeGet outbound "outbound_id")
+                  :expected_revision
+                  (nativeGet unknown "revision")
+                  :resolution
+                  "abandon_no_retry"
+                  :reason
+                  "manual decision does not identify native echo"
+                  :idempotency_key
+                  "keep-echo-gate"))))
+          (await (js-call f :tick))
+          (js-call
+            (expect
+              (js-length (nativeGet (await (callOk f "O" "delivery.list" (js-object))) "items")))
+            :toBe
+            1)
+          (put
+            peer
+            :lookup
+            (async
+              (out ctx)
+              (js-object
+                :state
+                "accepted"
+                :native_message_id
+                "pending-echo"
+                :evidence_level
+                "native_protocol")))
+          (await
+            (callOk
+              f
+              "O"
+              "outbound.reconcile"
+              (js-object
+                :outbound_id
+                (nativeGet outbound "outbound_id")
+                :idempotency_key
+                "known-echo-id")))
+          (await (js-call f :tick))
+          (js-call
+            (expect
+              (js-length (nativeGet (await (callOk f "O" "delivery.list" (js-object))) "items")))
+            :toBe
+            2)
+          (js-call (expect (js-length (nativeGet peer "sent"))) :toBe 1))))
+  closeFixture))
