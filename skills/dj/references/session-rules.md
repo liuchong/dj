@@ -8,6 +8,9 @@
 {"agent_id":"agent_example","expected_revision":1,"text":"当前对话负责获准来源的处理；严格遵守发送门禁和项目范围。","idempotency_key":"save-session-rules-example-1"}
 ```
 
+- format: text是规则正文，推荐Markdown标题、短列表或类INI的扁平键值，优先清晰、简短、少嵌套。把带真实换行的原文作为字符串参数提交；JSON请求对换行的一次标准转义是正常传输，不要再把整段正文JSON.stringify后存入text。上例仅示意短规则，长文同样保存原文，不要求改用JSON、XML或任何特定排版。
+- verify: 保存后用session.rules.get核对返回text与提交原文完全相等，并核对SHA256；JSON文本中看到的转义不等于原文丢失换行。DJ不会自动美化、反转义或解释正文中的字面反斜杠序列，以免改坏合法代码、路径或规则。
+- presentation: 原生唤醒中的external_message信封由DJ组装，conversation_rules.text是会话保存的原文；来源、上下文、订阅instructions和回复凭证不是会话规则的格式要求。不要把信封或工具响应整包照抄为最终回答，也不要从它推断必须输出JSON或XML。普通回复优先自然语言；只有明确的机器消费需要才约定结构化输出，DJ不会自动改掉已有会话输出规则。
 - update: 先读当前revision，只替换本对话完整规则；最大65536 UTF-8字节。text=""清空但保留版本。冲突先核实际修改，不盲目覆盖；超时沿原操作和幂等键查询，不能新键重写。
 - delivery: push/direct在提交前、pull在领取前附入conversation_rules，包含session_key、revision、sha256和完整text。超原生帧上限则阻断，不截断规则。已提交或领取的快照保持原版本。
 - restore: 上下文恢复后读回最新规则与原业务台账；不能把规则当作待办队列，也不能因规则存在就报告全部实时触发已接管。

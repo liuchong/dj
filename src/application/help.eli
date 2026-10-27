@@ -131,6 +131,10 @@
       "读取绑定内容版本的 session_message_ref，按 UTF-8 边界分页。"
       :session.message.search
       "在指定范围的已索引 Agent 正文中做字面检索，返回受控片段与引用。"
+      :session.rules.get
+      "读取准确原生对话保存的完整规则原文与 SHA256；JSON 仅是接口封装，读取 text 得到原文，不把整份响应当规则或最终回复。"
+      :session.rules.update
+      "完整保存本对话规则原文；建议使用易读 Markdown 标题、短列表或扁平键值与真实换行，不对正文重复 JSON 序列化。DJ 不整理、改写或替你选择回复格式；保存后 get 核对 text 与 SHA256。"
       :session.send
       "向精确 Agent 会话输入纯文本；无需 IM/登记/订阅，不自动启动或新建，不自动回 IM。"
       :instance.start

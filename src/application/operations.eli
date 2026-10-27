@@ -805,7 +805,8 @@
     (js-object :exclusive (js-array "session_key" "session_ref" "agent_id") :result "session_rules"))
   (addOperation "session.rules.update" "session_rules" (js-array "text")
     (js-object :session_key idSchema :session_ref idSchema :agent_id idSchema
-      :text (js-object :type "string" :maxLength 65536)
+      :text (js-object :type "string" :maxLength 65536
+        :description "完整规则原文。建议用 Markdown 标题、短列表或扁平键值，保留真实换行；不要把规则对象或整段正文再次 JSON.stringify 后存入 text。DJ 原样保存和还原，不替会话制定输出格式。")
       :reply_routes (js-object :type "array" :maxItems 32 :items (objectSchema
         (js-object :source_connection_id idSchema :mention_id idSchema :reply_connection_id idSchema)
         (js-array "source_connection_id" "mention_id" "reply_connection_id"))))
