@@ -457,6 +457,7 @@
             (if reply (js-array "reply") (js-array))))
                  (instructions (composeInstructions contributions event body)))
             (put envelope :topic (trackedTopic context event))
+            (when (nativeGet event "ingress_evidence") (put envelope :ingress_evidence (nativeGet event "ingress_evidence")))
             (if resource-event
               (let ((resource (resourceEnvelope context recipient event)))
                 (put envelope :resource resource)

@@ -332,6 +332,7 @@
                           (safeFields
                             (nativeGet normalized "reply_to")
                             (js-array "id" "sender_id"))))
+                      (when (nativeGet normalized "ingress_evidence") (put event :ingress_evidence (nativeGet normalized "ingress_evidence")))
                       (put event :topic (topicOf event))
                       (js-call repository :insert "events" event)
                       (let*

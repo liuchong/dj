@@ -16,6 +16,7 @@
       "conversation_rules"
       "context"
       "topic"
+      "ingress_evidence"
       "resource"
       "people"
       "mentions"

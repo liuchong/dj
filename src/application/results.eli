@@ -533,6 +533,8 @@
           :delivery_mode stringSchema
           :submitted_count
           integerSchema))))
+  (put definitions :message_recovery (obj (strings "recovery_id connection_id" (js-object :identity_revision integerSchema
+    :event_ids (arr stringSchema) :native_message_ids (arr stringSchema) :created_count integerSchema :recovered_count integerSchema :realtime boolSchema))))
   (put definitions :lark_resource (obj (strings "connection_id kind token node_token space_id title url resource_ref conversation_ref event_type action"
     (js-object :table_id nullableString :record_id nullableString))))
   (put definitions :resource_page (obj (strings "text format as_of"
@@ -540,6 +542,7 @@
       :next_cursor nullableString :complete boolSchema :body_complete boolSchema :cache_hit boolSchema :external_data boolSchema :coverage_complete boolSchema))))
   (put definitions :resource_watch (obj (strings "watch_id operation_id state event_channel"
     (js-object :resource (ref "lark_resource") :identity_revision integerSchema :native_error (js-object)))))
+  (put definitions :ingress_evidence (obj (strings "kind operation_id requested_by reason recovered_at")))
   (put definitions :topic (obj (strings "topic_key kind root_message_id" (js-object :native_thread_id nullableString :parent_message_id nullableString))))
   (put definitions :inbox_envelope (obj (js-object
     :schema_version integerSchema :kind stringSchema :origin stringSchema
@@ -548,7 +551,7 @@
     :attachments (arr (ref "attachment")) :reply_context_id nullableString :allowed_actions (arr stringSchema)
     :matched (arr (obj (js-object :subscription_id stringSchema :subscription_revision integerSchema :result stringSchema)))
     :conversation_rules (ref "conversation_rules") :people (arr (ref "mention")) :mentions (arr (ref "mention")) :reply_route (ref "reply_route")
-    :resource (ref "lark_resource") :context (ref "message_context") :topic (ref "topic")
+    :resource (ref "lark_resource") :context (ref "message_context") :topic (ref "topic") :ingress_evidence (ref "ingress_evidence")
     :instructions (arr (obj (js-object :subscription_id stringSchema :subscription_revision integerSchema
       :prompt stringSchema :task_template stringSchema :task stringSchema))))))
   (put definitions :inbox (obj (strings "operation_id inbox_id subscription_id event_id state expires_at claim_ref lease_until"

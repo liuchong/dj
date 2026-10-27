@@ -4,6 +4,7 @@
   (import "../core/limits.eli" limits)
   (import "../delivery/working.eli" projectWorking)
   (import "../resources/service.eli" projectWatch)
+  (import "../messaging/recovery.eli" projectRecovery)
   (import "../sessions/rules.eli" projectRules)
   (import "../filtering/service.eli" projectFilterPolicy)
   (import "../application/context.eli" can safeFields)
@@ -55,6 +56,7 @@
             (table
               (nativeGet
                 (js-object
+                  :message_recovery "operations"
                   :resource_watch "resource_watches"
                   :working "work_items"
                   :session_rules "session_rules"
@@ -82,6 +84,7 @@
           (unless record
             (progn (setq djReturn1Value (failure "forbidden")) (throw djReturn1Token)))
           (cond
+            ((= kind "message_recovery") (projectRecovery context record))
             ((= kind "resource_watch") (projectWatch context record))
             ((= kind "working") (projectWorking context record))
             ((= kind "session_rules") (projectRules context record))

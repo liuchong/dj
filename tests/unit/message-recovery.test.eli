@@ -1,0 +1,17 @@
+(module dj.tests.unit.message-recovery
+  (import "../../src/core/native.eli" nativeGet)
+  (import "../../src/application/schema.eli" validateRequest)
+  (import "../../src/policy/authorize.eli" authorize)
+  (import "../support/case.eli" withUnitCase)
+  (import "bun:test" expect)
+  (withUnitCase "T38.message-recovery-guards.unit" (lambda (ignored)
+    (let* ((args (js-object :connection_id "account" :native_message_ids (js-array "one") :reason "explicit recovery" :idempotency_key "key"))
+      (agent (js-object :principal_id "a" :kind "agent" :authorization_revision 1 :grants (js-array (js-object :action "*" :resources (js-array "*")))))
+      (operator (Object/assign (js-object) agent (js-object :kind "operator")))
+      (resource (js-object :connection_id "account")))
+      (js-call (expect (nativeGet (validateRequest "message.recover" args) "ok")) :toBe t)
+      (js-call (expect (nativeGet (validateRequest "message.recover" (Object/assign (js-object) args
+        (js-object :native_message_ids (js-call (new globalThis.Array 17) :fill "one")))) "ok")) :toBe false)
+      (js-call (expect (nativeGet (authorize agent "message.recover" resource 1) "allowed")) :toBe false)
+      (js-call (expect (nativeGet (authorize operator "message.recover" resource 1) "allowed")) :toBe t))))
+)

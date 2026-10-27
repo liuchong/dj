@@ -20,3 +20,9 @@ DJ将Lark `Typing`（敲键盘）作为已交给接收会话处理的标记，�
 ## 有界历史恢复
 
 `subscription.replay(subscription_id,event_ids,expected_revision,idempotency_key)`仅显式恢复最多16条已入库且匹配已完成的原事件。使用当前active版本的准确来源、谓词、内容权限、目标授权、黑名单、回声栅栏、TTL及容量，并复用原event和原生message ID；不改历史消息、start水位、已完成路由checkpoint或原始决策。唯一约束阻止同event/route重复输入。默认订阅更新仍只从now生效，不静默回补历史。它用于修复明确遗漏，不替代长连接实时收件。
+
+## 显式漏收补处理
+
+普通历史查询不启动Typing或任务。用户明确要求补处理漏收消息时，操作员可用message.recover给出同一连接下1..16个准确原生message_id、原因及固定幂等键，由DJ核验官方消息、当前身份和授权，再按原消息键去重进入原订阅/黑名单/投递路径。这里只登记explicit_native_recovery证据，不冒充WebSocket实时事件，不移动收件游标，不自动扩大订阅或重建已有任务。
+
+恢复消息按当前原订阅通知原对话；原case和owner继续复用。正式投递accepted后复用同一Typing租约，回复、delivery.complete、失败/无需回复或租约到期均走既有撤销机制。此接口仅操作员可调用，不是每次主动查询的隐式动作。

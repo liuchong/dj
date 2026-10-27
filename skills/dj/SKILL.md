@@ -77,6 +77,7 @@ metadata:
 - working: Lark的IM投递获原生accepted后，DJ按固定出口自动登记Typing（敲键盘）表情；它只表示正在交给会话处理，不自动创建任务或发送回答。delivery.working查询本条处理与清理状态。
 - complete: 每条已处理通知在完成/无需回复/失败/取消时调用delivery.complete，参数delivery_id、reason=completed/no_reply/failed/cancelled、稳定idempotency_key；不能只用普通输出或最终回答表示结束。若已通过DJ回复并获accepted，DJ自动结束对应租约，仍可幂等complete。
 - cleanup: 多接收方共享同一表情，全部结束后才删；清理持久化且超时、重启自动续试，原有人工Typing不删除。cleanup_state=done才是撤销确认，其余为待清理，不能谎报已撤销；无需回复时不得为了清理而额外发IM。处理租约30分钟，到期自动收回表情，不阻止业务后续推进。
+- native_recovery: 用户明确要求补处理尚未入库的漏收消息时，由操作员使用message.recover指定同一连接下最多16个准确native_message_ids、reason及固定幂等键；普通查询不触发任务或Typing，恢复后复用原case/owner和统一投递/处理租约，不把补处理说成实时事件。
 - replay: 明确授权恢复漏投历史时，用原subscription_id、当前expected_revision、最多16个准确event_ids及稳定键调用subscription.replay；使用当前来源/规则/授权并保留原消息身份，不篡改事件或恢复定时器。不能把更新订阅说成已自动回补。
 
 ## 消息触发黑名单

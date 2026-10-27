@@ -3,6 +3,7 @@
   (import "../core/types.eli" isObject)
   (defconst operatorOnly
     (js-array
+      "message.recover"
       "delivery.resolve"
       "outbound.resolve"
       "lifecycle.resolve"
