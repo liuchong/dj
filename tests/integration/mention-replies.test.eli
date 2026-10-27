@@ -21,6 +21,15 @@
         (js-call (nativeGet ports "im_ports") :set "lark-user" (createImPeer "lark-user"))
         (js-call grants :push (js-object :action "session.rules.read" :resources (js-array target)))
         (js-call grants :push (js-object :action "session.rules.manage" :resources (js-array target)))))))))
+  (defasync subscribeMentions (f agent)
+    (let* ((source (await (callOk f "A" "conversation.resolve" (js-object :connection_id "lark" :chat_id "c1" :thread_id nil))))
+      (spec (js-object :agent_id (nativeGet agent "agent_id") :selector (js-object :sources (js-array
+        (js-object :conversation_ref (nativeGet source "conversation_ref") :include_threads false)) :event_kinds (js-array "message.created"))
+        :predicate (js-object :field "mentions.id" :op "in" :value (js-array "ou_human" "ou_bot"))
+        :context_policy (js-object :mode "current" :max_events 1 :max_bytes 16384)
+        :delivery_policy (js-object :busy "queue" :offline "hold" :ttl_seconds 86400) :start "now"))
+      (preview (await (callOk f "A" "subscription.preview" (js-object :spec spec)))))
+      (callOk f "A" "subscription.create" (js-object :preview_id (nativeGet preview "preview_id") :idempotency_key "native-mention-subscription"))))
   (defun routes () (js-array
     (js-object :source_connection_id "lark" :mention_id "ou_human" :reply_connection_id "lark-user")
     (js-object :source_connection_id "lark" :mention_id "ou_bot" :reply_connection_id "lark")))
@@ -38,7 +47,8 @@
   (defun sent (f id) (nativeGet (js-call (nativeGet (nativeGet f "ports") "im_ports") :get id) "sent"))
   (withCase "T38.mention-replies.integration" setup (async (f)
     (let ((agent (await (bindRecipient f))))
-      (await (configure f agent)) (await (subscribe f agent "lark"))
+      (await (configure f agent)) (await (subscribeMentions f agent))
+      (await (js-call f :ingest (nativeEvent f "ordinary-without-mention" (js-array) "ou_human")))
       ;; Both user-sent self-mentions and another sender use exactly the native metadata.
       (await (js-call f :ingest (nativeEvent f "human-mentioned" (js-array "ou_human") "ou_human")))
       (await (js-call f :ingest (nativeEvent f "bot-mentioned" (js-array "ou_bot") "ou_human")))

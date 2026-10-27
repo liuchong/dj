@@ -119,6 +119,7 @@
               "connection_id"
               "sender.id"
               "sender.kind"
+              "mentions.id"
               "sender.person_id"
               "addressed_bot"
               "addressed_self"
