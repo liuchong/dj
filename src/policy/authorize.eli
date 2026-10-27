@@ -4,6 +4,7 @@
   (defconst operatorOnly
     (js-array
       "message.recover"
+      "resource.recover"
       "delivery.resolve"
       "outbound.resolve"
       "lifecycle.resolve"

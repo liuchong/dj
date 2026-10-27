@@ -540,6 +540,8 @@
   (put definitions :resource_page (obj (strings "text format as_of"
     (js-object :resource (ref "lark_resource") :data (js-object) :offset_bytes integerSchema :next_offset_bytes integerSchema :total_bytes integerSchema
       :next_cursor nullableString :complete boolSchema :body_complete boolSchema :cache_hit boolSchema :external_data boolSchema :coverage_complete boolSchema))))
+  (put definitions :resource_recovery (obj (strings "recovery_id" (js-object :resource (ref "lark_resource")
+    :identity_revision integerSchema :event_ids (arr stringSchema) :created_count integerSchema :realtime boolSchema))))
   (put definitions :resource_watch (obj (strings "watch_id operation_id state event_channel"
     (js-object :resource (ref "lark_resource") :identity_revision integerSchema :native_error (js-object)))))
   (put definitions :ingress_evidence (obj (strings "kind operation_id requested_by reason recovered_at")))

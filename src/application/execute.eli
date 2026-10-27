@@ -10,6 +10,7 @@
   (defconst resourceKinds
     (js-array
       "message_recovery"
+      "resource_recovery"
       "resource_watch"
       "inbox"
       "inbox_pull"

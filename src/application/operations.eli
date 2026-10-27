@@ -191,7 +191,7 @@
   (defconst operationCatalog (new globalThis.Map))
   (defun permissionAction
     (name group)
-    (cond ((= group "resources") (if (= name "resource.watch") "resource.subscribe" "resource.read"))
+    (cond ((= group "resources") (cond ((= name "resource.watch") "resource.subscribe") ((= name "resource.recover") "resource.recover") (t "resource.read")))
       ((= group "working") "delivery.inspect")
       ((= group "session_rules") (if (= name "session.rules.get") "session.rules.read" "session.rules.manage"))
       ((= group "filters") (if (= name "message.filter.get") "message.filter.inspect" "message.filter.manage"))
@@ -564,6 +564,8 @@
       :corpus (enumSchema "local" "native") :cursor idSchema :limit (integerSchema 1 50)
       :offset_bytes (integerSchema 0 (nativeGet NativeNumber "MAX_SAFE_INTEGER")) :max_bytes (integerSchema 1 32768))
     (js-object :result "resource_page"))
+  (addOperation "resource.recover" "resources" (js-array "resource_ref" "reason")
+    (js-object :resource_ref idSchema :reason idSchema) (js-object :effect "accept" :result "resource_recovery"))
   (addOperation "resource.watch.get" "resources" (js-array "watch_id") (js-object :watch_id idSchema) (js-object :result "resource_watch"))
   (addOperation "resource.watch" "resources" (js-array "resource_ref") (js-object :resource_ref idSchema)
     (js-object :effect "accept" :result "resource_watch"))

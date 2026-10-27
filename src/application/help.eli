@@ -63,6 +63,8 @@
       "核验Lark文档/表格/Wiki准确地址，解析实际资源并发放受控读取与订阅来源引用。"
       :resource.read
       "默认读取DJ资源缓存；显式native读取官方文档、记录、表格范围、评论或子项。"
+      :resource.recover
+      "操作员按明确授权恢复准确表格记录快照；经原订阅触发，审计且去重，不代表实时事件。"
       :resource.watch
       "登记并请求原生文件事件订阅；subscribed只证明平台受理，不证明事件通道或AI订阅已就绪。"
       :message.context

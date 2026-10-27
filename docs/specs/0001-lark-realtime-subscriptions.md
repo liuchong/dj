@@ -157,3 +157,7 @@ flowchart LR
 订阅默认覆盖调用方与接收方均获准的账号连接下全部群聊、全部私聊及其thread；selector.sources省略或空数组表示这一默认范围，不要求逐聊天登记。连接级来源可显式指定connection_id；只有用户明确按群、私聊对象或原生话题收窄时才用conversation_ref和include_threads。来源范围与触发条件分离：默认全部来源仍按配置的原生@/私聊条件和统一人员、字符黑名单决定是否通知，不把全部来源误当无条件创建任务。
 
 source.scope=connection表示账号范围；索引中的空container key仅是连接级匹配键，不是一个伪造会话。每次提交仍对真实消息来源、双方当前权限和身份栅栏重检。完整账号授权不能从某个会话的读取权限推导；缺少获准实时源必须报告，不用历史HTTP读取或轮询冒充长连接。
+
+## 官方应用事件的本人收件边界
+
+官方im.message.receive_v1说明的是机器人接收的单聊和机器人所在群消息。WebSocket endpoint以AppID/AppSecret建立应用事件连接，不以用户OAuth token建立个人全量收件箱连接。connection.probe分别报告identity=application、send_identity=user/bot、coverage=application_authorized_chats以及personal_inbox=not_provided_by_im_message_receive_v1；requested_coverage只是本地授权目标，不能作为平台实际覆盖证明。本人HTTP历史/收发成功、WebSocket connected均不能证明机器人未加入群及本人其他私聊可被实时推送。不得因此自行加群或退回轮询。依据：[官方接收消息事件](https://open.larksuite.com/document/server-docs/im-v1/message/events/receive)。

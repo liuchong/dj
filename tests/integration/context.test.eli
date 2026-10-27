@@ -171,6 +171,11 @@
       (address (js-object :connection_id "user" :native_chat_id "c1" :native_thread_id nil :thread_kind "main"))
       (call (js-object :deadline 15000 :abort_signal (nativeGet (new globalThis.AbortController) "signal")))
       (port (createLarkEventPort connection host)))
+      (let ((source (nativeGet (await (js-call port :probe connection call)) "event_source")))
+        (js-call (expect (nativeGet source "identity")) :toBe "application")
+        (js-call (expect (nativeGet source "send_identity")) :toBe "user")
+        (js-call (expect (nativeGet source "coverage")) :toBe "application_authorized_chats")
+        (js-call (expect (nativeGet source "personal_inbox")) :toBe "not_provided_by_im_message_receive_v1"))
       (js-call clock :advance 10000)
       (try
         (let ((resolved (await (js-call port :resolveConversation address call application))))

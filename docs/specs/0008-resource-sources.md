@@ -30,3 +30,9 @@ resource.watch(resource_ref,idempotency_key)登记并请求平台文件事件订
 AI通过原有subscription.preview/create选择准确目标会话与资源来源；event_kinds显式选择resource.changed，可用people.id/resource.kind/resource.token/resource.table_id/resource.record_id等组合条件。记录或评论归属作为话题保留，资源信封包含resource_ref及topic，AI可继续读取原资源上下文。业务规则由原接收会话维护，开发侧不代建任务、不改原BUG状态，不因资源读取成功就触发历史工作。
 
 资源事件不生成IM的reply_context_id，不点击IM Typing，也不把普通输出发到任何群。写评论、改记录、编辑文档不属于本批读取与变更支持；不能借读引用做写操作。
+
+## 显式记录快照恢复
+
+用户明确要求重放尚未入库的某条BUG/表格记录时，仅操作员可用resource.recover(resource_ref,reason,idempotency_key)。resource_ref必须绑定准确Bitable app/table/record；DJ通过官方API重新读取该一条记录，再按当前权限、黑名单和已有订阅走resource.changed，不修改资源、不直发目标、不自动建任务。普通resolve/read永不触发。
+
+持久ingress_evidence标明explicit_resource_recovery、操作、请求主体、原因与观察时间；resource.action为snapshot_recovered，sender.kind明确为unknown而不是原编辑者；连接的allowed_sender_kinds和统一黑名单照常生效，未允许unknown来源时不得绕过。人员字段仍是people而不是mentions。返回realtime=false，不伪装原生change事件或已验证实时资源推送。内容/地址一致时保持稳定source_key，同键请求及新键恢复同一快照均不重复通知；已恢复事件需要补投时使用独立显式subscription.replay。缓存按规范资源地址及查询参数定位，不因入口URL或显示标题变化而读不到同一记录。
