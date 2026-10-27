@@ -125,6 +125,13 @@
                     (js-call query :set "start_time" (str (Math/floor (/ (Date/parse (nativeGet parameters "start")) 1000))))
                     (js-call query :set "end_time" (str (Math/ceil (/ (Date/parse (nativeGet parameters "end")) 1000)))))
                   (setq path (str "/open-apis/im/v1/messages?" (js-call query :toString)))))
+              ((js-call (js-array "reaction_list" "reaction_create" "reaction_delete") :includes command)
+                (setq path (str "/open-apis/im/v1/messages/" (nativeEncodeURIComponent (nativeGet parameters "message_id")) "/reactions"))
+                (cond ((= command "reaction_list")
+                  (setq path (str path "?reaction_type=Typing&user_id_type=open_id&page_size=50"
+                    (if (nativeGet parameters "page_token") (str "&page_token=" (nativeEncodeURIComponent (nativeGet parameters "page_token"))) ""))))
+                  ((= command "reaction_create") (setq method "POST" body (js-object :reaction_type (js-object :emoji_type "Typing"))))
+                  (t (setq method "DELETE" path (str path "/" (nativeEncodeURIComponent (nativeGet parameters "reaction_id")))))))
               ((js-call (js-array "send" "reply") :includes command)
                 (setq method "POST" body (js-object :msg_type "text"
                   :content (JSON/stringify (js-object :text (nativeGet parameters "text")))

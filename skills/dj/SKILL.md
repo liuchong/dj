@@ -61,6 +61,13 @@ metadata:
 - setup: 接收对话自己经session.rules.update维护reply_routes；来源应用范围内原生mention_id映射到获准出口connection_id，DJ自动固定每条通知路径。手工自发@同样匹配，不设本人sender排除。详见[对话规则](references/session-rules.md)。
 - blocked: reply_route为ambiguous_target、stale_reference或forbidden且没有reply_context_id时报告明确限制，不自行挑账号、另开对话或双发。
 
+## 处理中标记与完成
+
+- working: Lark的IM投递获原生accepted后，DJ按固定出口自动登记Typing（敲键盘）表情；它只表示正在交给会话处理，不自动创建任务或发送回答。delivery.working查询本条处理与清理状态。
+- complete: 每条已处理通知在完成/无需回复/失败/取消时调用delivery.complete，参数delivery_id、reason=completed/no_reply/failed/cancelled、稳定idempotency_key；不能只用普通输出或最终回答表示结束。若已通过DJ回复并获accepted，DJ自动结束对应租约，仍可幂等complete。
+- cleanup: 多接收方共享同一表情，全部结束后才删；清理持久化且超时、重启自动续试，原有人工Typing不删除。cleanup_state=done才是撤销确认，其余为待清理，不能谎报已撤销；无需回复时不得为了清理而额外发IM。处理租约30分钟，到期自动收回表情，不阻止业务后续推进。
+- replay: 明确授权恢复漏投历史时，用原subscription_id、当前expected_revision、最多16个准确event_ids及稳定键调用subscription.replay；使用当前来源/规则/授权并保留原消息身份，不篡改事件或恢复定时器。不能把更新订阅说成已自动回补。
+
 ## 消息触发黑名单
 
 - policy: 人员与字符使用同一服务级规则集，通过message.filter.get/update维护；默认空规则。需要对应inspect/manage权限和message-filter:service资源授权，普通订阅者不能自行修改全局策略。

@@ -15,6 +15,7 @@
   (import "../subscriptions/service.eli" :as Subscriptions)
   (import "../filtering/service.eli" :as Filters)
   (import "../sessions/rules.eli" :as SessionRules)
+  (import "../delivery/working.eli" :as Working)
   (import "../catalog/service.eli" :as Catalog)
   (import "../catalog/search.eli" :as Search)
   (import "../catalog/refresh.eli" :as Refresh)
@@ -35,6 +36,7 @@
   (import "./runtime.eli" :as Runtime)
   (defconst drainMutations
     (js-array
+      "delivery.complete"
       "delivery.cancel"
       "delivery.resolve"
       "delivery.reconcile"
@@ -237,6 +239,7 @@
             (let ((handlers (new globalThis.Map)))
               (js-call
                 (js-array
+                  (js-array "working" Working)
                   (js-array "session_rules" SessionRules)
                   (js-array "filters" Filters)
                   (js-array "registry" Registry)

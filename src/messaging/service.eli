@@ -1,4 +1,5 @@
 (module dj.messaging.service
+  (import "../delivery/working.eli" finishWorking)
   (import "../core/native.eli" nativeNullish nativeTypeOf nativeGet)
   (import "../core/errors.eli" success failure)
   (import "../core/types.eli"
@@ -1251,6 +1252,9 @@
                     (nativeGet record "conversation_key")
                     :outbound_id
                     (nativeGet record "outbound_id"))))
+              (when (and (= (nativeGet record "state") "accepted") (nativeGet record "reply_record_id"))
+                (let ((reply (js-call repository :get "reply_contexts" (nativeGet record "reply_record_id"))))
+                  (when reply (finishWorking context (nativeGet reply "delivery_id") "replied"))))
               (put record :revision (nextRevision (nativeGet record "revision")))
               (must (js-call repository :replace "outbound" record))
               (must (js-call repository :replace "parts" part))

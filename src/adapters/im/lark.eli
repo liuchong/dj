@@ -861,6 +861,8 @@
                           readPollPage
                           :commitPollPage
                           commitPollPage
+                          :reaction (async (command parameters context)
+                            (await (js-call http :perform (str "reaction_" command) parameters context)))
                           :send
                           send
                           :resolveConversation

@@ -1,5 +1,6 @@
 (module dj.delivery.scheduler
   (import "../connections/replies.eli" selectReplyRoute)
+  (import "./working.eli" trackWorking finishWorking)
   (import "../connections/manager.eli" imPort)
   (import "../core/native.eli" nativeNullish nativeGet)
   (import "../core/errors.eli" success failure)
@@ -934,6 +935,9 @@
                   (not (= old-unknown (nativeGet route "unknown_delivery_id" nil)))
                   (not (= old-owner (nativeGet route "claim_owner" nil))))
                   (must (js-call repository :replaceProgress "routes" route)))
+                (when (= (nativeGet record "state") "accepted") (trackWorking context record))
+                (when (and native (js-call (js-array "ended" "settled" "turn_finished" "agent_settled" "rejected") :includes kind))
+                  (finishWorking context (nativeGet record "delivery_id") kind))
                 (success (projectDelivery context record))))
             (catch djReturn5Error
               (if (eq djReturn5Error djReturn5Token)

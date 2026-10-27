@@ -146,6 +146,8 @@
     "subscription_id revision start_seq cutover_seq state")
   (defineTable "inbox_entries" "inbox_id"
     "inbox_id subscription_id revision event_id agent_id state expires_at lease_until claim_principal_id claim_ref")
+  (defineTable "work_items" "delivery_id" "delivery_id state expires_at")
+  (defineTable "work_marks" "mark_id" "mark_id revision state next_due_at")
   (defineTable "inbox_pulls" "pull_id" "pull_id subscription_id principal_id")
   (defineTable "inbox_reply_contexts" "reply_context_id" "reply_context_id inbox_id recipient_principal_id expires_at")
   (defineTable

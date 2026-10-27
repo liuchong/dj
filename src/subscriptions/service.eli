@@ -27,6 +27,7 @@
   (import "../lifecycle/gates.eli" assertGate)
   (import "../catalog/snapshots.eli" openSnapshot resumeSnapshot advanceSnapshot)
   (import "../ingestion/visibility.eli" eventReadable)
+  (import "./replay.eli" replayEvents)
   (import "./inbox.eli" pullInbox ackInbox)
   (defun projectSubscription
     (record)
@@ -805,6 +806,7 @@
     (let ((djReturn11Token (js-object)) (djReturn11Value nil))
       (try
         (cond
+          ((= operation "subscription.replay") (replayEvents context args projectSubscription))
           ((= operation "subscription.pull") (pullInbox context args))
           ((= operation "subscription.ack") (ackInbox context args))
           ((= operation "subscription.preview")

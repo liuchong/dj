@@ -187,7 +187,8 @@
   (defconst operationCatalog (new globalThis.Map))
   (defun permissionAction
     (name group)
-    (cond ((= group "session_rules") (if (= name "session.rules.get") "session.rules.read" "session.rules.manage"))
+    (cond ((= group "working") "delivery.inspect")
+      ((= group "session_rules") (if (= name "session.rules.get") "session.rules.read" "session.rules.manage"))
       ((= group "filters") (if (= name "message.filter.get") "message.filter.inspect" "message.filter.manage"))
       ((js-call (js-array "subscription.pull" "subscription.ack") :includes name) "subscription.consume")
       ((= name "operation.get") "operation.inspect")
@@ -558,6 +559,13 @@
     (js-array "reply_context_id" "content")
     (js-object :reply_context_id idSchema :content textSchema)
     (js-object :effect "accept" :result "outbound"))
+  (addOperation "subscription.replay" "subscriptions" (js-array "subscription_id" "event_ids")
+    (js-object :subscription_id idSchema :event_ids (Object/assign (arraySchema idSchema 16) (js-object :uniqueItems t)))
+    (js-object :effect "accept" :result "subscription" :revision t))
+  (addOperation "delivery.working" "working" (js-array "delivery_id") (js-object :delivery_id idSchema) (js-object :result "working"))
+  (addOperation "delivery.complete" "working" (js-array "delivery_id")
+    (js-object :delivery_id idSchema :reason (enumSchema "completed" "no_reply" "failed" "cancelled"))
+    (js-object :effect "accept" :result "working"))
   (addOperation
     "delivery.list"
     "delivery"

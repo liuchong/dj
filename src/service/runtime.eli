@@ -14,6 +14,7 @@
   (import "../ingestion/service.eli" acceptEvent persistProgress)
   (import "../routing/matcher.eli" matchTurn)
   (import "../delivery/scheduler.eli" dispatchRoute reconcileDelivery observeDelivery)
+  (import "../delivery/working.eli" processWorking)
   (import "../messaging/service.eli" dispatchOutbound reconcileOutbound)
   (import "../catalog/refresh.eli" runCatalogBatch tombstoneMessage)
   (import "../lifecycle/service.eli" runLifecycle reconcileLifecycle)
@@ -645,6 +646,7 @@
                       context
                       (lambda (tx) (js-call (nativeGet context "store") :admissionStatus)))))
                 (put runtime :storage_blocked (not (nativeGet probe "ok"))))))
+          (launch context "working-reactions" (async () (await (processWorking context))))
           (queueControlJobs context)
           (when (= (nativeGet runtime "state") "ready")
             (queueSourceJobs context)
@@ -718,6 +720,9 @@
         (lambda
           (tx)
           (must (ownerGuard context))
+          (let ((db (nativeGet (nativeGet context "store") "db")))
+            (js-call (js-call db :query "UPDATE work_items SET state='completed',payload=json_set(payload,'$.state','completed','$.reason','service_stopping') WHERE state='active'") :run)
+            (js-call (js-call db :query "UPDATE work_marks SET next_due_at=?,payload=json_set(payload,'$.next_due_at',?) WHERE state<>'done'") :run (utcNow context) (utcNow context)))
           (let ((db (nativeGet tx "db")))
             (js-call
               db
