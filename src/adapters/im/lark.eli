@@ -862,7 +862,8 @@
                           :commitPollPage
                           commitPollPage
                           :reaction (async (command parameters context)
-                            (await (js-call http :perform (str "reaction_" command) parameters context)))
+                            (let ((response (await (js-call http :perform (str "reaction_" command) parameters context))))
+                              (if (nativeGet response "ok") (success (nativeGet (nativeGet response "data") "data")) response)))
                           :send
                           send
                           :resolveConversation

@@ -1,6 +1,7 @@
 (module dj.tests.integration.working
   (import "../../src/core/native.eli" nativeGet)
   (import "../../src/adapters/im/lark-http.eli" createLarkHttpTransport)
+  (import "../../src/adapters/im/lark.eli" createLarkPort)
   (import "../support/fixtures.eli" createFixture closeFixture callOk bindRecipient subscribe createdEvent)
   (import "../support/case.eli" withCase)
   (import "node:path" resolve)
@@ -108,5 +109,10 @@
       (js-call (expect (nativeGet (JSON/parse (nativeGet (aref calls 2) "body")) "reaction_type")) :toEqual (js-object :emoji_type "Typing"))
       (js-call (expect (nativeGet (aref calls 3) "method")) :toBe "DELETE")
       (js-call (expect (nativeGet (aref calls 3) "url")) :toContain "/reactions/reaction%2Fid")
+      (let* ((port (createLarkPort (js-object :connection_id "lark" :identity "bot" :credential_ref "credential" :watches (js-array)) host))
+        (response (await (js-call port :reaction "list" (js-object :message_id "message/id") ctx))))
+        (js-call (expect (nativeGet response "ok")) :toBe t)
+        (js-call (expect (nativeGet (nativeGet response "data") "items")) :toEqual (js-array))
+        (await (js-call port :close)))
       (await (js-call transport :close)))) (lambda (unused) nil))
 )
