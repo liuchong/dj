@@ -1,4 +1,5 @@
 (module dj.ingestion.service
+  (import "../connections/manager.eli" imPort)
   (import "../core/native.eli" nativeTypeOf nativeGet)
   (import "../core/errors.eli" success failure)
   (import "../core/types.eli" conversationKey utf8Bytes sliceUtf8 addSeconds isUtcTime)
@@ -41,7 +42,7 @@
       ((repository (nativeGet context "repository"))
         (id (nativeGet connection "connection_id"))
         (old (js-call repository :get "source_progress" id))
-        (port (js-call (nativeGet (nativeGet context "ports") "im_ports") :get id))
+        (port (imPort context id))
         (progress
           (js-object
             :connection_id
@@ -242,7 +243,7 @@
                         (sender
                           (safeFields
                             (nativeGet normalized "sender" (js-object))
-                            (js-array "id" "kind" "display_name")))
+                            (js-array "id" "kind" "display_name" "identities")))
                         (sequence (js-call repository :nextSequence "ingress"))
                         (event
                           (js-object

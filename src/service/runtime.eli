@@ -10,6 +10,7 @@
     agentPort
     nativeCallContext)
   (import "../application/write-batch.eli" enqueueWrite)
+  (import "../connections/manager.eli" imPort dispatchIm)
   (import "../ingestion/service.eli" acceptEvent persistProgress)
   (import "../routing/matcher.eli" matchTurn)
   (import "../delivery/scheduler.eli" dispatchRoute reconcileDelivery observeDelivery)
@@ -120,10 +121,7 @@
           (let*
             (
               (port
-                (js-call
-                  (nativeGet (nativeGet context "ports") "im_ports")
-                  :get
-                  (nativeGet event "connection_id")))
+                (imPort context (nativeGet event "connection_id")))
               (capabilities (nativeGet port "capabilities")))
             (when (and (= (nativeGet capabilities "ack_control") t) (nativeGet port "ack"))
               (await (js-call port :ack (nativeGet result "data") (nativeCallContext context)))))
@@ -138,7 +136,7 @@
           ((repository (nativeGet context "repository"))
             (id (nativeGet configured "connection_id"))
             (connection (js-call repository :get "connections" id))
-            (port (js-call (nativeGet (nativeGet context "ports") "im_ports") :get id))
+            (port (imPort context id))
             (source-context
               (Object/assign
                 (js-object)
@@ -170,17 +168,10 @@
             ((progress (js-call repository :get "source_progress" id))
               (page
                 (await
-                  (js-call
-                    port
-                    :receive
-                    connection
+                  (dispatchIm context id "receive" (js-array connection
                     (nativeGet progress "cursor" nil)
-                    (js-object
-                      :max_events
-                      100
-                      :max_bytes
-                      (nativeGet limits "native_response_max_bytes"))
-                    (nativeCallContext source-context))))
+                    (js-object :max_events 100 :max_bytes (nativeGet limits "native_response_max_bytes"))
+                    (nativeCallContext source-context)))))
               (items (nativeGet page "items"))
               (index 0))
             (unless (and (Array/isArray items) (<= (js-length items) 100))

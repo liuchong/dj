@@ -1,0 +1,11 @@
+(module dj.adapters.im.lark-identities
+  (import "../../core/native.eli" nativeGet nativeTypeOf)
+  (defun larkIdentities (brand app tenant native)
+    (let ((identities (js-array)) (append nil))
+      (setq append (lambda (scope id)
+        (when (and scope (= (nativeTypeOf id) "string") (> (js-length id) 0))
+          (js-call identities :push (js-object :platform brand :scope scope :id id)))))
+      (funcall append (and app (str "app:" app ":open_id")) (nativeGet native "open_id"))
+      (funcall append (and tenant (str "tenant:" tenant ":user_id")) (nativeGet native "user_id"))
+      identities))
+  (export larkIdentities))

@@ -253,6 +253,8 @@
                             :attachments
                             (js-array))))
                       ;; HTTP transport returns normalized text; do not decode it twice.
+                      (when (nativeGet sender "identities")
+                        (put (nativeGet event "sender") :identities (nativeGet sender "identities")))
                       (when (nativeGet sender "name")
                         (put (nativeGet event "sender") :display_name (nativeGet sender "name")))
                       (js-call messages :push event)))

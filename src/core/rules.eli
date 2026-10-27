@@ -13,6 +13,7 @@
         "string"
         :sender.kind
         "string"
+        :sender.person_id "string"
         :addressed_bot
         "boolean"
         :addressed_self "boolean"
@@ -22,7 +23,7 @@
         :text
         "string")))
   (defun validatePredicate
-    (predicate)
+    (predicate &optional allow-person)
     (let ((leaves 0) (bad nil))
       (let ((visit nil))
         (setq
@@ -72,6 +73,7 @@
                         (unless
                           (and
                             (object-has? fields field)
+                            (or allow-person (not (= field "sender.person_id")))
                             (<= leaves (nativeGet limits "rule_leaves"))
                             (cond ((= op "eq") (= (nativeTypeOf value) type))
                               ((= op "in")
@@ -102,6 +104,7 @@
     (event field)
     (cond ((= field "text") (nativeGet (nativeGet event "content") "text"))
       ((= field "sender.id") (nativeGet (nativeGet event "sender") "id"))
+      ((= field "sender.person_id") (nativeGet (nativeGet event "sender") "person_id"))
       ((= field "sender.kind") (nativeGet (nativeGet event "sender") "kind"))
       ((= field "reply_to.id") (nativeGet (nativeGet event "reply_to") "id"))
       (t (nativeGet event field))))

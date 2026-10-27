@@ -1,5 +1,6 @@
 (module dj.library
   (import "./service/core.eli" createCore)
+  (import "./connections/manager.eli" createConnectionManager)
   (import "./application/operations.eli"
     operationCatalog
     operationCatalogDigest
@@ -7,6 +8,7 @@
   (import "./application/schema.eli" validateRequest normalizeArgs)
   (export
     createCore
+    createConnectionManager
     operationCatalog
     operationCatalogDigest
     descriptorData

@@ -15,7 +15,7 @@
 - `effect`：当前只能为 `suppress_trigger`；条件与行为分离，未来行为通过明确的新版本能力扩展。
 - `predicate`：复用统一的有界 typed all/any/not DSL，不另写人员或字符串专属判断引擎。
 
-多条启用规则按 OR 合并，任一命中即禁止触发。单条规则内可任意组合 all/any/not。人员按 `sender.id` 的原生 ID 精确 eq/in 匹配，不按显示名猜人；可用 `connection_id` 条件限定该原生 ID 的平台连接范围。字符/词组按 `text contains` 字面子串匹配，区分大小写，保留 Unicode、emoji 和空白，不按正则或语义理解。空 contains/prefix 模式拒绝，防止误屏蔽全部消息；空规则列表用于清空策略。
+多条启用规则按 OR 合并，任一命中即禁止触发。单条规则内可任意组合 all/any/not。人员默认按全局 `sender.person_id` 匹配，原生 `sender.id` 保留兼容；只有明确要求单连接例外时才加 `connection_id`。不同应用身份通过下文的统一人员表关联，不按显示名猜人。字符/词组按 `text contains` 字面子串匹配，区分大小写，保留 Unicode、emoji 和空白，不按正则或语义理解。空 contains/prefix 模式拒绝，防止误屏蔽全部消息；空规则列表用于清空策略。
 
 规则最多64条，总定义最多65536 UTF-8字节；每个 predicate 沿用现有深度、叶数与集合值上限。不完整正文或缺失字段导致 indeterminate 时，保守禁止这一次触发并保留诊断，消息仍可见。
 
@@ -47,3 +47,15 @@
 本批集中验证：3项隔离 SQLite/Core 集成与1项保护单测通过（52个断言），覆盖权限/幂等/版本、重启、清空、人员与字符组合、正文公开读取、排队取消、已提交/已领取边界、显式直发、输入上限和截断保守判断。未重跑全套、性能或其他 AI 工具验收。
 
 运行服务已更新，service.status=ready、官方 WebSocket=connected；新增 message.filter.get 返回初始 revision=1、rules=[]。未加入任何实际人员或字符，原配置与数据库保留。
+
+## 全局人员身份（补充约束）
+
+黑名单属于 DJ 服务，不属于某条连接或某个机器人。连接 ID 仅表示接入实例，不代表人员身份；机器人显示名不得成为产品逻辑分支。部署可使用不同平台、应用与授权身份，但不得要求使用者按连接重复维护同一个人的黑名单。
+
+策略新增 `people`（最多64人），每项为 `{id,identities}`。`id` 是 DJ 内稳定人员标识；`identities` 是该人的已核实原生身份别名（1..128项），每项为 `{platform,scope,id}`。Lark OpenID 的 scope 为 `app:<app_id>:open_id`，租户内 UserID 为 `tenant:<tenant_key>:user_id`；Lark 与飞书品牌分开。相同别名不能登记给不同人员，不以显示名自动合并，不跨租户猜测，不将 OpenID 当全局人员 ID。
+
+人员规则（仅用于全局过滤策略，不作为订阅授权或跨平台发送凭据）使用 `{"field":"sender.person_id","op":"eq","value":"person-example"}`，可与字符规则及 all/any/not 组合。Core 每次匹配及 push/pull 提交复核都用同一份全局人员表，将当前消息的任何已核实别名映射为 DJ 人员 ID；所有连接使用相同实现，不为 user/bot 或机器人名称设置例外。未知身份不冒充已确认人员；冲突证据按 indeterminate 阻止本次触发。
+
+`message.filter.update` 可同时携带 `people` 与 `rules`，同事务、同 revision、同幂等台账更新；省略 people 时保留现有人员表，显式 `[]` 清空。引用不存在人员的规则拒绝。两部分合计不得超过65536 UTF-8字节。旧 sender.id 规则继续兼容，只有刻意限定某连接的特殊规则才应带 connection_id；人员黑名单默认不限定连接。
+
+接入保留官方事件中的应用级 OpenID、可用的租户级 UserID 及真实作用域。旧事件可从原连接的应用身份恢复 OpenID 作用域，不能用显示名补全。人员映射所缺的应用/租户身份须用官方可读数据或操作员明确映射补充；单个应用查到身份，不得报告其他未映射应用也已覆盖。

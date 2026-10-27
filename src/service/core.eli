@@ -20,9 +20,8 @@
   (import "../lifecycle/service.eli" :as Lifecycle)
   (import "../delivery/service.eli" :as Delivery)
   (import "../messaging/service.eli" :as Messaging)
-  (import "../adapters/im/lark.eli" createLarkPort createReadLimiter)
-  (import "../adapters/im/lark-events.eli" createLarkEventPort)
-  (import "../adapters/im/telegram.eli" createTelegramPort)
+  (import "../adapters/im/lark.eli" createReadLimiter)
+  (import "../connections/manager.eli" createConnectionManager)
   (import "../adapters/agent/opencode-http.eli" createOpenCodePort)
   (import "../adapters/agent/desktop.eli" createDesktopPort)
   (import "../adapters/agent/pi-native.eli" createPiNativePort)
@@ -122,6 +121,7 @@
           (new
             globalThis.Map
             (if (nativeGet host "im_ports") (js-call (nativeGet host "im_ports") :entries) (js-array))))
+        (put ports :connections nil)
         (put runtime :lark_limiter (createReadLimiter (nativeGet ports "clock")))
 
 
@@ -228,19 +228,9 @@
                     (when (and (not (js-call agent-ports :has tool)) (> (js-length selected) 0))
                       (js-call agent-ports :set tool
                         (createDesktopPort tool (js-object :endpoints selected) ports))))))
-              (js-call
-                (nativeGet config "connections")
-                :forEach
-                (lambda
-                  (connection)
-                  (unless (js-call im-ports :has (nativeGet connection "connection_id"))
-                    (js-call
-                      im-ports
-                      :set
-                      (nativeGet connection "connection_id")
-                      (if (= (nativeGet connection "platform") "lark")
-                        (if (= (nativeGet connection "source_delivery") "events") (createLarkEventPort connection ports) (createLarkPort connection ports))
-                        (createTelegramPort connection ports)))))))))
+              (unless (nativeGet ports "connections")
+                (put ports :connections (createConnectionManager (nativeGet config "connections") ports im-ports)))
+              (js-call (nativeGet ports "connections") :assemble))))
 (setq installHandlers (lambda
             ()
             (let ((handlers (new globalThis.Map)))
@@ -353,12 +343,7 @@
                         (when (nativeGet port "initialize") (js-call port :initialize base)))))
                   (put runtime :startup_stage "recover_state")
 (must (await (recoverState base)))
-                  (js-call
-                    (nativeGet ports "im_ports")
-                    :forEach
-                    (lambda
-                      (port)
-                      (when (nativeGet port "initialize") (js-call port :initialize base))))
+                  (js-call (nativeGet ports "connections") :initialize base)
                   ;; Client launch is separate from messaging; no argv-based Agent auto-start.
                   (put runtime :startup_stage "publish_ready")
 (must (setOwnerState base "ready"))
@@ -503,10 +488,8 @@
                           (setq store-sealing t)
                           (try
                           (let ((unique (new globalThis.Set)) (iterator nil) (done false))
-                            (js-call
-                              (nativeGet ports "im_ports")
-                              :forEach
-                              (lambda (port) (js-call unique :add port)))
+                            (when (nativeGet ports "connections")
+                              (js-call unique :add (nativeGet ports "connections")))
                             (js-call
                               (nativeGet ports "agent_ports")
                               :forEach

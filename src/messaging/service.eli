@@ -29,9 +29,7 @@
   (import "../ingestion/service.eli" allowedAddress)
   (import "../ingestion/visibility.eli" eventContentAvailable eventReadable)
   (import "../catalog/snapshots.eli" openSnapshot resumeSnapshot advanceSnapshot)
-  (defun imPort
-    (context connection-id)
-    (js-call (nativeGet (nativeGet context "ports") "im_ports") :get connection-id))
+  (import "../connections/manager.eli" imPort dispatchIm)
   (defun addressOf
     (connection chat thread)
     (js-object
@@ -1346,12 +1344,8 @@
               (setq
                 receipt
                 (await
-                  (js-call
-                    (imPort context (nativeGet record "connection_id"))
-                    :send
-                    record
-                    (nativeGet record "dispatch_key")
-                    (nativeCallContext context))))
+                  (dispatchIm context (nativeGet record "connection_id") "send"
+                    (js-array record (nativeGet record "dispatch_key") (nativeCallContext context)))))
               (catch uncertain
                 (when (eq uncertain djReturn14Token) (throw uncertain))
                 nil))

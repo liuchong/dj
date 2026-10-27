@@ -119,6 +119,7 @@
               "connection_id"
               "sender.id"
               "sender.kind"
+              "sender.person_id"
               "addressed_bot"
               "addressed_self"
               "chat_type"
@@ -375,7 +376,11 @@
     (js-object))
   (addOperation "message.filter.get" "filters" (js-array) (js-object) (js-object :result "message_filter"))
   (addOperation "message.filter.update" "filters" (js-array "rules")
-    (js-object :rules (arraySchema
+    (js-object :people (arraySchema
+      (objectSchema (js-object :id (js-object :type "string" :minLength 1 :maxLength 128)
+        :identities (arraySchema (objectSchema (js-object :platform idSchema :scope idSchema :id idSchema)
+          (js-array "platform" "scope" "id")) 128 1)) (js-array "id" "identities")) 64 0)
+      :rules (arraySchema
       (objectSchema (js-object :id (js-object :type "string" :minLength 1 :maxLength 128)
         :enabled booleanSchema :effect (enumSchema "suppress_trigger")
         :predicate (js-object :$ref "#/$defs/predicate"))

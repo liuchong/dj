@@ -91,7 +91,8 @@
   (put
     definitions
     :sender
-    (obj (strings "id kind display_name principal_id principal_kind")))
+    (obj (Object/assign (strings "id kind display_name principal_id principal_kind")
+      (js-object :identities (arr (obj (strings "platform scope id") (js-array "platform" "scope" "id")))))))
   (put
     definitions
     :capability
@@ -258,7 +259,10 @@
           (js-array "field" "op" "value")))))
   (put definitions :message_filter (obj (js-object
     :policy_id stringSchema :schema_version integerSchema :scope stringSchema :revision integerSchema
-    :updated_at stringSchema :rules (arr (obj (js-object :id stringSchema :enabled boolSchema
+    :updated_at stringSchema
+    :people (arr (obj (js-object :id stringSchema :identities
+      (arr (obj (strings "platform scope id") (js-array "platform" "scope" "id")))) (js-array "id" "identities")))
+    :rules (arr (obj (js-object :id stringSchema :enabled boolSchema
       :effect stringSchema :predicate (ref "predicate")) (js-array "id" "enabled" "effect" "predicate"))))
     (js-array "policy_id" "schema_version" "scope" "revision" "rules")))
   (put

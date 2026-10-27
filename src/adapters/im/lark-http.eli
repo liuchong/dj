@@ -4,21 +4,26 @@
   (import "../../core/types.eli" hashValue)
   (import "./telegram.eli" readJson)
 
-  (defun formatLarkMessage (message thread)
+  (import "./lark-identities.eli" larkIdentities)
+  (defun formatLarkMessage (message thread &optional brand app)
     (let ((text nil))
       (when (= (nativeGet message "msg_type") "text")
         (try
           (setq text (nativeGet (JSON/parse (nativeGet (nativeGet message "body") "content" "{}")) "text"))
           (catch invalid nil)))
       (Object/assign (js-object) message
-        (js-object :content text :thread_id
+        (js-object :sender (Object/assign (js-object) (nativeGet message "sender")
+          (js-object :identities (larkIdentities (or brand "lark") app nil
+            (js-object :open_id (and (= (nativeGet (nativeGet message "sender") "id_type" "open_id") "open_id")
+              (nativeGet (nativeGet message "sender") "id"))))))
+          :content text :thread_id
           (or thread (and (nativeGet message "root_id") (nativeGet message "thread_id")) nil)))))
 
   (defun createLarkHttpTransport (config host)
     (let* ((base (if (= (nativeGet config "brand") "feishu")
                    "https://open.feishu.cn" "https://open.larksuite.com"))
            (active (new globalThis.Set)) (closed false) (token nil) (token-until 0)
-           (request nil) (authorize nil) (acquire nil) (authorizing nil) (perform nil))
+           (application-id nil) (request nil) (authorize nil) (acquire nil) (authorizing nil) (perform nil))
       (setq request (async (path method body bearer context)
         (when closed (throw (new globalThis.Error "Lark transport closed")))
         (let* ((controller (new globalThis.AbortController))
@@ -79,6 +84,7 @@
                          (= (nativeTypeOf (nativeGet credential "app_secret")) "string")
                          (> (js-length (nativeGet credential "app_secret")) 0))
               (throw (new globalThis.Error "Lark application credentials missing")))
+            (setq application-id (nativeGet credential "app_id"))
             (if (= (nativeGet config "identity") "user")
               (progn
                 (let* ((value (nativeGet credential "user_access_token"))
@@ -148,7 +154,7 @@
                            (= (nativeTypeOf (nativeGet data "has_more")) "boolean"))
                     (success (js-object :ok t :identity (nativeGet config "identity") :data (js-object
                       :messages (js-call (nativeGet data "items") :map
-                        (lambda (message) (formatLarkMessage message thread)))
+                        (lambda (message) (formatLarkMessage message thread (nativeGet config "brand" "lark") application-id)))
                       :has_more (nativeGet data "has_more") :page_token (nativeGet data "page_token"))))
                     (failure "incompatible"))
                   (success (js-object :ok t :identity (nativeGet config "identity") :data data))))))
