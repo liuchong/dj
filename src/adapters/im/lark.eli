@@ -252,6 +252,9 @@
                               false)
                             :attachments
                             (js-array))))
+                      (when (Array/isArray (nativeGet message "mentions"))
+                        (put event :mentions (js-call (nativeGet message "mentions") :filter (lambda (mention)
+                          (= (nativeGet mention "id_type" "open_id") "open_id")))))
                       ;; HTTP transport returns normalized text; do not decode it twice.
                       (when (nativeGet sender "identities")
                         (put (nativeGet event "sender") :identities (nativeGet sender "identities")))

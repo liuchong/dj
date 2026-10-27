@@ -31,7 +31,9 @@
     "tests/integration/filters.test.eli",
     "tests/unit/filters.test.eli",
     "tests/integration/session-rules.test.eli",
-    "tests/unit/session-rules.test.eli"
+    "tests/unit/session-rules.test.eli",
+    "tests/integration/mention-replies.test.eli",
+    "tests/unit/mention-replies.test.eli"
   ],
   "outDir": "dist-tests"
 }

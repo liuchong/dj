@@ -9,6 +9,7 @@
         :event_kind
         "string"
         :connection_id "string"
+        :mentions.id "string"
         :sender.id
         "string"
         :sender.kind
@@ -103,6 +104,7 @@
   (defun fieldValue
     (event field)
     (cond ((= field "text") (nativeGet (nativeGet event "content") "text"))
+      ((= field "mentions.id") (nativeGet event "mentions"))
       ((= field "sender.id") (nativeGet (nativeGet event "sender") "id"))
       ((= field "sender.person_id") (nativeGet (nativeGet event "sender") "person_id"))
       ((= field "sender.kind") (nativeGet (nativeGet event "sender") "kind"))
@@ -170,6 +172,11 @@
                   (and (= field "text") (= (nativeGet (nativeGet event "content") "truncated") t))))
               (when (nativeNullish value)
                 (progn (setq djReturn3Value "indeterminate") (throw djReturn3Token)))
+              (when (= field "mentions.id")
+                (setq djReturn3Value (if (and (Array/isArray value)
+                  (js-call value :some (lambda (mention) (if (= op "in")
+                    (js-call wanted :includes (nativeGet mention "id")) (= (nativeGet mention "id") wanted))))) "true" "false"))
+                (throw djReturn3Token))
               (when (and budget (= field "text"))
                 (js-call budget :visit (js-length value)))
               (cond

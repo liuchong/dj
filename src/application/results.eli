@@ -257,8 +257,12 @@
                 boolSchema
                 (arr (js-object :type (js-array "string" "boolean"))))))
           (js-array "field" "op" "value")))))
+  (put definitions :mention (obj (strings "id name") (js-array "id")))
+  (put definitions :reply_route (obj (strings "status identity connection_id" (js-object :mention_ids (arr stringSchema)))))
+  (put definitions :reply_binding (obj (strings "source_connection_id mention_id reply_connection_id"
+    (js-object :source_identity_revision integerSchema :reply_identity_revision integerSchema))))
   (put definitions :session_rules (obj (strings "session_key tool native_namespace native_session_id text sha256 updated_at updated_by"
-    (js-object :revision integerSchema)) (js-array "session_key" "tool" "native_namespace" "native_session_id" "text" "sha256" "revision")))
+    (js-object :revision integerSchema :reply_routes (arr (ref "reply_binding")))) (js-array "session_key" "tool" "native_namespace" "native_session_id" "text" "sha256" "revision")))
   (put definitions :conversation_rules (obj (strings "session_key text sha256" (js-object :revision integerSchema))
     (js-array "session_key" "revision" "sha256" "text")))
   (put definitions :message_filter (obj (js-object
@@ -533,7 +537,7 @@
     :source (ref "delivery_source") :sender (ref "sender") :content (ref "content")
     :attachments (arr (ref "attachment")) :reply_context_id nullableString :allowed_actions (arr stringSchema)
     :matched (arr (obj (js-object :subscription_id stringSchema :subscription_revision integerSchema :result stringSchema)))
-    :conversation_rules (ref "conversation_rules")
+    :conversation_rules (ref "conversation_rules") :mentions (arr (ref "mention")) :reply_route (ref "reply_route")
     :instructions (arr (obj (js-object :subscription_id stringSchema :subscription_revision integerSchema
       :prompt stringSchema :task_template stringSchema :task stringSchema))))))
   (put definitions :inbox (obj (strings "operation_id inbox_id subscription_id event_id state expires_at claim_ref lease_until"
@@ -572,6 +576,7 @@
           (ref "address")
           :sender
           (ref "sender")
+          :mentions (arr (ref "mention"))
           :content
           (ref "content")
           :attachments

@@ -1,4 +1,5 @@
 (module dj.delivery.scheduler
+  (import "../connections/replies.eli" selectReplyRoute)
   (import "../connections/manager.eli" imPort)
   (import "../core/native.eli" nativeNullish nativeGet)
   (import "../core/errors.eli" success failure)
@@ -245,23 +246,26 @@
         (funcall work known-read)
         (withContributionReads context work t))))
   (defun replyContext
-    (context record event recipient &optional read)
+    (context record event recipient &optional read selected)
     (let ((djReturn3Token (js-object)) (djReturn3Value nil))
       (try
         (let*
           ((repository (nativeGet context "repository"))
-            (address (nativeGet event "conversation"))
+            (source-address (nativeGet event "conversation"))
+            (address (if selected (nativeGet selected "destination") source-address))
             (connection
               (if read
-                (funcall read "connections" (nativeGet event "connection_id"))
-                (js-call repository :get "connections" (nativeGet event "connection_id"))))
+                (funcall read "connections" (nativeGet address "connection_id"))
+                (js-call repository :get "connections" (nativeGet address "connection_id"))))
             (port
-              (imPort context (nativeGet event "connection_id")))
+              (imPort context (nativeGet address "connection_id")))
             (threaded (not (nativeNullish (nativeGet address "native_thread_id"))))
             (capabilities (nativeGet port "capabilities")))
           (unless
             (and
               recipient
+              (or (not selected) (= (nativeGet selected "status") "ready"))
+              (principalAllows context (nativeGet recipient "principal_id") "message.reply" source-address)
               port
               (nativeGet event "native_message_id")
               (principalAllows
@@ -303,6 +307,8 @@
                     (nativeGet event "event_id")
                     :recipient_principal_id
                     (nativeGet recipient "principal_id")
+                    :source_destination (Object/assign (js-object) source-address)
+                    :source_identity_revision (nativeGet event "identity_revision")
                     :destination
                     (Object/assign (js-object) address)
                     :native_reply_to
@@ -384,7 +390,8 @@
               (configuredPrincipal
                 (nativeGet (nativeGet context "config") "principals")
                 (nativeGet agent "recipient_principal_id")))
-            (reply (replyContext context record event recipient read))
+            (selected (selectReplyRoute context event (nativeGet (js-call (nativeGet context "repository") :get "routes" (nativeGet record "route_id")) "session_key")))
+            (reply (replyContext context record event recipient read selected))
             (content
               (js-object
                 :type
@@ -443,6 +450,9 @@
             :allowed_actions
             (if reply (js-array "reply") (js-array))))
                  (instructions (composeInstructions contributions event body)))
+            (when (object-has? event :mentions) (put envelope :mentions (nativeGet event "mentions")))
+            (put envelope :reply_route (js-object :status (if (and (= (nativeGet selected "status") "ready") (not reply)) "forbidden" (nativeGet selected "status"))
+              :connection_id (nativeGet selected "connection_id" "") :identity (nativeGet selected "identity" "") :mention_ids (nativeGet selected "mention_ids")))
             (when (> (js-length instructions) 0) (put envelope :instructions instructions))
             (when (nativeGet record "inbox_id") (put envelope :inbox_id (nativeGet record "inbox_id")))
             (when (nativeGet instructions "overflow") (put envelope :instruction_overflow t))

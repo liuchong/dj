@@ -37,6 +37,7 @@ Lark 必须直连官方 WebSocket 与 HTTPS API，禁止 SDK、CLI 及其子进�
 ## 正式规格与接续要求
 
 - 用户确认的产品职责、行为和硬边界必须保存为 `docs/specs/` 下四位数字前缀的正式 spec；同一问题继续更新原 spec，不靠聊天记忆或另起重复说明。
+- 原生提及到回复身份及原消息位置由DJ按[0005](docs/specs/0005-mention-replies.md)固定；AI只决定是否、何时调用回复工具提交内容。禁止把普通输出或最终回答自动接到IM。
 - 对话规则须经 [0004](docs/specs/0004-session-rules.md) 的持久接口按准确原生会话保存和恢复，不依赖聊天历史或定时器文案；规则保存不冒充实时触发覆盖。
 - 多IM、多账号及user/bot身份共用扁平连接注册表和路由分发，人员身份与原生会话地址分离；以 [0003](docs/specs/0003-connections-and-routing.md) 为准，不按部署昵称分叉业务。
 - 人员、字符与后续消息过滤策略以 [0002](docs/specs/0002-message-trigger-filters.md) 为准；当前黑名单只拦截订阅触发，不改变消息接收、记录和查询可见性。

@@ -470,6 +470,7 @@
                   "connection_id"
                   "conversation"
                   "sender"
+                  "mentions"
                   "received_at"
                   "source_time"
                   "ingress_seq"
@@ -801,6 +802,13 @@
               (progn
                 (setq djReturn8Value (failure "reply_context_expired"))
                 (throw djReturn8Token)))
+            (when (nativeGet reply "source_destination")
+              (let* ((source (nativeGet reply "source_destination"))
+                (source-connection (js-call repository :get "connections" (nativeGet source "connection_id"))))
+                (unless (and source-connection
+                  (= (nativeGet reply "source_identity_revision") (nativeGet source-connection "identity_revision" (nativeGet source-connection "revision")))
+                  (can context "message.reply" source))
+                  (setq djReturn8Value (failure "reply_context_expired")) (throw djReturn8Token))))
             (unless (can context "message.reply" (nativeGet reply "destination"))
               (progn (setq djReturn8Value (failure "forbidden")) (throw djReturn8Token)))
             (success reply)))
@@ -940,6 +948,7 @@
                 (nativeGet (nativeGet resolved "data") "address")
                 connection
                 (nativeGet (nativeGet resolved "data") "connection"))))
+          (when (nativeGet reply "source_destination") (must (requirePermission context action (nativeGet reply "source_destination"))))
           (let
             ((permission (requirePermission context action address))
               (capability

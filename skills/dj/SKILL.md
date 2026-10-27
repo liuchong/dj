@@ -54,6 +54,13 @@ metadata:
 - precedence: 当前明确人类指令及系统约束优先；持久对话规则用于恢复职责，订阅instructions只补本条来源任务。规则不改变工具权限、发送授权或工作区核心约束。更新不会回写已提交/领取的历史快照。
 - distinction: 规则持久化保证可读回，不保证AI必然遵守，也不补齐任何消息源、定时器或任务唤醒覆盖。完整示例见[对话规则](references/session-rules.md)。
 
+## 回复职责与提及身份
+
+- route: 原生mentions和reply_route说明谁被提及及DJ已固定的回复身份；message.reply只提交reply_context_id、content、稳定idempotency_key，不选择账号或收件人，不改为message.send绕开缺失引用。
+- decision: 按本对话规则判断是否处理、是否属于已有任务、是否及何时回复；不是每条通知都要建任务或回复，也不是每次输出都外发。最终回答不自动转发IM；真正外发是显式工具调用，可在最终回答前进行。
+- setup: 接收对话自己经session.rules.update维护reply_routes；来源应用范围内原生mention_id映射到获准出口connection_id，DJ自动固定每条通知路径。手工自发@同样匹配，不设本人sender排除。详见[对话规则](references/session-rules.md)。
+- blocked: reply_route为ambiguous_target、stale_reference或forbidden且没有reply_context_id时报告明确限制，不自行挑账号、另开对话或双发。
+
 ## 消息触发黑名单
 
 - policy: 人员与字符使用同一服务级规则集，通过message.filter.get/update维护；默认空规则。需要对应inspect/manage权限和message-filter:service资源授权，普通订阅者不能自行修改全局策略。
