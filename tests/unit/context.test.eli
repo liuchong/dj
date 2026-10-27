@@ -1,5 +1,6 @@
 (module dj.tests.unit.context
   (import "../../src/core/native.eli" nativeGet)
+  (import "../../src/adapters/im/lark-http.eli" formatLarkMessage)
   (import "../../src/messaging/context.eli" matchesAddress projectMessage policyFor)
   (import "../support/case.eli" withCase)
   (import "bun:test" expect)
@@ -7,6 +8,9 @@
     (let* ((address (js-object :connection_id "account-a" :native_chat_id "chat-a" :native_thread_id nil :thread_kind "main"))
       (message (js-object :connection_id "account-a" :native_message_id "native-1" :conversation address
         :sender (js-object :id "human-a" :kind "human") :content (js-object :kind "text" :text "🤖中文" :truncated false))))
+      (let ((root (formatLarkMessage (js-object :message_id "root-message" :chat_id "chat-a" :thread_id "native-thread"
+        :msg_type "text" :body (js-object :content (JSON/stringify (js-object :text "root")))) nil)))
+        (js-call (expect (nativeGet root "thread_id")) :toBe "native-thread"))
       (js-call (expect (matchesAddress address message)) :toBe t)
       (js-call (expect (matchesAddress (Object/assign (js-object) address (js-object :connection_id "account-b")) message)) :toBe false)
       (js-call (expect (matchesAddress (Object/assign (js-object) address (js-object :native_chat_id "chat-b")) message)) :toBe false)
