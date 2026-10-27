@@ -76,6 +76,7 @@
           (let* ((inputs (nativeGet (nativeGet f "opencode") "inputs")) (envelope (nativeGet (aref inputs 0) "envelope")))
             (js-call (expect (js-length inputs)) :toBe 1)
             (js-call (expect (nativeGet (nativeGet envelope "source") "kind")) :toBe "resource")
+            (js-call (expect (> (js-length (nativeGet (nativeGet envelope "sender") "identities")) 0)) :toBe t)
             (js-call (expect (nativeGet (nativeGet envelope "resource") "record_id")) :toBe "recordOne")
             (js-call (expect (nativeGet (nativeGet envelope "topic") "kind")) :toBe "resource_record")
             (js-call (expect (nativeGet envelope "reply_context_id")) :toBe nil)

@@ -1,4 +1,5 @@
 (module dj.adapters.im.lark-resource-events
+  (import "./lark-identities.eli" larkIdentities)
   (import "../../core/native.eli" nativeGet nativeTypeOf NativeNumber)
   (defconst resourceEvents (js-array "drive.file.bitable_record_changed_v1" "drive.file.bitable_field_changed_v1" "drive.file.edit_v1"))
   (defun peopleIn (value &optional field)
@@ -35,7 +36,7 @@
               :resource_kind kind :resource_token token :table_id table :record_id record :native_thread_id record :thread_kind "resource")
             :resource (js-object :connection_id (nativeGet config "connection_id") :kind kind :token token :table_id table :record_id record
               :event_type type :action (nativeGet action "action" "edited"))
-            :sender (js-object :id operator :kind (if (= operator "unknown") "unknown" "human"))
+            :sender (js-object :id operator :identities (larkIdentities (nativeGet config "brand" "lark") (nativeGet config "event_app_id") (nativeGet header "tenant_key") (nativeGet event "operator_id" (js-object))) :kind (if (= operator "unknown") "unknown" "human"))
             :source_time (js-call (new globalThis.Date stamp) :toISOString) :source_revision "1"
             :root_message_id token :people (peopleIn decoded) :mentions (js-array)
             :content (js-object :kind "text" :text (JSON/stringify (js-object :action (nativeGet action "action" "edited") :fields values)) :truncated false)
