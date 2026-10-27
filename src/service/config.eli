@@ -57,7 +57,8 @@
         :native_chat_id
         id
         :native_thread_id
-        nullableId)))
+        nullableId
+        :kind id :resource_kind id :resource_token id :table_id id :record_id id)))
   (defconst grantSchema
     (obj
       (js-object
