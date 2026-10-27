@@ -13,6 +13,7 @@
       "sender"
       "matched"
       "instructions"
+      "conversation_rules"
       "content"
       "attachments"
       "reply_context_id"

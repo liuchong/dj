@@ -7,6 +7,7 @@
   (import "../policy/handles.eli" issueHandle)
   (import "../delivery/service.eli" isContributionEffective)
   (import "../filtering/policy.eli" evaluateTriggerFilters)
+  (import "../sessions/rules.eli" attachConversationRules)
   (import "../delivery/scheduler.eli" freezeEnvelope)
   (import "../delivery/envelope.eli" encodeEnvelope)
   (import "../delivery/snapshot.eli" packEnvelope unpackEnvelope)
@@ -94,7 +95,9 @@
                                    :agent_id (nativeGet agent "agent_id") :inbox_id (nativeGet entry "inbox_id")
                                    :inbox_claim_ref claim-ref))
                          (event (js-call repository :get "events" (nativeGet entry "event_id")))
-                         (envelope (freezeEnvelope context record event (js-array (nativeGet entry "contribution")) agent)))
+                         (envelope (attachConversationRules context
+                           (js-object :session_key (nativeGet (js-call repository :get "routes" (nativeGet agent "route_id")) "session_key"))
+                           (freezeEnvelope context record event (js-array (nativeGet entry "contribution")) agent))))
                     (when (or (nativeGet envelope "instruction_overflow")
                               (> (utf8Bytes (encodeEnvelope envelope)) (nativeGet limits "native_frame_max_bytes")))
                       (must (failure "limit_exceeded")))

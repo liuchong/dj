@@ -257,6 +257,10 @@
                 boolSchema
                 (arr (js-object :type (js-array "string" "boolean"))))))
           (js-array "field" "op" "value")))))
+  (put definitions :session_rules (obj (strings "session_key tool native_namespace native_session_id text sha256 updated_at updated_by"
+    (js-object :revision integerSchema)) (js-array "session_key" "tool" "native_namespace" "native_session_id" "text" "sha256" "revision")))
+  (put definitions :conversation_rules (obj (strings "session_key text sha256" (js-object :revision integerSchema))
+    (js-array "session_key" "revision" "sha256" "text")))
   (put definitions :message_filter (obj (js-object
     :policy_id stringSchema :schema_version integerSchema :scope stringSchema :revision integerSchema
     :updated_at stringSchema
@@ -529,6 +533,7 @@
     :source (ref "delivery_source") :sender (ref "sender") :content (ref "content")
     :attachments (arr (ref "attachment")) :reply_context_id nullableString :allowed_actions (arr stringSchema)
     :matched (arr (obj (js-object :subscription_id stringSchema :subscription_revision integerSchema :result stringSchema)))
+    :conversation_rules (ref "conversation_rules")
     :instructions (arr (obj (js-object :subscription_id stringSchema :subscription_revision integerSchema
       :prompt stringSchema :task_template stringSchema :task stringSchema))))))
   (put definitions :inbox (obj (strings "operation_id inbox_id subscription_id event_id state expires_at claim_ref lease_until"

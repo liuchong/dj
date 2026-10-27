@@ -27,6 +27,7 @@
   (import "../policy/handles.eli" issueHandle)
   (import "../catalog/records.eli" attachBinding)
   (import "../lifecycle/gates.eli" assertGate)
+  (import "../sessions/rules.eli" attachConversationRules)
   (import "./envelope.eli" encodeAgentInput)
   (import "./snapshot.eli" packEnvelope)
   (import "./service.eli" isContributionEffective projectDelivery)
@@ -618,7 +619,7 @@
                     (throw djReturn4Token)))
                 (let*
                   ((binding (attachBinding context route session instance observation))
-                    (envelope (freezeEnvelope context record event contributions agent read))
+                    (envelope (attachConversationRules context session (freezeEnvelope context record event contributions agent read)))
                     (frame
                       (encodeAgentInput
                         (nativeGet session "tool")

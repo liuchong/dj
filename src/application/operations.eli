@@ -187,7 +187,8 @@
   (defconst operationCatalog (new globalThis.Map))
   (defun permissionAction
     (name group)
-    (cond ((= group "filters") (if (= name "message.filter.get") "message.filter.inspect" "message.filter.manage"))
+    (cond ((= group "session_rules") (if (= name "session.rules.get") "session.rules.read" "session.rules.manage"))
+      ((= group "filters") (if (= name "message.filter.get") "message.filter.inspect" "message.filter.manage"))
       ((js-call (js-array "subscription.pull" "subscription.ack") :includes name) "subscription.consume")
       ((= name "operation.get") "operation.inspect")
       ((= group "connections") "connection.inspect")
@@ -754,6 +755,13 @@
     (js-array "query")
     (js-object :query (querySchema t) :scope scopeSchema :time_range timeRangeSchema)
     (js-object :page t :result "session"))
+  (addOperation "session.rules.get" "session_rules" (js-array)
+    (js-object :session_key idSchema :session_ref idSchema :agent_id idSchema)
+    (js-object :exclusive (js-array "session_key" "session_ref" "agent_id") :result "session_rules"))
+  (addOperation "session.rules.update" "session_rules" (js-array "text")
+    (js-object :session_key idSchema :session_ref idSchema :agent_id idSchema
+      :text (js-object :type "string" :maxLength 65536))
+    (js-object :exclusive (js-array "session_key" "session_ref" "agent_id") :result "session_rules" :effect "accept" :revision t))
   (addOperation
     "session.send"
     "delivery"

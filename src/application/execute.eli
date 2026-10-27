@@ -12,6 +12,7 @@
       "inbox"
       "inbox_pull"
       "message_filter"
+      "session_rules"
       "subscription"
       "delivery"
       "outbound"
