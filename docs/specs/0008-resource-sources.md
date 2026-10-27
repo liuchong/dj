@@ -19,7 +19,7 @@ resource.watch(resource_ref,idempotency_key)登记并请求平台文件事件订
 
 当前接收已登记文件的drive.file.bitable_record_changed_v1、drive.file.bitable_field_changed_v1、drive.file.edit_v1；经同一官方WebSocket、持久收件箱、Core形成resource.changed。记录变更按每个真实record_id保留action及字段变更，人员引用从原生after_value解析，重复事件不重复通知；删除记录不自动变成需要修复的任务。收到事件后失效相关内容缓存，不凭旧快照冒充当前内容。
 
-平台要求在应用后台开启相应事件，且调用身份须是文档拥有者/管理者并具备原生权限。没有新事件读回前不得宣称实时链路已验收。文档评论中的@有独立平台语义；没有已核对的原生事件时，只提供获准评论读取，不能宣称已覆盖所有文档@通知。
+上述文件级变更订阅要求在应用后台开启相应事件，且调用身份须是文档拥有者/管理者并具备原生权限。没有新事件读回前不得宣称实时链路已验收。文档评论中的@有独立平台语义；没有已核对的原生事件时，只提供获准评论读取，不能宣称已覆盖所有文档@通知。
 
 ## 触发与任务判断
 
@@ -38,3 +38,15 @@ AI通过原有subscription.preview/create选择准确目标会话与资源来源
 持久ingress_evidence标明explicit_resource_recovery、操作、请求主体、原因与观察时间；resource.action为snapshot_recovered，sender.kind明确为unknown而不是原编辑者；连接的allowed_sender_kinds和统一黑名单照常生效，未允许unknown来源时不得绕过。人员字段仍是people而不是mentions。返回realtime=false，不伪装原生change事件或已验证实时资源推送。内容/地址一致时保持稳定source_key，同键请求及新键恢复同一快照均不重复通知；已恢复事件需要补投时使用独立显式subscription.replay。缓存按规范资源地址及查询参数定位，不因入口URL或显示标题变化而读不到同一记录。
 
 资源通知没有IM表情租约时，接收方仍可幂等调用delivery.complete；记录受理操作并返回state=not_marked、cleanup_state=done，不创建表情或更改投递业务状态。重复调用仍受原接收主体和当前delivery.inspect权限约束。
+
+## 本人接收者视角的评论与回复通知
+
+Drive v1 的 `POST /drive/v1/user/subscription` 与文件级 `POST /drive/v1/files/:token/subscribe` 是两种不同能力。前者订阅 `drive.notice.comment_add_v1`，官方要求 `docs:event:subscribe`，事件要求 `docs:document.comment:read`；不以拥有文件管理权限为前提。官方明确其通知逻辑与 Lark 客户端的文档评论通知一致，接收者在客户端能收到对应评论通知时才有该事件。这不等于所有客户端通知或多维表格人员字段变更均公开为该事件。
+
+user 长连接接入时使用同一授权用户凭据，先 GET `/drive/v1/user/subscription_status`，仅明确 false 时 POST 开启，然后 GET 核实 true；未知状态不当作未订阅盲发，失败保留具体状态，不降级为定时读消息。该动作只在接入初始化执行，既不是周期扫描，也不替代应用后台事件配置。connection.probe 的 `event_source.user_document_notices` 区分 subscribed 与 blocked/native_unknown；subscribed 仅证明订阅开启，不声称已收到真实新事件。
+
+同一官方 WebSocket 接收该事件，严格校验 app_id 与 notice_meta.to_user_id.open_id 必须属于当前 user 连接。通知不依赖 resource.watch 文件管理权限；文件级变更仍走原 watch。文档、表格、多维表格通知沿现有持久 inbox、resource.changed、统一黑名单和原订阅路由，禁止把另一个登录用户的通知混入。保留 comment_id、reply_id、recipient_id、is_mentioned 和原生发送者；仅 is_mentioned=true 才构成真正的 mentions.id/addressed_self，不把普通评论通知冒充 @。文件级字段关联仍只是 people.id。
+
+评论使用 comment_id 跟踪原生话题，不猜测不存在于事件中的 table_id/record_id；已有指定数据表订阅不会自动覆盖缺少表 ID 的评论事件。接收 AI 可自行配置连接范围的 resource.changed 加 addressed_self=true 条件，再用 resource.read(view=comments) 读取获准原文；不自动建任务、不写评论、不向 IM 发文字。具体实时覆盖须以新的真实原生事件及准确目标投递验证，不能用旧 BUG 重放或本地夹具冒充。
+
+官方依据：[用户订阅](https://open.larksuite.com/document/uAjLw4CM/ukTMukTMukTM/reference/drive-v1/user/subscription)、[评论通知事件](https://open.larksuite.com/document/uAjLw4CM/ukTMukTMukTM/reference/drive-v1/notice/events/comment_add)。

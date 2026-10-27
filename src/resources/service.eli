@@ -234,7 +234,7 @@
           (success watch (js-object :operation_id (nativeGet accepted "operation_id") :effect_state "recorded"))))))
   (defun resourceEnvelope (context recipient event)
     (let* ((scoped (Object/assign (js-object) context (js-object :principal recipient)))
-      (resource (safeFields (nativeGet event "resource") (js-array "connection_id" "kind" "token" "table_id" "record_id" "event_type" "action"))))
+      (resource (safeFields (nativeGet event "resource") (js-array "connection_id" "kind" "token" "table_id" "record_id" "event_type" "action" "recipient_id" "comment_id" "reply_id" "is_mentioned"))))
       (currentResource scoped resource (nativeGet event "identity_revision"))
       (projectResource scoped resource (nativeGet event "identity_revision"))))
   (defun projectWatch (context watch)

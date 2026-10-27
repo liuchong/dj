@@ -537,8 +537,8 @@
           integerSchema))))
   (put definitions :message_recovery (obj (strings "recovery_id connection_id" (js-object :identity_revision integerSchema
     :event_ids (arr stringSchema) :native_message_ids (arr stringSchema) :created_count integerSchema :recovered_count integerSchema :realtime boolSchema))))
-  (put definitions :lark_resource (obj (strings "connection_id kind token node_token space_id title url resource_ref conversation_ref event_type action"
-    (js-object :table_id nullableString :record_id nullableString))))
+  (put definitions :lark_resource (obj (strings "connection_id kind token node_token space_id title url resource_ref conversation_ref event_type action recipient_id comment_id"
+    (js-object :table_id nullableString :record_id nullableString :reply_id nullableString :is_mentioned boolSchema))))
   (put definitions :resource_page (obj (strings "text format as_of"
     (js-object :resource (ref "lark_resource") :data (js-object) :offset_bytes integerSchema :next_offset_bytes integerSchema :total_bytes integerSchema
       :next_cursor nullableString :complete boolSchema :body_complete boolSchema :cache_hit boolSchema :external_data boolSchema :coverage_complete boolSchema))))
@@ -629,8 +629,9 @@
     :delivery
     (obj
       (strings
-        "delivery_id route_id origin delivery_seq state expires_at operation_id principal_id"
+        "delivery_id route_id origin delivery_seq state expires_at"
         (js-object
+          :operation_id nullableString :principal_id nullableString
           :agent_id
           nullableString
           :event_id
