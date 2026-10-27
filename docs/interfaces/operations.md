@@ -23,6 +23,8 @@ request_id 可选，用于追踪；所有受理变更要求 idempotency_key。�
 | 操作 | 业务输入 | data 结果 | 权限/效果 |
 | --- | --- | --- | --- |
 | service.status | 无 | api_version、build_id、operation_catalog_digest、visible_operations、能力/上限、服务与队列摘要 | 可见诊断，无模型判定；技术目录摘要不含秘密/私有实例 |
+| message.filter.get | 无 | 服务级过滤策略、revision、rules | message.filter.inspect；消息可见性不变 |
+| message.filter.update | expected_revision、rules、idempotency_key | 更新后的完整策略 | message.filter.manage；suppress_trigger；原子替换、持久化 |
 | operation.get | operation_id，或 operation + idempotency_key（二选一） | Operation 状态、resource_refs、当前允许的 safe_result | 仅本主体；重新检查读取权限 |
 | connection.list/get | filters? / connection_id | 安全 Connection | inspect |
 | connection.probe | connection_id | 健康/能力/凭据状态摘要 | inspect；不修改配置 |

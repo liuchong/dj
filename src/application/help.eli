@@ -5,6 +5,10 @@
     (js-object
       :service.status
       "读取当前服务状态、可用操作、限制和获准来源；不启动工具。"
+      :message.filter.get
+      "读取服务级消息过滤规则；只限制触发动作，不改变收件或消息可见性。"
+      :message.filter.update
+      "按当前 revision 一次替换人员/字符/组合过滤规则；仅支持 suppress_trigger，不补发历史。"
       :operation.get
       "按 operation_id，或原 operation+idempotency_key 查受理台账；not_found 不证明原请求不会提交。"
       :connection.list

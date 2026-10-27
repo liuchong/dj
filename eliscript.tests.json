@@ -27,7 +27,9 @@
     "tests/integration/pi-observer.test.eli",
     "tests/integration/desktop.test.eli",
     "tests/integration/cli.test.eli",
-    "tests/unit/native-inboxes.test.eli"
+    "tests/unit/native-inboxes.test.eli",
+    "tests/integration/filters.test.eli",
+    "tests/unit/filters.test.eli"
   ],
   "outDir": "dist-tests"
 }

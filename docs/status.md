@@ -1,5 +1,7 @@
 # 当前状态与接续入口
 
+2026-10-27 触发黑名单已实现并更新常驻服务：人员与字面字符统一为可组合规则，当前只支持 suppress_trigger；Core 保留入库、查询、已提交/领取内容，匹配与提交/领取前检查只拦自动动作。新增 message.filter.get/update 提供服务级持久策略、权限/版本/幂等。3项集成+1项保护单测通过（52断言）；服务ready、WebSocket connected、规则默认为空，未写入实际人员或字符。详见[0002](specs/0002-message-trigger-filters.md)。
+
 > Lark 当前接线以 [规格 0001](./specs/0001-lark-realtime-subscriptions.md) 和官方 WebSocket / HTTPS API 直连实现为准；外部 IM 命令行进程路径已移除，以下旧施工记录不恢复该路径。
 
 2026-10-27 官方 API 直连已落地并部署：Lark 应用 WebSocket → Core → 默认原生 @ / 显式组合关键词订阅 → 原 Codex 对话原生 IPC 已真实通过，并读回两条输入及确认。Core 的本人发送、机器人原消息回复也分别获得官方读回；独立 recipient 绑定已核对。常驻服务保持原名称，保留数据库、凭据及旧版本恢复备份；源码、运行包与真实控制器均不调用 Lark 外部 CLI 或 SDK。Skill 通过 MDP 校验并安装至通用、Codex、Cursor 的 Skill 目录，调用方采用确认单独留在私有记录。当前应用事件可见范围不等同于本人全部收件箱，其他 IM 与性能专项仍按既定范围后置。

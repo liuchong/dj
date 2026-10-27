@@ -20,6 +20,7 @@
     nativeCallContext
     safeFields)
   (import "../application/write-batch.eli" enqueueWrite)
+  (import "../filtering/policy.eli" evaluateTriggerFilters)
   (import "../policy/principals.eli" configuredPrincipal)
   (import "../policy/authorize.eli" authorize)
   (import "../policy/handles.eli" issueHandle)
@@ -559,6 +560,9 @@
                           "routing_incomplete"))
                       (throw djReturn4Token)))
                   (setq event (js-call repository :get "events" (nativeGet record "event_id")))
+                  (when (nativeGet (evaluateTriggerFilters context event) "suppressed")
+                    (setq djReturn4Value (holdDelivery context record claim "cancelled" "trigger_suppressed"))
+                    (throw djReturn4Token))
                   (setq agent (funcall read "agents" (nativeGet record "agent_id")))
                   (setq
                     contributions

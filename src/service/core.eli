@@ -13,6 +13,7 @@
   (import "../storage/repository.eli" createRepository)
   (import "../registry/agents.eli" :as Registry)
   (import "../subscriptions/service.eli" :as Subscriptions)
+  (import "../filtering/service.eli" :as Filters)
   (import "../catalog/service.eli" :as Catalog)
   (import "../catalog/search.eli" :as Search)
   (import "../catalog/refresh.eli" :as Refresh)
@@ -245,6 +246,7 @@
             (let ((handlers (new globalThis.Map)))
               (js-call
                 (js-array
+                  (js-array "filters" Filters)
                   (js-array "registry" Registry)
                   (js-array "subscriptions" Subscriptions)
                   (js-array "catalog" Catalog)

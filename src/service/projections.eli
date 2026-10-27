@@ -2,6 +2,7 @@
   (import "../core/native.eli" nativeNullish nativeGet)
   (import "../core/errors.eli" success failure)
   (import "../core/limits.eli" limits)
+  (import "../filtering/service.eli" projectFilterPolicy)
   (import "../application/context.eli" can safeFields)
   (import "../application/operations.eli" operationCatalog operationCatalogDigest)
   (import "../policy/authorize.eli" operatorOnly)
@@ -51,6 +52,7 @@
             (table
               (nativeGet
                 (js-object
+                  :message_filter "message_filter_policies"
                   :inbox "inbox_entries"
                   :inbox_pull "inbox_pulls"
                   :agent
@@ -74,6 +76,7 @@
           (unless record
             (progn (setq djReturn1Value (failure "forbidden")) (throw djReturn1Token)))
           (cond
+            ((= kind "message_filter") (projectFilterPolicy context record))
             ((= kind "inbox") (projectInbox context record))
             ((= kind "inbox_pull") (projectPull context record))
             ((and (= kind "agent") (can context "agent.bind" record))

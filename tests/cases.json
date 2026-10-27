@@ -26158,6 +26158,70 @@
       "given": "Existing native endpoint configurations and real-ID trajectory shapes",
       "when": "Encode scheduler inputs, project native messages and validate exclusive transports",
       "then": "Preserve native IDs and workspace identity, omit thinking, reject incomplete or mixed process bindings"
+    },
+    {
+      "case_id": "T38.message-filters.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/filters.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "requirements": [
+        "SPEC-0002"
+      ]
+    },
+    {
+      "case_id": "T31.message-filter-cutover.integration",
+      "parent_id": "T31",
+      "file": "tests/integration/filters.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "requirements": [
+        "SPEC-0002"
+      ]
+    },
+    {
+      "case_id": "T40.message-filter-pull.integration",
+      "parent_id": "T40",
+      "file": "tests/integration/filters.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "requirements": [
+        "SPEC-0002"
+      ]
+    },
+    {
+      "case_id": "T38.message-filters.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/filters.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "pure",
+      "requirements": [
+        "SPEC-0002"
+      ]
     }
   ],
   "source_extension_base": "c1eb7b1"

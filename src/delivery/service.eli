@@ -23,6 +23,7 @@
   (import "../lifecycle/gates.eli" assertGate)
   (import "../ingestion/visibility.eli" eventContentAvailable)
   (import "./envelope.eli" encodeAgentInput)
+  (import "../filtering/policy.eli" evaluateTriggerFilters)
   (defconst pendingStates
     (js-array "ready" "deferred" "blocked" "submitting" "unknown"))
   (defun queueCapacity
@@ -581,6 +582,13 @@
           (when (and planning
             (not (= (nativeGet planning "event_id") (nativeGet event "event_id"))))
             (throw (new globalThis.TypeError "event planning identity mismatch")))
+          (let ((filtered (if (and planning (nativeGet planning "trigger_filter"))
+                    (nativeGet planning "trigger_filter") (evaluateTriggerFilters context event))))
+            (when (nativeGet filtered "suppressed")
+              (put decision :trigger_filter filtered)
+              (put decision :reason_codes (js-call (or (nativeGet decision "reason_codes") (js-array)) :concat (js-array "trigger_suppressed")))
+              (setq djReturn5Value (success (js-object :suppressed t)))
+              (throw djReturn5Token)))
           (unless (isContributionEffective context contribution event agent reader route)
             (progn (setq djReturn5Value (success nil)) (throw djReturn5Token)))
           (when (= (nativeGet version "delivery_mode" "push") "pull")

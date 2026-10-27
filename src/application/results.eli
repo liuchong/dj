@@ -256,6 +256,11 @@
                 boolSchema
                 (arr (js-object :type (js-array "string" "boolean"))))))
           (js-array "field" "op" "value")))))
+  (put definitions :message_filter (obj (js-object
+    :policy_id stringSchema :schema_version integerSchema :scope stringSchema :revision integerSchema
+    :updated_at stringSchema :rules (arr (obj (js-object :id stringSchema :enabled boolSchema
+      :effect stringSchema :predicate (ref "predicate")) (js-array "id" "enabled" "effect" "predicate"))))
+    (js-array "policy_id" "schema_version" "scope" "revision" "rules")))
   (put
     definitions
     :spec

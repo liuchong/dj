@@ -201,3 +201,12 @@ PO D必需补强：多个合法assistant按原追加位置选最早；不变文�
 PO build115本地D及180独立增量审核通过，unit48完整79/79、integration68 PO 1/1（98断言）；Pi companion真实用例仍not_run，不将本地fixture记为平台通过。
 
 T63.opencode-native-read.integration 补充当前 OpenCode 消息分页与有界缩页；T38.native-access.unit 补充原生游标的会话绑定/格式拒绝。两者不替代独立 recipient 订阅回复的真实证据，也不扩大为全工具/性能矩阵。
+
+## 规格0002 触发过滤
+
+| 用例 | 验收职责 |
+|---|---|
+| T38.message-filters.integration | 统一策略权限、版本/幂等、重启、组合条件、消息记录与正文可读、清空 |
+| T31.message-filter-cutover.integration | 未提交自动通知取消，已提交保持，显式直发不拦截 |
+| T40.message-filter-pull.integration | 待领取复核并抑制，已领取不隐藏，消息查询保持 |
+| T38.message-filters.unit | 严格结构/上限、字面Unicode、disabled、indeterminate、无跨消息/版本缓存 |

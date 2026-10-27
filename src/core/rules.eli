@@ -8,6 +8,7 @@
       (js-object
         :event_kind
         "string"
+        :connection_id "string"
         :sender.id
         "string"
         :sender.kind

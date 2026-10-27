@@ -116,6 +116,7 @@
             :field
             (enumSchema
               "event_kind"
+              "connection_id"
               "sender.id"
               "sender.kind"
               "addressed_bot"
@@ -185,7 +186,8 @@
   (defconst operationCatalog (new globalThis.Map))
   (defun permissionAction
     (name group)
-    (cond ((js-call (js-array "subscription.pull" "subscription.ack") :includes name) "subscription.consume")
+    (cond ((= group "filters") (if (= name "message.filter.get") "message.filter.inspect" "message.filter.manage"))
+      ((js-call (js-array "subscription.pull" "subscription.ack") :includes name) "subscription.consume")
       ((= name "operation.get") "operation.inspect")
       ((= group "connections") "connection.inspect")
       ((= name "agent.discover") "agent.discover")
@@ -371,6 +373,14 @@
       :thread_id
       (js-object :type (js-array "string" "null") :minLength 1))
     (js-object))
+  (addOperation "message.filter.get" "filters" (js-array) (js-object) (js-object :result "message_filter"))
+  (addOperation "message.filter.update" "filters" (js-array "rules")
+    (js-object :rules (arraySchema
+      (objectSchema (js-object :id (js-object :type "string" :minLength 1 :maxLength 128)
+        :enabled booleanSchema :effect (enumSchema "suppress_trigger")
+        :predicate (js-object :$ref "#/$defs/predicate"))
+        (js-array "id" "enabled" "effect" "predicate")) 64 0))
+    (js-object :effect "accept" :revision t :result "message_filter"))
   (addOperation "agent.whoami" "registry" (js-array) (js-object) (js-object))
   (addOperation
     "agent.discover"

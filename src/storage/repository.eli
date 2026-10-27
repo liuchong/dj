@@ -71,6 +71,7 @@
         :progress_sql progress-sql
         :progress_revision_sql (and progress-sql (str progress-sql " AND revision=?"))
         :delete_sql (str "DELETE FROM " table " WHERE " where)))))
+  (defineTable "message_filter_policies" "policy_id" "policy_id revision")
   (defineTable "connections" "connection_id" "connection_id revision state")
   (defineTable
     "principal_registry"

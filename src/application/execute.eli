@@ -11,6 +11,7 @@
     (js-array
       "inbox"
       "inbox_pull"
+      "message_filter"
       "subscription"
       "delivery"
       "outbound"
