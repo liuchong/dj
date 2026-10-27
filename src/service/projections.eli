@@ -82,6 +82,8 @@
                   "instances")
                 kind))
             (record (and table (js-call repository :get table id))))
+          (when (and (= kind "working") (not record))
+            (setq record (js-call repository :get "deliveries" id)))
           (unless record
             (progn (setq djReturn1Value (failure "forbidden")) (throw djReturn1Token)))
           (cond
