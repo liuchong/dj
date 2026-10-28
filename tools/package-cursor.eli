@@ -20,6 +20,8 @@
             (await (copyFile (str "connectors/cursor/" name) (resolve extension name)))
             (put files name (sha256 (await (readFile (resolve extension name))))))
           (setq index (1+ index))))
+      (await (copyFile "LICENSE" (resolve extension "LICENSE")))
+      (put files "LICENSE" (sha256 (await (readFile (resolve extension "LICENSE")))))
       (put files "control.cjs" (sha256 (await (readFile (resolve extension "control.cjs")))))
       (await (copyFile "connectors/cursor/extension.vsixmanifest" (resolve out "extension.vsixmanifest")))
       (await (copyFile "connectors/cursor/[Content_Types].xml" (resolve out "[Content_Types].xml")))

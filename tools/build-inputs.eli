@@ -13,6 +13,7 @@
           (js-array
             "src/host/darwin/process-info.c"
             "package.json"
+            "LICENSE"
             "bun.lock"
             "eliscript.json"
             "eliscript.tests.json"

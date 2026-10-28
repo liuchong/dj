@@ -1,5 +1,6 @@
 # 开工准备与依赖固化资料
 
+> 历史资料：保留当时的设计、状态与验收记录，不作为当前使用或施工指令。当前说明见[文档索引](../index.md)和[项目状态](../status.md)。
 当前施工接续：S1 已落盘固定包/锁文件、目标 Bun 包、编译器候选产物摘要与固定源输入闭包，详见 config/toolchain.lock.json、compiler-provenance.json、compiler-source-inputs.json。固定源准备在项目私有 `.local/toolchains/eliscript-b1c7741/source`，不修改共享语言检出；记录来源 SHA、逐文件摘要、内部相对链接及补充 Unicode 生成源的独立摘要。它是依赖准备，不是编译器构建通过。
 
 I01 的“写齐”仅表示配置、已知产物身份和重建输入/配方已固化；固定源成品身份闭环与互操作仍归 S3/A01，不能因 npm 同版本或输入已齐而放行旧冻结产物。S3 在资源保护下按 compiler-source-inputs.json 的参数数组，从维护的 Emacs seed 构建、完成 stage2/stage3 同产物链并安装到隔离依赖树，之后才将该树的 bin 放入本次构建 PATH。准备轮次未执行这些命令，不改全局 Bun/Node/Emacs，不跑语言项目整套测试或替代其发布。
@@ -8,7 +9,7 @@ I01 的“写齐”仅表示配置、已知产物身份和重建输入/配方已
 
 日期：2026-10-23；本轮起点 master / 4e06ea8，工作区干净、无 remote。现有 36 份文档已包含施工顺序，本次补齐开工时直接使用的依赖、字段及用例资料。仍处于施工准备：没有编写生产/测试源码、安装依赖、构建、启动 DJ/Agent/IM 或运行产品测试。
 
-唯一施工入口仍是 [plan](plan.md)和根 [TODO](../../TODO.md)；本文没有另一套进度 checkbox。[逐操作字段表](operation-catalog.md)落实 I09/I12/I27 的目录输入，[用例卡](case-cards.md)落实 I02/I04–I08 的 manifest/断言。所有 I/A 仍未完成，不能把资料准备等同 I01 的包/lock 已落盘。
+唯一施工入口仍是 [plan](construction-plan.md)和根 [TODO](implementation-checklist.md)；本文没有另一套进度 checkbox。[逐操作字段表](operation-catalog.md)落实 I09/I12/I27 的目录输入，[用例卡](case-cards.md)落实 I02/I04–I08 的 manifest/断言。所有 I/A 仍未完成，不能把资料准备等同 I01 的包/lock 已落盘。
 
 ## 1. 已准备、将落盘与将验收
 

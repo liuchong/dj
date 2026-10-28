@@ -39,17 +39,17 @@ ConversationHandle 默认有效 24 小时，来源关闭/移除/语义变更时�
 
 message_ref 默认 10 分钟有效；重新读取若源修订变化则 stale_reference，不把可变正文拼成一个快照。local 查询返回 Event，native 查询返回 MessageSnapshot，二者不共享入库去重主键或路由序号。
 
-source_key 在连接内唯一：只有适配器确认原生事件 ID 具有稳定业务去重语义时才优先使用；否则声明消息 ID+事件类型+源修订的稳定组合。Lark user 轮询的 created 按原生 message_id+created 去重；历史 bot receive_v1 的 event_id 只作传输标识，不参与当前接收路径。见首批范围。不得按正文相似度去重。缺少可靠源修订时公开编辑事件保证限制。
+source_key 在连接内唯一：只有适配器确认原生事件 ID 具有稳定业务去重语义时才优先使用；否则声明消息 ID+事件类型+源修订的稳定组合。Lark 实时消息使用连接身份与原生 message_id、事件类型等稳定字段去重；传输 event_id 不替代业务消息身份。当前接线见[IM 适配](adapters/im.md)。不得按正文相似度去重。缺少可靠源修订时公开编辑事件保证限制。
 
 ## Agent 身份与绑定
 
-surface 为 desktop/cli/sdk；tool 为 codex/claude/cursor/opencode/pi/agy/antigravity，未知插件须先由操作员注册描述符。binding_mode 为 existing/managed。历史只作为发现候选，不能当活 Binding。
+surface 为 desktop/cli/sdk；tool 为 codex/claude/cursor/opencode/pi/agy/antigravity，未知插件须先由操作员注册描述符。正式接线使用 existing；数据模型中保留的 managed 描述不代表配置允许托管启动。历史只作为发现候选，不能当活 Binding。
 
 主体系绑定由可信宿主/启动配置创建，初始 target_constraint 限制工具、namespace 与原生会话。Agent 自报信息必须与候选及约束一致；不是靠猜测当前宿主或标题验证所有权。普通 Agent 只为自己登记；操作员代登记时必须指定配置中已存在的 recipient_principal_id，不把操作员全权限凭据发给目标。
 
 runtime_state 为 unknown/idle/busy/waiting_permission/offline/incompatible。原生状态缺失就保留 unknown。注册通过后原子建立 recipient 的 bound_agent_id/target_constraint 绑定；操作员代登记也执行该步骤，owner 与 recipient 的授权保持独立。同主体重复登记相同 canonical_target_key 返回已存在目标，不再建一条；其他主体无授权不可据此探知对象存在。
 
-原生目标身份不因 display_name 改变。重绑只能更新同一目标的临时 Binding；不同窗口/CLI 视图若指同后端，适配器给出同一 canonical_target_key。existing 离线不自动新建或恢复；managed 的进程创建单独受操作员配置控制。
+原生目标身份不因 display_name 改变。重绑只能更新同一目标的临时 Binding；不同窗口/CLI 视图若指同后端，适配器给出同一 canonical_target_key。existing 离线不自动新建或恢复；正式配置拒绝 managed_profiles，不通过创建进程替代原目标。
 
 ## 订阅 spec
 

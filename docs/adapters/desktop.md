@@ -40,4 +40,4 @@ Codex 会话列表来自只读状态库，消息来自当前原生 owner 的会�
 
 ## Cursor 自动 Inspector 配置
 
-native_api 指定 inspector_url、process_id、process_origin、workspace_id；当前适配 Cursor 3.27.14。manage_inspector=true 时再提供从只读进程信息 helper 得到的 process_birth，以及指向目录包 libexec/dj-process-info 的 process_helper_ref。仅 macOS arm64 默认 9229 端口，helper 已随成品编译，不要求用户安装编译器。原进程重启后必须重新核对身份，不自动换目标；已有调试端口不抢占，发送 unknown 不重发。完整字段及私有配置方式见[目录包运行说明](../../packaging/runtime.md)和[接口记录](../construction/cursor-local-api.md)。
+native_api 指定 inspector_url、process_id、process_origin、workspace_id；当前适配 Cursor 3.27.14。manage_inspector=true 时再提供从只读进程信息 helper 得到的 process_birth，以及指向目录包 libexec/dj-process-info 的 process_helper_ref。仅 macOS arm64 默认 9229 端口，helper 已随成品编译，不要求用户安装编译器。原进程重启后必须重新核对身份，不自动换目标；已有调试端口不抢占，发送 unknown 不重发。完整字段及私有配置方式见[目录包运行说明](../../packaging/runtime.md)和[接口记录](cursor-native.md)。

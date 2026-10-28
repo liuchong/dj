@@ -319,6 +319,7 @@
           (resolve staging "dist/build-identity.json")
           (str (JSON/stringify (js-object :schema_version 1 :build_id build-id)) "\n")
           (js-object :mode 384)))
+      (await (copyAsset "LICENSE" staging "LICENSE"))
       (await (copyAsset "bin/dj" staging "bin/dj" t))
       (await (copyAsset "dist/native/dj-process-info" staging "libexec/dj-process-info" t))
       (await (copyTree "skills/dj" staging "skills/dj"))
@@ -344,6 +345,8 @@
               (nativeGet metadata "name")
               :version
               (nativeGet metadata "version")
+              :license
+              (nativeGet metadata "license")
               :build_id
               build-id
               :api_version

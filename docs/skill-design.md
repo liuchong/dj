@@ -8,9 +8,7 @@ DJ 本身没有 AI。Skill 在调用方模型中加载，帮助其正确使用�
 
 Skill 教模型定位自身目标、选择来源、生成确定性规则、建立订阅、处理注入信封、回复与诊断。它不持有 token，不启动隐藏守护进程、不创建定时器、不自动批准工具请求，也不替代适配器协议实现。核心步骤短文放 SKILL.md，具体例子与故障放 references。
 
-追加 [会话控制参考](../skills/dj/references/control.md)：跨工具/实例范围检索、已知会话直发、显式 profile 启动/空会话创建。该分支不要求已登记目标或 IM 订阅，不把 whoami 未绑定当成不能查询；动作仍受 scope/grants 约束。模型依据事实/片段作判断，服务只机械查询，不替用户选任务位置。
-
-整体复审补齐精确 session_keys、空页续扫、get 重取引用、只读 probe、Pi initial_session_key、当前状态与历史 ready 的区别，以及创建到订阅的独立 recipient 接线。Skill 不替部署面配置新凭据；stopping/unknown 不另起实例，原键重放保持原意图。首期正向/拒绝/后续能力统一以 release-scope.md 为准，不因示例提到远期能力就尝试使用。
+[会话控制参考](../skills/dj/references/control.md)：跨工具/实例范围检索、已知会话直发、受原生能力约束的显式空会话创建。该分支不要求已登记目标或 IM 订阅，不把 whoami 未绑定当成不能查询；动作仍受 scope/grants 约束。模型依据事实/片段作判断，服务只机械查询，不替用户选任务位置。
 
 格式依据 [Agent Skills 规范](https://agentskills.io/specification)和[客户端接入说明](https://agentskills.io/client-implementation/adding-skills-support)。厂商扩展字段不进入共享必需元数据；暂不写 allowed-tools 或自动执行 hooks。
 
@@ -36,12 +34,12 @@ Skill 教模型定位自身目标、选择来源、生成确定性规则、建�
 
 行为场景包含：工具名与会话标题冲突、同名候选、只有历史没有 live receiver、引用类型混淆、preview 后改规则、操作台账查回、无回复权限、自身消息回流、发送超时、原生权限 pending、正文被截断。模型应沿用明确目标，不能新建进程冒充已有会话；未知投递先核对，不能换幂等键重发。
 
-安装器在隔离项目验证，不据此启动所有工具的模型测试。当前优先 Codex/Cursor；采用时记录 Skill 路径、正文版本、实际工具调用与证据。模型权限拒绝时保留未读/未执行状态，不借另一个工具绕过。
+安装器在隔离项目验证，不据此启动所有工具的模型测试。当前优先 Codex/Cursor；采用时记录 Skill 路径、正文摘要、实际工具调用与证据。模型权限拒绝时保留未读/未执行状态，不借另一个工具绕过。
 
 ## 接口与 Skill 的分工
 
 模型使用发现结果的精确引用，检查 preview 的解析摘要并提交同一 preview_id。服务独立校验字段、权限、句柄、revision 与幂等；不能只写一句“模型要仔细”。错误给字段路径和确定的下一步操作，Skill 教模型读取结构而不是猜报错文本。正常主路径无额外审批，只有当前授权或用户意图确实缺失时才询问；DJ 自己不提自然语言澄清问题。
 
-## 首期采用路径
+## 客户端接线
 
-先完成 Codex/Cursor 的正文/参考加载与实际接口使用；其他工具保留目录和配置指引，专项验证后置。Pi 通过 CLI 使用，不假设内置 MCP。可信宿主接线凭据、目标可由操作员代登记，Agent 的第一步仍是 whoami 核对绑定；安装 Skill 本身不创建目标或订阅。首期不承诺其他工具已可用。部署顺序见 [完整流程](startup-to-reply.md)。
+Codex、Cursor、Claude Code、OpenCode、Pi 和 Antigravity 的目录与配置方式见[客户端接线参考](../skills/dj/references/clients.md)。Pi/shared 使用 DJ CLI，不假设客户端内置 MCP；DJ CLI 调用已有服务，不是新建 Agent 进程。凭据与准确目标由可信配置面接线，接收方先用 whoami 核对绑定。安装 Skill 本身不创建目标或订阅；实际采用情况见[当前状态](status.md)。部署顺序见[完整流程](startup-to-reply.md)。

@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" fill="none" role="img" aria-labelledby="title desc">
+<title id="title">DJ — Dispatch Junction</title>
+<desc id="desc">D 与 J 双唱盘之间，两条荧光消息通道交叉汇入中央节点，再沿箭头分流到不同出口。</desc>
+<path d="M16 7h96l9 9v96l-9 9H16l-9-9V16Z" fill="#1b1029" stroke="#574166" stroke-width="2"/>
+<g stroke-linecap="round" stroke-linejoin="round">
+  <path d="M14 18h15l70 92h15M14 110h15l70-92h15" stroke="#110b18" stroke-width="13"/>
+  <path d="M14 18h15l70 92h15" stroke="#d7ff3f" stroke-width="7"/>
+  <path d="M14 110h15l70-92h15" stroke="#ff40b4" stroke-width="7"/>
+</g>
+<rect x="8" y="12" width="12" height="12" rx="2" fill="#d7ff3f" stroke="#110b18" stroke-width="2"/>
+<rect x="8" y="104" width="12" height="12" rx="2" fill="#ff40b4" stroke="#110b18" stroke-width="2"/>
+<path d="m109 10 10 8-10 8M109 102l10 8-10 8" stroke="#110b18" stroke-width="10" stroke-linejoin="round"/>
+<path d="m109 10 10 8-10 8" stroke="#ff40b4" stroke-width="5" stroke-linejoin="round"/>
+<path d="m109 102 10 8-10 8" stroke="#d7ff3f" stroke-width="5" stroke-linejoin="round"/>
+<circle cx="33" cy="64" r="24" fill="#110b18" stroke="#d7ff3f" stroke-width="3"/>
+<circle cx="95" cy="64" r="24" fill="#110b18" stroke="#ff40b4" stroke-width="3"/>
+<g stroke="#62536b"><circle cx="33" cy="64" r="19"/><circle cx="33" cy="64" r="15"/><circle cx="95" cy="64" r="19"/><circle cx="95" cy="64" r="15"/></g>
+<path d="M22 49h9c10 0 17 5 17 15s-7 15-17 15h-9V49Z" stroke="#d7ff3f" stroke-width="6" stroke-linejoin="round"/>
+<path d="M88 49h17v18c0 10-5 15-15 15h-6" stroke="#ff40b4" stroke-width="6" stroke-linejoin="round"/>
+<path d="m64 54 10 10-10 10-10-10Z" fill="#f9efdc" stroke="#110b18" stroke-width="3"/>
+<circle cx="64" cy="64" r="3" fill="#1b1029"/>
+<circle cx="48" cy="28" r="3" fill="#d7ff3f"/><circle cx="64" cy="28" r="3" fill="#f9efdc"/><circle cx="80" cy="28" r="3" fill="#ff40b4"/>
+<path d="M43 98h42" stroke="#9b88a6" stroke-width="2"/><path d="M58 94h12v8H58Z" fill="#d7ff3f" stroke="#110b18" stroke-width="2"/>
+</svg>

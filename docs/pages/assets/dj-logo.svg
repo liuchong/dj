@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="350" viewBox="0 0 1000 350" fill="none" role="img" aria-labelledby="title desc">
+<title id="title">DJ — Dispatch Junction</title><desc id="desc">双唱盘与交叉消息通道：中央汇合，按箭头分流。</desc>
+<defs><pattern id="checks" width="28" height="28" patternUnits="userSpaceOnUse"><path d="M0 0h14v14H0Zm14 14h14v14H14Z" fill="#d7ff3f"/></pattern></defs>
+<rect width="1000" height="350" rx="12" fill="#170d22"/>
+<path d="m680 0-140 350h35L717 0ZM850 0 710 350h7L859 0Z" fill="#ff40b4" opacity=".13"/>
+<path d="M0 0h1000v12H0Zm0 338h1000v12H0Z" fill="url(#checks)"/>
+<path d="m900 38 9 26 28-7-17 23 19 21-29-4-6 27-12-26-27 10 15-25-21-19 28 2Z" fill="#ff40b4"/>
+<g transform="translate(38 65) scale(1.68)"><path d="M16 7h96l9 9v96l-9 9H16l-9-9V16Z" fill="#1b1029" stroke="#574166" stroke-width="2"/>
+<g stroke-linecap="round" stroke-linejoin="round">
+  <path d="M14 18h15l70 92h15M14 110h15l70-92h15" stroke="#110b18" stroke-width="13"/>
+  <path d="M14 18h15l70 92h15" stroke="#d7ff3f" stroke-width="7"/>
+  <path d="M14 110h15l70-92h15" stroke="#ff40b4" stroke-width="7"/>
+</g>
+<rect x="8" y="12" width="12" height="12" rx="2" fill="#d7ff3f" stroke="#110b18" stroke-width="2"/>
+<rect x="8" y="104" width="12" height="12" rx="2" fill="#ff40b4" stroke="#110b18" stroke-width="2"/>
+<path d="m109 10 10 8-10 8M109 102l10 8-10 8" stroke="#110b18" stroke-width="10" stroke-linejoin="round"/>
+<path d="m109 10 10 8-10 8" stroke="#ff40b4" stroke-width="5" stroke-linejoin="round"/>
+<path d="m109 102 10 8-10 8" stroke="#d7ff3f" stroke-width="5" stroke-linejoin="round"/>
+<circle cx="33" cy="64" r="24" fill="#110b18" stroke="#d7ff3f" stroke-width="3"/>
+<circle cx="95" cy="64" r="24" fill="#110b18" stroke="#ff40b4" stroke-width="3"/>
+<g stroke="#62536b"><circle cx="33" cy="64" r="19"/><circle cx="33" cy="64" r="15"/><circle cx="95" cy="64" r="19"/><circle cx="95" cy="64" r="15"/></g>
+<path d="M22 49h9c10 0 17 5 17 15s-7 15-17 15h-9V49Z" stroke="#d7ff3f" stroke-width="6" stroke-linejoin="round"/>
+<path d="M88 49h17v18c0 10-5 15-15 15h-6" stroke="#ff40b4" stroke-width="6" stroke-linejoin="round"/>
+<path d="m64 54 10 10-10 10-10-10Z" fill="#f9efdc" stroke="#110b18" stroke-width="3"/>
+<circle cx="64" cy="64" r="3" fill="#1b1029"/>
+<circle cx="48" cy="28" r="3" fill="#d7ff3f"/><circle cx="64" cy="28" r="3" fill="#f9efdc"/><circle cx="80" cy="28" r="3" fill="#ff40b4"/>
+<path d="M43 98h42" stroke="#9b88a6" stroke-width="2"/><path d="M58 94h12v8H58Z" fill="#d7ff3f" stroke="#110b18" stroke-width="2"/></g>
+<text x="288" y="77" fill="#d7ff3f" font-family="Arial, sans-serif" font-size="16" font-weight="900" letter-spacing="4">DROP THE MESSAGE. START THE SESSION.</text>
+<text x="289" y="216" fill="#ff40b4" font-family="Arial Black, Arial, sans-serif" font-size="155" font-weight="900" font-style="italic" letter-spacing="-12">DJ</text>
+<text x="281" y="208" fill="#d7ff3f" stroke="#170d22" stroke-width="2" paint-order="stroke" font-family="Arial Black, Arial, sans-serif" font-size="155" font-weight="900" font-style="italic" letter-spacing="-12">DJ</text>
+<text x="527" y="145" fill="#f9efdc" font-family="Arial Black, Arial, sans-serif" font-size="44" font-weight="900" font-style="italic">DISPATCH</text>
+<text x="527" y="197" fill="#f9efdc" font-family="Arial Black, Arial, sans-serif" font-size="44" font-weight="900" font-style="italic">JUNCTION<tspan fill="#ff40b4">↗</tspan></text>
+<text x="296" y="274" fill="#f9efdc" font-family="sans-serif" font-size="28" font-weight="900" letter-spacing="6">消息一响，Agent 上场。</text>
+<text x="296" y="309" fill="#ac97b7" font-family="monospace" font-size="13" letter-spacing="3">IM → SUBSCRIPTIONS → YOUR EXISTING AI SESSION</text></svg>

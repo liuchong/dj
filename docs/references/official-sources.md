@@ -184,7 +184,7 @@ Pi 的可编程 RPC 不意味着任意已经打开的普通 TUI 可附着。本�
 
 ## 开工准备补充资料
 
-2026-10-23 施工准备轮次重新读取 MC11，并读取以下官方资料；npm registry 网页访问失败后改用只读 HTTPS JSON 元数据请求，不安装/执行包。包名/精确版本/SRI/依赖图与逐包URL归档于 construction/readiness.md，SRI属于发布元数据而非已下载校验。只读重核固定 Eliscript 源身份/内容摘要，并查询本机版本/基础资源，没有产品测试、源码改动或账号连接。
+2026-10-23 施工准备轮次重新读取 MC11，并读取以下官方资料；npm registry 网页访问失败后改用只读 HTTPS JSON 元数据请求，不安装/执行包。包名/精确版本/SRI/依赖图与逐包URL归档于 [依赖准备](../archive/readiness.md)，SRI属于发布元数据而非已下载校验。只读重核固定 Eliscript 源身份/内容摘要，并查询本机版本/基础资源，没有产品测试、源码改动或账号连接。
 
 | ID | 官方资料 | 用途与适用边界 | 状态 |
 | --- | --- | --- | --- |
@@ -196,9 +196,11 @@ Pi 的可编程 RPC 不意味着任意已经打开的普通 TUI 可附着。本�
 | RT07 | [Bun installation](https://bun.com/docs/installation) | 目标宿主/平台及固定版本安装入口；本轮未安装或升级 | 已访问 |
 
 <a id="lark-user-sources"></a>
-## Lark 国际版与用户收件准备复核
+## Lark 用户收件的历史准备记录
 
-2026-10-23 核对当前安装 CLI 1.0.76 的 event list/schema 与 chat/thread list、reply、auth login、config init help；仅静态查询，没有登录或读取账号。新版本在线 CLI 文档的选项可能比当前多，本期接线必须以固定安装版本为准；例如本机未证支持的 page-all 不能套入循环。
+以下保留 2026-10-23 的查阅记录，不是当前接入方式。正式路径见[IM 适配](../adapters/im.md)与[0001](../specs/0001-lark-realtime-subscriptions.md)，直接连接官方 WebSocket/HTTPS，不使用 CLI 或 SDK。
+
+当时核对安装 CLI 1.0.76 的 event list/schema 与 chat/thread list、reply、auth login、config init help；仅静态查询，没有登录或读取账号。新版本在线 CLI 文档的选项可能比当前多，当时核对以固定安装版本为准；例如本机未证支持的 page-all 不能套入循环。
 
 | ID | 官方资料 | 用途与适用边界 | 状态 |
 | --- | --- | --- | --- |
@@ -207,7 +209,7 @@ Pi 的可编程 RPC 不意味着任意已经打开的普通 TUI 可附着。本�
 | IM09 | [Lark user authorization overview](https://open.larksuite.com/document/server-docs/getting-started/authen-v1/build-login-free-system-) | user_access_token 需用户授权，App 凭证不等于用户身份；CLI device flow 另核本机 help | 官方搜索正文可读；未执行 OAuth |
 | IM10 | [Lark receive message](https://open.larksuite.com/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/events/receive) | 区分机器人消息事件与用户读取；CLI event list 的 IM auth_types 仅 bot，不声称无条件支持 user 推送 | 官方事件说明/CLI 静态合同；没有用户事件实证 |
 
-有界轮询是 DJ 的设计选择，不是上述来源的实时性/完备性承诺；源迟可见、撤回、权限和保留不足仍可能产生 gap。具体预算/窗口/状态/测试输入归 adapters/im 与 construction/readiness。
+这一轮曾提出有界轮询，现已被正式实时规格取代；不得据此恢复轮询接线。历史准备细节见[归档资料](../archive/readiness.md)，各官方资料的读取日期和权限局限仍按表内记录保留。
 
 ## S1 原生协议与存储用例资料
 

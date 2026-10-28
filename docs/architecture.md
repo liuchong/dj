@@ -1,47 +1,28 @@
 # 总体架构与模块划分
 
-## 当前基线与目标
+## 运行结构
 
-本轮整体复审基线为 master 的 bd6b8e2（文档设计）；最初初始化为 0907ee0。当前仅有 README、docs 与 Skill 文本，没有业务入口、运行时、数据库或适配器。当前业务流程是人工提供需求与整理研究；没有实际消息调用链。
+Eliscript 业务源码编译为 ESM，由 Bun 装配常驻 Core、SQLite、IM 与 Agent 适配器。CLI 是短命客户端，MCP 是连接同一服务的 stdio 薄代理，GEPO 与 JSON API 共用私有 UDS。客户端退出不删除订阅，也不停止 Core。
 
 ```mermaid
 flowchart LR
-  U[需求与研究输入] --> D[本文档集]
-  D -.尚未实现.-> R[常驻收件与目标唤醒]
+  CLI[CLI / MCP] --> API[本地 API / GEPO]
+  API --> Core[身份、权限与业务操作]
+  IM[官方 IM 长连接] --> Ingest[持久收件]
+  Ingest --> Match[过滤与订阅匹配]
+  Core --> Match
+  Match --> Queue[持久队列与目标调度]
+  Queue --> Port[已有 Agent 进程接口]
+  Port --> Session[精确原生会话]
+  Session --> API
+  Core --> Out[固定回复路径与出站]
+  Out --> IM
+  DB[SQLite] --- Core
+  DB --- Ingest
+  DB --- Queue
 ```
 
-目标形态为一个受操作系统服务管理器监督的 DJ 服务、一个可嵌入的核心和多个进程内/进程外适配器。首期采用 Eliscript 编译 ESM，由 Bun 单进程装配；具体依赖、同步存储边界和嵌入面以 [技术选型](technical-stack.md)为准。CLI 是短命客户端；stdio MCP 可作为连接常驻服务的薄代理。任何客户端退出均不删除订阅，也不自动停止 DJ。
-
-```mermaid
-flowchart TB
-  CLI[CLI] --> APP[业务操作层]
-  MCP[MCP stdio 代理] --> APP
-  API[本地 UDS API] --> APP
-  APP --> POL[身份与授权]
-  APP --> REG[连接与 Agent 注册]
-  APP --> CAT[工具 / 实例 / 会话目录与机械查询]
-  CAT --> AD
-  APP --> LIFE[显式 profile 启动 / 会话创建]
-  LIFE --> AD
-  APP --> DIRECT[免订阅定向输入]
-  DIRECT --> Q
-  APP --> SUB[订阅服务]
-  IM[IM 接入器] --> ING[事件规范化与入库]
-  ING --> MATCH[规则匹配]
-  SUB --> MATCH
-  MATCH --> Q[持久投递队列]
-  Q --> DISP[按目标调度]
-  DISP --> AD[Agent 接入器]
-  AD --> P[指定工具实例与会话]
-  AD --> REC[回执与核对]
-  REC --> Q
-  APP --> OUT[消息发送与回复]
-  OUT --> IM
-  DB[持久状态] --- ING
-  DB --- Q
-  DB --- REG
-  DB --- SUB
-```
+Lark 使用官方 WebSocket 与 HTTPS；Agent 使用已有实例的 IPC/socket/loopback API。正式装配不接受非空 managed_profiles，不启动替代 Agent 子进程。具体模块与支持边界见[技术栈](technical-stack.md)和[适配说明](adapters/agent-tools.md)。
 
 ## 确定性边界
 
@@ -49,16 +30,16 @@ flowchart TB
 
 ## 模块契约
 
-下表名称是语言无关的目标模块，不是假定已经存在的源码。
+下表对应当前 `src/` 下的模块职责；具体导出和调用签名以源码为准。
 
 | 模块 | 拥有状态与主要操作 | 不承担 |
 | --- | --- | --- |
-| domain | 对象、规则 AST、状态转换、错误类型 | 网络或数据库实现 |
+| core | 对象、规则 AST、状态转换、错误类型 | 网络或数据库实现 |
 | application | execute(principal, operation, request) → Result；业务事务编排 | 厂商帧格式 |
 | policy | authorize(principal, action, resource, context) → Decision | 根据标题赋权 |
 | registry | register、probe、rebind；稳定目标和临时 binding | 从历史猜活进程 |
 | catalog | 工具/实例/会话索引、catalog_seq 逻辑版本、稳定键续扫、精确 probe、刷新/覆盖 | 推断任务归属、扫描任意目录、自动唤醒、持有跨请求长读事务 |
-| lifecycle | 获准 profile 的实例 start/stop、空 create、归属/slot/持久 gate 与动作核对 | 任意 shell、改模型/权限、借创建自动发 prompt、把 manual 当退出证明 |
+| lifecycle | 可选空 create、持久 gate 与动作核对；启动/停止取决于实际装配能力 | 任意 shell、改模型/权限、借创建自动发 prompt、把 manual 当退出证明 |
 | ingestion | normalize(raw, connection)、accept(event)；事件去重和源游标 | 模型判断 |
 | subscriptions | preview/commit；固定规范化规则、版本与 cutover_seq | 理解自然语言、修改来源权限 |
 | routing | 用来源/事件索引取候选，执行编译谓词 → MatchDecision | 模型推理、全订阅扫描、执行 shell |
@@ -110,6 +91,6 @@ catalog 的读取与 direct 的发送可以独立于 registry/subscriptions；Ta
 
 ## 目标目录职责
 
-当前实际树仅含本文档集。技术方向见 [技术选型](technical-stack.md#组件与构建布局)；未来精确 `.eli` 路径、符号和编写依赖统一维护于 [施工手册](construction/plan.md)，目标签名/事务接线见 [施工接口](construction/contracts.md)，不创建占位源码。完整启动接线见 [启动到回复](startup-to-reply.md)。
+当前实际树仅含本文档集。技术方向见 [技术选型](technical-stack.md)；未来精确 `.eli` 路径、符号和编写依赖统一维护于 [施工手册](archive/construction-plan.md)，目标签名/事务接线见 [施工接口](archive/construction-contracts.md)，不创建占位源码。完整启动接线见 [启动到回复](startup-to-reply.md)。
 
 本轮交付的是产品、协议和技术设计，不是已完成实现或可执行施工验收。

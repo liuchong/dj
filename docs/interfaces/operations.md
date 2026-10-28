@@ -1,6 +1,6 @@
 # 统一业务操作契约
 
-CLI、MCP 与本地 API 共享本文件的业务语义。全部为设计，尚未实现。输入只接受结构化 JSON，未知字段拒绝；不提供自然语言命令、模型判路由、智能参数修复或自由字符串 execute。IM 操作保留 conversation/message 命名；Agent 会话使用 session 命名，避免发送方向混淆。
+CLI、MCP、本地 API 与 GEPO 共用业务操作、权限和台账。现行参数和描述由 `src/application/operations.eli` 生成，本文件说明业务语义。输入只接受结构化 JSON，未知字段拒绝；不提供自然语言命令、模型判路由、智能参数修复或自由字符串 execute。IM 操作保留 conversation/message 命名；Agent 会话使用 session 命名，避免发送方向混淆。
 
 ## 共用输入、结果与校验
 
@@ -56,9 +56,9 @@ request_id 可选，用于追踪；所有受理变更要求 idempotency_key。�
 | delivery.reconcile/retry/cancel | delivery_id | 当前 Delivery 与处理结果 | manage；核对/安全重试/取消分开 |
 | delivery.resolve | delivery_id、resolution、reason | resolved、manual 决定 | 仅操作员；永不重发 |
 
-connection 和 managed profile 的配置由操作员维护，普通工具不接受秘密、任意 argv 或目标 URL；文件凭据与 UDS 已选定，见技术选型。获准调用者可显式选择预配 profile 启动实例，不修改其配置。新增 tool/profile/instance/catalog/session/lifecycle 的逐项操作、严格输入与输出目录见 [Agent 会话控制面](../agent-control-plane.md#统一操作目录)，是本目录的正式补充，不能只暴露在某一入口。
+连接与端点配置由操作员维护，普通工具不接受秘密、任意 argv 或自由目标 URL。正式配置拒绝 managed_profiles；profile/instance 生命周期操作的存在不代表允许启动 Agent。查询、直发和可选创建的边界见[Agent 会话控制](../agent-control-plane.md)，各入口共用当前操作目录。
 
-施工用的全部61操作必填/可选、互斥、幂等键/修订保护、嵌套类型及结果已展开为 [逐操作字段表](../construction/operation-catalog.md)。service.status 的 operation_catalog_digest 表示公共描述符/schema/默认规则的技术身份，不含主体授权/私有实例；薄客户端不匹配则 incompatible，不能悄悄用另一套字段目录。
+各操作的必填、互斥、幂等、并发校验及结果 schema 以运行时 `--help`、MCP 工具描述和 GEPO 用法为准；[早期字段资料](../archive/operation-catalog.md)仅保留施工参考。service.status 的 operation_catalog_digest 表示公共描述符/schema/默认规则的技术身份，不含主体授权/私有实例；薄客户端不匹配则 incompatible，不能悄悄用另一套字段目录。
 
 agent.register 的 recipient_principal_id 仅操作员代登记时允许且必填，普通 Agent 不能传入；主体/目标约束见安全文档。rebind 不接受 tool/namespace/session 改变。unregister 关闭目标并暂停其订阅，撤销未提交的订阅贡献，保留已提交记录；不能把新 native_session_id 写进原 agent_id。它不停止原生实例、不删除共享 TargetRoute/unknown，也不取消独立直发。后续登记沿用同一 canonical route，不能通过注销/重登记绕过顺序屏障。
 
@@ -140,7 +140,7 @@ time_range 为 from 包含、to 不包含，from<to；无范围表示当前保�
 
 这一 API 只是同一 execute 的投影，跨入口仍按同一主体/操作/幂等键去重。不以 IM 聊天消息作为管理命令入口，也不维护 UI 状态库；既有 IM 读写 API 继续保留。
 
-施工落实的传输状态映射见 [施工接口](../construction/contracts.md#1-操作目录与入口)：有效业务 Result 用 HTTP 200 承载，业务成败仍检查 ok/code/effect_state；格式/认证/请求预算/服务启动故障使用相应 HTTP 状态并尽可能保留安全 envelope。不能因 HTTP 200 就把 unknown 或领域失败当成功。
+施工落实的传输状态映射见 [施工接口](../archive/construction-contracts.md#1-操作目录与入口)：有效业务 Result 用 HTTP 200 承载，业务成败仍检查 ok/code/effect_state；格式/认证/请求预算/服务启动故障使用相应 HTTP 状态并尽可能保留安全 envelope。不能因 HTTP 200 就把 unknown 或领域失败当成功。
 
 ## 消息上下文
 

@@ -11,7 +11,7 @@ GEPO 0.2 与现有 JSON API 共用同一私有 HTTP-over-UDS 服务、Bearer 身
 
 所有操作把点分名称映射为斜杠路径，例如 message.get 对应 /message/get。GET/HEAD 只提供说明或目录，不创建订阅、不读取 IM 正文、不触发投递；业务查询也使用 POST。无权限路径不在目录中出现，认证信息仍逐请求复核。
 
-POST 参数、结果、权限、revision 和幂等键与 CLI/MCP 完全相同，不增加 GEPO 专用业务 envelope。业务失败可能返回 HTTP 200 且 ok=false，必须读取完整 DJ Result、effect_state 和 next_actions；超时用原 operation/idempotency_key 查回，不能自动重发 POST。已有 /v1/operations envelope 保持兼容。
+POST 参数、结果、权限、revision 和幂等键与 CLI/MCP 完全相同，不增加 GEPO 专用业务 envelope。业务失败可能返回 HTTP 200 且 ok=false，必须读取完整 DJ Result、effect_state 和 next_actions；超时用原 operation/idempotency_key 查回，不能自动重发 POST。普通本地 API 使用 `/v1/operations` 请求封装；两种入口共用当前核心，不提供旧版本行为选择。
 
 响应携带 x-dj-api-version 与 x-dj-operation-catalog-digest。可携同名目录摘要请求头拒绝不兼容目录。Origin 请求、未认证调用和超预算请求仍拒绝；认证的空能力集合不会扩权。
 

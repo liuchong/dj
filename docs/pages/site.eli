@@ -1,0 +1,105 @@
+;; Browser-compiled page behaviour. The SDK and bootstrap are in index.html;
+;; generated JavaScript exists only in the browser's module/blob memory.
+(module dj.pages.site
+  (defconst document (js* "globalThis.document"))
+  (defconst navigator (js* "globalThis.navigator"))
+  (defun field (object key) (js* "object == null ? undefined : object[key]"))
+  (defun by-id (id) (js-call document :getElementById id))
+  (defun set-text (id text) (put (by-id id) :textContent text))
+  (defconst scenarios
+    (js-array
+      (js-object :id "mention" :source "项目讨论群" :kind "Lark · 原生 @ 提及"
+        :message "@助手 帮我看一下登录回调。" :rule "规则命中"
+        :target "Codex · 原订阅对话" :target-state "精确投递到已有会话"
+        :action "携带原消息与规则，交给这个对话处理。"
+        :outcome "是否处理、何时回复，由 AI 判断" :icon "↗" :avatar "AI"
+        :log "收到消息 → 匹配订阅 → 持久入队 → 原会话投递")
+      (js-object :id "keyword" :source "研发讨论群" :kind "IM 消息 · 关键词订阅"
+        :message "登录回调出现异常，需要排查。" :rule "关键词：登录回调"
+        :target "Cursor · 原订阅对话" :target-state "使用该订阅绑定的精确目标"
+        :action "命中已设置的关键词，携带订阅提示词进入原对话。"
+        :outcome "关键词和目标都由订阅者明确设置" :icon "↗" :avatar "AI"
+        :log "收到消息 → 关键词命中 → 持久入队 → 原会话投递")
+      (js-object :id "blocked" :source "项目讨论群" :kind "IM 消息 · 触发字符黑名单"
+        :message "@助手 [广告] 这条不需要触发处理。" :rule "已拦截自动触发"
+        :target "消息保留在本地缓存" :target-state "不向 Agent 发出本次通知"
+        :action "消息继续接收和记录，之后仍可被其他消息带作上下文。"
+        :outcome "禁止自动触发 ≠ 隐藏或删除消息" :icon "■" :avatar "存"
+        :log "收到消息 → 持久缓存 → 黑名单命中 → 不触发投递")))
+  (defconst scenario-buttons (js-call document :querySelectorAll "[data-scenario]"))
+  (defconst interface-buttons (js-call document :querySelectorAll "[data-interface]"))
+  (defconst interface-names (js-array "cli" "mcp" "gepo"))
+  (defvar current-interface "cli")
+  (defvar motion-paused false)
+  (defun select-scenario (id)
+    (let ((scenario (js-call scenarios :find (lambda (row) (= (field row "id") id)))))
+      (when scenario
+        (put (field (by-id "routing-console") "dataset") :mode id)
+        (js-call scenario-buttons :forEach
+          (lambda (button)
+            (let ((selected (= (field (field button "dataset") "scenario") id)))
+              (js-call button :setAttribute "aria-pressed" (if selected "true" "false"))
+              (js-call (field button "classList") :toggle "active" selected))))
+        (js-call (js-array "source" "kind" "message" "rule" "target" "target-state" "action" "outcome" "avatar" "log")
+          :forEach (lambda (name) (set-text (str "demo-" name) (field scenario name))))
+        (set-text "demo-target-icon" (field scenario "icon")))))
+  (defun select-interface (name &optional focus)
+    (when (js-call interface-names :includes name)
+      (setq current-interface name)
+      (js-call interface-buttons :forEach
+        (lambda (button)
+          (let ((selected (= (field (field button "dataset") "interface") name)))
+            (js-call button :setAttribute "aria-selected" (if selected "true" "false"))
+            (put button :tabIndex (if selected 0 -1))
+            (when (and selected focus) (js-call button :focus)))))
+      (js-call interface-names :forEach
+        (lambda (item) (put (by-id (str "panel-" item)) :hidden (not (= item name)))))
+      (set-text "copy-status"
+        (cond ((= name "cli") "CLI · 预览不会修改配置")
+              ((= name "mcp") "MCP · 合并到对应客户端")
+              (t "GEPO · 复用私有连接与身份")))))
+  (defun move-interface (event)
+    (let* ((key (field event "key"))
+      (index (js-call interface-names :indexOf current-interface))
+      (next nil))
+      (cond ((= key "ArrowRight") (setq next (mod (1+ index) 3)))
+            ((= key "ArrowLeft") (setq next (mod (+ index 2) 3)))
+            ((= key "Home") (setq next 0))
+            ((= key "End") (setq next 2)))
+      (when (not (eq next nil))
+        (js-call event :preventDefault)
+        (select-interface (aref interface-names next) t))))
+  (defasync copy-code ()
+    (try
+      (let ((clipboard (field navigator "clipboard")))
+        (unless clipboard (throw (new globalThis.Error "clipboard unavailable")))
+        (await (js-call clipboard :writeText (field (by-id (str "code-" current-interface)) "textContent")))
+        (set-text "copy-status" "已复制当前示例。"))
+      (catch unavailable
+        (set-text "copy-status" "未能自动复制，请选中上方示例手动复制。"))))
+  (defun toggle-motion ()
+    (setq motion-paused (not motion-paused))
+    (put (field (field document "body") "dataset") :motion (if motion-paused "paused" "playing"))
+    (js-call (by-id "motion-toggle") :setAttribute "aria-pressed" (if motion-paused "true" "false"))
+    (set-text "motion-toggle" (if motion-paused "恢复动效" "暂停动效")))
+  (defun start ()
+    (js-call scenario-buttons :forEach
+      (lambda (button)
+        (put button :disabled false)
+        (js-call button :addEventListener "click"
+          (lambda () (select-scenario (field (field button "dataset") "scenario"))))))
+    (js-call interface-buttons :forEach
+      (lambda (button)
+        (put button :disabled false)
+        (js-call button :addEventListener "click"
+          (lambda () (select-interface (field (field button "dataset") "interface"))))
+        (js-call button :addEventListener "keydown" move-interface)))
+    (put (by-id "copy-code") :disabled false)
+    (js-call (by-id "copy-code") :addEventListener "click" copy-code)
+    (put (by-id "motion-toggle") :disabled false)
+    (js-call (by-id "motion-toggle") :addEventListener "click" toggle-motion)
+    (select-scenario "mention")
+    (select-interface "cli")
+    (set-text "runtime-status" "本地交互演示 · 选择上面的场景试试看。")
+    (put (field (field document "documentElement") "dataset") :eliscript "ready"))
+  (start))

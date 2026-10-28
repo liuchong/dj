@@ -1,59 +1,65 @@
+<p align="center">
+  <img src="docs/pages/assets/dj-mark.svg" width="160" height="160" alt="DJ Logo">
+</p>
+
+<p align="center">
+  <a href="docs/index.html">主页源码</a> · <a href="docs/delivery.md">安装与使用</a> · <a href="docs/index.md">文档</a> · <a href="skills/dj/SKILL.md">Skill</a> · <a href="LICENSE">1PL</a>
+</p>
+
 # DJ — Dispatch Junction
 
-DJ 是连接多种 IM 与多种 AI 编程工具的消息交叉枢纽。一个 Agent 会话可以按规则订阅多个 IM 对话，一个 IM 对话也可以触发多个 Agent。名称同时带有 DJ Mixer 的多通道混合与分配联想。
+DJ 把 IM 消息按规则送进已有的 AI 编程对话，并为 AI 提供读取上下文、管理订阅和回复原消息的接口。一个对话可以订阅多个来源，一个来源也可以通知多个对话。
 
-DJ 还提供统一 Agent 会话控制入口：跨工具/实例/工作区机械列举和搜索、免订阅向精确会话发消息。空会话创建与客户端启停按已有原生接口显式开放；缺少接口时明确 unsupported，不以新 Agent CLI 进程替代。提供 CLI、MCP、本地 JSON API 和 GEPO，不做 IM 操作界面，不判断任务归属或自动选择目标。
+DJ 负责身份核对、订阅匹配、持久排队和投递；AI 负责判断是否处理、怎样处理、是否回复。DJ 自己不调用模型，也不会把 AI 的普通输出自动转发给 IM。
 
-**当前处于 S3 集中验收：固定源工具链与完整图构建已验证，生产源码、测试与运行资料已写齐，本地门禁正在收口。真实 IM/Agent、Skill采用和性能验收尚未全部完成。实际进度以 [状态](docs/status.md)和 [TODO](TODO.md)为准。**
+## 能做什么
 
-**DJ 本身没有 AI 能力，不调用大模型。调用方 Agent 负责理解意图和正确调用；DJ 只按明确身份、结构化规则与权限高效收件、排队和转发。** 详见[组件边界](docs/component-contract.md)和[面向模型的接口](docs/model-facing.md)。
-
-DJ 的核心流程：登记真实 Agent 会话 → 创建消息订阅 → DJ 常驻接收 IM 事件 → 规则匹配与持久排队 → 向指定会话投递并触发工作 → 按授权回复原对话。
-
-订阅可设置固定提示词与确定性任务模板（spec.instruction_policy）；规则命中后，DJ 将各有效订阅的说明与原消息一起送到原会话。模板字段、版本与超限行为见[统一操作契约](docs/interfaces/operations.md#规则与提交)。DJ 不生成自然语言决策或执行任务，任务仍由接收 AI 处理。
-
-历史与引用通过[消息上下文](docs/specs/0007-message-context.md)统一提供：通知自带有界context，AI可调用MCP的dj_message_context/dj_message_history继续按消息位置或会话分页读取。默认直接用DJ本地缓存，不做search；缺失时才显式请求平台补取。
-
-需要由 AI 主动消费时，订阅设置 `spec.delivery_mode="pull"`，使用 `subscription.pull` 领取与 `subscription.ack` 确认或重试；租约与待办持久保存，消息、提示词和回复上下文沿用权限重检，不向原生会话重复推送。确认消费不等同于任务完成，具体授权、幂等和时效见[操作契约](docs/interfaces/operations.md)。
-
-无需订阅时：查询或精确定位会话 → 只读核验 → 定向输入 → 查投递/原生回答；需要新实例或会话则显式 start/create。所有输入共用原生会话队列与未知结果屏障。完整分支、停止并发和创建后的接线见[统一业务流程](docs/workflows.md#统一路径与收口)，首期正向与拒绝范围见[能力矩阵](docs/release-scope.md#首期统一能力与验收适用矩阵)。
+- **实时订阅**：Lark / 飞书直连官方 WebSocket 与 HTTPS API，支持原生 @、关键词、组合条件，以及人员和字符触发黑名单。
+- **通知原会话**：通过已有客户端的 IPC、socket 或本机 API 精确投递，不启动替代 Agent 进程。工具接线与验证范围见[能力范围](docs/release-scope.md)。
+- **保留上下文**：提供历史、引用、话题和 thread；默认读取本地缓存，AI 可主动请求更多上下文。
+- **固定回复位置与身份**：谁被 @、从哪里来，由 DJ 固定回复路线；AI 显式调用回复工具提交内容。
+- **持久规则与待办**：对话保存自己的规则，也可以使用 `subscription.pull/ack` 主动领取和确认消息。
+- **统一接口**：CLI、本地 API、MCP、GEPO 与 Skill 共用权限、操作目录和幂等台账。
 
 ```mermaid
 flowchart LR
-  I[多个 IM / 账号 / 对话] --> C[IM 接入器]
-  C --> D[DJ：事件、订阅、路由、持久投递]
-  D --> A[Agent 接入器]
-  A --> S[多个工具 / 实例 / 会话]
-  S --> T[CLI / MCP / API]
-  T --> D
-  D --> C
-  K[Skill] -.使用说明.-> S
+  IM[IM 消息] --> DJ[DJ：订阅、过滤、上下文、持久队列]
+  DJ --> Agent[已有 AI 对话]
+  Agent --> API[CLI / MCP / API / GEPO]
+  API --> DJ
+  DJ --> Reply[原消息 / 原话题回复]
 ```
 
-## Codex / Cursor 接线
+## 开始使用
 
-Codex 使用已有 Desktop IPC；Cursor 可使用原生 Desktop Bridge，或由 DJ 按需管理 Inspector 的 native_api 通道。两者均已完成国际版 Lark 专用机器人→原订阅会话→独立 recipient API→原消息回复的真实验证。Inspector 只用于 DJ 调用 Cursor 的方向，操作后关闭；Cursor 主动调用 DJ 的 MCP/API 不需要 Inspector。精确配置与版本边界见[桌面端接线](docs/adapters/desktop.md)，其他工具专项验收和未通过的性能门禁仍以 TODO 为准。
+使用已生成的目录包。运行环境为 macOS arm64 与 Bun 1.4.4；账号凭据和对话身份由私有配置提供。
 
-Codex / Cursor 可选原生消费回调由 `dj skill hooks` 生成配置，`dj hook pull` 校验原会话后领取一项；不自动确认或安装配置。两工具事件与续轮边界见[回调说明](skills/dj/references/callbacks.md)。
+```sh
+dj status --json
+dj agent whoami --json
+dj skill targets
+```
 
-## 阅读入口
+1. 按[安装与使用](docs/delivery.md)准备服务和独立客户端身份；需要持续运行时配置 [macOS 常驻服务](docs/guides/macos-service.md)。
+2. 为 AI 工具[安装 Skill、配置接口](skills/dj/references/clients.md)，核对原会话绑定。
+3. 由接收对话建立[消息订阅](docs/guides/lark-realtime.md)，或直接向精确会话发送输入。
 
-先取用目录包时，阅读 [Codex / Cursor 交付与使用](docs/delivery.md)：运行前提、私有配置、原会话订阅、MCP/GEPO 与已知限制集中列出。
+Skill 安装先预览，再按实际目标执行：
 
-安装随包 Skill：`dj skill targets` 查看目录；`dj skill install --target cursor --scope project --project PROJECT --dry-run` 预览，确认后去掉 dry-run。`dj skill config --target codex --client-profile PRIVATE_PROFILE` 只生成 MCP 配置片段供合并，不更改客户端或启动 AI。完整目录、冲突与采用边界见[客户端接线](skills/dj/references/clients.md)。
+```sh
+dj skill install --target codex --scope user --dry-run
+```
 
-- [文档总索引](docs/index.md)：所有设计的职责与阅读顺序。
-- [施工手册](docs/construction/plan.md)与[唯一 TODO](TODO.md)：Eliscript 文件/符号、实现依赖、接口契约及测试验收。
-- [开工准备](docs/construction/readiness.md)：精确依赖/环境事实/构建配方，配套逐操作字段表和可转写用例卡。
-- [需求](docs/requirements.md)和[研究结论](docs/research.md)：明确要求、设计建议、历史证据边界。
-- [总体架构](docs/architecture.md)、[领域模型](docs/domain-model.md)、[业务流程](docs/workflows.md)。
-- [统一操作契约](docs/interfaces/operations.md)、[CLI](docs/interfaces/cli.md)、[MCP](docs/interfaces/mcp.md)、[GEPO](docs/interfaces/gepo.md)。
-- [Agent 会话控制面](docs/agent-control-plane.md)：查询范围、索引/覆盖、直发、创建与启动；与 IM 订阅独立可用。
-- [Agent 适配](docs/adapters/agent-tools.md)、[IM 适配](docs/adapters/im.md)、[可靠投递](docs/delivery-storage.md)、[权限](docs/security.md)。
-- [Skill 设计](docs/skill-design.md)与[Skill 调用说明](skills/dj/SKILL.md)。
-- [目录包运行说明](packaging/runtime.md)：成品结构、私有配置、启动/recipient 接线、订阅与原话题回复，以及安全排空；隔离目录包独立运行已验证，尚未安装或部署。
-- [官方资料目录](docs/references/official-sources.md)与[按问题查阅](docs/references/reading-map.md)。
-- [技术选型](docs/technical-stack.md)、[首批接入范围](docs/release-scope.md)、[从启动到回复](docs/startup-to-reply.md)。
-- [验收方案](docs/acceptance.md)、[设计决定](docs/decisions.md)、[整体设计审阅](docs/design-review.md)、[当前状态与接续入口](docs/status.md)。
+安装 Skill 不会自动建立订阅，也不会修改客户端信任或启动 AI。
 
-首轮设计以单机常驻枢纽为基线，保留核心库嵌入与进程外适配边界；前期采用 Eliscript 编译 ESM、Bun、SQLite 与本地 UDS；当前优先交付已授权 Lark 国际版专用机器人与 Codex、Cursor 的主要业务链，其他工具专项验收后置。精确依赖已锁定，跨机器部署在首期范围之外，真实兼容证据仍待验收。DJ 不拥有 Agent 的任务完成真相，也不因消息投递而扩大其执行权限。
+## 文档
+
+- [完整文档索引](docs/index.md)
+- [故障排查](docs/guides/troubleshooting.md)与[当前能力、验证边界](docs/status.md)
+- [业务操作](docs/interfaces/operations.md)、[CLI](docs/interfaces/cli.md)、[MCP](docs/interfaces/mcp.md)、[GEPO](docs/interfaces/gepo.md)
+- [架构](docs/architecture.md)、[安全边界](docs/security.md)、[开发与打包](docs/guides/development.md)
+- [Pages 本地预览](docs/pages/README.md)与[待办](TODO.md)
+
+## 许可证
+
+DJ 自有代码与文档使用 [One Public License 1.0（1PL）](https://license.pub/1pl/)，完整文本见 [LICENSE](LICENSE)。第三方依赖保留各自许可证，运行包附带依赖许可证清单。

@@ -1,5 +1,6 @@
 # 可转写的测试用例卡
 
+> 历史资料：保留当时的设计、状态与验收记录，不作为当前使用或施工指令。当前说明见[文档索引](../index.md)和[项目状态](../status.md)。
 本轮只写用例资料，没有测试源码或运行结果。父 T 的业务定义见 [acceptance](../acceptance.md)，文件/层次/计时与适用映射见 [test-plan](test-plan.md)。本文给出固定 fixture、输入动作和机械断言，供 I02 转 tests/cases.json、I04–I08 写全测试时使用；只在根 TODO 的 I/A 计进度。
 
 P=enabled-positive，R=required-rejection，D=deferred。case_id 稳定，不随测试顺序变化；参数展开使用原 ID 加明确参数名/值，不把多个组合藏在同一个通过记录。对每个 operation 自动生成的字段边界见文末，不能以通用 schema 测试取代具体原生/事务/跨模块场景。

@@ -1,6 +1,7 @@
 # 测试实现、执行与验收方案
 
-本文落实 [T01–T72 行为规格](../acceptance.md)，不重编号或重复维护业务预期。首期适用性继承 [发布矩阵](../release-scope.md#首期统一能力与验收适用矩阵)，当前S3完整构建、unit/integration/system已有通过证据，性能与真实组仍在收口；准确状态以TODO/status为准。TODO的A清单是唯一验收进度；本文件负责文件/子用例/环境/命令/证据。
+> 历史资料：保留当时的设计、状态与验收记录，不作为当前使用或施工指令。当前说明见[文档索引](../index.md)和[项目状态](../status.md)。
+本文落实 [T01–T72 行为规格](../acceptance.md)，不重编号或重复维护业务预期。首期适用性继承 [发布矩阵](../release-scope.md#能力与验证范围)，当前S3完整构建、unit/integration/system已有通过证据，性能与真实组仍在收口；准确状态以TODO/status为准。TODO的A清单是唯一验收进度；本文件负责文件/子用例/环境/命令/证据。
 
 可转写的 fixture、稳定主case_id、给定/操作/机械断言、八个真实四组合分支与远期D卡见 [用例卡](case-cards.md)。I02 先据此生成完整参数 manifest，再由 I04–I08 写测试源码；本文和用例卡都不能冒充已经生成的 tests/cases.json。61 操作的参数矩阵输入见 [字段表](operation-catalog.md)。
 

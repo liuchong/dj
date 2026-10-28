@@ -1,20 +1,20 @@
 # DJ 目录包与运行接线
 
-本文说明目录包与运行方式。生成运行包不会安装系统服务、开启桌面桥接、启动 Agent 或发送消息；目录包入口可用也不代表真实模型与 IM 收发已验收。包内示例全部需要替换，不含可用身份。当前交付优先跑通 Codex、Cursor，其他工具专项验收后置。
+本文说明目录包与运行方式。生成运行包不会安装系统服务、开启桌面桥接、启动 Agent 或发送消息；目录包入口可用也不代表真实模型与 IM 收发已验收。包内示例全部需要替换，不含可用身份。工具当前支持与验证边界见项目状态和适配文档。
 
 ## 成品与依赖
 
 在固定 Eliscript stage3 与目标 Bun 准备好后，以 `bun run build` 生成当前构建，再执行 `bun run package:directory`；已有匹配构建时直接打包，构建器尚未准备时才先运行 `bun run build:tools`。打包器只接受当前源码/输出摘要匹配的全入口构建，输出到全新 `.local/packages/dj-<build_id>`，不覆盖现有目录；失败保留私有 `.build-<uuid>` 诊断目录，不启动成品。具体工具链准备按施工文档执行，不能用同版本但未绑定的编译器替代。
 
-目录包含 `bin/dj`、`dist/src/{service/main,interfaces/cli,interfaces/mcp,library}.mjs` 及共享 chunks/source map、`dist/build-identity.json`、Skill、两份配置示例、依赖许可证和 `package-manifest.json`。manifest 记录 build_id、相对文件摘要、固定编译器身份、Bun 版本和生产依赖。SDK/Ajv/语言运行时被打入 ESM；成品不带构建器、测试、编译器、Emacs、node_modules、账号或数据库。source map 的源码名称转换为包内逻辑路径。
+目录包含 `bin/dj`、`dist/src/{service/main,interfaces/cli,interfaces/mcp,library}.mjs` 及共享 chunks/source map、`dist/build-identity.json`、Skill、两份配置示例、项目 `LICENSE`、第三方 `licenses/` 和 `package-manifest.json`。manifest 记录 build_id、相对文件摘要、固定编译器身份、Bun 版本和生产依赖。SDK/Ajv/语言运行时被打入 ESM；成品不带构建器、测试、编译器、Emacs、node_modules、账号或数据库。source map 的源码名称转换为包内逻辑路径。
 
-目标运行环境为 macOS arm64、Bun 1.4.4；Bun 由可信宿主提供。Codex 使用已有 Desktop IPC，Cursor 使用已有 Desktop Bridge 或显式配置的 native_api 原生版本适配通道；其他工具也必须连接实际运行中的客户端或 CLI 接口。Lark/飞书机器人通过私有 App ID/Secret 与精确 watch 接入；操作员本人通过独立 OAuth 凭据和官方 HTTP API 发送调试消息。不得新建 Agent 子进程作为消息通道。外部客户端、模型服务和授权不包含在 DJ 包内。包内 `bin/dj` 从 PATH 找 Bun；非交互宿主可直接用确定的 Bun 可执行文件运行对应 ESM。目录可移至其他持久位置，不能依赖构建仓库作为 cwd。
+目标运行环境为 macOS arm64、Bun 1.4.4；Bun 由可信宿主提供。Codex 使用已有 Desktop IPC，Cursor 使用已有 Desktop Bridge 或显式配置的 native_api 原生版本适配通道；其他工具也必须连接实际运行中的客户端或 CLI 接口。Lark/飞书机器人通过私有 App ID/Secret 与精确 watch 接入；本人身份通过独立 OAuth 凭据使用已授权的官方接收、读取与发送接口。不得新建 Agent 子进程作为消息通道。外部客户端、模型服务和授权不包含在 DJ 包内。包内 `bin/dj` 从 PATH 找 Bun；非交互宿主可直接用确定的 Bun 可执行文件运行对应 ESM。目录可移至其他持久位置，不能依赖构建仓库作为 cwd。
 
 ## Cursor 本机原生通道
 
 Bridge 未启用时不自动修改开关。可显式选择 `native_api` 连接已运行 Cursor 3.27.14 的本机 Inspector；列表只列精确窗口、工作区中已加载的 local 会话；对明确的已有 ID，可经本机仓库加载该工作区的既有 local 记录后核对、读取或提交，不能加载未知、归档或其他工作区记录。加载本身不提交输入、不创建对话或启动 AI 进程，临时引用随请求释放。配置中的 `process_id`、`process_origin`（原进程 performance.timeOrigin）和 `workspace_id` 必须由可信操作员发现，重启后重新核对。仅允许 `http://127.0.0.1:PORT`，不接受远端、重定向或认证信息嵌入 URL。该 endpoint 不同时设置 manifest_path/control_manifest_path；无需 history_database，因为消息从原生运行态读取。
 
-Inspector 是高权限本机调试入口：只有已授权的专用实例才配置。manage_inspector=true 时，由 DJ 按需开启原进程的 Inspector，操作后自动关闭；需提供 process_birth 和 process_helper_ref，后者指向包内 libexec/dj-process-info。helper 是只读 macOS 进程元数据程序，成品已编译，无需运行时编译器。它核对同用户原进程及信号处理器；已有调试端口不抢占、不关闭。默认端口必须为 9229，进程变化或版本不匹配时明确不可用，不回退 CLI，不重启客户端。实际订阅、独立 recipient 和回复的授权要求保持不变。详见 [本机接口记录](../docs/construction/cursor-local-api.md)。
+Inspector 是高权限本机调试入口：只有已授权的专用实例才配置。manage_inspector=true 时，由 DJ 按需开启原进程的 Inspector，操作后自动关闭；需提供 process_birth 和 process_helper_ref，后者指向包内 libexec/dj-process-info。helper 是只读 macOS 进程元数据程序，成品已编译，无需运行时编译器。它核对同用户原进程及信号处理器；已有调试端口不抢占、不关闭。默认端口必须为 9229，进程变化或版本不匹配时明确不可用，不回退 CLI，不重启客户端。实际订阅、独立 recipient 和回复的授权要求保持不变。详见 [本机接口记录](https://github.com/liuchong/dj/blob/master/docs/adapters/cursor-native.md)。
 
 Cursor 主动调用 DJ 的 MCP/API 不依赖 Inspector，不触发上述开启/关闭流程。开发构建需要本机 C 编译器编译只读进程元数据宿主胶水，最终目录包无需 C 编译器。
 
@@ -24,7 +24,7 @@ Cursor 主动调用 DJ 的 MCP/API 不依赖 Inspector，不触发上述开启/�
 
 先由可信操作员创建根目录与 `run`、`state`、`secrets`、所需 `workspaces` 子目录，目录 0700、配置/凭据 0600。将 `config/service.example.json` 复制为私有 `service.json` 后，只保留本次获准连接/实例/profile；把占位 chat/thread/project/session/workspace 改为原生读取所得事实。使用独立随机 token 为 operator 和每个 recipient 建立独立 `credential_ref` 文件，秘密只进受保护文件，不放命令参数、日志、仓库或给其他 Agent 的提示词。Telegram token 与 OpenCode Basic JSON 也仅通过所示 credential_ref 读取。
 
-Lark/飞书实时连接显式配置 source_delivery=events、event_app_id、event_subject_id、event_scope 及 credential_ref。应用密钥文件保存 app_id/app_secret，直接连接官方 WebSocket；本人发送另外使用已授权 OAuth 文件与 user_identity 锚点。所有消息读写直接使用官方 HTTPS API，不依赖 SDK、外部 IM CLI 或桌面。详见[IM 接入](../docs/adapters/im.md)。示例全部为占位值，managed_profiles 必须为空。
+Lark/飞书实时连接显式配置 source_delivery=events、event_app_id、event_subject_id、event_scope 及 credential_ref。应用密钥文件保存 app_id/app_secret，直接连接官方 WebSocket；本人发送另外使用已授权 OAuth 文件与 user_identity 锚点。所有消息读写直接使用官方 HTTPS API，不依赖 SDK、外部 IM CLI 或桌面。详见[IM 接入](https://github.com/liuchong/dj/blob/master/docs/adapters/im.md)。示例全部为占位值，managed_profiles 必须为空。
 
 客户端复制 `config/client.example.json`，按主体选独立 credential_ref，socket 指向本服务。operator profile 只给可信操作员；recipient 不继承 operator token。为每个 Agent 提供独立客户端配置和包内 `skills/dj` 的原生 Skill 接入；Skill 文本本身不创建权限。CLI 可显式传 `--client-profile`，MCP 宿主以 `DJ_CLIENT_PROFILE` 或 `dj mcp serve --client-profile FILE` 选择该主体。
 
@@ -55,13 +55,13 @@ MCP 尚未接入时，也可由可信操作员预先提供固定的 DJ CLI/API �
 
 对服务 SIGTERM/SIGINT 会关闭 intake/新提交并进入 draining。尚未发送的队列保持持久 hold；已提交/unknown 与自有 Agent 管道继续保留，只有原生静止/归属退出证据满足后才关闭。期限到仍 draining 就等待或按原对象显式核对，不强杀、不用监督器重启顶替旧 owner。已有 AI 客户端由原宿主拥有，DJ 不停止它。
 
-`launchd.example.plist` 仅是需要替换路径的前台托管骨架，RunAtLoad/KeepAlive 均为 false，没有安装或加载。不要在 active/unknown 工作期间 bootstrap/bootout/强制 restart；launchd 或其他监督器的退出期限不能保证 DJ 排空。首期按前台方式完成 A18/真实排空证据，再由操作员确定监督策略；本工程不会自动安装系统服务、部署或发布。
+`launchd.example.plist` 仅是需要替换路径的前台托管骨架，RunAtLoad/KeepAlive 均为 false，复制示例不会执行安装或加载。不要在 active/unknown 工作期间 bootstrap/bootout/强制 restart；launchd 或其他监督器的退出期限不能保证 DJ 排空。首期按前台方式完成 A18/真实排空证据，再由操作员确定监督策略；本工程不会自动安装系统服务、部署或发布。
 
-S3 的 T38.directory-runtime.system 会复制目录包到仓库以外，以不同 cwd 启动 standalone 和 MCP 并核对实际 build_id；测试不访问真实 IM/Agent。真正的两 IM×两 Agent/Skill/资源验收仍需专用授权 profile 与原生观察证据，目录包测试不能替代它们。
+S3 的 T38.directory-runtime.system 会复制目录包到仓库以外，以不同 cwd 启动 standalone 和 MCP 并核对实际 build_id；测试不访问真实 IM/Agent。真实 IM、Agent、Skill 与资源验收按明确范围选择，需要独立授权配置与原生观察证据，目录包测试不能替代它们。
 
 ## 跨进程实现边界
 
-正式 Core 只装配已有 OpenCode HTTP 与 Codex/Cursor Desktop 端口，不装配 CLI/ACP/Pi 进程托管端口，不执行 Agent profile auto_start。非空 managed_profiles 在配置校验阶段拒绝，早于存储与端口初始化。原进程托管实现及证据保留供追溯，不属于当前接入验收。
+正式 Core 装配已有实例的 OpenCode HTTP、Codex/Cursor Desktop、Pi 接收扩展及其他已配置原生端口，不装配 CLI/ACP/Pi 进程托管端口，不执行 Agent profile auto_start。非空 managed_profiles 在配置校验阶段拒绝，早于存储与端口初始化。原进程托管实现及证据保留供追溯，不属于当前接入验收。
 
 AI 工具可主动启动 DJ MCP 薄客户端，这是 AI→DJ 请求，不是 DJ 启动 AI。若未来支持自动拉起缺席客户端，只允许启动与业务通信分离的实现；启动后必须通过接收端接口操作会话，不通过 argv 携带对话或消息。目前没有这种接口式启动实现，不能宣称已有支持。
 
@@ -83,3 +83,9 @@ Cursor endpoint只有全部配置了control_manifest_path才声明session_create
 当前包提供 connectors/pi/extension.mjs 与编译后的 Pi 接收模块。由 Pi 原生扩展生命周期在原进程内创建私有本机接口，DJ 配置已有 pi endpoint 的 manifest_path/directory/workspace_ref 后，通过该原生 session ID 查询和投递；不装配 managed RPC，也不启动或替换 Pi。安装、reload、权限及 partial 历史边界见 connectors/pi/README.md。扩展和客户端配置不会自动安装；缺少运行进程时先完成实现交付，真实客户端验收由使用者执行，不等待或新建替代 CLI。
 
 Claude Code and Antigravity use existing local receivers via `dj native configure --input PRIVATE_JSON`; see `dj native configure --help`. The shipped `libexec/dj-process-info` binds PID, owner and process birth. The command writes new private endpoint/credential files without starting a client or changing client settings. Merge the endpoint into the service configuration explicitly. Claude requires its current native session registry/socket with idle notifications; the Desktop app alone is insufficient. Antigravity requires its observed loopback HTTPS language-server endpoint and preserves the original model configuration. No cloud control or argv prompt fallback is provided. Configuration is host-local and must be refreshed after a receiver restart; never ship the generated files, credentials or real native IDs with the package.
+
+## 许可证与持续运行
+
+目录包的 `LICENSE` 是 DJ 自有代码与文档的 [One Public License 1.0](https://license.pub/1pl/) 完整文本；`licenses/` 与 manifest 中的 dependencies 保留第三方依赖各自许可，不被项目许可证替代。
+
+需要用户级 launchd 常驻运行时，参考[macOS 服务配置](https://github.com/liuchong/dj/blob/master/docs/guides/macos-service.md)。固定 label 为 `dev.dispatch-junction.local`；打包不自动安装或启用它。故障定位见[排查指南](https://github.com/liuchong/dj/blob/master/docs/guides/troubleshooting.md)。

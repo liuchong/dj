@@ -2,7 +2,7 @@
 
 ## 规范基线
 
-2026-10-23 核对时，官方 latest 指向 2026-07-28。以该明确版本作为新接口设计基线：自描述请求、每请求身份/能力元数据与对应传输规范。2025-11-25 等历史宿主若需要支持，放入显式协议适配层并单独验证；不能混用旧 initialize/session 与新核心规则，也不自动承诺所有版本兼容。[规范](https://modelcontextprotocol.io/specification/2026-07-28)、[变更](https://blog.modelcontextprotocol.io/posts/2026-07-28/)
+MCP 入口使用锁定的 `@modelcontextprotocol/server` 2.3.1 和 stdio 传输。协议协商、分帧与协议级错误由 SDK 处理，业务 schema、身份与权限由 DJ 校验。[官方现行规范](https://modelcontextprotocol.io/specification/latest)用于查阅协议要求，不代表 DJ 实现了所有可选扩展，也不因旧宿主而增加项目自己的兼容层。
 
 宿主报告的版本、实际 SDK 支持与厂商扩展均需能力探测。服务的 Subscription、AgentTarget 是 DJ 应用状态，不能绑定 MCP 传输连接 ID，也不因客户端断线而删除。
 
@@ -54,22 +54,20 @@ inputSchema 在所有嵌套业务对象上明确 additionalProperties=false；�
 
 outputSchema 覆盖成功与领域失败两种 envelope，字段为统一目录规定的 data/error、effect_state、evidence_level、warnings。field_errors 使用 JSON Pointer；next_actions 来自固定代码映射，工具文本只是该结构的简短投影，不产生另一个与 JSON 冲突的解释。
 
-subscription.preview 返回可直接提交的 preview_id；create/update 不接受第二份 spec。超时通过 dj_operation_get 找对象，再调用 dj_outbound_get 或 dj_delivery_get。引用失败一律不按标题兜底。规范版本适配只改变协议编码，不改变此业务语义。
+subscription.preview 返回可直接提交的 preview_id；create/update 不接受第二份 spec。超时通过 dj_operation_get 找对象，再调用 dj_outbound_get 或 dj_delivery_get。引用失败一律不按标题兜底。MCP 的协议握手由锁定 SDK 处理，不能改变业务授权、参数与幂等语义。
 
 以上是 DJ 自身的设计取舍，不能把服务校验寄托于宿主 strict 模式、Skill 被读取或模型总能正确选择。完整责任边界见 [模型调用契约](../model-facing.md)。
 
-## 首期实现选型与宿主范围
+## 实现与客户端接线
 
-采用 Eliscript 调用官方 SDK v2 稳定线的协议/stdio 能力，复用服务统一 schema 与 Ajv 验证；不另写 TS 业务层，也不引入 SDK 客户端或模型循环。主入口为本地 stdio → UDS，依赖与适配边界见 [技术选型](../technical-stack.md)。本轮查阅的 [官方 v2 文档](https://ts.sdk.modelcontextprotocol.io/v2/)明确对应 2026-07-28；v1 是独立历史线，不能因包名熟悉而默认安装 v1。
+Eliscript 调用锁定的 `@modelcontextprotocol/server` 2.3.1，使用 Server 与 `serveStdio(factory)`。主路径为 stdio → UDS → 现有 Core，不启动另一个服务或模型循环。依赖见[技术栈](../technical-stack.md)，各客户端配置与 CLI 备用入口见[客户端接线](../../skills/dj/references/clients.md)。共享配置不能证明当前会话身份，接收方仍需核对自己的 recipient 绑定。
 
-首期 OpenCode 可使用经过兼容验证的 MCP 或 CLI；Pi 的共同最低入口是 CLI，MCP 代理本身仍需协议验收。共享宿主配置并不证明当前原生会话身份，recipient 凭据与会话启动接线见 [完整流程](../startup-to-reply.md)。没有实际兼容证据的宿主保留 incompatible，不预填支持范围。
+tools/list 从 operationCatalog 投影严格 schema，tools/call 将合法协议壳的业务参数交给 DJ 权威校验，领域错误返回统一 envelope/isError。协议壳错误由 SDK 处理；不依赖高层默认校验生成另一套业务错误。代理核对服务 api_version/build_id/operation_catalog_digest，摘要不符明确拒绝。SDK 协议依据见[低层接口文档](https://ts.sdk.modelcontextprotocol.io/v2/advanced/low-level-server.html)；实际安装与运行证据见[当前状态](../status.md)。
 
-开工资料将具体接线固定为 @modelcontextprotocol/server 2.3.1 的 Server + serveStdio(factory)：tools/list 从同一 operationCatalog 投影严格 schema，tools/call 将合法协议壳的业务参数原样转给 DJ 权威校验，领域错误仍返回统一 envelope/isError。协议壳错误由 SDK 处理；不依赖高层默认校验提前返回另一格式的业务报错。代理先核对服务 api_version/build_id/operation_catalog_digest，摘要不符 incompatible。依据与边界见 [SDK低层官方说明](https://ts.sdk.modelcontextprotocol.io/v2/advanced/low-level-server.html)和[开工准备](../construction/readiness.md#4-mcp-与-ajv-接线决定)，尚未运行兼容测试。
+## 控制面的一致投影
 
-## 新控制面的一致投影
+[统一操作目录](operations.md)中的 tool/profile/instance/catalog/session/lifecycle 操作按同一映射提供。查询 schema 表达 tools/instances/workspaces 等机械范围；结果同时给分页 complete 与 coverage_complete/as_of，不能简化成一句“搜索无结果”。session.send 不依赖订阅，也不与 IM message.send 合并为模糊 send 工具。
 
-[Agent 控制面](../agent-control-plane.md#统一操作目录)的 tool/profile/instance/catalog/session/lifecycle 操作都按同一映射逐项提供。查询 schema 表达 tools/instances/workspaces 等机械范围；结果同时给分页 complete 与 coverage_complete/as_of，不能简化成一句“搜索无结果”。session.send 不依赖订阅，也不与 IM message.send 合并为模糊 send 工具。
-
-实例启动/会话创建属于有副作用工具，带 idempotency_key 与明确 profile/epoch 约束；catalog.refresh/reconcile 也会更新台账，不标成无状态读取。模型需要显式调用，不能把 start 当作 list/search 的隐含补救。IM 收件仍只走事件/订阅规则，不增加聊天管理面。
+可选会话创建带 idempotency_key 和明确实例 epoch 约束；catalog.refresh/reconcile 也会更新台账，不标成无状态读取。正式配置没有可用的托管 Agent 启动路径，不能把 start 当成 list/search 的隐含补救。IM 收件仍只走事件/订阅规则，不增加聊天管理面。
 
 dj_session_get 的 session_ref/session_key 严格二选一；dj_session_probe 对单个精确会话只读核验，不测试发送。scope.session_keys 允许定点刷新/消息搜索；delivery 过滤允许 operation_id/session_key/origin 等已定义字段，但不跨主体扩权。search 只允许稳定键顺序，空 items + 非空 next_cursor 必须继续视为未完；outputSchema 区分稳定 key、过期短期引用、历史生命周期结果和当前实例状态。所有 origin 分支和 stopping 错误继承统一契约，不由 MCP 描述自行放宽。

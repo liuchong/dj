@@ -22,7 +22,7 @@ stdio MCP 代理连接常驻服务时使用明确主体凭证。凭证缺失返�
 | tool.inspect / instance.inspect / profile.inspect | 指定工具/实例/获准启动配置的安全描述，不含秘密或任意进程扫描 |
 | catalog.refresh / session.list / session.inspect / session.read / session.search | 允许 namespace/工作区/会话/消息与保留范围；标题、计数、片段也授权过滤 |
 | session.send / session.create | 精确会话输入与指定实例/工作区建空会话分别授权；不因读或登记获得 |
-| instance.start / instance.stop | 对已授权 profile 的显式启动、对自有 managed 实例的优雅停止；可委派窄权限 |
+| instance.start / instance.stop | 生命周期权限独立；正式配置没有可用 managed profile，不因接口或 grant 存在获得进程启动能力 |
 | lifecycle.inspect / lifecycle.reconcile / lifecycle.resolve | 自有动作读取/证据核对；resolve 仅操作员，不重发、不伪造就绪 |
 
 创建订阅、事件匹配、提交输入和发送回复都检查权限。订阅保存的是范围意图，不能冻结一个永久不撤销的授权。更新规则不能扩大来源或改变目标而跳过验证。

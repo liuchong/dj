@@ -20,7 +20,7 @@ DJ 以事件、规则、状态与原生证据确定性工作，不调用模型�
 | reply_contexts / outbound / parts | 各 ID；每 Outbound 有序 part_id | 固定目的地、出站意图与子消息结算 |
 | service_lease / echo_index | 服务 owner；connection+native_message_id | 唯一自身调度者与可证回声归属 |
 
-SQLite（bun:sqlite、WAL/FULL）为单机存储，schema与事务已有实现，当前验证状态见 [status](status.md)；版本/同步读回与单进程边界见 [技术选型](technical-stack.md)。源 ACK 可控时，事件/游标持久后才确认；SDK/CLI 提前 ACK 则声明 ack_control=false，DJ 保证从自身入库开始。无可靠重放时崩溃窗口可能丢源消息，报告 gap（范围可能未知），不以服务重启成功掩盖。
+SQLite（bun:sqlite、WAL/FULL）为单机存储，schema与事务已有实现，当前验证状态见 [status](status.md)；版本/同步读回与单进程边界见 [技术选型](technical-stack.md)。源 ACK 可控时，事件/游标持久后才确认；协议决定提前 ACK 时声明 ack_control=false，DJ 保证从自身入库开始。无可靠重放时崩溃窗口可能丢源消息，报告 gap（范围可能未知），不以服务重启成功掩盖。
 
 免订阅 session.send 的原子边界为 Operation/幂等键、内部 TargetRoute 和 origin=direct 的 Delivery；不需要 Event、Subscription 或 AgentTarget。所有发往同一 canonical key 的输入共用 Binding、claim 和 unknown 屏障；origin 的权限/取消规则不能互相借用。启动/创建使用独立 LifecycleAction 和原生关联键，不能把网络超时视作“未创建”重新执行，详见 Agent 控制面。
 
@@ -92,7 +92,7 @@ ReplyContext 在实际提交输入前生成，目标离线排队不消耗其 24 
 
 自身回声根据出站原生 message ID 索引识别，不看文本相似度或文风。默认禁止自身出站再次触发。首轮不承诺跨 IM 传播可验证 hop_count：外部平台若丢失来源链，仅凭再次看到一段文字无法恢复它。显式开放机器人消息时仍抑制已知自身出站，并以每来源/目标速率预算限制风暴；跨 Agent 自动转发链留给后续带可验证 provenance 的设计。
 
-Lark user 轮询使用与 Event/拒绝诊断同事务的 PollCheckpoint，未提交页可安全重读且以 message_id+created 去重；最后一页才推进冻结窗口。内部读取不是公开 native 历史查询，也不是平台推送/可控 ACK，完整合同见 [IM 接入](adapters/im.md#lark-user-poll)。
+Lark 官方 WebSocket 事件先持久提交到 im_event_inbox，再确认原生接收；Core 持续消费并执行业务去重和订阅路由。历史补取是显式读取或补偿，不充当正常实时入口。完整接线见[IM 适配](adapters/im.md)。
 
 为处理 user 出站先回流、回执后到的竞态，Outbound 进入 submitting 的事务建立按规范化 ConversationAddress 的 EchoGate。入站可持久化，但待判定事件的 routing_work 保持 held，不生成 no_match。消息 ID/echo_index 落盘或确证未发送后释放该出站占用，再按原序号复核；多个在途占用必须全部结算。unknown/manual 但无原生 ID/未发送证据时继续 held，不能因人工关闭台账就自动重入循环。按现有队列容量/告警处理积压，不无限存入内存；不影响其他目的地。只凭 sender=self 无法区分用户自己发言与 DJ 代发，不能用于整类丢弃。
 
@@ -106,4 +106,4 @@ Lark user 轮询使用与 Event/拒绝诊断同事务的 PollCheckpoint，未提
 
 过期完整响应分批移除，保留 operation/key/request_hash/resource_refs，未结算对象的必要响应继续保留；原键仍只能找回原动作，不能重新执行。审计按索引分批清理，不清未结算证据。关闭 SQLite 自动 checkpoint，由服务每分钟在低负载时执行 PASSIVE，繁忙最多延后至五分钟；记录原生 busy/帧数和实际停顿，不能改 NORMAL 或以计划间隔冒充实测性能。
 
-退出时先关闭 intake/提交 gate、保存游标和尝试，再按与 instance.stop 相同的安全边界关闭自有流/进程；不停止非自身管理的既有工具。活跃/unknown 尚未 drain 时保留 draining，期限到不强杀或提前关不可重连的 RPC 管道。监督器须避免连带强杀 managed 任务；外部强制终止只能报告中断/未知风险。崩溃由上述事务和未知恢复合同处理，正确性不依赖退出钩子。
+退出时先关闭 intake/提交 gate、保存游标和尝试，再关闭 DJ 自有连接和工作资源；不停止非自身管理的既有工具。活跃/unknown 尚未 drain 时保留 draining，期限到不强杀已有 Agent，也不删除未知动作证据。监督器不应连带终止 Agent 任务；外部强制终止只能报告中断/未知风险。崩溃由上述事务和未知恢复合同处理，正确性不依赖退出钩子。

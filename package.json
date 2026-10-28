@@ -20,7 +20,8 @@
     "packaging",
     "skills/dj",
     "config/*.example.json",
-    "connectors/pi"
+    "connectors/pi",
+    "LICENSE"
   ],
   "scripts": {
     "build": "bun dist-tools/tools/build.mjs --scope all",
@@ -51,5 +52,6 @@
     "fast-deep-equal": "3.1.3",
     "require-from-string": "2.0.2",
     "json-schema-traverse": "1.0.0"
-  }
+  },
+  "license": "SEE LICENSE IN LICENSE"
 }

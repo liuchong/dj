@@ -1,6 +1,7 @@
 # 逐操作字段与受理资料
 
-当前运行目录共 63 个操作，来自 src/application/operations.eli 的 operationCatalog；结构、语义与结果校验分别见 operations/schema/results 模块。CLI、MCP、本地 API 和 GEPO 共用该目录、权限和受理台账。本文保留原施工基线 4e06ea8 的字段资料，并同步新增主动消费接口；工具能力与正式运行限制以 [当前发布范围](../release-scope.md#当前交付优先级2026-10-26-用户调整)及服务实际返回为准，描述符存在不代表适配器支持。handler 归属见 [contracts](contracts.md)。
+> 历史资料：保留当时的设计、状态与验收记录，不作为当前使用或施工指令。当前说明见[文档索引](../index.md)和[项目状态](../status.md)。
+当前运行目录共 63 个操作，来自 src/application/operations.eli 的 operationCatalog；结构、语义与结果校验分别见 operations/schema/results 模块。CLI、MCP、本地 API 和 GEPO 共用该目录、权限和受理台账。本文保留原施工基线 4e06ea8 的字段资料，并同步新增主动消费接口；工具能力与正式运行限制以 [当前发布范围](../release-scope.md#能力与验证范围)及服务实际返回为准，描述符存在不代表适配器支持。handler 归属见 [contracts](construction-contracts.md)。
 
 ## 1. 共用字段与检查顺序
 
