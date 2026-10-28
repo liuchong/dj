@@ -945,9 +945,21 @@
         :stale
         boolSchema)
       (js-array "items" "next_cursor" "complete")))
+  (put definitions :reply_context (obj (js-object :delivery_id stringSchema :reply_context_id stringSchema :expires_at stringSchema :allowed_actions (arr stringSchema))))
+  (put definitions :task_source (obj (strings "connection_id native_chat_id thread_kind kind resource_kind resource_token table_id record_id event_id native_message_id received_at summary"
+    (js-object :native_thread_id nullableString))))
+  (put definitions :task (obj (strings "delivery_id event_id tool session_key native_session_id title state blocked_reason task_state observed_at runtime_state"
+    (js-object :source (ref "task_source") :runtime_stale boolSchema))))
+  (put definitions :task_node (obj (strings "session_key tool native_session_id title runtime_state evidence"
+    (js-object :parent_session_key nullableString :depth integerSchema))))
+  (put definitions :task_page (obj (js-object :items (arr (ref "task")) :next_after nullableString)))
+  (put definitions :task_tree (obj (js-object :task (ref "task") :nodes (arr (ref "task_node")) :truncated boolSchema
+    :as_of stringSchema :children_coverage stringSchema)))
+  (put definitions :task_link (obj (strings "delivery_id parent_session_key child_session_key evidence")))
   (defun dataSchemaFor
     (operation kind)
-    (cond ((= operation "service.status") (ref "status"))
+    (cond ((= operation "task.list") (ref "task_page"))
+      ((= operation "service.status") (ref "status"))
       ((= operation "operation.get") (ref "operation"))
       ((= operation "agent.whoami") (ref "principal"))
       ((= operation "subscription.preview") (ref "preview"))

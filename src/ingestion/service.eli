@@ -1,5 +1,6 @@
 (module dj.ingestion.service
   (import "../messaging/topics.eli" topicOf)
+  (import "../tasks/commands.eli" stageCommand)
   (import "../connections/manager.eli" imPort)
   (import "../core/native.eli" nativeTypeOf nativeGet)
   (import "../core/errors.eli" success failure)
@@ -337,6 +338,7 @@
                       (js-call repository :insert "events" event)
                       (let*
                         (
+                          (command (stageCommand context event))
                           (backpressure
                             (>=
                               (nativeGet
@@ -355,13 +357,13 @@
                               :ingress_seq
                               sequence
                               :state
-                              (if backpressure "blocked" "ready")
+                              (if command "done" (if backpressure "blocked" "ready"))
                               :last_subscription_id
                               nil
                               :last_revision
                               nil
                               :reason
-                              (if backpressure "ingress_capacity" nil))))
+                              (if command "task_command" (if backpressure "ingress_capacity" nil)))))
                         (js-call repository :insert "routing_work" work)
                         (let
                           (

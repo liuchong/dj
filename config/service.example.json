@@ -292,5 +292,9 @@
   "client_profiles": [
     "client-codex.json",
     "client-cursor.json"
-  ]
+  ],
+  "task_inspection": {
+    "administrators": [],
+    "users": []
+  }
 }

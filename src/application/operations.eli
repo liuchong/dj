@@ -191,7 +191,8 @@
   (defconst operationCatalog (new globalThis.Map))
   (defun permissionAction
     (name group)
-    (cond ((js-call (js-array "message.acknowledge" "message.acknowledge.get") :includes name) "message.reply")
+    (cond ((= group "tasks") (if (= name "task.link") "task.link" "task.inspect"))
+      ((js-call (js-array "message.reply_context" "message.acknowledge" "message.acknowledge.get") :includes name) "message.reply")
       ((= group "resources") (cond ((= name "resource.watch") "resource.subscribe") ((= name "resource.recover") "resource.recover") (t "resource.read")))
       ((= group "working") "delivery.inspect")
       ((= group "session_rules") (if (= name "session.rules.get") "session.rules.read" "session.rules.manage"))
@@ -382,6 +383,13 @@
       :thread_id
       (js-object :type (js-array "string" "null") :minLength 1))
     (js-object))
+  (addOperation "task.list" "tasks" (js-array)
+    (js-object :after idSchema :limit (integerSchema 1 50)) (js-object :result "task_page"))
+  (addOperation "task.tree" "tasks" (js-array "delivery_id")
+    (js-object :delivery_id idSchema :max_depth (integerSchema 1 8)) (js-object :result "task_tree"))
+  (addOperation "task.link" "tasks" (js-array "delivery_id" "parent_session_key" "child_session_key")
+    (js-object :delivery_id idSchema :parent_session_key idSchema :child_session_key idSchema)
+    (js-object :effect "accept" :result "task_link"))
   (addOperation "message.filter.get" "filters" (js-array) (js-object) (js-object :result "message_filter"))
   (addOperation "message.filter.update" "filters" (js-array "rules")
     (js-object :people (arraySchema
@@ -592,6 +600,8 @@
     (js-array "reply_context_id" "content")
     (js-object :reply_context_id idSchema :content textSchema)
     (js-object :effect "accept" :result "outbound"))
+  (addOperation "message.reply_context" "messaging" (js-array "delivery_id")
+    (js-object :delivery_id idSchema) (js-object :result "reply_context"))
   (addOperation "message.acknowledge" "messaging" (js-array "reply_context_id")
     (js-object :reply_context_id idSchema) (js-object :effect "accept" :result "acknowledgement"))
   (addOperation "message.acknowledge.get" "working" (js-array "acknowledgement_id")

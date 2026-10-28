@@ -3,6 +3,10 @@
   (import "../core/limits.eli" limits)
   (defconst summaries
     (js-object
+      :message.reply_context "原接收者在原有效期内重新取得固定回复引用；重检当前授权和原身份，不改目标、不延长有效期。"
+      :task.list "按当前管理员白名单或本人连接范围分页巡查任务；accepted 不代表完成。"
+      :task.tree "展示原 IM 消息、准确 AI 会话与登记的子对话；未知关联明确标注。"
+      :task.link "为已接收投递登记明确父子会话关系；未原生核验，不猜任务归属。"
       :service.status
       "读取当前服务状态、可用操作、限制和获准来源；不启动工具。"
       :message.filter.get

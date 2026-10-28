@@ -45,7 +45,9 @@
     "tests/integration/subscription-scope.test.eli",
     "tests/unit/subscription-scope.test.eli",
     "tests/integration/message-recovery.test.eli",
-    "tests/unit/message-recovery.test.eli"
+    "tests/unit/message-recovery.test.eli",
+    "tests/integration/tasks.test.eli",
+    "tests/unit/tasks.test.eli"
   ],
   "outDir": "dist-tests"
 }

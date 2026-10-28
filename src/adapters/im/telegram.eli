@@ -120,6 +120,7 @@
                   "1"
                   :conversation
                   address
+                  :chat_type (if (= (nativeGet chat "type") "private") "p2p" "group")
                   :sender
                   (js-object
                     :id

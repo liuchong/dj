@@ -57,6 +57,7 @@ metadata:
 
 ## 回复职责与提及身份
 
+- refresh_reply: 权限更新导致原 reply_context_id 失效时，原接收者可用 message.reply_context(delivery_id) 重新取得引用；仍核对当前权限、原消息、原身份及原有效期，不延长 TTL，不换收件人或重放任务。新引用后使用同一逻辑回复的原幂等键，先查原操作，不能重发已 accepted 的回复。
 - route: 原生mentions和reply_route说明谁被提及及DJ已固定的回复身份；message.reply只提交reply_context_id、content、稳定idempotency_key，不选择账号或收件人，不改为message.send绕开缺失引用。
 - decision: 按本对话规则判断是否处理、是否属于已有任务、是否及何时回复；不是每条通知都要建任务或回复，也不是每次输出都外发。最终回答不自动转发IM；真正外发是显式工具调用，可在最终回答前进行。
 - setup: 接收对话自己经session.rules.update维护reply_routes；来源应用范围内原生mention_id映射到获准出口connection_id，DJ自动固定每条通知路径。手工自发@同样匹配，不设本人sender排除。详见[对话规则](references/session-rules.md)。
@@ -113,3 +114,8 @@ metadata:
 | [工作流](references/workflows.md) | 需要参数、预览及回复示例 |
 | [投递诊断](references/delivery.md) | 处理引用、超时、权限或部分发送 |
 | [会话控制](references/control.md) | 跨工具查询、免订阅输入及显式启动或创建 |
+
+## 任务巡查
+
+- inspect: task.list/task.tree 按管理员白名单或本人绑定连接查询来源树；IM 私聊可用 /dj tasks 和 /dj tree DELIVERY_ID，查询不唤醒 AI。详见[任务巡查](references/tasks.md)。
+- descendants: 子对话使用准确 delivery_id 和 session_key 经 task.link 登记，默认标注未原生核实；未知关联不猜。任务接收、会话忙闲和任务完成分别记录。

@@ -9,6 +9,7 @@
 | 设置 Lark / 飞书消息订阅 | [实时订阅指南](guides/lark-realtime.md) |
 | 安装 Skill、配置 MCP 或 GEPO | [客户端接线](../skills/dj/references/clients.md) |
 | 收到通知后读取、处理与回复 | [DJ Skill](../skills/dj/SKILL.md)、[消息闭环](startup-to-reply.md) |
+| 查看来源任务树及排队原因 | [任务巡查](guides/task-inspection.md) |
 | 消息没触发、投递未知或回复失败 | [故障排查](guides/troubleshooting.md) |
 | 了解实际交付和验证范围 | [能力范围](release-scope.md)、[当前状态](status.md)、[待办](../TODO.md) |
 
@@ -33,6 +34,7 @@
 | [0006 处理中表情](specs/0006-working-reactions.md) | 登记、完成及最终清理 |
 | [0007 消息上下文](specs/0007-message-context.md) | 历史、引用、话题与缓存读取 |
 | [0008 资源来源](specs/0008-resource-sources.md) | 文档、表格、Wiki 和原生事件 |
+| [0009 任务巡查](specs/0009-task-inspection.md) | 来源树、管理员／本人连接权限及确定性 IM 查询 |
 
 ## 技术与维护
 

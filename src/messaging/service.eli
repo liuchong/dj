@@ -1,4 +1,5 @@
 (module dj.messaging.service
+  (import "../tasks/commands.eli" taskOutboundAllowed)
   (import "./topics.eli" topicOf trackedTopic)
   (import "../delivery/working.eli" finishWorking queueAcknowledgement)
   (import "../core/native.eli" nativeNullish nativeTypeOf nativeGet)
@@ -820,6 +821,24 @@
             (success reply)))
         (catch djReturn8Error
           (if (eq djReturn8Error djReturn8Token) djReturn8Value (throw djReturn8Error))))))
+  (defun currentReplyContext (context delivery-id)
+    (inTransaction context (lambda (tx)
+      (let* ((repository (nativeGet context "repository"))
+        (delivery (js-call repository :get "deliveries" delivery-id))
+        (row (and delivery (js-call (js-call (nativeGet tx "db") :query
+          "SELECT payload FROM reply_contexts WHERE delivery_id=? ORDER BY rowid DESC LIMIT 1") :get delivery-id)))
+        (reply (and row (JSON/parse (nativeGet row "payload"))))
+        (actor (currentPrincipal context)))
+        (if (not (and reply actor (= (nativeGet reply "recipient_principal_id") (nativeGet actor "principal_id"))
+          (> (Date/parse (nativeGet reply "expires_at")) (Date/parse (utcNow context)))))
+          (failure "reply_context_expired")
+          (let* ((handle (must (issueResourceHandle context "reply_context" (nativeGet reply "reply_context_id")
+              (js-object :identity_revision (nativeGet reply "identity_revision"))
+              (Math/floor (/ (- (Date/parse (nativeGet reply "expires_at")) (Date/parse (utcNow context))) 1000)))))
+            (checked (resolveReply context (nativeGet handle "ref"))))
+            (if (not (nativeGet checked "ok")) checked
+              (success (js-object :delivery_id delivery-id :reply_context_id (nativeGet handle "ref")
+                :expires_at (nativeGet handle "expires_at") :allowed_actions (js-array "reply"))))))))))
   (defun projectOutbound
     (context record)
     (let ((djReturn9Token (js-object)) (djReturn9Value nil))
@@ -1042,6 +1061,9 @@
                           "ready"
                           :native_message_id
                           nil)))
+                    (when (nativeGet context "task_command_event_id")
+                      (put record :task_command_event_id (nativeGet context "task_command_event_id"))
+                      (put record :task_command_policy_hash (nativeGet context "task_command_policy_hash")))
                     (when (nativeGet reply "inbox_id") (put record :reply_inbox_id (nativeGet reply "inbox_id")))
                     (js-call repository :insert "outbound" record)
                     (js-call repository :insert "parts" part)
@@ -1076,6 +1098,8 @@
     (context record)
     (let ((djReturn12Token (js-object)) (djReturn12Value nil))
       (try
+        (unless (taskOutboundAllowed context record)
+          (progn (setq djReturn12Value (failure "forbidden")) (throw djReturn12Token)))
         (let*
           ((repository (nativeGet context "repository"))
             (connection
@@ -1521,7 +1545,8 @@
     (context operation args)
     (let ((djReturn19Token (js-object)) (djReturn19Value nil))
       (try
-        (cond ((= operation "connection.list") (queryConnections context args))
+        (cond ((= operation "message.reply_context") (currentReplyContext context (nativeGet args "delivery_id")))
+          ((= operation "connection.list") (queryConnections context args))
           ((js-call (js-array "connection.get" "connection.probe") :includes operation)
             (let
               (

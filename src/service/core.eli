@@ -16,6 +16,7 @@
   (import "../filtering/service.eli" :as Filters)
   (import "../sessions/rules.eli" :as SessionRules)
   (import "../delivery/working.eli" :as Working)
+  (import "../tasks/service.eli" :as Tasks)
   (import "../catalog/service.eli" :as Catalog)
   (import "../catalog/search.eli" :as Search)
   (import "../catalog/refresh.eli" :as Refresh)
@@ -140,6 +141,7 @@
             (let ((copy (Object/assign (js-object) configuration)))
               (Reflect/deleteProperty copy "principals")
               (Reflect/deleteProperty copy "client_profiles")
+              (Reflect/deleteProperty copy "task_inspection")
               (hashValue copy))))
 (setq admission (lambda
             (descriptor &optional startup)
@@ -242,6 +244,7 @@
             (let ((handlers (new globalThis.Map)))
               (js-call
                 (js-array
+                  (js-array "tasks" Tasks)
                   (js-array "working" Working)
                   (js-array "session_rules" SessionRules)
                   (js-array "filters" Filters)
@@ -459,6 +462,7 @@
                     (progn (setq djReturn5Value recorded) (throw djReturn5Token)))
                   (put config :principals (nativeGet candidate "principals"))
                   (put config :client_profiles (nativeGet candidate "client_profiles"))
+                  (put config :task_inspection (nativeGet candidate "task_inspection"))
                   (success
                     (js-object
                       :state

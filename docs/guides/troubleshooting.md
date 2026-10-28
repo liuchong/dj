@@ -48,3 +48,7 @@ dj status --client-profile PRIVATE_PROFILE --json
 
 - Cursor native_api 只连接已核验的本机实例。客户端重启或升级后，旧 PID、出生信息、origin 和 workspace 不再作为当前事实；不要通过启动 Agent CLI 替代原目标。
 - Pi 接收扩展必须实际加载在原 TUI 内；临时加载不代表重启后仍在。按[扩展说明](../../connectors/pi/README.md)处理。
+
+## 私聊没有立即唤醒
+
+原消息已命中订阅但投递为 `deferred / target_busy` 时，说明原助手仍在执行上一项任务。消息保持原序排队，不创建替身、不重复提交、不打断原任务。排队阶段没有 Typing；它只在原生接收后表示已交给助手。可通过 `task.list` / `task.tree` 或已配置身份的 IM 私聊 `/dj tasks` 检查等待原因；`accepted` 与业务完成仍需分开核对。

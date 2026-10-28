@@ -45,6 +45,8 @@ Lark 必须直连官方 WebSocket 与 HTTPS API，禁止 SDK、CLI 及其子进�
 
 ## 正式规格与接续要求
 
+- 任务巡查按 [0009](docs/specs/0009-task-inspection.md)：管理员显式白名单可查全部，普通用户仅查绑定连接，子对话归属未知不猜；IM 查询不唤醒 AI。
+
 - Lark文档、表格、Wiki读取与原生变更按[0008](docs/specs/0008-resource-sources.md)，复用连接、权限和订阅路由。人员字段不冒充IM @；没有真实事件不得把读取成功当实时通知通过。
 
 - 历史、引用和主动上下文读取统一通过DJ，按[0007](docs/specs/0007-message-context.md)执行；默认直接读本地缓存，缺失才由调用方显式请求原生补取，不以search/平台轮询替代正常收件。

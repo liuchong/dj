@@ -27007,6 +27007,50 @@
       "requirements": [
         "SPEC-0008"
       ]
+    },
+    {
+      "case_id": "T38.task-inspection.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/tasks.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "requirements": [
+        "SPEC-0009"
+      ],
+      "acceptance_ids": [
+        "A13"
+      ],
+      "given": "Administrator and scoped IM users with original source deliveries",
+      "when": "Inspect task trees, register child links and issue native IM commands",
+      "then": "Isolate sources, mark unknown relationships, reject cycles, deduplicate queries and use normal outbound routing"
+    },
+    {
+      "case_id": "T38.task-inspection.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/tasks.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 1000,
+      "resource_group": "unit",
+      "requirements": [
+        "SPEC-0009"
+      ],
+      "acceptance_ids": [
+        "A13"
+      ],
+      "given": "Bound IM identities and explicit connection ownership",
+      "when": "Account generation, identity binding or administrator policy changes",
+      "then": "Reject stale or unbound queries and queued disclosures; render descendants by parent rather than BFS order"
     }
   ],
   "source_extension_base": "c1eb7b1"

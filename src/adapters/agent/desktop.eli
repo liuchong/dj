@@ -175,7 +175,7 @@
         (js-object :tool tool :native_namespace (nativeGet endpoint "native_namespace")
           :native_session_id id :instance_id (nativeGet endpoint "instance_id") :instance_epoch epoch
           :workspace_ref (nativeGet endpoint "workspace_ref")
-          :title (sliceUtf8 (or title "") (nativeGet limits "title_bytes")) :runtime_state state
+          :title (nativeGet (sliceUtf8 (or title "") 0 (nativeGet limits "title_bytes")) "text" "") :runtime_state state
           :live_receiver (not (= state "offline"))
           :visibility (if (nativeGet endpoint "native_api") (js-array "live") (js-array "history" "live"))
           :capabilities capabilities :coverage "covered" :evidence_level "native_protocol")))

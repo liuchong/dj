@@ -2,6 +2,7 @@
   (import "../core/native.eli" nativeNullish nativeGet)
   (import "../core/errors.eli" success failure)
   (import "../core/limits.eli" limits)
+  (import "../tasks/service.eli" projectTaskLink)
   (import "../delivery/working.eli" projectWorking projectAcknowledgement)
   (import "../resources/service.eli" projectWatch projectResourceRecovery)
   (import "../messaging/recovery.eli" projectRecovery)
@@ -155,7 +156,9 @@
         :forEach
         (lambda
           (ref)
-          (let ((projected (resourceProjection context ref)))
+          (let ((projected (if (= (nativeGet record "operation") "task.link")
+            (projectTaskLink context (nativeGet (nativeGet record "safe_result") "data"))
+            (resourceProjection context ref))))
             (when (nativeGet projected "ok")
               (js-call refs :push ref)
               (unless primary (setq primary (nativeGet projected "data")))))))
