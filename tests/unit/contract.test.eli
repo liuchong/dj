@@ -21,6 +21,7 @@
   (import "../../src/adapters/im/lark-http.eli" formatLarkMessage)
   (import "../../src/adapters/im/lark-wire.eli" encodeLarkFrame decodeLarkFrame)
   (import "../../src/adapters/im/lark-events.eli" normalizeLarkEvent)
+  (import "../../src/adapters/im/lark-inbox.eli" normalizeInboxMessage)
   (import "../../src/adapters/agent/json-rpc.eli" createJsonRpcChannel)
   (import "../../src/service/recovery.eli" managedStopConfirmed)
   (import "../../src/service/config.eli" validateStructure)
@@ -82,14 +83,36 @@
              (wire (js-object :type "im.message.receive_v1" :message_id "om_test" :chat_id "oc_test" :sender_id "ou_human"
                :sender_type "user" :create_time "1790000000000" :content "@self text" :mentions (js-array))))
         (js-call (expect (nativeGet (normalizeLarkEvent config wire) "addressed_self")) :toBe false)
+        (js-call (expect (nativeGet (normalizeLarkEvent config wire) "receive_transport")) :toBeUndefined)
         (put wire :mentions (js-array (js-object :id "ou_self")))
         (js-call (expect (nativeGet (normalizeLarkEvent config wire) "addressed_self")) :toBe t))
       (let ((message (formatLarkMessage (js-object :message_id "wire-1" :msg_type "text"
               :body (js-object :content "{\"text\":\"native text\"}")) nil)))
         (js-call (expect (nativeGet message "content")) :toBe "native text")
         (js-call (expect (nativeGet message "thread_id")) :toBe nil))
+      (let* ((config (js-object :connection_id "user" :identity "user" :event_app_id "app"
+                :event_subject_id "self"))
+        (message (js-object :message_id "native" :chat_id "chat" :content "first\nsecond"
+          :create_time "1790000000000" :sender (js-object :id "human" :id_type "open_id" :sender_type "user")
+          :thread_id "thread" :root_id "root" :parent_id "parent"
+          :mentions (js-array (js-object :id "self" :id_type "open_id")
+            (js-object :id "unrelated" :id_type "user_id"))))
+        (event (normalizeInboxMessage config message "p2p_chat" normalizeLarkEvent)))
+        (js-call (expect (nativeGet event "receive_transport")) :toBe "poll")
+        (js-call (expect (nativeGet event "source_key")) :toBe "native:created")
+        (js-call (expect (nativeGet event "chat_type")) :toBe "p2p")
+        (js-call (expect (nativeGet event "addressed_self")) :toBe t)
+        (js-call (expect (js-length (nativeGet event "mentions"))) :toBe 1)
+        (js-call (expect (nativeGet (nativeGet event "content") "text")) :toBe "first\nsecond")
+        (js-call (expect (nativeGet (nativeGet event "conversation") "native_thread_id")) :toBe "thread")
+        (js-call (expect (nativeGet event "root_message_id")) :toBe "root")
+        (js-call (expect (nativeGet (nativeGet event "reply_to") "id")) :toBe "parent")
+        (put message :sender (js-object :id "peer-app" :id_type "app_id" :sender_type "app"))
+        (let ((bot (normalizeInboxMessage config message "group" normalizeLarkEvent)))
+          (js-call (expect (nativeGet (nativeGet bot "sender") "kind")) :toBe "bot")
+          (js-call (expect (nativeGet bot "chat_type")) :toBe "group")))
       (js-call (expect (nativeGet (formatLarkMessage
-        (js-object :msg_type "text" :body (js-object :content "invalid-json")) nil) "content")) :toBe nil)
+        (js-object :msg_type "text" :body (js-object :content "invalid-json")) nil) "content")) :toBe "[text] invalid-json")
       (js-call (expect (nativeGet (formatLarkMessage
         (js-object :msg_type "text" :body (js-object :content "{\"text\":\"thread\"}"))
         "exact-thread") "thread_id")) :toBe "exact-thread")))

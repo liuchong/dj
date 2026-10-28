@@ -321,6 +321,8 @@
                           (safeFields mention (js-array "id" "name"))))))
                       (when (object-has? normalized :addressed_self) (put event :addressed_self (nativeGet normalized "addressed_self")))
                       (when (object-has? normalized :chat_type) (put event :chat_type (nativeGet normalized "chat_type")))
+                      (when (js-call (js-array "websocket" "poll") :includes (nativeGet normalized "receive_transport"))
+                        (put event :receive_transport (nativeGet normalized "receive_transport")))
                       (when (object-has? normalized :addressed_bot)
                         (put event :addressed_bot (nativeGet normalized "addressed_bot")))
                       (when (nativeGet normalized "resource") (put event :resource (nativeGet normalized "resource")))

@@ -29,10 +29,10 @@ flowchart LR
 
 ### 2.1 正常收件
 
-- 必须使用平台事件长连接，保持连接并处理断线、重连、停止与错误。
+- 能实时接收的消息使用平台事件长连接，保持连接并处理断线、重连、停止与错误。user 与 bot 共用双通道收件实现，均由 DJ 服务轮询官方 API 补齐；默认 2 秒，可配置。
 - 必须直接实现官方 WebSocket 协议及 HTTPS API；不得使用任何 SDK、CLI、SDK 封装服务或 CLI 子进程。
-- 不得以周期性聊天记录搜索、定时拉历史消息、每隔一段时间唤醒 AI 巡检或独立 relay 直接 session.send 代替正常链路。
-- 历史查询仅用于主动拉取、用户明确请求的历史读取，或有边界、有记录的断线补偿。它不等于实时长连接验收。
+- 不得用每隔一段时间唤醒 AI 巡检或独立 relay 直接 session.send 代替正常链路。服务内获准的轮询仍须经过持久化、黑名单、订阅及提交期授权重检。
+- 主动历史查询、断线补偿与持续轮询分别记录；轮询接收不等于实时长连接验收。
 - 收件范围由连接身份、平台权限及操作员授权共同限定。“全部消息”不意味着跨租户、跨账号或越权读取任意会话。
 - 接入层不得因默认规则是 @ 而预先丢弃未 @ 消息；已经授权且确实可见的消息进入统一入口，再按订阅判断。
 - 平台仅提供部分事件时必须公开具体覆盖范围，不能把“仅 @ 事件”描述成全消息接入。
@@ -55,7 +55,7 @@ flowchart LR
 - 使用既有受保护 key/secret 或已授权用户 OAuth 凭据，不依赖 Lark 桌面 UI，不将 token、secret、个人账号或真实会话 ID 放进版本库、Skill 示例或日志投影。
 - 同一个应用 不代表 user/bot 权限相同；必须核对实际调用身份。
 - 本人账号切换后，原连接应拒绝继续以另一账号读写，要求显式重新绑定。
-- 若平台或当前接口不能提供要求的本人长连接范围，必须如实报告具体能力缺口；不得换身份、换成轮询或缩小范围后仍宣称原要求通过。
+- 长连接与服务内 HTTP 补收同时运行，分别报告实际传输方式和覆盖；不得换身份或将轮询描述为实时。
 
 ## 4. 订阅和默认 @ 规则
 
@@ -119,7 +119,9 @@ flowchart LR
 - bot 后台开权限与 user 本人授权分别处理；不能把接口能力缺失说成开某个 bot scope 就能解决。
 - 权限不齐时继续完成独立的业务接线、配置、Skill 与说明；缺失项保留未验收，不能假称完成。
 
-## 9. 当前实现与核验状态
+## 9. 实现与核验记录
+
+以下为先前仅 WebSocket 部署的时点记录；双通道现行实现与真实新消息核验见[双通道落地证据](../evidence/lark-hybrid-2026-10-28/README.md)。原时点结果不改写，也不用于推定未验范围。
 
 当前实现直接用官方 WebSocket 接收 `im.message.receive_v1`，使用自有有界 protobuf 编解码、分片合并与心跳重连；持久提交后 ACK，再通过现有 Core 去重和匹配。消息读写直接调用官方 HTTPS API，应用 token、用户 OAuth 身份核验和刷新均不使用 SDK 或外部 CLI。
 
@@ -160,7 +162,19 @@ source.scope=connection表示账号范围；索引中的空container key仅是�
 
 ## 官方应用事件的本人收件边界
 
-官方im.message.receive_v1说明的是机器人接收的单聊和机器人所在群消息。WebSocket endpoint以AppID/AppSecret建立应用事件连接，不以用户OAuth token建立个人全量收件箱连接。connection.probe分别报告identity=application、send_identity=user/bot、coverage=application_authorized_chats以及personal_inbox=not_provided_by_im_message_receive_v1；requested_coverage只是本地授权目标，不能作为平台实际覆盖证明。本人HTTP历史/收发成功、WebSocket connected均不能证明机器人未加入群及本人其他私聊可被实时推送。不得因此自行加群或退回轮询。依据：[官方接收消息事件](https://open.larksuite.com/document/server-docs/im-v1/message/events/receive)。
+官方im.message.receive_v1说明的是机器人接收的单聊和机器人所在群消息。WebSocket endpoint以AppID/AppSecret建立应用事件连接；用户身份授权与应用身份授权即使权限名称相同，也必须分别核对。本人HTTP历史/收发成功、WebSocket connected均不能证明个人全部收件箱已被实时覆盖。依据：[官方接收消息事件](https://open.larksuite.com/document/server-docs/im-v1/message/events/receive)。
+
+## 双通道共享收件与 HTTP 补齐
+
+每个 Lark `source_delivery="events"` 连接同时启用 WebSocket 与 HTTP 增量收件。user、bot 共用同一个实现，但每条连接拥有独立实例、凭据、限流器、错误状态和持久断点。`inbox_poll_seconds` 默认 2 秒，可配置为 1–300 秒。配置是每个查询窗口的目标调度间隔，不是每条消息必然到达的时限；索引延迟、分页积压及平台限流单独报告。
+
+- DJ 以已核验的本人 OAuth 凭据直接请求官方 `POST /open-apis/search/v2/message`，以空查询和 `start_time/end_time` 时间窗分别扫描群聊与私聊；随后读取对应消息内容，包含原生 thread、引用链、提及与发送者。不得依赖机器人已在群内，也不得把订阅限制为调试群。
+- bot 通过官方会话列表发现群，通过已有事件和显式配置发现私聊；使用相同收件器的消息归一化、断点、重试及入库路径，不能把未知私聊或不可访问会话宣称为已完整覆盖。群发现周期为 30 秒，已发现会话的消息按配置间隔补读。
+- 每个身份的扫描断点保存在现有 `poll_checkpoints`，包含启用时刻、冻结窗口、分页票据及尚未读取的消息 ID。首次只接收启用后的新消息，不自动重放历史任务；重启从持久断点续扫。窗口使用 120 秒重叠，单轮最多推进 60 秒，搜索索引的更长延迟不宣称无漏收保证。
+- 每条连接每次只执行一个有界原生请求，使用读取限速、原生超时和服务停止信号；分页或消息读取失败保留断点，原样报告权限、限流及读取失败，不以空结果推进。错误会话退避后允许其他会话继续，不拖住另一条连接。
+- WebSocket 和轮询写入同一个 `im_event_inbox`，复用 `(connection_id, native_message_id + ":created")` 去重。先从实时链路到达的消息跳过详情补取，晚到的重复推送不再触发一次投递。
+- `connection.probe.event_source` 明示 `transport="lark-websocket+poll"`、`personal_inbox="poll"` 及扫描器状态；消息审计的 `receive_transport` 区分首次接收的 `websocket` 和 `poll`。黑名单仅影响触发，不改变收件与查询；AI 是否回复及原生回复身份仍按既有规则处理。
+- 原生消息 ID 的去重只在同一连接身份内进行；不同连接分别保留历史，不能因为同一消息来自两个授权账号就混淆来源与回复身份。历史沿用既有 `events`、上下文查询及保留期限，不另设一套消息存储或跨账号别名路由。
 
 ## 表情触发扩展
 

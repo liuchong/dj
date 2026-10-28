@@ -47,6 +47,7 @@
 - [技术栈](technical-stack.md)、[设计决定](decisions.md)、[开发与打包](guides/development.md)、[验收范围](acceptance.md)。
 - [官方资料](references/official-sources.md)与[阅读地图](references/reading-map.md)。
 - [Lark 收件验证证据（2026-10-28）](evidence/lark-receive-2026-10-28/README.md)：脱敏矩阵、持续对照快照及实际验证程序。
+- [Lark 双通道收件落地](evidence/lark-hybrid-2026-10-28/README.md)：默认 2 秒 HTTP 补收、独立连接实例、去重及真实投递。
 
 ## 站点、许可证与历史
 

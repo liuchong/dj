@@ -4,9 +4,11 @@
 
 ## 1. 核对运行与身份
 
-安装目录中的 `dj status --json` 应为 ready。使用自己的独立 client profile 调用 `agent.whoami`，确认 binding_state=bound；普通 AI 不得借用 operator 配置。`connection.probe` 的 event_source 应为 connected、transport=lark-websocket，并检查覆盖范围与最近收件时间。
+安装目录中的 `dj status --json` 应为 ready。使用自己的独立 client profile 调用 `agent.whoami`，确认 binding_state=bound；普通 AI 不得借用 operator 配置。混合收件部署后，`connection.probe.event_source` 分别报告 WebSocket 连接状态和 `poll_fallback`，transport 为 `lark-websocket+poll`。连接成功不等于全部消息都能收到，须检查实际覆盖、最近收件时间及 HTTP 错误。
 
 Lark 应用后台启用长连接与 im.message.receive_v1，使用受保护 app_id/app_secret。应用实际获准消息才是收件范围；机器人私聊可见不表示应用可见本人全部私聊。本人 HTTP 发送使用独立 OAuth 身份，不能悄悄改成机器人。
+
+user 与 bot 连接使用同一套 WebSocket＋HTTP 收件器，各自独立实例、凭据和断点。`inbox_poll_seconds` 默认 2 秒，可配置 1–300 秒；它是调度目标，实际延迟仍受官方索引和限流影响。本人身份按群聊／私聊全局增量查询，机器人身份补读可发现的群和已知私聊，未知私聊不能宣称已覆盖。两种传输统一去重和保存历史后进入原订阅，不要求 AI 定时巡检，也不自动重放启用前消息。
 
 ## 2. 找到来源与原会话
 

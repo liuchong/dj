@@ -27205,6 +27205,33 @@
       "given": "Native reaction payload and explicit connection identity",
       "when": "Validate and match emoji/operator metadata and choose reply route",
       "then": "Exact native codes, independent triggers, no false mention or automated reaction loop"
+    },
+    {
+      "case_id": "T41.hybrid-inbox.integration",
+      "parent_id": "T41",
+      "file": "tests/integration/im.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {
+        "transport": "user-inbox-fallback"
+      },
+      "required_profile": null,
+      "timeout_ms": 10000,
+      "resource_group": "isolated",
+      "requirements": [
+        "Q01",
+        "Q03",
+        "Q07"
+      ],
+      "acceptance_ids": [
+        "A03",
+        "A05"
+      ],
+      "given": "A user event connection with persistent inbox checkpoints and a real isolated SQLite Core",
+      "when": "Poll private and group messages through independent user and bot instances, resume pages and restart, overlap a WebSocket message and isolate a permission failure",
+      "then": "New messages share ingress and deduplication, retain mentions and thread context, preserve checkpoints, and expose the native error"
     }
   ],
   "source_extension_base": "c1eb7b1"

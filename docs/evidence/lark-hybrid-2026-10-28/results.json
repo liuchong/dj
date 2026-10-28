@@ -1,0 +1,199 @@
+{
+  "date": "2026-10-28",
+  "build_id": "dj-9d7217649fb4b82abc311e21d0322847ba0df4587d85c98afbed1202ab4a249a",
+  "build_manifest_sha256": "1219825ee979fc6edda03f15d4ee6bd28029f202687ec078a1994c4a253a672e",
+  "default_poll_seconds": 2,
+  "native_im_sdk_or_cli_used": false,
+  "same_connection_created_event_keys_unique": true,
+  "accepted_deliveries": 7,
+  "completed_test_deliveries": 7,
+  "typing_cleanup_done": 7,
+  "cases": [
+    {
+      "message_id": "om_demo_hybrid_001",
+      "sender": "bot-a",
+      "kind": "private",
+      "observations": [
+        {
+          "connection": "lark-bot-a",
+          "transport": "poll",
+          "received_at": "2026-10-28T13:33:16.084Z",
+          "source_time": "2026-10-28T13:33:14.545Z",
+          "created_events": 1,
+          "accepted_deliveries": 0
+        },
+        {
+          "connection": "lark-user-b",
+          "transport": "poll",
+          "received_at": "2026-10-28T13:33:23.465Z",
+          "source_time": "2026-10-28T13:33:14.545Z",
+          "created_events": 1,
+          "accepted_deliveries": 1
+        }
+      ]
+    },
+    {
+      "message_id": "om_demo_hybrid_002",
+      "sender": "bot-a",
+      "kind": "group_mention_user",
+      "observations": [
+        {
+          "connection": "lark-bot-a",
+          "transport": "poll",
+          "received_at": "2026-10-28T13:33:17.265Z",
+          "source_time": "2026-10-28T13:33:14.909Z",
+          "created_events": 1,
+          "accepted_deliveries": 1
+        },
+        {
+          "connection": "lark-user-b",
+          "transport": "poll",
+          "received_at": "2026-10-28T13:33:25.028Z",
+          "source_time": "2026-10-28T13:33:14.909Z",
+          "created_events": 1,
+          "accepted_deliveries": 1
+        }
+      ]
+    },
+    {
+      "message_id": "om_demo_hybrid_003",
+      "sender": "bot-b",
+      "kind": "private",
+      "observations": [
+        {
+          "connection": "lark-user-b",
+          "transport": "poll",
+          "received_at": "2026-10-28T13:33:28.527Z",
+          "source_time": "2026-10-28T13:33:15.324Z",
+          "created_events": 1,
+          "accepted_deliveries": 1
+        }
+      ]
+    },
+    {
+      "message_id": "om_demo_hybrid_004",
+      "sender": "bot-b",
+      "kind": "group_mention_user",
+      "observations": [
+        {
+          "connection": "lark-bot-a",
+          "transport": "poll",
+          "received_at": "2026-10-28T13:33:17.266Z",
+          "source_time": "2026-10-28T13:33:15.680Z",
+          "created_events": 1,
+          "accepted_deliveries": 1
+        },
+        {
+          "connection": "lark-user-b",
+          "transport": "poll",
+          "received_at": "2026-10-28T13:33:24.696Z",
+          "source_time": "2026-10-28T13:33:15.680Z",
+          "created_events": 1,
+          "accepted_deliveries": 1
+        }
+      ]
+    },
+    {
+      "message_id": "om_demo_hybrid_005",
+      "sender": "bot-b",
+      "kind": "group_mention_repair_bot",
+      "observations": [
+        {
+          "connection": "lark-bot-a",
+          "transport": "websocket",
+          "received_at": "2026-10-28T13:33:16.896Z",
+          "source_time": "2026-10-28T13:33:16.048Z",
+          "created_events": 1,
+          "accepted_deliveries": 1
+        },
+        {
+          "connection": "lark-user-b",
+          "transport": "poll",
+          "received_at": "2026-10-28T13:33:24.346Z",
+          "source_time": "2026-10-28T13:33:16.048Z",
+          "created_events": 1,
+          "accepted_deliveries": 0
+        }
+      ]
+    }
+  ],
+  "connection_health": {
+    "lark-user-b": {
+      "websocket": "connected",
+      "poll_state": "ready",
+      "poll_seconds": 2,
+      "coverage": "authorized_user_messages"
+    },
+    "lark-bot-a": {
+      "websocket": "connected",
+      "poll_state": "ready",
+      "poll_seconds": 2,
+      "coverage": "discoverable_groups_and_known_private_chats"
+    }
+  },
+  "source_sha256": {
+    "src/adapters/im/lark-inbox.eli": "1e0e5aa085db1c2055652544a9f0dd28db6e443fe05bc824741fa1e57c18ed3a",
+    "src/adapters/im/lark-events.eli": "cbed42f784958318535d83c72dff7054cfc0acc2c42d69ae3c1b3ce1168ba9ac",
+    "src/adapters/im/lark.eli": "ae74780e36958614e21dc4a01a8ed8e8ae7a4896d9e47f23970a4636eca71ad7",
+    "src/ingestion/service.eli": "d067bf3824e105005873ea7897b5a4f9431431a070f525b91083a71b64ee8d13",
+    "src/service/config.eli": "46d7135b0b22211984802f76bc831b8d8bee846009ef6201ceed938839e75c89"
+  },
+  "limitations": [
+    "HTTP polling interval is not an instantaneous delivery guarantee.",
+    "Bot HTTP coverage is discoverable groups and known private chats.",
+    "History and deduplication are scoped to connection identity.",
+    "Different source connections may independently match the same recipient subscription.",
+    "Only targeted verification was run; no full suite or performance claim."
+  ],
+  "initial_live_build_id": "dj-33292d37aeaa3396bfc76f6321297ba91223528e5256668b883806cbbf27d374",
+  "initial_build_manifest_sha256": "a384979fa4ff48cba8962eb7db242c5f315d85393f3bd8087ac4f0d7a41946b4",
+  "final_smoke": [
+    {
+      "message_id": "om_demo_final_001",
+      "kind": "private",
+      "send_code": 0,
+      "observations": [
+        {
+          "connection": "lark-user-b",
+          "transport": "poll",
+          "received_at": "2026-10-28T13:51:46.842Z",
+          "created_events": 1,
+          "deliveries": [
+            {
+              "state": "accepted",
+              "work_state": "completed",
+              "cleanup_state": "done"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "message_id": "om_demo_final_002",
+      "kind": "bot_mention",
+      "send_code": 0,
+      "observations": [
+        {
+          "connection": "lark-bot-a",
+          "transport": "websocket",
+          "received_at": "2026-10-28T13:51:38.947Z",
+          "created_events": 1,
+          "deliveries": [
+            {
+              "state": "accepted",
+              "work_state": "completed",
+              "cleanup_state": "done"
+            }
+          ]
+        },
+        {
+          "connection": "lark-user-b",
+          "transport": "poll",
+          "received_at": "2026-10-28T13:51:51.341Z",
+          "created_events": 1,
+          "deliveries": []
+        }
+      ]
+    }
+  ]
+}
