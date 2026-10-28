@@ -1,0 +1,59 @@
+{
+  "description": "Sanitized copies of actual diagnostic sources. Deployment constants and output locations changed; archived copies were not rerun against real accounts. No generated JavaScript, credentials, raw payloads or logs are included.",
+  "files": [
+    {
+      "file": "programs/handshake.eli",
+      "role": "executed_source_sanitized_copy",
+      "original_source_sha256": "05d5ec0f6178031bcc10a552be24eca63719ed73ad02214f1b6c4ac6e062152e",
+      "archived_sha256": "886e8c7bc32ab5dc1ebd53f3d1edc35098d9a754d34dda98ae065eae72249d63"
+    },
+    {
+      "file": "programs/live-roundtrip.eli",
+      "role": "executed_source_sanitized_copy",
+      "original_source_sha256": "8e4c101874fbce3fc0db513d872a39ff687e6a117bf149da9a3349f2e29252df",
+      "archived_sha256": "727f53e04f82e81c6a7112aded2a8452aa4b18c43bef7395685fe109eac25eeb"
+    },
+    {
+      "file": "programs/probe.py",
+      "role": "executed_source_sanitized_copy",
+      "original_source_sha256": "39f80aba2450c7a14afbf02c4c049fba6518bcd2f11341b4806f435564f183f8",
+      "archived_sha256": "2ee86564de4c6e67d2f990a49a1d7cf94bd663aef98c923944ab90c06efab140"
+    },
+    {
+      "file": "programs/roundtrip.py",
+      "role": "executed_source_sanitized_copy",
+      "original_source_sha256": "590f2129f41918aae02163806bf5c66a95b18c97385f933add3c9aa126534f06",
+      "archived_sha256": "a4bd5397781349b06084a5cd58db2210262e9c433ee7824757fdf5e599173933"
+    },
+    {
+      "file": "programs/resolve.py",
+      "role": "executed_source_sanitized_copy",
+      "original_source_sha256": "9ac0d474e3c2931f500a12dfe130c5bb3d2ada3e4ced24114d078d53f50e0f28",
+      "archived_sha256": "e05401ab228377cecafa9c3fa5fc716662834b796d26b1e371cc63e95ce2f9c0"
+    },
+    {
+      "file": "programs/private-resolved.py",
+      "role": "executed_source_sanitized_copy",
+      "original_source_sha256": "b18fd10e9c51235f7223ecae00b33e1ca26bb6fccd377b715e860192a6633a51",
+      "archived_sha256": "8bfd7b86841d24297fa8da5f5bc074988771cce416c45944f818c4a5b2a704cb"
+    },
+    {
+      "file": "programs/http-inventory.py",
+      "role": "executed_source_sanitized_copy",
+      "original_source_sha256": "bcbeef1ba54998cf8813c446c7ad3a9cd98a45399b36e2be38e694ca635d4a2d",
+      "archived_sha256": "bcbeef1ba54998cf8813c446c7ad3a9cd98a45399b36e2be38e694ca635d4a2d"
+    },
+    {
+      "file": "programs/fill-samples.py",
+      "role": "executed_source_sanitized_copy",
+      "original_source_sha256": "8f508538646f0970916289fe08c05387bbc950df3fabf5c5fb82c635f4095a0d",
+      "archived_sha256": "64e45163752832820289280c4aaedc597a45f6c4a668a16cffb0dbea3b889c57"
+    },
+    {
+      "file": "programs/monitor.py",
+      "role": "executed_source_sanitized_copy",
+      "original_source_sha256": "006c9ec72831b22f3d312289fab582e2eef1f4c7153a7968fcfc966cce078804",
+      "archived_sha256": "15346a7f70f3713efb4022574e49484d77659eeeb8a9a4f00bf0ab3c4f460e2b"
+    }
+  ]
+}

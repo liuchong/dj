@@ -1,0 +1,170 @@
+{
+  "timezone": "Asia/Shanghai",
+  "cases": [
+    {
+      "id": "C01",
+      "case": "human-self to bot-a private",
+      "window_seconds": 125,
+      "send": "accepted",
+      "websocket_receivers": [
+        "lark-bot-a"
+      ],
+      "http_readback": "both directions readable",
+      "user_websocket_reverse_bot_message": "not_observed"
+    },
+    {
+      "id": "C02",
+      "case": "human-self group echo in debug-group",
+      "window_seconds": 65,
+      "send": "accepted",
+      "websocket_receivers": [
+        "lark-bot-a",
+        "lark-user-b"
+      ],
+      "same_native_message_across_receivers": true,
+      "limit": "This is own echo, not another human."
+    },
+    {
+      "id": "C03",
+      "case": "other-human group messages in work-group-b",
+      "source_local_times": [
+        "19:25:53",
+        "19:27:14",
+        "19:28:04"
+      ],
+      "bot_service_received_local_times": [
+        "19:25:54",
+        "19:27:16",
+        "19:28:05"
+      ],
+      "bot_http_readback": "one corresponding sample explicitly checked and readable",
+      "user_service_matches": 0,
+      "limit": "First two messages were inside the 19:25:14 to 19:27:20 passive observation window; the third was confirmed from persisted service timestamps."
+    },
+    {
+      "id": "C04",
+      "case": "bot-b mentions bot-a in debug-group",
+      "send": "accepted",
+      "websocket_receivers": [
+        "lark-bot-a"
+      ],
+      "websocket_delay_seconds": 0.987,
+      "http_readers": [
+        "human-user-b",
+        "bot-a",
+        "bot-b"
+      ]
+    },
+    {
+      "id": "C05",
+      "case": "bot-a mentions bot-b in debug-group",
+      "send": "accepted",
+      "websocket_receivers": [],
+      "http_readers": [
+        "human-user-b",
+        "bot-a",
+        "bot-b"
+      ],
+      "window_seconds": 65,
+      "recipient_include_bot_scope_present": false,
+      "limit": "Different grants; this is not a symmetric permission comparison."
+    },
+    {
+      "id": "C06",
+      "case": "plain group messages from both bots",
+      "send": "accepted",
+      "websocket_receivers": [],
+      "http_readers": [
+        "human-user-b",
+        "bot-a",
+        "bot-b"
+      ],
+      "window_seconds": 65
+    },
+    {
+      "id": "C07",
+      "case": "bot to bot private using peer own-app open_id",
+      "directions": 2,
+      "send": "rejected",
+      "native_code": 99992361,
+      "native_message": "open_id cross app",
+      "limit": "Wrong app-scoped identity; does not establish bot-private messaging support."
+    },
+    {
+      "id": "C08",
+      "case": "bot-a to bot-b private using bot-b sender ID from actual bot-a WebSocket event",
+      "send": "rejected",
+      "native_code": 230013,
+      "native_message": "Bot has NO availability to this user.",
+      "limit": "This account-level refusal does not establish universal platform behavior."
+    },
+    {
+      "id": "C09",
+      "case": "human-self and other-human conversation in work-group-a",
+      "human_self_messages": 5,
+      "other_human_messages": 7,
+      "user_http": "all 12 observed",
+      "websocket_receivers": [],
+      "source_local_time_range": [
+        "20:27:09",
+        "20:40:33"
+      ],
+      "other_human_http_delay_seconds": [
+        11.52,
+        16.79
+      ],
+      "human_self_http_delay_seconds": [
+        9.71,
+        15.59
+      ]
+    },
+    {
+      "id": "C10",
+      "case": "other-human to human-user-b private",
+      "messages": 2,
+      "source_local_times": [
+        "20:50:56",
+        "20:51:03"
+      ],
+      "user_http_observed_local_times": [
+        "20:51:09",
+        "20:51:15"
+      ],
+      "websocket_receivers": [],
+      "body_retained": false
+    },
+    {
+      "id": "C11",
+      "case": "bot-a and bot-b each send private and group mention to human-user-b",
+      "sent_messages": 4,
+      "send": "all accepted",
+      "user_http": "all 4 observed",
+      "websocket_receivers": [],
+      "source_local_time_range": [
+        "20:52:42",
+        "20:52:44"
+      ],
+      "limit": "Covers same-application and different-application bot senders."
+    },
+    {
+      "id": "C12",
+      "case": "fresh bot-b mentions bot-a positive control",
+      "send": "accepted",
+      "websocket_receivers": [
+        "lark-bot-a"
+      ],
+      "websocket_delay_seconds": 0.873,
+      "http_readers": [
+        "human-user-b",
+        "bot-a"
+      ],
+      "source_local_time": "20:52:44"
+    },
+    {
+      "id": "C13",
+      "case": "other-human directly messages bot-a private",
+      "result": "not_tested",
+      "limit": "Cannot substitute the operator or a bot for another human account."
+    }
+  ]
+}

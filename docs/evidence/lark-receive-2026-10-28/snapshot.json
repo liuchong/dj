@@ -1,0 +1,32 @@
+{
+  "snapshot_at": "2026-10-28T12:59:28.935466+00:00",
+  "monitor_state": "running",
+  "comparison": [
+    {
+      "connection": "lark-user-b",
+      "unique_messages": 25,
+      "http_only_so_far": 25
+    },
+    {
+      "connection": "lark-bot-a",
+      "unique_messages": 10,
+      "http_only_so_far": 9,
+      "both": 1
+    }
+  ],
+  "http_requests": {
+    "lark-bot-a": 2599,
+    "lark-user-b": 757
+  },
+  "completed_http_windows": {
+    "lark-user-b": 732,
+    "lark-bot-a": 2562
+  },
+  "limits": [
+    "HTTP discovery uses periodic queries and is not real-time push.",
+    "Absence of a WebSocket observation is not proof of platform-wide impossibility.",
+    "Messages observed through the service event table are not preserved raw WebSocket frames.",
+    "No historical recovery or subscription replay was performed.",
+    "The snapshot is fixed; the private monitor continues separately."
+  ]
+}

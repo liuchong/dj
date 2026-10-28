@@ -1,0 +1,50 @@
+{
+  "endpoint": "POST /open-apis/search/v2/message",
+  "identity": "authorized user token",
+  "parameters": {
+    "page_size": "query parameter",
+    "query": "empty string accepted",
+    "chat_type": [
+      "p2p_chat",
+      "group_chat"
+    ],
+    "time_window": [
+      "start_time",
+      "end_time"
+    ]
+  },
+  "results": [
+    {
+      "case": "empty_query_private_messages",
+      "code": 0,
+      "returned_items": 50,
+      "has_more": true
+    },
+    {
+      "case": "empty_query_group_messages",
+      "code": 0,
+      "returned_items": 50,
+      "has_more": true
+    },
+    {
+      "case": "incorrect_future_from_time_to_time",
+      "code": 0,
+      "returned_items": 50,
+      "has_more": true,
+      "conclusion": "These keys did not enforce the future time window; do not use them."
+    },
+    {
+      "case": "correct_future_start_time_end_time",
+      "code": 0,
+      "returned_items": 0,
+      "has_more": false
+    },
+    {
+      "case": "correct_recent_start_time_end_time",
+      "code": 0,
+      "returned_items": 0,
+      "has_more": false,
+      "conclusion": "An empty result only describes that selected window."
+    }
+  ]
+}

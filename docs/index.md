@@ -46,6 +46,7 @@
 - [Agent 适配](adapters/agent-tools.md)、[Codex / Cursor](adapters/desktop.md)、[Cursor 原生接口](adapters/cursor-native.md)、[Claude / Antigravity](adapters/native-inboxes.md)、[IM 适配](adapters/im.md)。
 - [技术栈](technical-stack.md)、[设计决定](decisions.md)、[开发与打包](guides/development.md)、[验收范围](acceptance.md)。
 - [官方资料](references/official-sources.md)与[阅读地图](references/reading-map.md)。
+- [Lark 收件验证证据（2026-10-28）](evidence/lark-receive-2026-10-28/README.md)：脱敏矩阵、持续对照快照及实际验证程序。
 
 ## 站点、许可证与历史
 

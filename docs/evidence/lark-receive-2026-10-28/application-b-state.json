@@ -1,0 +1,76 @@
+{
+  "application": "cli_demo_app_b",
+  "checked_before_live_message_tests": true,
+  "same_named_grants": [
+    {
+      "scope_name": "im:message",
+      "grant_status": 1,
+      "scope_type": "tenant"
+    },
+    {
+      "scope_name": "im:message:readonly",
+      "grant_status": 1,
+      "scope_type": "tenant"
+    },
+    {
+      "scope_name": "im:message",
+      "grant_status": 1,
+      "scope_type": "user"
+    },
+    {
+      "scope_name": "im:message:readonly",
+      "grant_status": 1,
+      "scope_type": "user"
+    }
+  ],
+  "user_read_grants": [
+    {
+      "scope_name": "im:message.p2p_msg:get_as_user",
+      "grant_status": 1,
+      "scope_type": "user"
+    },
+    {
+      "scope_name": "im:message.group_msg:get_as_user",
+      "grant_status": 1,
+      "scope_type": "user"
+    }
+  ],
+  "published_message_events": [
+    {
+      "event_description": "用户发送新消息至机器人或群聊后推送事件",
+      "event_name": "接收消息",
+      "event_type": "im.message.receive_v1"
+    },
+    {
+      "event_description": "消息被阅读事件",
+      "event_name": "消息已读",
+      "event_type": "im.message.message_read_v1"
+    },
+    {
+      "event_description": "某一条消息被添加了reaction",
+      "event_name": "消息被reaction",
+      "event_type": "im.message.reaction.created_v1"
+    },
+    {
+      "event_description": "某一条消息被取消了reaction",
+      "event_name": "消息被取消reaction",
+      "event_type": "im.message.reaction.deleted_v1"
+    },
+    {
+      "event_description": "用户更新消息后推送事件",
+      "event_name": "消息更新",
+      "event_type": "im.message.updated_v1"
+    },
+    {
+      "event_description": "某条消息被撤回",
+      "event_name": "消息撤回",
+      "event_type": "im.message.recalled_v1"
+    },
+    {
+      "event_description": "群聊艾特用户已读事件",
+      "event_name": "艾特已读",
+      "event_type": "im.message.at_message_read_v1"
+    }
+  ],
+  "limit": "Published permissions and configured events do not prove the coverage of actual delivered messages."
+}

@@ -1,0 +1,103 @@
+(module dj.private.user-websocket-probe
+  (import "node:fs/promises" readFile writeFile chmod)
+  (import "node:path" join)
+  (defconst host (js* "globalThis"))
+  (defun field (object key)
+    (js* "object == null ? undefined : object[key]"))
+  (defconst main (async ()
+    (let* ((home (field (field globalThis.process "env") "HOME"))
+           (root (join home ".dj"))
+           (config (JSON/parse (await (readFile (join root "service.json") "utf8"))))
+           (connection (js-call (field config "connections") :find
+             (lambda (item) (= (field item "connection_id") "lark-user-b"))))
+           (credential (JSON/parse (await (readFile (join root (field connection "credential_ref")) "utf8"))))
+           (origin (if (= (field connection "brand") "feishu") "https://open.feishu.cn" "https://open.larksuite.com"))
+           (app (field credential "app_id")) (secret (field credential "app_secret"))
+           (token (field credential "user_access_token"))
+           (tenant nil)
+           (mode (field (field globalThis.process "argv") 3))
+           (scope-mode (js-call (js-array "scopes" "events") :includes mode))
+           (results (js-array)) (request nil)
+           (report (js-object :checked_at (js-call (new globalThis.Date) :toISOString)
+             :origin origin :identity "user" :credential_validated false
+             :opened_websockets 0 :external_messages_sent 0 :history_requests 0
+             :note "Handshake experiment only. A shared application ticket is never opened as a second consumer."
+             :results results)))
+      (unless (and connection app secret token)
+        (throw (new globalThis.Error "required authorized credential fields missing")))
+      (setq request (async (label path body bearer)
+        (let* ((headers (js-object :content-type "application/json"))
+               (options (js-object :method (if body "POST" "GET") :redirect "error"
+                 :signal (js-call globalThis.AbortSignal :timeout 12000) :headers headers))
+               (summary (js-object :case label :path path :authorization (if bearer "bearer" "none"))))
+          (when bearer (put headers :authorization (str "Bearer " bearer)))
+          (when body (put options :body (JSON/stringify body)))
+          (try
+            (let* ((response (await (js-call host :fetch (str origin path) options)))
+                   (wire (await (js-call response :json))) (data (field wire "data"))
+                   (endpoint (field data "URL")) (message (field wire "msg")))
+              (put summary :http_status (field response "status"))
+              (put summary :code (field wire "code"))
+              (when (= (js* "typeof message") "string")
+                (js-call (js-array secret token) :forEach (lambda (s)
+                  (setq message (js-call (js-call message :split s) :join "[redacted]"))))
+                (put summary :message (js-call message :slice 0 180)))
+              (put summary :data_keys (if data (Object/keys data) (js-array)))
+              (when (= label "tenant_identity")
+                (when (= (field wire "code") 0) (setq tenant (field wire "tenant_access_token"))))
+              (when (and data (field data "scopes"))
+                (put summary :scopes (js-call (field data "scopes") :map (lambda (scope)
+                  (js-object :scope_name (field scope "scope_name")
+                    :grant_status (field scope "grant_status")
+                    :scope_type (field scope "scope_type") :fields (Object/keys scope))))))
+              (when (and data (field data "items"))
+                (put summary :app_versions (js-call (field data "items") :map (lambda (item)
+                  (js-object :status (field item "status") :fields (Object/keys item)
+                    :events (field item "events") :event_infos (field item "event_infos")
+                    :scopes (field item "scopes"))))))
+              (when endpoint
+                (let ((url (new globalThis.URL endpoint)))
+                  (put summary :websocket (js-object :protocol (field url "protocol")
+                    :host (field url "hostname") :path (field url "pathname")
+                    :query_keys (Array/from (js-call (field url "searchParams") :keys))
+                    :opened false))))
+              (when (= label "user_identity")
+                (put summary :expected_open_id_matches (= (field data "open_id") (field credential "open_id")))
+                (put report :credential_validated
+                  (and (= (field wire "code") 0) (field data "open_id")
+                    (= (field data "open_id") (field credential "open_id")))))
+              (js-call results :push summary)
+              summary)
+            (catch error
+              (put summary :error_name (field error "name"))
+              (js-call results :push summary) summary)))))
+      (await (funcall request "user_identity" "/open-apis/authen/v1/user_info" nil token))
+      (unless (field report "credential_validated")
+        (throw (new globalThis.Error "user token validity or identity not confirmed; no handshake probes performed")))
+      (if scope-mode
+        (progn
+          (await (funcall request "tenant_identity" "/open-apis/auth/v3/tenant_access_token/internal"
+            (js-object :app_id app :app_secret secret) nil))
+          (unless tenant (throw (new globalThis.Error "application token unavailable")))
+          (when (= mode "scopes")
+            (await (funcall request "tenant_grants" "/open-apis/application/v6/scopes" nil tenant))
+            (await (funcall request "user_token_grants_response" "/open-apis/application/v6/scopes" nil token)))
+          (await (funcall request "published_event_configuration"
+            (str "/open-apis/application/v6/applications/" app "/app_versions?page_size=1&order=0&lang=zh_cn") nil tenant)))
+        (progn
+      (await (funcall request "application_credentials" "/callback/ws/endpoint"
+        (js-object :AppID app :AppSecret secret) nil))
+      (await (funcall request "user_bearer_without_application_secret" "/callback/ws/endpoint"
+        (js-object :AppID app) token))
+      (await (funcall request "user_token_body_without_application_secret" "/callback/ws/endpoint"
+        (js-object :AppID app :UserAccessToken token) nil))
+      (await (funcall request "application_credentials_plus_valid_user_bearer" "/callback/ws/endpoint"
+        (js-object :AppID app :AppSecret secret) token))
+      (await (funcall request "application_credentials_plus_invalid_bearer" "/callback/ws/endpoint"
+        (js-object :AppID app :AppSecret secret) "dj-invalid-authentication-control"))))
+      (let ((path (field (field globalThis.process "argv") 2)))
+        (unless path (throw (new globalThis.Error "private output path required")))
+        (await (writeFile path (str (JSON/stringify report nil 2) "\n") (js-object :mode 384)))
+        (await (chmod path 384)))
+      (js-call globalThis.console :log (JSON/stringify report)))))
+  (funcall main))

@@ -1,0 +1,42 @@
+[
+  {
+    "application": "application-a",
+    "memberships": [
+      {
+        "chat_alias": "debug-group",
+        "code": 0,
+        "is_in_chat": true
+      },
+      {
+        "chat_alias": "work-group-a",
+        "code": 0,
+        "is_in_chat": false
+      },
+      {
+        "chat_alias": "notification-group",
+        "code": 0,
+        "is_in_chat": true
+      }
+    ]
+  },
+  {
+    "application": "application-b",
+    "memberships": [
+      {
+        "chat_alias": "debug-group",
+        "code": 0,
+        "is_in_chat": true
+      },
+      {
+        "chat_alias": "work-group-a",
+        "code": 0,
+        "is_in_chat": false
+      },
+      {
+        "chat_alias": "notification-group",
+        "code": 0,
+        "is_in_chat": false
+      }
+    ]
+  }
+]

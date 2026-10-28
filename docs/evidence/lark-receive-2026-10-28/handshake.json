@@ -1,0 +1,128 @@
+{
+  "checked_at": "2026-10-28T11:10:17.498Z",
+  "origin": "https://open.larksuite.com",
+  "identity": "user",
+  "credential_validated": true,
+  "opened_websockets": 0,
+  "external_messages_sent": 0,
+  "history_requests": 0,
+  "note": "Handshake experiment only. A shared application ticket is never opened as a second consumer.",
+  "results": [
+    {
+      "case": "user_identity",
+      "path": "/open-apis/authen/v1/user_info",
+      "authorization": "bearer",
+      "http_status": 200,
+      "code": 0,
+      "message": "success",
+      "data_keys": [
+        "avatar_big",
+        "avatar_middle",
+        "avatar_thumb",
+        "avatar_url",
+        "en_name",
+        "name",
+        "open_id",
+        "tenant_key",
+        "union_id"
+      ],
+      "expected_open_id_matches": true
+    },
+    {
+      "case": "application_credentials",
+      "path": "/callback/ws/endpoint",
+      "authorization": "none",
+      "http_status": 200,
+      "code": 0,
+      "message": "",
+      "data_keys": [
+        "URL",
+        "ClientConfig"
+      ],
+      "websocket": {
+        "protocol": "wss:",
+        "host": "msg-frontier-sg.larksuite.com",
+        "path": "/ws/v2",
+        "query_keys": [
+          "fpid",
+          "aid",
+          "device_id",
+          "access_key",
+          "service_id",
+          "ticket"
+        ],
+        "opened": false
+      }
+    },
+    {
+      "case": "user_bearer_without_application_secret",
+      "path": "/callback/ws/endpoint",
+      "authorization": "bearer",
+      "http_status": 400,
+      "code": 9499,
+      "message": "Bad Request",
+      "data_keys": []
+    },
+    {
+      "case": "user_token_body_without_application_secret",
+      "path": "/callback/ws/endpoint",
+      "authorization": "none",
+      "http_status": 400,
+      "code": 9499,
+      "message": "Bad Request",
+      "data_keys": []
+    },
+    {
+      "case": "application_credentials_plus_valid_user_bearer",
+      "path": "/callback/ws/endpoint",
+      "authorization": "bearer",
+      "http_status": 200,
+      "code": 0,
+      "message": "",
+      "data_keys": [
+        "ClientConfig",
+        "URL"
+      ],
+      "websocket": {
+        "protocol": "wss:",
+        "host": "msg-frontier-sg.larksuite.com",
+        "path": "/ws/v2",
+        "query_keys": [
+          "fpid",
+          "aid",
+          "device_id",
+          "access_key",
+          "service_id",
+          "ticket"
+        ],
+        "opened": false
+      }
+    },
+    {
+      "case": "application_credentials_plus_invalid_bearer",
+      "path": "/callback/ws/endpoint",
+      "authorization": "bearer",
+      "http_status": 200,
+      "code": 0,
+      "message": "",
+      "data_keys": [
+        "URL",
+        "ClientConfig"
+      ],
+      "websocket": {
+        "protocol": "wss:",
+        "host": "msg-frontier-sg.larksuite.com",
+        "path": "/ws/v2",
+        "query_keys": [
+          "fpid",
+          "aid",
+          "device_id",
+          "access_key",
+          "service_id",
+          "ticket"
+        ],
+        "opened": false
+      }
+    }
+  ]
+}
