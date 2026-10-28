@@ -76,7 +76,7 @@
       :message.history
       "在context_ref或conversation_ref绑定的会话内有界分页读取历史，区分local/native覆盖。"
       :message.send
-      "向 destination_ref 固定的 IM 地址发送一条纯文本；需要独立主动发送授权。"
+      "向 destination_ref 固定的 IM 地址发送一条纯文本；已认证主体默认可使用已配置连接，无需逐群发送授权。"
       :message.acknowledge
       "按固定回复身份与原消息添加Get收到确认；持久去重，官方读回后才确认成功，不发送文字。"
       :message.acknowledge.get

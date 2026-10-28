@@ -26,5 +26,5 @@
 ```
 
 - filter: 订阅predicate可以用{field:"mentions.id",op:"in",value:["native_user_mention_id","native_bot_mention_id"]}匹配任何人的原生@，包括自己手工发送的@。正文@文本不算；不要加入排除本人发送的条件。此设置不替代来源订阅与授权。
-- reply: 收到通知后只按业务规则决定是否、何时调用message.reply提交content和信封reply_context_id；身份及原chat/thread/message已由DJ锁定。需要原来源及出口发送权限，不借operator凭据。多身份同时命中返回ambiguous_target，不要求AI选人。
+- reply: 收到通知后只按业务规则决定是否、何时调用message.reply提交content和信封reply_context_id；身份及原chat/thread/message已由DJ锁定。消息默认自由收发，不要求逐群授权；仍核对原来源、出口身份和引用，不借operator凭据。多身份同时命中返回ambiguous_target，不要求AI选人。
 - output: 普通输出或最终回答不会发到IM；不是所有通知都是新任务、不是所有任务都需要回复，允许先工作后在最终回答前主动调用工具。

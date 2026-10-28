@@ -87,7 +87,7 @@
         (arr grantSchema 256)
         :target_constraint
         constraint)
-      (js-array "principal_id" "kind" "authorization_revision" "grants")))
+      (js-array "principal_id" "kind" "authorization_revision")))
   (defconst watchSchema
     (obj
       (js-object

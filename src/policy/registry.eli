@@ -10,7 +10,7 @@
         :kind
         (nativeGet principal "kind")
         :grants
-        (nativeGet principal "grants")
+        (nativeGet principal "grants" (js-array))
         :disabled
         (= (nativeGet principal "disabled") t)
         :target_constraint

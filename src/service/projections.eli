@@ -10,7 +10,7 @@
   (import "../filtering/service.eli" projectFilterPolicy)
   (import "../application/context.eli" can safeFields)
   (import "../application/operations.eli" operationCatalog operationCatalogDigest)
-  (import "../policy/authorize.eli" operatorOnly)
+  (import "../policy/authorize.eli" operatorOnly authorize)
   (import "../catalog/records.eli" projectSession isSessionVisible)
   (import "../catalog/service.eli" objectProjection)
   (import "../registry/agents.eli" projectAgent)
@@ -32,6 +32,9 @@
             (not (js-call operatorOnly :includes (nativeGet descriptor "operation")))
             (= (nativeGet principal "kind") "operator"))
           (or
+            (nativeGet (authorize principal (nativeGet descriptor "action")
+              (js-object :principal_id (nativeGet principal "principal_id"))
+              (nativeGet principal "authorization_revision")) "allowed")
             (js-call
               (js-array "service.status" "agent.whoami")
               :includes

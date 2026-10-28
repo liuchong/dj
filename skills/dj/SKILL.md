@@ -15,6 +15,7 @@ metadata:
 
 - status: 先用当前主体的`dj status --json`或MCP `dj_service_status`核对运行时、能力和目录摘要。源码或Skill存在不证明服务已启动或验收通过；服务不可达或目录不兼容时报告限制，不自建服务或假装成功。
 - profile: 默认客户端配置为`~/.dj/client.json`。使用宿主分配的独立profile，不读取或借用operator或其他Agent凭据。
+- communication: 身份认证后默认可发现、读取、订阅及收发已配置连接中平台可访问的信息，无需message或resource的逐连接／逐群grants；自己的消息操作和出站台账也可核验。订阅过滤不是读取或回复许可。仍使用真实账号、当前引用和原幂等键，平台权限、停用状态、回复身份及其他Agent控制／管理边界继续生效。
 - identity: 用`agent.whoami`核对真实主体及绑定；目标可由操作员代登记，共享宿主配置不证明当前会话身份。不能凭标题、cwd或宿主猜原生会话；未绑定时只读discover并登记允许的candidate_ref。只有历史而无收件口时报告限制，不用新进程替代。
 - transport: Lark user/bot共用官方WebSocket＋HTTPS增量补收实现，每条连接独立实例、凭据、断点和限流。HTTP默认2秒，可由操作员用inbox_poll_seconds配置；统一持久化、去重和订阅，不使用SDK或Lark外部CLI。user/bot授权与实际覆盖分别核对，轮询不称作实时。
 - scope: Lark正式职责是长连接接收获准消息，经Core订阅规则过滤后通知指定工具的原始对话，默认按原生@且支持复杂过滤。user代表本人、bot代表应用，不能混用或把未完成的本人接线说成仅bot可用。实际能力以当前服务状态和schema为准；查询式收件不能冒充实时长连接。AI工具通过已有实例跨进程接口接收，不新建Agent进程代替原目标。
@@ -26,7 +27,7 @@ metadata:
 
 - reference: 查询、免订阅直发及已有实例内创建见[会话控制](references/control.md)，不要求订阅或已登记agent_id。
 - selectors: tools和instance_ids筛选工具或实例；agent_id仅表示已登记的单个会话。检查覆盖和新鲜度，不把空缓存当不存在。
-- effects: 查询不启动，发送不创建；create必须通过已有实例接口且显式获准；正式配置不接受argv启动profile，不启动Agent子进程代替原目标。session.send发给Agent，message.send/reply发给IM。不要让DJ判断任务应该在哪；DJ不提供IM操作界面。
+- effects: 查询不启动，发送不创建；create必须通过已有实例接口且显式获准；正式配置不接受argv启动profile，不启动Agent子进程代替原目标。session.send发给Agent，保留独立目标权限；message.send/reply发给IM，身份认证后默认开放。不要让DJ判断任务应该在哪；DJ不提供IM操作界面。
 - pagination: 空items但有next_cursor表示查询尚未结束；精确session_keys可用于定点刷新或搜索。已知稳定key用session.get重新取得短期引用，session.probe只读核验receiver。
 - new_session: 新会话若用于订阅，须先由可信宿主接入独立recipient和工具，不能改绑创建者。历史lifecycle ready不代表实例当前ready。
 
@@ -64,7 +65,7 @@ metadata:
 - route: 原生mentions和reply_route说明谁被提及及DJ已固定的回复身份；message.reply只提交reply_context_id、content、稳定idempotency_key，不选择账号或收件人，不改为message.send绕开缺失引用。
 - decision: 按本对话规则判断是否处理、是否属于已有任务、是否及何时回复；不是每条通知都要建任务或回复，也不是每次输出都外发。最终回答不自动转发IM；真正外发是显式工具调用，可在最终回答前进行。
 - setup: 接收对话自己经session.rules.update维护reply_routes；来源应用范围内原生mention_id映射到获准出口connection_id，DJ自动固定每条通知路径。手工自发@同样匹配，不设本人sender排除。详见[对话规则](references/session-rules.md)。
-- blocked: reply_route为ambiguous_target、stale_reference或forbidden且没有reply_context_id时报告明确限制，不自行挑账号、另开对话或双发。
+- blocked: reply_route为ambiguous_target、stale_reference或forbidden且没有reply_context_id时报告明确限制，不自行挑账号、另开对话或双发；消息默认开放，不要求用户补逐群grants，按真实身份、引用或平台错误排查。
 
 ## 历史与引用上下文
 

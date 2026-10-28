@@ -4,7 +4,7 @@
 
 文档、电子表格、多维表格和Wiki均通过已有Lark连接的官方HTTPS读取，不增加SDK、CLI或第二套凭据/连接管理。Wiki是入口节点，必须先解析实际对象类型与token，不能把Wiki token直接当表格token。资源地址为扁平的connection_id、resource_kind、resource_token及可选table_id/record_id；账户和原生资源分开核验。
 
-资源与IM共享现有权限、事件持久化、过滤、订阅、目标对话投递及幂等台账。内部路由container key区分resource和IM，不能将文件token发到IM chat接口。resource.read/resource.subscribe是独立权限，message.read或“机器人看过群消息”不授予文档读取权。
+资源与IM共享身份、事件持久化、过滤、订阅、目标对话投递及幂等台账。内部路由container key区分resource和IM，不能将文件token发到IM chat接口。已认证主体的resource.read/resource.subscribe默认开放，无需逐文件grants；平台原生文档权限独立核验，“机器人看过群消息”不证明账号有文档读取权。
 
 ## 读取
 
@@ -15,7 +15,7 @@
 
 ## 原生变更
 
-resource.watch(resource_ref,idempotency_key)登记并请求平台文件事件订阅，resource.watch.get(watch_id)查询真实状态。必须有resource.subscribe权限；native_unknown不盲目重新订阅，blocked记录实际错误与权限信息。只有已确认的原生拒绝进入blocked；断线、5xx或无确定原生响应保留native_unknown。blocked在权限修复后可由调用方用新幂等键显式再申请；同一幂等键只读回原操作，native_unknown和subscribed不重新发起外部订阅。申请前在同一事务内重读并把状态持久预占为native_unknown，避免并发重复请求；不自动循环重试。subscribed只表示平台订阅请求成功，event_channel=configured只表示本机配置，均不等于已看到真实新事件。
+resource.watch(resource_ref,idempotency_key)登记并请求平台文件事件订阅，resource.watch.get(watch_id)查询真实状态。DJ不要求额外resource.subscribe授权，平台原生文件权限仍须满足；native_unknown不盲目重新订阅，blocked记录实际错误与权限信息。只有已确认的原生拒绝进入blocked；断线、5xx或无确定原生响应保留native_unknown。blocked在权限修复后可由调用方用新幂等键显式再申请；同一幂等键只读回原操作，native_unknown和subscribed不重新发起外部订阅。申请前在同一事务内重读并把状态持久预占为native_unknown，避免并发重复请求；不自动循环重试。subscribed只表示平台订阅请求成功，event_channel=configured只表示本机配置，均不等于已看到真实新事件。
 
 当前接收已登记文件的drive.file.bitable_record_changed_v1、drive.file.bitable_field_changed_v1、drive.file.edit_v1；经同一官方WebSocket、持久收件箱、Core形成resource.changed。记录变更按每个真实record_id保留action及字段变更，人员引用从原生after_value解析，重复事件不重复通知；删除记录不自动变成需要修复的任务。收到事件后失效相关内容缓存，不凭旧快照冒充当前内容。
 

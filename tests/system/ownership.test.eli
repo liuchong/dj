@@ -324,7 +324,9 @@
   (import "../support/fixtures.eli" bindRecipient subscribe createdEvent)
   (withCase
     "T33.recipient-boundary.system"
-    setup
+    (async () (await (createFixture "recipient-default-reply" "one" (js-object :configure (lambda (config ports)
+      (put config :managed_profiles (js-array))
+      (put (aref (nativeGet config "agent_endpoints") 0) :instance_epoch "epoch-1"))))))
     (async
       (f)
       (let ((agent (await (bindRecipient f))))
@@ -340,15 +342,15 @@
           (js-call
             f
             :ingest
-            (createdEvent "lark" "no-reply-grant" "read-only recipient")))
+            (createdEvent "lark" "no-reply-grant" "default reply recipient")))
         (await (js-call f :tick))
         (let
           (
             (delivery
               (aref (nativeGet (await (callOk f "O" "delivery.list" (js-object))) "items") 0)))
-          (js-call (expect (nativeGet delivery "reply_context_id")) :toBe nil)
+          (js-call (nativeGet (expect (nativeGet delivery "reply_context_id")) "not") :toBe nil)
           (js-call
-            (nativeGet (expect (nativeGet delivery "allowed_actions" (js-array))) "not")
+            (expect (nativeGet delivery "allowed_actions" (js-array)))
             :toContain
             "reply"))))
     closeFixture)

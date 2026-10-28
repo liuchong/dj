@@ -1,6 +1,14 @@
 (module dj.policy.authorize
   (import "../core/native.eli" nativeTypeOf nativeGet)
   (import "../core/types.eli" isObject)
+  ;; Configured IM accounts form the communication boundary. Do not require
+  ;; per-principal, per-chat grants for ordinary collection, reading or sending.
+  (defconst communicationActions
+    (Object/freeze (js-array "service.status" "connection.inspect" "conversation.discover"
+      "message.read" "message.search" "message.send" "message.reply"
+      "resource.read" "resource.subscribe")))
+  (defconst ownCommunicationActions
+    (Object/freeze (js-array "operation.inspect" "outbound.inspect" "outbound.manage")))
   (defconst operatorOnly
     (js-array
       "message.recover"
@@ -103,6 +111,11 @@
                 (not (js-call operatorOnly :includes action))
                 (= (nativeGet principal "kind") "operator")))
             (progn (setq djReturn3Value denied) (throw djReturn3Token)))
+          (when (or (js-call communicationActions :includes action)
+            (and (js-call ownCommunicationActions :includes action) (isOwnResource principal resource)))
+            (setq djReturn3Value (js-object :allowed t
+              :authorization_revision authorization-revision :policy "default_communication"))
+            (throw djReturn3Token))
           (let
             ((grants (nativeGet principal "grants" (js-array)))
               (ids (resourceIds resource))
@@ -145,4 +158,4 @@
     (and
       (nativeGet principal "target_constraint")
       (matchesConstraint (nativeGet principal "target_constraint") target)))
-  (export authorize matchesConstraint isOwnResource resourceIds targetAllowed operatorOnly))
+  (export authorize matchesConstraint isOwnResource resourceIds targetAllowed operatorOnly communicationActions))

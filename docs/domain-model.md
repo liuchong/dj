@@ -108,7 +108,7 @@ direct 的 delivery_policy 仅 busy/offline/ttl_seconds，不接 context_policy�
 - Connection.state 为 configured/connecting/online/degraded/offline/incompatible；AgentTarget.state 为 registered/closed；Subscription.state 为 active/paused/deleted。
 - Delivery.state 为 ready/deferred/blocked/submitting/accepted/unknown/failed/expired/cancelled/resolved；Outbound 使用同一状态集合（deferred/blocked 可表发送限流/配置等待）。Operation.state 为 recorded/done/result_expired；done 只指业务 API 已受理结算，不是模型任务结束。
 - Outbound.content 为 {type:text,text:string}；parts 是稳定有序子消息记录，每项有 part_id、dispatch_key、state、native_message_id?，首轮若平台无法提供安全拆分则发送前拒绝。
-- ReplyContext 在实际输入提交前签发，默认有效 24 小时，不晚于正文保留期限；绑定 recipient 主体与精确原话题。允许读取不代表允许回复，缺少发送权限时 reply_context_id=null 且 allowed_actions 不含 reply。
+- ReplyContext 在实际输入提交前签发，默认有效 24 小时，不晚于正文保留期限；绑定 recipient 主体与精确原话题。已认证主体默认可读和回复，无需逐群发送权限；来源失效、身份变化或路由歧义时 reply_context_id=null 且 allowed_actions 不含 reply。
 - Delivery 信封含 schema_version=1、kind=external_message、delivery/event ID、source、sender、匹配原因、content、attachments、reply_context_id?、allowed_actions。正文永远是结构化数据字段，不拼入受信任头。传输版本、信封 schema_version 与对象 revision 分开。
 
 信封按 origin 分支：subscription_event 使用 IM source、Sender、event_id 和匹配贡献；direct 使用 source.kind=api、ApiSender={principal_id,principal_kind:operator/agent/service}、event_id=null、无匹配贡献和无 IM 回复引用。不能将 API 主体伪造成人类 IM 作者；未接线 DJ 工具的接收方 allowed_actions 为空，输入仍可留在原生会话。当前均为未发布草案，两个分支的 schema 必须一起验证。

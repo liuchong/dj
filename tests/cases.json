@@ -947,9 +947,9 @@
         "A06",
         "A17"
       ],
-      "given": "F01/F04；system/ownership",
+      "given": "A bound recipient with no explicit IM reply grant",
       "when": "无 target_constraint/无 reply grant，或离线排队24h后才提交",
-      "then": "不靠自报绑定；无权限不发reply引用，引用在提交前签发且有期限；A04/A06/A17"
+      "then": "Default communication issues an exact recipient-bound reply context without a per-chat grant"
     },
     {
       "case_id": "T34.multipart-disabled.integration",
@@ -27261,7 +27261,7 @@
       "then": "History retains all visible messages, each connection/message key is unique, only matching nonblocked messages reach the recipient and every Typing marker is removed"
     },
     {
-      "case_id": "T24.scoped-send-permission.integration",
+      "case_id": "T24.default-communication.integration",
       "parent_id": "T24",
       "file": "tests/integration/im.test.eli",
       "suite": "integration",
@@ -27269,7 +27269,7 @@
       "e2e": false,
       "applicability": "enabled-positive",
       "parameters": {
-        "scope": "connection-and-chat"
+        "access": "default-communication"
       },
       "required_profile": null,
       "timeout_ms": 10000,
@@ -27282,9 +27282,9 @@
         "A03",
         "A05"
       ],
-      "given": "A recipient with reply access and proactive send limited to one exact chat",
-      "when": "A different chat is denied, the operator grants that chat and reloads the same principal, then the caller retries the original logical send",
-      "then": "Denial has no effect, the new chat sends once with the same key, the original scope is retained and a third chat remains forbidden"
+      "given": "Authenticated principals with absent message grants and a stale narrow grant, configured IM accounts and a real SQLite Core",
+      "when": "Read, subscribe, send, reply and inspect own send records across chats and platforms without granting message scopes",
+      "then": "Communication defaults open, blacklist only suppresses triggers, retries deduplicate, while disabled identities, foreign reply references, other ledgers and admin changes remain blocked"
     }
   ],
   "source_extension_base": "c1eb7b1"

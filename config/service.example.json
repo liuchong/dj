@@ -59,59 +59,6 @@
           ]
         },
         {
-          "action": "connection.inspect",
-          "resources": [
-            "lark-user",
-            "telegram-bot"
-          ]
-        },
-        {
-          "action": "conversation.discover",
-          "resources": [
-            "lark-user",
-            "telegram-bot"
-          ]
-        },
-        {
-          "action": "message.read",
-          "resources": [
-            {
-              "connection_id": "lark-user",
-              "native_chat_id": "replace-lark-chat-id"
-            },
-            {
-              "connection_id": "telegram-bot",
-              "native_chat_id": "replace-telegram-chat-id"
-            }
-          ]
-        },
-        {
-          "action": "message.search",
-          "resources": [
-            {
-              "connection_id": "lark-user",
-              "native_chat_id": "replace-lark-chat-id"
-            },
-            {
-              "connection_id": "telegram-bot",
-              "native_chat_id": "replace-telegram-chat-id"
-            }
-          ]
-        },
-        {
-          "action": "message.reply",
-          "resources": [
-            {
-              "connection_id": "lark-user",
-              "native_chat_id": "replace-lark-chat-id"
-            },
-            {
-              "connection_id": "telegram-bot",
-              "native_chat_id": "replace-telegram-chat-id"
-            }
-          ]
-        },
-        {
           "action": "operation.inspect",
           "resources": [
             "self"
@@ -179,46 +126,6 @@
           "action": "subscription.manage",
           "resources": [
             "self"
-          ]
-        },
-        {
-          "action": "connection.inspect",
-          "resources": [
-            "lark-user",
-            "telegram-bot"
-          ]
-        },
-        {
-          "action": "conversation.discover",
-          "resources": [
-            "lark-user",
-            "telegram-bot"
-          ]
-        },
-        {
-          "action": "message.read",
-          "resources": [
-            {
-              "connection_id": "lark-user",
-              "native_chat_id": "replace-lark-chat-id"
-            },
-            {
-              "connection_id": "telegram-bot",
-              "native_chat_id": "replace-telegram-chat-id"
-            }
-          ]
-        },
-        {
-          "action": "message.reply",
-          "resources": [
-            {
-              "connection_id": "lark-user",
-              "native_chat_id": "replace-lark-chat-id"
-            },
-            {
-              "connection_id": "telegram-bot",
-              "native_chat_id": "replace-telegram-chat-id"
-            }
           ]
         },
         {

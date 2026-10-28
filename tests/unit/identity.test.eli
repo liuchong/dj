@@ -3,7 +3,7 @@
   (import "bun:test" expect)
   (import "../support/case.eli" withUnitCase)
   (import "../../src/core/types.eli" canonicalTargetKey stableSessionKey)
-  (import "../../src/policy/authorize.eli" authorize)
+  (import "../../src/policy/authorize.eli" authorize communicationActions)
   (import "../../src/policy/handles.eli" createHandleAuthority handleKinds)
   (import "../../src/host/bun/ids.eli" entityUuidV7 nextHostId)
   (import "../../src/host/bun/io.eli" createHostPorts)
@@ -81,7 +81,21 @@
         (js-call
           (expect (nativeGet (authorize principal "session.send" "session-1" 2) "allowed"))
           :toBe
-          false))))
+          false))
+      (let* ((principal (js-object :principal_id "free" :kind "agent" :authorization_revision 1))
+        (destination (js-object :connection_id "configured" :native_chat_id "any-chat")))
+        (js-call communicationActions :forEach (lambda (action)
+          (js-call (expect (nativeGet (authorize principal action destination 1) "allowed")) :toBe t)
+          (js-call (expect (nativeGet (authorize principal action destination 2) "allowed")) :toBe false)
+          (js-call (expect (nativeGet (authorize (Object/assign (js-object) principal (js-object :disabled t))
+            action destination 1) "allowed")) :toBe false)))
+        (js-call (expect (nativeGet (authorize nil "message.send" destination 1) "allowed")) :toBe false)
+        (js-call (expect (nativeGet (authorize principal "session.send" destination 1) "allowed")) :toBe false)
+        (js-call (expect (nativeGet (authorize principal "service.manage" destination 1) "allowed")) :toBe false)
+        (js-call (expect (nativeGet (authorize principal "outbound.resolve" destination 1) "allowed")) :toBe false)
+        (js-call (js-array "operation.inspect" "outbound.inspect" "outbound.manage") :forEach (lambda (action)
+          (js-call (expect (nativeGet (authorize principal action (js-object :principal_id "free") 1) "allowed")) :toBe t)
+          (js-call (expect (nativeGet (authorize principal action (js-object :principal_id "other") 1) "allowed")) :toBe false))))))
   (withUnitCase
     "T33.handle-identity.unit"
     (lambda

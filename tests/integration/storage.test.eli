@@ -3799,7 +3799,7 @@
           (full-principal (js-object :principal_id "O" :kind "operator" :authorization_revision 1
             :target_constraint (js-object :tool "opencode")
             :grants (js-array (js-object :action "*" :resources (js-array "*")))))
-          (denied-principal (js-object :principal_id "X" :kind "service" :authorization_revision 1 :grants (js-array)))
+          (denied-principal (js-object :principal_id "X" :kind "service" :disabled t :authorization_revision 1 :grants (js-array)))
           (principals-config (js-object :principals (js-array full-principal denied-principal)))
           (bg-context (js-object :store store :repository repository :ports ports :runtime (js-object) :config principals-config))
           (auth-context (js-object :store store :repository repository :ports ports :runtime (js-object)
@@ -3920,7 +3920,7 @@
             ;; - recordReceipt updates routes via replaceProgress exactly ONCE when unknown_delivery_id or claim_owner changes, and 0 times otherwise;
             ;; - strict owner_token + claim_epoch isolation against foreign owner or newer epoch claims;
             ;; - P3: beginSubmission runs inside a single narrow withContributionReads(..., true) scope, reading session 1x, agent 1x,
-            ;;   connection 1x (shared across effectiveContributions and replyContext), and subscriptions via getSubscriptionState (0 full get),
+            ;;   connection reader plus current source/exit identity checks, and subscriptions via getSubscriptionState (0 full get),
             ;;   without leaking reader onto the frozen result or persisted attempt.
             (let ((claim-ctx (Object/assign (js-object :owner_token "owner-r5"
                   :handles (createHandleAuthority (js-object :records (nativeGet repository "handleRecords")))) auth-context))
@@ -3957,7 +3957,8 @@
                 (js-call (expect (nativeGet parsed-head "state")) :toBe "ready")
                 (js-call (expect (nativeGet parsed-head "dispatch_key")) :toBe "r5-dispatch-1")
                 (put db :query (lambda (sql)
-                  (when (= sql "SELECT delivery_id,state FROM deliveries INDEXED BY deliveries_route_head WHERE route_id=? AND state IN ('ready','deferred','blocked','submitting','unknown') ORDER BY delivery_seq LIMIT 1")
+                  (when (and (js-call sql :startsWith "SELECT delivery_id,state,")
+                    (js-call sql :includes "INDEXED BY deliveries_route_head"))
                     (setq claim-narrow-head-calls (1+ claim-narrow-head-calls)))
                   (when (= sql "SELECT payload FROM deliveries WHERE route_id=? AND state IN ('ready','deferred','blocked','submitting','unknown') ORDER BY delivery_seq LIMIT 1")
                     (setq claim-payload-head-calls (1+ claim-payload-head-calls)))
@@ -4175,7 +4176,7 @@
                       (Reflect/deleteProperty d-p3 "blocked_reason")
                       (funcall original-replace "deliveries" d-p3))))))
                 ;; 2) Idle observation in beginSubmission: single narrow withContributionReads scope reads session 1x, agent 1x,
-                ;;    connection 1x, routing_work via narrow SELECT state (0 repository.get("routing_work")), and K2b effectiveContributions
+                ;;    connection reader plus current source/exit identity checks, routing_work via narrow SELECT state, and K2b effectiveContributions
                 ;;    streams contributions LEFT JOIN subscriptions via :iterate/:next/:return with row-local item-read
                 ;;    (0 full get, 0 single-key getSubscriptionState, 0 batch getSubscriptionStates) and uses replaceProgress:
                 (let ((c-idle (successful (claimRoute claim-ctx "observe-route")))
@@ -4214,7 +4215,7 @@
                     (js-call (expect (nativeGet frozen "submitted")) :toBe t)
                     (js-call (expect sess-gets) :toBe 1)
                     (js-call (expect agent-gets) :toBe 1)
-                    (js-call (expect conn-gets) :toBe 1)
+                    (js-call (expect conn-gets) :toBe 3)
                     (js-call (expect sub-full-gets) :toBe 0)
                     (js-call (expect rw-done-gets) :toBe 0)
                     (js-call (expect rw-done-sqls) :toBe 1)
@@ -4237,7 +4238,7 @@
                       (js-object :state "accepted" :kind "accepted" :evidence_level "native_protocol"
                         :dispatch_key "p3-sub-dispatch" :native_receipt_key "p3-rec-1")))))
                 ;; 3) K2b >128 contributions on a single delivery (135 contributions: 131 active/effective, 1 paused -> revoked,
-                ;;    1 revision mismatch -> revoked, 1 expired -> expired, 1 revoked owner grant -> revoked):
+                ;;    1 revision mismatch -> revoked, 1 expired -> expired, 1 disabled owner -> revoked):
                 ;;    - 3a: Streaming :iterate/:next/:return stops early on matched-bytes > native_frame_max_bytes (6 next calls < 135),
                 ;;          closes iterator via rows.return(), and holds delivery as blocked (limit_exceeded) without submitting any prefix;
                 ;;    - 3b: Normal streaming processes all 135 rows without LIMIT 128 truncation (131 matched > 128), writes back
@@ -4389,7 +4390,7 @@
                     (js-call (expect stream-return-called) :toBe t)
                     (js-call (expect sess-135) :toBe 1)
                     (js-call (expect agent-135) :toBe 1)
-                    (js-call (expect conn-135) :toBe 1)
+                  (js-call (expect conn-135) :toBe 3)
                     (js-call (expect sub-full-135) :toBe 0)
                     (js-call (expect sub-single-135) :toBe 0)
                     (js-call (expect sub-batch-135) :toBe 0)

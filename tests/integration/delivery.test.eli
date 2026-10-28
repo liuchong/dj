@@ -3383,7 +3383,9 @@
     closeFixture)
   (withCase
     "T12.update-cutover.sqlite"
-    setup
+    (async () (await (createFixture "update-cutover" "one" (js-object :configure (lambda (config ports)
+      (put config :managed_profiles (js-array))
+      (put (aref (nativeGet config "agent_endpoints") 0) :instance_epoch "epoch-1"))))))
     (async
       (f)
       (let*
@@ -3574,17 +3576,17 @@
                         (js-call (expect (nativeGet r-row "seq")) :toBe (nativeGet r-row "j_seq"))
                         (js-call (expect (nativeGet r-row "epoch")) :toBe (nativeGet r-row "j_epoch")))
                       (finally (js-call reader :close)))))
-                ;; Revoke A's message.read grant during routing.before_checkpoint_commit (after prepare evaluated predicate):
-                ;; commit-time isContributionEffective must recheck fresh grant and not use stale prepare conclusion.
-                (let ((saved-a-grants (nativeGet (nativeGet f "A") "grants")))
+                ;; Disable A during routing.before_checkpoint_commit (after prepare evaluated predicate):
+                ;; commit-time isContributionEffective must recheck current principal state and not use stale prepare conclusion.
+                (let ((saved-a-disabled (nativeGet (nativeGet f "A") "disabled" false)))
                   (js-call (nativeGet f "faults") :install "routing.before_checkpoint_commit" (async (work)
-                    (put (nativeGet f "A") :grants (js-array))
+                    (put (nativeGet f "A") :disabled t)
                     (put (nativeGet f "A") :authorization_revision (1+ (nativeGet (nativeGet f "A") "authorization_revision")))))
-                  (await (js-call f :ingest (createdEvent "lark" "after-revoke" "revoked grant must not deliver")))
+                  (await (js-call f :ingest (createdEvent "lark" "after-revoke" "disabled principal must not deliver")))
                   (await (js-call f :tick))
-                  ;; Restore A's grants and pause updated subscription during routing.before_checkpoint_commit (after prepare & subscription-ids extraction):
+                  ;; Restore A and pause updated subscription during routing.before_checkpoint_commit (after prepare & subscription-ids extraction):
                   ;; K2a batch getSubscriptionStates inside the write tx must read the fresh paused/revision state and create 0 deliveries/contributions.
-                  (put (nativeGet f "A") :grants saved-a-grants)
+                  (put (nativeGet f "A") :disabled saved-a-disabled)
                   (put (nativeGet f "A") :authorization_revision (1+ (nativeGet (nativeGet f "A") "authorization_revision")))
                   (js-call (nativeGet f "faults") :install "routing.before_checkpoint_commit" (async (work)
                     (await (callOk f "A" "subscription.pause"
@@ -3597,7 +3599,7 @@
                 (js-call (expect (js-length (nativeGet peer "inputs"))) :toBe 3)
                 ;; W1-W3 + K2a: verify match_decisions and contributions persisted by single-event batch flush across seq-event-1, seq-event-2,
                 ;; after-revoke, and after-prepare-pause (where prepare matched updated subscription so 1 match_decision each is written, while commit-time
-                ;; batch getSubscriptionStates + isContributionEffective rejected revoked grant / post-prepare pause so 0 deliveries and 0 contributions are written):
+                ;; batch getSubscriptionStates + isContributionEffective rejected disabled principal / post-prepare pause so 0 deliveries and 0 contributions are written):
                 (let ((reader (new Database (resolve (nativeGet f "root") "state/dj.sqlite") (js-object :readonly t))))
                   (try
                     (let* ((ev-revoke (js-call (js-call reader :query
@@ -3722,7 +3724,8 @@
                   (put (aref (nativeGet peer "sessions") 1) :runtime_state "idle")
                   (try
                     (put (nativeGet Database "prototype") :query (funcall wrap-db-query original-db-query (lambda (sql)
-                      (when (= sql "SELECT delivery_id,state FROM deliveries INDEXED BY deliveries_route_head WHERE route_id=? AND state IN ('ready','deferred','blocked','submitting','unknown') ORDER BY delivery_seq LIMIT 1")
+                      (when (and (js-call sql :startsWith "SELECT delivery_id,state,")
+                        (js-call sql :includes "INDEXED BY deliveries_route_head"))
                         (setq dispatch-narrow-head-sqls (1+ dispatch-narrow-head-sqls)))
                       (when (= sql "SELECT payload FROM deliveries WHERE route_id=? AND state IN ('ready','deferred','blocked','submitting','unknown') ORDER BY delivery_seq LIMIT 1")
                         (setq dispatch-payload-head-sqls (1+ dispatch-payload-head-sqls)))
