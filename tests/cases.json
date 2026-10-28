@@ -863,6 +863,28 @@
       "then": "短贡献失效而长贡献仍可投，预算不扩权、旧版本不复活；A13"
     },
     {
+      "case_id": "T31.existing-session-epoch.sqlite",
+      "parent_id": "T31",
+      "file": "tests/integration/delivery.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-integration",
+      "requirements": [
+        "Q05"
+      ],
+      "acceptance_ids": [
+        "A13"
+      ],
+      "given": "Recovered existing instance and open gate; original session still has the previous process epoch",
+      "when": "A fresh same-target native probe precedes subscription delivery; also exercise a closed gate, foreign session/workspace and missing native evidence",
+      "then": "Refresh only the verified original session and deliver once without manual agent.probe; never bypass a closed gate or accept another target"
+    },
+    {
       "case_id": "T31.submit-cutover.sqlite",
       "parent_id": "T31",
       "file": "tests/integration/delivery.test.eli",

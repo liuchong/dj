@@ -31,7 +31,7 @@
   (import "../policy/principals.eli" configuredPrincipal)
   (import "../policy/authorize.eli" authorize)
   (import "../policy/handles.eli" issueHandle)
-  (import "../catalog/records.eli" attachBinding)
+  (import "../catalog/records.eli" attachBinding putSession)
   (import "../lifecycle/gates.eli" assertGate)
   (import "../sessions/rules.eli" attachConversationRules)
   (import "./envelope.eli" encodeAgentInput)
@@ -719,6 +719,7 @@
                           (packEnvelope envelope))))
                     (js-call repository :insert "attempts" attempt)
                     (put record :state "submitting")
+                    (put record :blocked_reason nil)
                     (put record :attempt_id (nativeGet attempt "attempt_id"))
                     (put record :binding_id (nativeGet binding "binding_id"))
                     (put record :submitted_at (utcNow context))
@@ -966,6 +967,28 @@
     (context point data)
     (when (nativeGet (nativeGet context "ports") "faults")
       (await (js-call (nativeGet (nativeGet context "ports") "faults") :hit point data))))
+  (defun refreshObservedSession
+    (context session observation)
+    ;; Instance recovery can verify a new process without refreshing its sessions.
+    ;; Adopt only fresh proof of this same target under the already-open gate.
+    (let ((identity-fields (js-array "tool" "native_namespace" "native_session_id" "instance_id" "workspace_ref")))
+      (when (and
+        (not (= (nativeGet session "instance_epoch") (nativeGet observation "instance_epoch")))
+        (= (nativeGet observation "live_receiver") t)
+        (= (nativeGet observation "evidence_level") "native_protocol")
+        (js-call identity-fields :every
+          (lambda (field) (= (nativeGet session field) (nativeGet observation field)))))
+        (let* ((repository (nativeGet context "repository"))
+               (current (js-call repository :get "sessions" (nativeGet session "session_key")))
+               (instance (and current (js-call repository :get "instances" (nativeGet current "instance_id")))))
+          (when (and current instance
+            (= (nativeGet instance "ownership") "existing")
+            (= (nativeGet instance "instance_epoch") (nativeGet observation "instance_epoch"))
+            (js-call identity-fields :every
+              (lambda (field) (= (nativeGet current field) (nativeGet observation field))))
+            (nativeGet (assertGate (nativeGet context "store") (nativeGet instance "instance_id")
+              (nativeGet observation "instance_epoch") "open") "ok"))
+            (must (putSession context (Object/assign (js-object) current observation) instance)))))))
   (defasync dispatchRoute
     (context route-id)
     (let ((djReturn6Token (js-object)) (djReturn6Value nil))
@@ -996,6 +1019,7 @@
                 (
                   (prepared
                     (await (enqueueWrite context (lambda ()
+                      (refreshObservedSession context session observation)
                       (beginSubmission context (nativeGet claim "delivery_id") claim observation)))))
                   (frozen (nativeGet prepared "data")))
                 (unless (and (nativeGet prepared "ok") (nativeGet frozen "submitted"))

@@ -20,6 +20,8 @@ dj status --client-profile PRIVATE_PROFILE --json
 4. `agent.probe` / `session.probe` 的真实 receiver、实例与会话。只有历史记录不代表已有活接收口。
 5. `delivery.get` 的状态和错误。`ready` 是排队，`blocked/deferred` 需读原因，`unknown` 必须先核对原提交。
 
+已有客户端重启后，实例与会话缓存可能暂时属于不同进程代际。调度器收到同一原生会话、实例和工作区的新原生核验，并确认当前实例提交门已开放后，会在提交事务内刷新会话缓存。不会创建新会话或绕过关闭的门；确认刷新前也不会提交输入。检查时不要仅凭 `instance_stopping` 文案认定客户端正在退出，还要比对实例、门与会话的进程代际。
+
 根据需要用 `message.context/history` 读取本地上下文；不要靠反复重放、平台历史轮询或换会话试发判断实时接线是否正常。
 
 ## 请求超时或结果未知

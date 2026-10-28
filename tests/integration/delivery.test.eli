@@ -17,6 +17,75 @@
     subscribe
     createdEvent)
   (defasync setup () (await (createFixture "delivery" "one")))
+  (withCase "T31.existing-session-epoch.sqlite"
+    (async () nil)
+    (async (unused)
+      (let ((modes (js-array "recovered" "closed_gate" "other_session" "other_workspace" "unverified")) (index 0))
+        (while (< index (js-length modes))
+          (let* ((mode (aref modes index))
+                 (f (await (createFixture (str "session-epoch-" mode) "one"
+                   (js-object :configure (lambda (config ports) (put config :managed_profiles (js-array))))))))
+            (try
+              (let* ((session (await (getSession f "s1")))
+                     (agent (await (bindRecipient f)))
+                     (subscription (await (subscribe f agent "lark")))
+                     (peer (nativeGet f "opencode"))
+                     (new-epoch (str (nativeGet session "instance_epoch") "-restarted"))
+                     (original-probe (nativeGet peer "probe"))
+                     (db (new Database (resolve (nativeGet f "root") "state/dj.sqlite") (js-object :strict t))))
+                ;; Reproduce recovered instance/gate metadata with a cached old session.
+                (try
+                  (let* ((instance (JSON/parse (nativeGet (js-call (js-call db :query
+                            "SELECT payload FROM instances WHERE instance_id=?") :get (nativeGet session "instance_id")) "payload")))
+                         (gate (JSON/parse (nativeGet (js-call (js-call db :query
+                            "SELECT payload FROM instance_gates WHERE instance_id=?") :get (nativeGet session "instance_id")) "payload"))))
+                    (put instance :instance_epoch new-epoch)
+                    (put instance :revision (1+ (nativeGet instance "revision")))
+                    (put gate :instance_epoch new-epoch)
+                    (put gate :state (if (= mode "closed_gate") "closed" "open"))
+                    (put gate :revision (1+ (nativeGet gate "revision")))
+                    (js-call db :run "BEGIN IMMEDIATE")
+                    (js-call (js-call db :query "UPDATE instances SET instance_epoch=?,revision=?,payload=? WHERE instance_id=?")
+                      :run new-epoch (nativeGet instance "revision") (JSON/stringify instance) (nativeGet instance "instance_id"))
+                    (js-call (js-call db :query "UPDATE instance_gates SET instance_epoch=?,state=?,revision=?,payload=? WHERE instance_id=?")
+                      :run new-epoch (nativeGet gate "state") (nativeGet gate "revision") (JSON/stringify gate) (nativeGet instance "instance_id"))
+                    (js-call db :run "COMMIT"))
+                  (finally (js-call db :close)))
+                (let ((native (js-call (nativeGet peer "sessions") :find
+                        (lambda (item) (= (nativeGet item "native_session_id") "s1")))))
+                  (put native :instance_epoch new-epoch))
+                (put peer :probe (async (target binding context)
+                  (let ((observed (Object/assign (js-object) (await (funcall original-probe target binding context))
+                                    (js-object :evidence_level (if (= mode "unverified") "none" "native_protocol")))))
+                    (when (= mode "other_session") (put observed :native_session_id "different-session"))
+                    (when (= mode "other_workspace") (put observed :workspace_ref "different-workspace"))
+                    observed)))
+                (await (js-call f :ingest (createdEvent "lark" (str "epoch-" mode) "epoch notification")))
+                (successful (await (js-call f :tick)))
+                (let ((reader (new Database (resolve (nativeGet f "root") "state/dj.sqlite") (js-object :readonly t))))
+                  (try
+                    (let* ((stored (JSON/parse (nativeGet (js-call (js-call reader :query
+                                "SELECT payload FROM sessions WHERE session_key=?") :get (nativeGet session "session_key")) "payload")))
+                           (delivery (JSON/parse (nativeGet (js-call (js-call reader :query
+                                "SELECT payload FROM deliveries WHERE agent_id=?") :get (nativeGet agent "agent_id")) "payload"))))
+                      (js-call (expect (nativeGet stored "native_session_id")) :toBe "s1")
+                      (if (= mode "recovered")
+                        (progn
+                          (js-call (expect (nativeGet stored "instance_epoch")) :toBe new-epoch)
+                          (js-call (expect (nativeGet delivery "state")) :toBe "accepted")
+                          (js-call (expect (nativeGet delivery "blocked_reason")) :toBe nil)
+                          (js-call (expect (js-length (nativeGet peer "inputs"))) :toBe 1)
+                          (js-call (expect (nativeGet (nativeGet (aref (nativeGet peer "inputs") 0) "binding") "instance_epoch")) :toBe new-epoch))
+                        (progn
+                          (js-call (expect (nativeGet stored "instance_epoch")) :toBe (nativeGet session "instance_epoch"))
+                          (js-call (expect (nativeGet delivery "state")) :toBe "deferred")
+                          (js-call (expect (nativeGet delivery "blocked_reason")) :toBe "instance_stopping")
+                          (js-call (expect (js-length (nativeGet peer "inputs"))) :toBe 0)
+                          (js-call (expect (nativeGet (js-call (js-call reader :query "SELECT COUNT(*) AS n FROM attempts") :get) "n")) :toBe 0))))
+                    (finally (js-call reader :close)))))
+              (finally (await (closeFixture f)))))
+          (setq index (1+ index)))))
+    (async (unused) nil))
   (defasync instructionSubscription (f agent source actor key policy &optional old delivery-mode)
     (let* ((resolved-source (await (callOk f actor "conversation.resolve"
               (js-object :connection_id "lark" :chat_id "c1" :thread_id nil))))
