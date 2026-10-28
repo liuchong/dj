@@ -10,6 +10,7 @@
         "string"
         :connection_id "string"
         :mentions.id "string"
+        :reaction.emoji_type "string" :reaction.operator.id "string" :reaction.operator.kind "string" :reaction.operator.is_self "boolean"
         :people.id "string" :topic.key "string" :topic.kind "string" :thread.id "string" :resource.kind "string" :resource.token "string" :resource.table_id "string" :resource.record_id "string"
         :sender.id
         "string"
@@ -106,6 +107,10 @@
     (event field)
     (cond ((= field "text") (nativeGet (nativeGet event "content") "text"))
       ((= field "mentions.id") (nativeGet event "mentions"))
+      ((= field "reaction.emoji_type") (nativeGet (nativeGet event "reaction") "emoji_type" ""))
+      ((js-call field :startsWith "reaction.operator.")
+        (nativeGet (nativeGet (nativeGet event "reaction") "operator") (js-call field :slice 18)
+          (if (= field "reaction.operator.is_self") false "")))
       ((= field "people.id") (nativeGet event "people"))
       ((= field "topic.key") (nativeGet (nativeGet event "topic") "topic_key"))
       ((= field "topic.kind") (nativeGet (nativeGet event "topic") "kind"))

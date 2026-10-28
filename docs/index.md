@@ -24,6 +24,8 @@
 
 ## 产品规格
 
+- [0013 表情触发](specs/0013-reaction-triggers.md)：指定一个或多个原生 emoji_type，与提及、私聊并列配置。
+
 | 规格 | 内容 |
 | --- | --- |
 | [0001 实时订阅](specs/0001-lark-realtime-subscriptions.md) | Lark 收件、本人身份、默认 @ 和准确原会话投递 |

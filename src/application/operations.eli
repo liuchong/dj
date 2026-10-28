@@ -120,6 +120,7 @@
               "sender.id"
               "sender.kind"
               "mentions.id"
+              "reaction.emoji_type" "reaction.operator.id" "reaction.operator.kind" "reaction.operator.is_self"
               "people.id" "topic.key" "topic.kind" "thread.id" "resource.kind" "resource.token" "resource.table_id" "resource.record_id"
               "sender.person_id"
               "addressed_bot"
@@ -157,7 +158,7 @@
               (nativeGet limits "sources") 0)
             :event_kinds
             (arraySchema
-              (enumSchema "message.created" "message.edited" "message.deleted" "resource.changed")
+              (enumSchema "message.created" "message.edited" "message.deleted" "resource.changed" "message.reaction.added")
               (nativeGet limits "event_kinds")))
           (js-array))
         :predicate

@@ -460,7 +460,7 @@
           :capabilities
           (ref "capabilities")
           :event_source
-          (obj (js-object :state stringSchema :reason nullableString :identity stringSchema :send_identity stringSchema :native_code integerSchema :transport stringSchema :coverage stringSchema :last_received_at nullableString :missing_scopes (arr stringSchema) :console_url nullableString :required_events (arr stringSchema)))
+          (obj (js-object :state stringSchema :reason nullableString :identity stringSchema :send_identity stringSchema :native_code integerSchema :transport stringSchema :coverage stringSchema :last_received_at nullableString :reaction_event_type stringSchema :last_reaction_at nullableString :missing_scopes (arr stringSchema) :console_url nullableString :required_events (arr stringSchema)))
           :credential_state
           stringSchema
           :checked_at
@@ -546,6 +546,9 @@
     :identity_revision integerSchema :event_ids (arr stringSchema) :created_count integerSchema :realtime boolSchema))))
   (put definitions :resource_watch (obj (strings "watch_id operation_id state event_channel"
     (js-object :resource (ref "lark_resource") :identity_revision integerSchema :native_error (js-object)))))
+  (put definitions :reaction (obj (strings "native_event_id emoji_type action_time"
+    (js-object :message_source_time nullableString :operator (obj (strings "id kind"
+      (js-object :is_self boolSchema :identities (arr (obj (strings "platform scope id"))))))))))
   (put definitions :ingress_evidence (obj (strings "kind operation_id requested_by reason recovered_at")))
   (put definitions :topic (obj (strings "topic_key kind root_message_id" (js-object :native_thread_id nullableString :parent_message_id nullableString))))
   (put definitions :inbox_envelope (obj (js-object
@@ -554,7 +557,7 @@
     :source (ref "delivery_source") :sender (ref "sender") :content (ref "content")
     :attachments (arr (ref "attachment")) :reply_context_id nullableString :allowed_actions (arr stringSchema)
     :matched (arr (obj (js-object :subscription_id stringSchema :subscription_revision integerSchema :result stringSchema)))
-    :conversation_rules (ref "conversation_rules") :people (arr (ref "mention")) :mentions (arr (ref "mention")) :reply_route (ref "reply_route")
+    :conversation_rules (ref "conversation_rules") :people (arr (ref "mention")) :mentions (arr (ref "mention")) :reaction (ref "reaction") :reply_route (ref "reply_route")
     :resource (ref "lark_resource") :context (ref "message_context") :topic (ref "topic") :ingress_evidence (ref "ingress_evidence")
     :instructions (arr (obj (js-object :subscription_id stringSchema :subscription_revision integerSchema
       :prompt stringSchema :task_template stringSchema :task stringSchema))))))
@@ -594,7 +597,7 @@
           (ref "address")
           :sender
           (ref "sender")
-          :mentions (arr (ref "mention")) :people (arr (ref "mention")) :resource (ref "lark_resource")
+          :mentions (arr (ref "mention")) :reaction (ref "reaction") :people (arr (ref "mention")) :resource (ref "lark_resource")
           :reply_to (obj (strings "id sender_id")) :topic (ref "topic")
           :content
           (ref "content")

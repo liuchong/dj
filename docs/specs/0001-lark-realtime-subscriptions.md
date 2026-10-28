@@ -161,3 +161,7 @@ source.scope=connection表示账号范围；索引中的空container key仅是�
 ## 官方应用事件的本人收件边界
 
 官方im.message.receive_v1说明的是机器人接收的单聊和机器人所在群消息。WebSocket endpoint以AppID/AppSecret建立应用事件连接，不以用户OAuth token建立个人全量收件箱连接。connection.probe分别报告identity=application、send_identity=user/bot、coverage=application_authorized_chats以及personal_inbox=not_provided_by_im_message_receive_v1；requested_coverage只是本地授权目标，不能作为平台实际覆盖证明。本人HTTP历史/收发成功、WebSocket connected均不能证明机器人未加入群及本人其他私聊可被实时推送。不得因此自行加群或退回轮询。依据：[官方接收消息事件](https://open.larksuite.com/document/server-docs/im-v1/message/events/receive)。
+
+## 表情触发扩展
+
+除提及、私聊外，允许显式订阅 message.reaction.added，按原生 emoji_type 配置任意一个或多个，复用统一来源、黑名单、授权与准确会话投递。完整语义、回复身份及官方覆盖边界见 [0013](0013-reaction-triggers.md)。默认提及规则保持不变。

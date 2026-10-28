@@ -47,7 +47,7 @@
         :sources
         100
         :event_kinds
-        3
+        5
         :preview_samples
         20
         :scope_tools

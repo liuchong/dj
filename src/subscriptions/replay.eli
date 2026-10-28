@@ -24,7 +24,9 @@
                 (unless (and event (eventReadable context event) (= (nativeGet routing "state") "done")
                   (js-call (nativeGet current "resolved_sources") :some (lambda (source)
                     (matchesSource source (nativeGet source "include_threads") event)))) (must (failure "forbidden")))
-                (unless (and (js-call (nativeGet connection "allowed_sender_kinds" (js-array "human")) :includes (nativeGet (nativeGet event "sender") "kind"))
+                (unless (and (js-call (nativeGet connection "allowed_sender_kinds" (js-array "human")) :includes
+                  (nativeGet (if (= (nativeGet event "event_kind") "message.reaction.added")
+                    (nativeGet (nativeGet event "reaction") "operator") (nativeGet event "sender")) "kind"))
                   (= (echoState context event) "clear"))
                   (must (failure "forbidden")))
                 (let* ((answer (evaluatePredicate (nativeGet current "predicate") event))

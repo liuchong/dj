@@ -161,7 +161,7 @@
                             source-cursor
                             "source_not_allowed"))
                         (throw djReturn3Token)))
-                    (unless (js-call (js-array "message.created" "resource.changed") :includes (nativeGet normalized "event_kind"))
+                    (unless (js-call (js-array "message.created" "resource.changed" "message.reaction.added") :includes (nativeGet normalized "event_kind"))
                       (progn
                         (setq
                           djReturn3Value
@@ -325,6 +325,8 @@
                         (put event :addressed_bot (nativeGet normalized "addressed_bot")))
                       (when (nativeGet normalized "resource") (put event :resource (nativeGet normalized "resource")))
                       (when (Array/isArray (nativeGet normalized "people")) (put event :people (nativeGet normalized "people")))
+                      (when (= (nativeGet normalized "event_kind") "message.reaction.added")
+                        (put event :reaction (nativeGet normalized "reaction")))
                       (when (nativeGet normalized "root_message_id") (put event :root_message_id (nativeGet normalized "root_message_id")))
                       (when (nativeGet normalized "reply_to")
                         (put

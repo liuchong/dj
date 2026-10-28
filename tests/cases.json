@@ -27161,6 +27161,50 @@
       "given": "Native provider metadata and independent Skill targets",
       "when": "Map runtime state, validate local origins and encode messages",
       "then": "No none-as-permission bug, no invented agent availability, no launch or credential scope expansion"
+    },
+    {
+      "case_id": "T38.reaction-trigger.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/reactions.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-lark-events",
+      "acceptance_ids": [
+        "A01"
+      ],
+      "requirements": [
+        "SPEC-0013"
+      ],
+      "given": "Synthetic official WebSocket frames and exact message HTTP responses",
+      "when": "Route configured reactions through the real durable Core and blacklist",
+      "then": "Original body and thread delivered once; automatic reactions do not self-trigger"
+    },
+    {
+      "case_id": "T38.reaction-trigger.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/reactions.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 5000,
+      "resource_group": "pure",
+      "acceptance_ids": [
+        "A01"
+      ],
+      "requirements": [
+        "SPEC-0013"
+      ],
+      "given": "Native reaction payload and explicit connection identity",
+      "when": "Validate and match emoji/operator metadata and choose reply route",
+      "then": "Exact native codes, independent triggers, no false mention or automated reaction loop"
     }
   ],
   "source_extension_base": "c1eb7b1"

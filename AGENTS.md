@@ -45,6 +45,8 @@ Lark 必须直连官方 WebSocket 与 HTTPS API，禁止 SDK、CLI 及其子进�
 
 ## 正式规格与接续要求
 
+- 可配置表情触发按 [0013](docs/specs/0013-reaction-triggers.md)：使用原生表情标识和添加者，复用订阅与统一黑名单；不把表情当作新的提及，不让自动工作/已阅表情自触发。
+
 - Kimi / DSH 现有实例接入按 [0012](docs/specs/0012-kimi-dsh-existing-sessions.md)：区分 Desktop Work、Desktop Host 与 Web，不以普通 TUI、新托管进程、共用历史或桌面像素替代准确原生接口证据。
 
 - AI 通知展示按 [0011](docs/specs/0011-readable-notifications.md)：MDP 元数据和 Markdown 原文块；原生 API 外壳、结构化接口和审计快照分别处理，不改写接收者规则，不把通知布局强加给普通回复。

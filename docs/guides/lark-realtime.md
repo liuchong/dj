@@ -49,3 +49,9 @@ Lark 应用后台启用长连接与 im.message.receive_v1，使用受保护 app_
 ## 已核验的范围
 
 正式常驻服务中，真实未提及消息进入 Core 而不通知；真实 @ 与未 @ 的组合关键词分别投到同一原始 Codex 对话，原生读回找到对应输入和确认。本人 Core 发送与机器人 Core 回复都有官方平台读回，回复指向原消息。其他平台、全部个人收件箱和性能不由这些结果推定通过。
+
+## 添加表情触发
+
+在现有订阅 selector.event_kinds 中加入 message.reaction.added，用 reaction.emoji_type 的 eq/in 指定一个或多个平台原生表情标识，例如 Pin、Fire，大小写须精确。使用 any 与原来的提及、私聊分支组合；每个分支先限定 event_kind，避免原消息旧的提及或私聊属性让任意表情误命中。添加者可用 reaction.operator.id/kind/is_self 限定，默认沿用连接允许的操作者类别与统一黑名单；不按 emoji 的显示文字猜测代码。
+
+参考[完整订阅示例](../../skills/dj/references/reactions.md)与[规格 0013](../specs/0013-reaction-triggers.md)。平台须订阅 im.message.reaction.created_v1，且该事件只覆盖机器人所在会话；读取历史表情不代表实时已接通。删除表情不撤回输入，也不自动扫描旧表情补投。

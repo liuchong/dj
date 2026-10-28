@@ -182,7 +182,8 @@
             (unless
               (and
                 (= echo "clear")
-                (js-call allowed-kinds :includes (nativeGet (nativeGet event "sender") "kind")))
+                (js-call allowed-kinds :includes (nativeGet (if (= (nativeGet event "event_kind") "message.reaction.added")
+                  (nativeGet (nativeGet event "reaction") "operator") (nativeGet event "sender")) "kind")))
               (progn
                 (setq
                   djReturn2Value

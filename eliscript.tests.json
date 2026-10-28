@@ -50,7 +50,9 @@
     "tests/unit/tasks.test.eli",
     "tests/support/harness-receiver.eli",
     "tests/integration/kimi-dsh.test.eli",
-    "tests/unit/kimi-dsh.test.eli"
+    "tests/unit/kimi-dsh.test.eli",
+    "tests/integration/reactions.test.eli",
+    "tests/unit/reactions.test.eli"
   ],
   "outDir": "dist-tests"
 }

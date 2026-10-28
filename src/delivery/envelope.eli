@@ -21,6 +21,7 @@
       "resource"
       "people"
       "mentions"
+      "reaction"
       "reply_route"
       "content"
       "attachments"

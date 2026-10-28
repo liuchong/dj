@@ -205,7 +205,7 @@
               (js-call
                 (nativeGet (nativeGet spec "selector") "event_kinds")
                 :every
-                (lambda (kind) (js-call (js-array "message.created" "resource.changed") :includes kind))))
+                (lambda (kind) (js-call (js-array "message.created" "resource.changed" "message.reaction.added") :includes kind))))
             (progn (setq djReturn4Value (failure "unsupported")) (throw djReturn4Token)))
           (let*
             ((target (targetState context agent))
