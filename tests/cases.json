@@ -27232,6 +27232,33 @@
       "given": "A user event connection with persistent inbox checkpoints and a real isolated SQLite Core",
       "when": "Poll private and group messages through independent user and bot instances, resume pages and restart, overlap a WebSocket message and isolate a permission failure",
       "then": "New messages share ingress and deduplication, retain mentions and thread context, preserve checkpoints, and expose the native error"
+    },
+    {
+      "case_id": "T41.hybrid-inbox-flow.integration",
+      "parent_id": "T41",
+      "file": "tests/integration/hybrid-inbox.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {
+        "transport": "websocket-http-core"
+      },
+      "required_profile": null,
+      "timeout_ms": 10000,
+      "resource_group": "isolated",
+      "requirements": [
+        "Q01",
+        "Q03",
+        "Q07"
+      ],
+      "acceptance_ids": [
+        "A03",
+        "A05"
+      ],
+      "given": "Independent user and bot event ports, controlled official wire/API peers, a real isolated SQLite Core and an existing recipient",
+      "when": "Receive WS and HTTP messages, overlap both directions, apply mention/private subscriptions and trigger blacklist, reply or complete without reply",
+      "then": "History retains all visible messages, each connection/message key is unique, only matching nonblocked messages reach the recipient and every Typing marker is removed"
     }
   ],
   "source_extension_base": "c1eb7b1"

@@ -50,3 +50,19 @@
 - 机器人只能补读官方可发现的群和已知私聊，不能声称发现了全部未知私聊。
 - 本记录证明这些真实样本从平台进入 DJ、历史和原接收对话；不证明模型完成了额外业务任务。
 - 对照采集仍可继续。编译与采集程序交接期间，服务 WebSocket 保持原运行；采集程序保留原始开始时间及事件游标，HTTP 从旧水位重叠续查。该时段的 HTTP 首次观察延迟不能用来评价服务轮询速度。
+
+## 固化的完整链路集成测试
+
+`T41.hybrid-inbox-flow.integration` 位于 `tests/integration/hybrid-inbox.test.eli`，通过正式 `createLarkEventPort` 装配两个连接；仅平台 WebSocket／HTTP 与 Agent 接收端使用可控替身，其余使用实际 Core、SQLite、订阅、过滤、投递和 Working 生命周期。测试不直接调用 `Core.ingest`，不读取本机凭据、不外发真实消息。
+
+覆盖本人收机器人私聊、机器人收人类私聊、群聊提及两种身份、未提及消息、黑名单消息，以及 WebSocket 先到和 HTTP 先到的重叠。断言同连接不重复、不同连接保留独立来源、完整换行／thread／引用入库、仅四条匹配投递、按本人身份原路回复，以及回复／无需回复后全部 Typing 撤销。已有 `T41.hybrid-inbox.integration` 继续覆盖分页、持久断点和错误隔离。
+
+可独立复跑（先按开发说明完成编译）：
+
+```sh
+bun test dist-tests/tests/integration/hybrid-inbox.test.mjs dist-tests/tests/integration/im.test.mjs --test-name-pattern '^T41.hybrid-inbox(-flow)?\.integration$'
+```
+
+该自动化测试验证组件集成，不将可控平台替身冒充官方线上推送；上文真实账号验收证据继续单独保留。
+
+两项集成测试已集中通过，共 **210 条断言**：补收／断点用例约 69 ms，完整链路约 292 ms，整组约 445 ms。首轮完整链路的回复夹具缺少官方回包中的 `chat_id`，正式发送器因此正确判为 `unknown`、未结束 Working；补齐夹具后原路回复获 `accepted`，四条处理项与表情清理全部完成。编译期间的括号作用域错误及该次失败日志均保留，不改写为首轮通过。

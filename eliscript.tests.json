@@ -52,7 +52,8 @@
     "tests/integration/kimi-dsh.test.eli",
     "tests/unit/kimi-dsh.test.eli",
     "tests/integration/reactions.test.eli",
-    "tests/unit/reactions.test.eli"
+    "tests/unit/reactions.test.eli",
+    "tests/integration/hybrid-inbox.test.eli"
   ],
   "outDir": "dist-tests"
 }
