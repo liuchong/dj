@@ -27259,6 +27259,32 @@
       "given": "Independent user and bot event ports, controlled official wire/API peers, a real isolated SQLite Core and an existing recipient",
       "when": "Receive WS and HTTP messages, overlap both directions, apply mention/private subscriptions and trigger blacklist, reply or complete without reply",
       "then": "History retains all visible messages, each connection/message key is unique, only matching nonblocked messages reach the recipient and every Typing marker is removed"
+    },
+    {
+      "case_id": "T24.scoped-send-permission.integration",
+      "parent_id": "T24",
+      "file": "tests/integration/im.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {
+        "scope": "connection-and-chat"
+      },
+      "required_profile": null,
+      "timeout_ms": 10000,
+      "resource_group": "isolated",
+      "requirements": [
+        "Q01",
+        "Q03"
+      ],
+      "acceptance_ids": [
+        "A03",
+        "A05"
+      ],
+      "given": "A recipient with reply access and proactive send limited to one exact chat",
+      "when": "A different chat is denied, the operator grants that chat and reloads the same principal, then the caller retries the original logical send",
+      "then": "Denial has no effect, the new chat sends once with the same key, the original scope is retained and a third chat remains forbidden"
     }
   ],
   "source_extension_base": "c1eb7b1"

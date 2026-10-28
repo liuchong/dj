@@ -48,6 +48,12 @@ user 与 bot 连接使用同一套 WebSocket＋HTTP 收件器，各自独立实�
 
 所有外发保存固定幂等键，unknown 先查 operation/outbound 与官方读回，不换键重发。配置中的 OAuth 与应用密钥文件仅当前用户可读，模型只拿自己的客户端引用。
 
+### 回复权限与主动发送权限分开
+
+`message.reply` 不包含 `message.send`。助手能回复收到的消息，不表示它能主动向另一个群发通知。主动发送需要操作员在该助手主体的 grants 中明确授予 `message.send`，资源可以限定为 `{ "connection_id": "lark-user", "native_chat_id": "oc_demo_group" }`；已有群的授权不会自动扩展到新群，不能用 operator 身份绕过。
+
+发送前返回 `forbidden`、`effect_state=none` 且没有操作记录，表示 DJ 本地授权未通过，并非 Lark 平台拒绝或消息已发送。经人类授权补齐准确目标范围、重载服务后，调用方重新解析会话引用，再沿原正文和原逻辑幂等键续接；有操作或不确定副作用时仍先核原结果。`T24.scoped-send-permission.integration` 固化了拒绝无副作用、定向增权重载、原键只发送一次、保留原群授权和未授权群仍拒绝的回归。
+
 ## 已核验的范围
 
 正式常驻服务中，真实未提及消息进入 Core 而不通知；真实 @ 与未 @ 的组合关键词分别投到同一原始 Codex 对话，原生读回找到对应输入和确认。本人 Core 发送与机器人 Core 回复都有官方平台读回，回复指向原消息。其他平台、全部个人收件箱和性能不由这些结果推定通过。
