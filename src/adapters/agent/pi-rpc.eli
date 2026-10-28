@@ -4,7 +4,7 @@
   (import "../../core/errors.eli" success failure)
   (import "../../core/types.eli" utf8Bytes isUtcTime)
   (import "../../core/limits.eli" limits)
-  (import "../../delivery/envelope.eli" encodeAgentInput encodeEnvelope)
+  (import "../../delivery/envelope.eli" encodeAgentInput renderEnvelope)
   (defun channelFailure
     (code definite &optional reason)
     (Object/assign
@@ -1064,7 +1064,7 @@
                                       (nativeGet record "channel")
                                       :request
                                       "prompt"
-                                      (js-object :message (encodeEnvelope envelope))
+                                      (js-object :message (renderEnvelope envelope))
                                       (Object/assign
                                         (js-object)
                                         context

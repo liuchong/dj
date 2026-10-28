@@ -45,6 +45,8 @@ Lark 必须直连官方 WebSocket 与 HTTPS API，禁止 SDK、CLI 及其子进�
 
 ## 正式规格与接续要求
 
+- AI 通知展示按 [0011](docs/specs/0011-readable-notifications.md)：MDP 元数据和 Markdown 原文块；原生 API 外壳、结构化接口和审计快照分别处理，不改写接收者规则，不把通知布局强加给普通回复。
+
 - 消息消费按 [0010](docs/specs/0010-message-consumption.md)：默认不等上一项业务完成，复用已存在会话的原生忙时输入；显式配置才排队。持久队列、全局传输并发和 AI 业务完成分别处理。
 
 - 任务巡查按 [0009](docs/specs/0009-task-inspection.md)：管理员显式白名单可查全部，普通用户仅查绑定连接，子对话归属未知不猜；IM 查询不唤醒 AI。

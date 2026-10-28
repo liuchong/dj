@@ -2,7 +2,7 @@
   (import "../../core/native.eli" nativeGet nativeTypeOf nativeSetTimeout nativeClearTimeout)
   (import "../../core/types.eli" utf8Bytes sliceUtf8)
   (import "../../core/errors.eli" failure)
-  (import "../../delivery/envelope.eli" encodeEnvelope)
+  (import "../../delivery/envelope.eli" renderEnvelope)
   (import "./json-rpc.eli" createJsonRpcChannel rpcError)
 
   (defun createCliPort (tool config host)
@@ -236,7 +236,7 @@
                     (unless (and session (= mode "start_idle")
                         (= (nativeGet (funcall sessionRecord record session) "runtime_state") "idle"))
                       (throw (rpcError "cli_not_idle")))
-                    (let* ((text (encodeEnvelope envelope 250000))
+                    (let* ((text (renderEnvelope envelope 250000))
                            (active (js-object :key key :text text :session_id (nativeGet session "id")
                                      :ref (if (= tool "cursor") key nil)))
                            (receipt nil) (timer nil))

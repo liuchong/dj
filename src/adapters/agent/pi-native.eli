@@ -1,7 +1,7 @@
 (module dj.adapters.agent.pi-native
   (import "../../core/native.eli" nativeGet nativeTypeOf)
   (import "../../core/types.eli" utf8Bytes)
-  (import "../../delivery/envelope.eli" encodeEnvelope)
+  (import "../../delivery/envelope.eli" renderEnvelope)
   (import "./desktop-transport.eli" readCursorManifest cursorRequest)
   (defconst piCapabilities
     (js-object :session_list "supported" :session_messages "supported"
@@ -140,7 +140,7 @@
                 (unless (js-call (js-array "start_idle" "steer") :includes mode) (throw (new globalThis.Error "unsupported Pi submit mode")))
                 (let* ((endpoint (funcall endpointFor binding))
                        (before (await (funcall request endpoint binding "probe" (js-object) context)))
-                       (text (encodeEnvelope envelope)))
+                       (text (renderEnvelope envelope)))
                   (unless (and (= (nativeGet (nativeGet before "data") "runtime_state") "idle")
                                (<= (utf8Bytes text) 262144))
                     (throw (new globalThis.Error "Pi original target is not sendable")))

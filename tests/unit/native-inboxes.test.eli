@@ -2,7 +2,7 @@
   (import "bun:test" expect)
   (import "../support/case.eli" withUnitCase)
   (import "../../src/core/native.eli" nativeGet)
-  (import "../../src/delivery/envelope.eli" encodeAgentInput)
+  (import "../../src/delivery/envelope.eli" encodeAgentInput renderEnvelope)
   (import "../../src/adapters/agent/antigravity.eli" cascadeMessage cascadeWorkspace cascadeState)
   (import "../../src/service/config.eli" validateStructure)
   (import "node:path" resolve)
@@ -14,7 +14,7 @@
       (js-call (js-array "claude" "antigravity") :forEach (lambda (tool)
         (let* ((input (encodeAgentInput tool envelope "dispatch-test"))
                (wire (JSON/parse (nativeGet input "wire"))))
-          (js-call (expect (JSON/parse (nativeGet wire "text"))) :toEqual envelope)
+          (js-call (expect (nativeGet wire "text")) :toBe (renderEnvelope envelope))
           (js-call (expect (nativeGet input "frame_bytes")) :toBe (Buffer/byteLength (nativeGet input "wire") "utf8"))))))
     (let* ((step (js-object :plannerResponse (js-object :messageId "native-answer"
                     :response "visible answer" :thinking "private thinking")))

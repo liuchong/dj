@@ -2,7 +2,7 @@
   (import "../../core/native.eli" nativeGet nativeTypeOf nativeBitAnd)
   (import "../../core/types.eli" utf8Bytes sliceUtf8)
   (import "../../core/limits.eli" limits)
-  (import "../../delivery/envelope.eli" encodeEnvelope)
+  (import "../../delivery/envelope.eli" renderEnvelope)
   (import "./cursor-control.eli" cursorCreationId)
   (import "./cursor-native.eli" cursorNativeRequest)
   (import "./desktop-transport.eli" desktopError desktopDeadline cursorRequest openCodexChannel)
@@ -315,7 +315,7 @@
           (try
             (unless (js-call (js-array "start_idle" "steer") :includes mode) (throw (desktopError "desktop_send_mode")))
             (let* ((endpoint (funcall endpointFor binding)) (id (nativeGet binding "native_session_id"))
-                   (text (encodeEnvelope envelope 250000)))
+                   (text (renderEnvelope envelope 250000)))
               (if (= tool "cursor")
                 (let* ((response (when (nativeGet endpoint "native_api")
                                   (await (cursorNativeRequest endpoint (js-object :operation "probe" :thread id) context))))

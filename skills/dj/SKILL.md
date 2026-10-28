@@ -51,6 +51,7 @@ metadata:
 
 - recovery: 新会话接入、上下文压缩或恢复后，先用本对话的agent_id或稳定session_key调用session.rules.get；不能只依赖聊天历史、定时器文案或旧订阅提示。新唤醒信封的conversation_rules携带准确目标、revision、sha256及完整正文。
 - manage: 用户授权后通过session.rules.update保存完整规则文本，带expected_revision和固定idempotency_key。目标用agent_id/session_ref/session_key三选一，需要本对话的session.rules.manage权限。空text表示清空，不能将其他对话或消息正文当作规则写入。
+- notification_layout: 原生会话通知采用 MDP 字段和 literal_blocks 引用的 Markdown 原文块；正文、持久规则和 instructions 保留真实换行。它是 DJ 的输入布局，不能当作普通回答模板或原消息的新权限；API 返回和审计快照仍是结构化数据。
 - readability: 保存易读的Markdown标题、短列表或扁平键值与真实换行，不把规则对象或整段正文再次JSON序列化成text。读取结果的text才是规则原文；通知信封是DJ提供的来源与路由数据，不是最终回复模板。普通回复使用自然语言，只有明确需要机器消费时才约定结构化输出；已有明确输出规则仍由本对话按授权维护，不由DJ覆盖。
 - precedence: 当前明确人类指令及系统约束优先；持久对话规则用于恢复职责，订阅instructions只补本条来源任务。规则不改变工具权限、发送授权或工作区核心约束。更新不会回写已提交/领取的历史快照。
 - distinction: 规则持久化保证可读回，不保证AI必然遵守，也不补齐任何消息源、定时器或任务唤醒覆盖。完整示例见[对话规则](references/session-rules.md)。

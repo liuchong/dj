@@ -1,0 +1,34 @@
+- mds: "0.1"
+- mdp: "1.0"
+
+# Preamble
+
+| name | type | required | enum |
+| --- | --- | --- | --- |
+| format | string | true | dj_notification |
+| body_layout | string | true | mdp_with_literal_blocks |
+
+# Sections
+
+| name | kind | required | min_rows | additional |
+| --- | --- | --- | --- | --- |
+| notification | object | true | | true |
+| literal_blocks | list | true | 1 | false |
+
+# notification
+
+| name | type | required | enum |
+| --- | --- | --- | --- |
+| kind | string | true | external_message |
+
+# literal_blocks
+
+| name | type | required | min | max | min_length | max_length | enum |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| id | string | true | | | 1 | | |
+| path | string | true | | | 1 | | |
+| encoding | string | true | | | | | text,json |
+| utf8_bytes | int | true | 0 | | | | |
+| sha256 | string | true | | | 64 | 64 | |
+
+MDS 只校验结构元数据；原文围栏由 Markdown 显示，原始对象由内部审计快照保存。

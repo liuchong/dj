@@ -27095,6 +27095,26 @@
       "given": "Original Codex owner and message consumer policy",
       "when": "Build busy steer and idle start native requests",
       "then": "Keep exact session/model inheritance, default immediate delivery and explicit queue/global override"
+    },
+    {
+      "case_id": "T38.readable-notification.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/session-rules.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "pure",
+      "acceptance_ids": [
+        "A01",
+        "A03"
+      ],
+      "requirements": [
+        "SPEC-0011"
+      ]
     }
   ],
   "source_extension_base": "c1eb7b1"

@@ -1,7 +1,7 @@
 (module dj.adapters.agent.claude-inbox
   (import "../../core/native.eli" nativeGet nativeTypeOf nativeBitAnd nativeSetTimeout nativeClearTimeout)
   (import "../../core/types.eli" utf8Bytes)
-  (import "../../delivery/envelope.eli" encodeEnvelope)
+  (import "../../delivery/envelope.eli" renderEnvelope)
   (import "./native-local.eli" ownedJson processProof expectedEpoch)
   (import "./desktop-transport.eli" desktopError desktopDeadline socketIdentity)
   (import "node:net" createServer createConnection)
@@ -220,7 +220,7 @@
         :submit (async (binding envelope mode key context)
           (let ((started false) (entry nil))
             (try
-              (let* ((endpoint (funcall endpointFor binding)) (text (encodeEnvelope envelope))
+              (let* ((endpoint (funcall endpointFor binding)) (text (renderEnvelope envelope))
                      (checked (await (funcall probe binding binding context))) (id (randomUUID)))
                 (unless (and (js-call (js-array "start_idle" "steer") :includes mode) (or (= (nativeGet checked "runtime_state") "idle")
                                (and (= mode "steer") (= (nativeGet checked "runtime_state") "busy")))

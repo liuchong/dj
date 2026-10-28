@@ -1,7 +1,7 @@
 (module dj.adapters.agent.antigravity
   (import "../../core/native.eli" nativeGet nativeTypeOf)
   (import "../../core/types.eli" utf8Bytes)
-  (import "../../delivery/envelope.eli" encodeEnvelope)
+  (import "../../delivery/envelope.eli" renderEnvelope)
   (import "./native-local.eli" antigravityRpc expectedEpoch)
   (import "node:url" pathToFileURL)
   (defconst antigravityCapabilities (Object/freeze
@@ -142,7 +142,7 @@
                      (rows (await (funcall steps endpoint id offset total context t)))
                      (user (nativeGet (aref rows 0) "userInput")) (config (nativeGet user "userConfig"))
                      (model (nativeGet (nativeGet config "plannerConfig") "planModel"))
-                     (text (encodeEnvelope envelope)))
+                     (text (renderEnvelope envelope)))
                 (unless (and (= (cascadeState (nativeGet row "status")) "idle")
                              (= (nativeTypeOf model) "string") (> (js-length model) 0) (<= (utf8Bytes text) 262144))
                   (throw (new globalThis.Error "original Antigravity model/session is not sendable")))
