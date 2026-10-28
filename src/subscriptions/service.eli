@@ -201,7 +201,7 @@
             (and
               (= (nativeGet spec "start") "now")
               (js-call (js-array "current" "recent") :includes (nativeGet (nativeGet spec "context_policy") "mode"))
-              (= (nativeGet (nativeGet spec "delivery_policy") "busy") "queue")
+              (js-call (js-array "steer" "queue") :includes (nativeGet (nativeGet spec "delivery_policy") "busy"))
               (js-call
                 (nativeGet (nativeGet spec "selector") "event_kinds")
                 :every

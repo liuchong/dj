@@ -339,7 +339,7 @@
       ((js-call (js-array "message.send" "message.reply") :includes name)
         (js-array "send" "exact_thread" "single_text"))
       ((= group "subscriptions")
-        (js-array "created" "current" "queue" "hold" "recipient_binding"))
+        (js-array "created" "current" "steer" "hold" "recipient_binding"))
       ((= group "catalog") (js-array "configured_source"))
       ((= group "search") (js-array "literal" "indexed_content"))
       ((= group "refresh") (js-array "read_only_native_catalog" "bounded_native_frame"))
