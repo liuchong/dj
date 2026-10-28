@@ -11,7 +11,7 @@
   (import "node:crypto" randomUUID)
   (defconst claudeCapabilities (Object/freeze
     (js-object :session_list "supported" :session_messages "supported" :session_probe "supported"
-      :session_send "supported" :start_idle "supported" :session_create "unsupported"
+      :session_send "supported" :start_idle "supported" :message_during_run "supported" :session_create "unsupported"
       :instance_start "unsupported" :instance_stop "unsupported" :native_idempotency "unsupported"
       :lookup_send "positive_only" :lookup_create "unsupported" :observe "unsupported" :max_input_frame_bytes 262144)))
   (defasync claudeTarget (endpoint context)
@@ -222,7 +222,8 @@
             (try
               (let* ((endpoint (funcall endpointFor binding)) (text (encodeEnvelope envelope))
                      (checked (await (funcall probe binding binding context))) (id (randomUUID)))
-                (unless (and (= mode "start_idle") (= (nativeGet checked "runtime_state") "idle")
+                (unless (and (js-call (js-array "start_idle" "steer") :includes mode) (or (= (nativeGet checked "runtime_state") "idle")
+                               (and (= mode "steer") (= (nativeGet checked "runtime_state") "busy")))
                              (<= (utf8Bytes text) 262144) (< (nativeGet pending "size") 256))
                   (throw (desktopError "claude_not_sendable")))
                 (setq entry (js-object :kind "send" :peer (nativeGet endpoint "socket_path") :key key :notice nil))

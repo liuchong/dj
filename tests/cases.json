@@ -27051,6 +27051,50 @@
       "given": "Bound IM identities and explicit connection ownership",
       "when": "Account generation, identity binding or administrator policy changes",
       "then": "Reject stale or unbound queries and queued disclosures; render descendants by parent rather than BFS order"
+    },
+    {
+      "case_id": "T31.message-consumption.sqlite",
+      "parent_id": "T31",
+      "file": "tests/integration/tasks.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "requirements": [
+        "SPEC-0010"
+      ],
+      "acceptance_ids": [
+        "A13"
+      ],
+      "given": "Long-running original session with two independent messages",
+      "when": "Consume with steer or explicit queue and an uncertain first interactive send",
+      "then": "Busy input does not wait for business completion; uncertainty only blocks itself; configured queue waits for idle"
+    },
+    {
+      "case_id": "T31.message-consumption.unit",
+      "parent_id": "T31",
+      "file": "tests/unit/tasks.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 1000,
+      "resource_group": "unit",
+      "requirements": [
+        "SPEC-0010"
+      ],
+      "acceptance_ids": [
+        "A13"
+      ],
+      "given": "Original Codex owner and message consumer policy",
+      "when": "Build busy steer and idle start native requests",
+      "then": "Keep exact session/model inheritance, default immediate delivery and explicit queue/global override"
     }
   ],
   "source_extension_base": "c1eb7b1"

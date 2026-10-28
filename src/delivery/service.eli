@@ -344,8 +344,6 @@
     (let ((djReturn3Token (js-object)) (djReturn3Value nil))
       (try
         (let* ((repository (nativeGet context "repository")) (target-args args) (alias nil))
-          (unless (= (nativeGet (nativeGet args "delivery_policy") "busy") "queue")
-            (progn (setq djReturn3Value (failure "unsupported")) (throw djReturn3Token)))
           (when (nativeGet args "agent_id")
             (setq alias (js-call repository :get "agents" (nativeGet args "agent_id")))
             (unless (and alias (= (nativeGet alias "state") "registered"))

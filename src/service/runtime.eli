@@ -14,7 +14,7 @@
   (import "../ingestion/service.eli" acceptEvent persistProgress)
   (import "../tasks/commands.eli" processCommands)
   (import "../routing/matcher.eli" matchTurn)
-  (import "../delivery/scheduler.eli" dispatchRoute reconcileDelivery observeDelivery)
+  (import "../delivery/scheduler.eli" dispatchRoute selectDispatchHead reconcileDelivery observeDelivery)
   (import "../delivery/working.eli" processWorking)
   (import "../messaging/service.eli" dispatchOutbound reconcileOutbound)
   (import "../catalog/refresh.eli" runCatalogBatch tombstoneMessage)
@@ -31,7 +31,7 @@
     (let ((djReturn1Token (js-object)) (djReturn1Value nil))
       (try
         (let* ((runtime (nativeGet context "runtime")) (jobs (nativeGet runtime "jobs")))
-          (when (or (js-call jobs :has key) (>= (nativeGet jobs "size") 64))
+          (when (or (js-call jobs :has key) (>= (nativeGet jobs "size") (nativeGet (nativeGet (nativeGet context "config") "message_delivery") "max_in_flight" 64)))
             (progn (setq djReturn1Value false) (throw djReturn1Token)))
           (let ((entry (js-object :key key :started_at (utcNow context) :promise nil)))
             (js-call jobs :set key entry)
@@ -451,9 +451,7 @@
         (when (> steps 0)
           (let ((head nil))
             (try
-              (setq head (js-call (js-call db :query
-                "SELECT state FROM deliveries INDEXED BY deliveries_route_head WHERE route_id=? AND state IN ('ready','deferred','blocked','submitting','unknown') ORDER BY delivery_seq LIMIT 1")
-                :get route-id))
+              (setq head (selectDispatchHead context route-id))
               (catch unavailable
                 (setq result (failure "storage_unavailable") running false)))
             ;; This read is only an early exit; dispatch rechecks the actual head.
@@ -479,14 +477,14 @@
       (turn (js-object :launched 0 :dispatched 0 :more false)))
       (js-call roles :forEach (lambda (role)
         (let* ((routes (= role "routes"))
-          (available (Math/max 0 (- 64 (nativeGet jobs "size"))))
+          (available (Math/max 0 (- (nativeGet (nativeGet (nativeGet context "config") "message_delivery") "max_in_flight" 64) (nativeGet jobs "size"))))
           (budget (Math/min (if routes 32 16) available)))
           (if (= budget 0)
             (put turn :more t)
             (let* ((scan (js-object))
               (rows (pendingRows context role
                 (if routes
-                  "SELECT r.route_id AS key FROM routes r WHERE r.route_id>? AND r.unknown_delivery_id IS NULL AND EXISTS (SELECT 1 FROM deliveries d INDEXED BY deliveries_route_head WHERE d.route_id=r.route_id AND d.state IN ('ready','deferred','blocked','submitting','unknown') AND d.state IN ('ready','deferred','blocked')) ORDER BY r.route_id LIMIT ?"
+                  "SELECT r.route_id AS key FROM routes r WHERE r.route_id>? AND EXISTS (SELECT 1 FROM deliveries d INDEXED BY deliveries_route_head WHERE d.route_id=r.route_id AND d.state IN ('ready','deferred','blocked','submitting','unknown') AND d.state IN ('ready','deferred','blocked')) ORDER BY r.route_id LIMIT ?"
                   "SELECT outbound_id AS key FROM outbound WHERE outbound_id>? AND state IN ('ready','deferred','blocked') ORDER BY outbound_id LIMIT ?")
                 budget scan)))
               (when (or (= (js-length rows) budget) (not (nativeGet scan "from_start")))
@@ -766,8 +764,9 @@
                       :held_deliveries
                       (heldDeliveryCount context))))
                 (throw djReturn10Token)))
-            ;; Probe accepted inputs at their original exact binding before treating
-            ;; their native work as drained. Queued deliveries stay held.
+            ;; Only owned managed processes must finish native work before teardown.
+            ;; Existing clients retain their own business lifetime; accepted messages
+            ;; remain durable and are not resent after a DJ restart.
             (let*
               ((db (nativeGet (nativeGet context "store") "db"))
                 (rows
@@ -775,7 +774,7 @@
                     (js-call
                       db
                       :query
-                      "SELECT payload FROM deliveries WHERE state='accepted' AND COALESCE(json_extract(payload,'$.native_drained'),0)=0 LIMIT 100")
+                      "SELECT d.payload FROM deliveries d JOIN bindings b ON b.binding_id=json_extract(d.payload,'$.binding_id') JOIN instances i ON i.instance_id=b.instance_id WHERE i.ownership='managed' AND d.state='accepted' AND COALESCE(json_extract(d.payload,'$.native_drained'),0)=0 LIMIT 100")
                     :all))
                 (index 0))
               (while

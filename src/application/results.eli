@@ -110,7 +110,7 @@
   (let ((properties (js-object)))
     (js-call
       (js-call
-        "receive_events send reply_thread replay native_history session_create session_send session_list session_messages session_probe instance_start instance_stop native_idempotency lookup_send lookup_create observe live_receiver managed_rpc start_idle"
+        "receive_events send reply_thread replay native_history session_create session_send session_list session_messages session_probe instance_start instance_stop native_idempotency lookup_send lookup_create observe live_receiver managed_rpc start_idle message_during_run"
         :split
         " ")
       :forEach

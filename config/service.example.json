@@ -296,5 +296,9 @@
   "task_inspection": {
     "administrators": [],
     "users": []
+  },
+  "message_delivery": {
+    "busy": "steer",
+    "max_in_flight": 64
   }
 }

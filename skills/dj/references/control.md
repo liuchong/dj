@@ -54,7 +54,7 @@ search 仅按稳定 session_key 顺序，不支持全局时间/相关度排序�
 
 保存 operation_id/delivery_id，以 delivery.get 查投递状态；没有 agent_id 仍可按 operation_id/session_key 查自己的 delivery。目标原生回答通过 session.message.list/get 读取，正文未覆盖则显式定点 catalog.refresh(include_content=true) 后再读，不会自动回某个 IM。offline 不会自动启动或换会话；unknown 先 reconcile，不能新键重发。短期 session_ref 过期后用稳定 session_key 调 session.get，或精确重新 resolve，已受理 Delivery 仍保存固定目标。
 
-delivery_policy 仅 busy/offline/ttl_seconds，首期 queue/hold；context_policy/current 不属于直发参数。注销登记、暂停订阅不取消独立 direct，也不清共享 unknown。stopping 时新直发被拒绝，不能另起同名实例绕过。
+delivery_policy 仅 busy/offline/ttl_seconds，默认 steer/hold；busy=queue 显式要求等待空闲，原生未声明忙时输入支持则明确受阻；context_policy/current 不属于直发参数。注销登记、暂停订阅不取消独立 direct，也不清共享 unknown。stopping 时新直发被拒绝，不能另起同名实例绕过。
 
 ## 显式启动与创建
 

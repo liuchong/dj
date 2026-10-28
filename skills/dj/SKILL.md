@@ -119,3 +119,8 @@ metadata:
 
 - inspect: task.list/task.tree 按管理员白名单或本人绑定连接查询来源树；IM 私聊可用 /dj tasks 和 /dj tree DELIVERY_ID，查询不唤醒 AI。详见[任务巡查](references/tasks.md)。
 - descendants: 子对话使用准确 delivery_id 和 session_key 经 task.link 登记，默认标注未原生核实；未知关联不猜。任务接收、会话忙闲和任务完成分别记录。
+
+## 消息消费模式
+
+- default_delivery: 默认 busy=steer，消息交给正在运行的原会话，不等待前一个业务任务结束；busy=queue 可显式要求空闲后消费，pull/ack 仍可独立使用。服务配置 message_delivery.busy 可统一覆盖，max_in_flight 限制传输并发，不占用到模型任务完成。
+- busy_limit: 原生端口未声明 message_during_run 支持时，忙时明确显示 busy_input_unsupported，不静默改成排队或创建新 Agent；可明确选择 queue。单条 interactive 的未知结果不应阻塞其他独立消息，但该条本身绝不盲目重发。

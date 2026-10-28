@@ -5,7 +5,7 @@
   (import "./desktop-transport.eli" readCursorManifest cursorRequest)
   (defconst piCapabilities
     (js-object :session_list "supported" :session_messages "supported"
-      :session_probe "supported" :session_send "supported" :start_idle "supported"
+      :session_probe "supported" :session_send "supported" :start_idle "supported" :message_during_run "unsupported"
       :session_create "unsupported" :instance_start "unsupported" :instance_stop "unsupported"
       :native_idempotency "unsupported" :lookup_send "unsupported" :lookup_create "unsupported"
       :observe "unsupported" :max_input_frame_bytes 262144))
@@ -137,7 +137,7 @@
           :submit (async (binding envelope mode key context)
             (let ((started false))
               (try
-                (unless (= mode "start_idle") (throw (new globalThis.Error "unsupported Pi submit mode")))
+                (unless (js-call (js-array "start_idle" "steer") :includes mode) (throw (new globalThis.Error "unsupported Pi submit mode")))
                 (let* ((endpoint (funcall endpointFor binding))
                        (before (await (funcall request endpoint binding "probe" (js-object) context)))
                        (text (encodeEnvelope envelope)))

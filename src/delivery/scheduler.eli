@@ -92,16 +92,14 @@
                 (let*
                   ((repository (nativeGet context "repository"))
                     (route (js-call repository :get "routes" route-id))
-                    (head (and route (js-call (js-call (nativeGet tx "db") :query
-                      "SELECT delivery_id,state FROM deliveries INDEXED BY deliveries_route_head WHERE route_id=? AND state IN ('ready','deferred','blocked','submitting','unknown') ORDER BY delivery_seq LIMIT 1")
-                      :get route-id))))
+                    (head (and route (selectDispatchHead context route-id))))
                   (unless route
                     (progn
                       (setq djReturn2Value (failure "not_found"))
                       (throw djReturn2Token)))
                   (when
                     (or
-                      (nativeGet route "unknown_delivery_id")
+                      (and (nativeGet route "unknown_delivery_id") (= (nativeGet head "busy_policy") "queue"))
                       (js-call repository :get "claims" route-id))
                     (progn
                       (setq djReturn2Value (failure "delivery_unknown"))
@@ -472,10 +470,25 @@
             (when (nativeGet record "inbox_id") (put envelope :inbox_id (nativeGet record "inbox_id")))
             (when (nativeGet instructions "overflow") (put envelope :instruction_overflow t))
             envelope)))))
+  (defun effectiveBusyPolicy (context record)
+    (nativeGet (nativeGet (nativeGet context "config") "message_delivery") "busy"
+      (nativeGet (nativeGet record "delivery_policy") "busy" "steer")))
+  (defun selectDispatchHead (context route-id)
+    (let* ((override (nativeGet (nativeGet (nativeGet context "config") "message_delivery") "busy" nil))
+      (db (nativeGet (nativeGet context "store") "db"))
+      (interactive (js-call (js-call db :query
+        "SELECT delivery_id,state,'steer' AS busy_policy FROM deliveries INDEXED BY deliveries_route_head WHERE route_id=? AND state IN ('ready','deferred','blocked','submitting','unknown') AND state IN ('ready','deferred','blocked') AND COALESCE(?,json_extract(payload,'$.delivery_policy.busy'),'steer')='steer' ORDER BY delivery_seq LIMIT 1")
+        :get route-id override)))
+      (or interactive
+        (let ((head (js-call (js-call db :query
+          "SELECT delivery_id,state,COALESCE(?,json_extract(payload,'$.delivery_policy.busy'),'steer') AS busy_policy FROM deliveries INDEXED BY deliveries_route_head WHERE route_id=? AND state IN ('ready','deferred','blocked','submitting','unknown') ORDER BY delivery_seq LIMIT 1") :get override route-id)))
+          (and head (= (nativeGet head "busy_policy") "queue")
+            (js-call queuedStates :includes (nativeGet head "state")) head)))))
   (defun exactObservation
-    (session observation)
+    (session observation &optional allow-busy)
     (and
-      (= (nativeGet observation "runtime_state") "idle")
+      (or (= (nativeGet observation "runtime_state") "idle")
+        (and allow-busy (js-call (js-array "busy" "waiting_permission") :includes (nativeGet observation "runtime_state"))))
       (= (nativeGet observation "live_receiver") t)
       (js-call
         (js-array "native_session_id" "native_namespace" "instance_epoch")
@@ -503,9 +516,10 @@
                   (and
                     session
                     (js-call repository :get "instances" (nativeGet session "instance_id"))))
-                (head (and route (js-call (js-call (nativeGet tx "db") :query
-                  "SELECT delivery_id FROM deliveries INDEXED BY deliveries_route_head WHERE route_id=? AND state IN ('ready','deferred','blocked','submitting','unknown') ORDER BY delivery_seq LIMIT 1")
-                  :get (nativeGet route "route_id"))))
+                (busy-policy (effectiveBusyPolicy context record))
+                (port (agentPort context instance))
+                (capabilities (nativeGet port "capabilities"))
+                (head (and route (selectDispatchHead context (nativeGet route "route_id"))))
                 (event nil)
                 (agent nil)
                 (contributions (js-array)))
@@ -519,7 +533,7 @@
                   (= delivery-id (nativeGet claim "delivery_id"))
                   (= delivery-id (nativeGet head "delivery_id"))
                   (js-call queuedStates :includes (nativeGet record "state"))
-                  (not (nativeGet route "unknown_delivery_id")))
+                  (or (= busy-policy "steer") (not (nativeGet route "unknown_delivery_id"))))
                 (progn
                   (setq djReturn4Value (failure "revision_conflict"))
                   (throw djReturn4Token)))
@@ -619,7 +633,8 @@
                           "expired"
                           "no_effective_contributions"))
                       (throw djReturn4Token)))))
-              (unless (exactObservation session observation)
+              (unless (exactObservation session observation
+                (and (= busy-policy "steer") (= (nativeGet capabilities "message_during_run") "supported")))
                 (progn
                   (setq
                     djReturn4Value
@@ -636,6 +651,7 @@
                             (nativeGet observation "runtime_state" (nativeGet observation "state"))
                             "offline")
                           "target_offline")
+                        ((= busy-policy "steer") "busy_input_unsupported")
                         (t "target_busy"))))
                   (throw djReturn4Token)))
               (let*
@@ -738,6 +754,7 @@
                     (must (js-call repository :replaceProgress "deliveries" record))
                     (success
                       (js-object
+                        :send_mode (if (= busy-policy "steer") "steer" "start_idle")
                         :submitted
                         t
                         :attempt_id
@@ -931,7 +948,7 @@
                     native
                     (js-call (js-array "settled" "agent_settled") :includes kind))
                   (put record :native_drained t))
-                (if (= (nativeGet record "state") "unknown")
+                (if (and (= (nativeGet record "state") "unknown") (= (effectiveBusyPolicy context record) "queue"))
                   (put route :unknown_delivery_id (nativeGet record "delivery_id"))
                   (when (= (nativeGet route "unknown_delivery_id") (nativeGet record "delivery_id"))
                     (put route :unknown_delivery_id nil)))
@@ -1036,7 +1053,7 @@
                           :submit
                           (nativeGet frozen "binding")
                           (nativeGet frozen "envelope")
-                          "start_idle"
+                          (nativeGet frozen "send_mode" "start_idle")
                           (nativeGet frozen "dispatch_key")
                           (nativeCallContext context))))
                     (await
@@ -1189,6 +1206,7 @@
         (catch djReturn8Error
           (if (eq djReturn8Error djReturn8Token) djReturn8Value (throw djReturn8Error))))))
   (export
+    effectiveBusyPolicy selectDispatchHead
     freezeEnvelope
     claimRoute
     beginSubmission

@@ -263,6 +263,8 @@
             (js-object :const t)
             :busy_timeout
             (js-object :type "integer" :minimum 0 :maximum 1000)))
+        :message_delivery
+        (obj (js-object :busy (enumOf "steer" "queue") :max_in_flight (js-object :type "integer" :minimum 1 :maximum 64)))
         :task_inspection
         (obj (js-object
           :administrators (arr id 32)

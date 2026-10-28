@@ -80,6 +80,7 @@
             "supported"
             :start_idle
             "supported"
+            :message_during_run "supported"
             :instance_start
             (if existing-only "unsupported" "supported")
             :instance_stop
@@ -542,7 +543,7 @@
                     (binding envelope mode key context)
                     (let ((djReturn7Token (js-object)) (djReturn7Value nil))
                       (try
-                        (unless (= mode "start_idle")
+                        (unless (js-call (js-array "start_idle" "steer") :includes mode)
                           (progn
                             (setq
                               djReturn7Value
@@ -557,7 +558,8 @@
                         (let* ((endpoint (endpointFor binding)) (observation (await (probe binding binding context))))
                           (unless
                             (and
-                              (= (nativeGet observation "runtime_state") "idle")
+                              (or (= (nativeGet observation "runtime_state") "idle")
+                                (and (= mode "steer") (= (nativeGet observation "runtime_state") "busy")))
                               (= (nativeGet observation "live_receiver") t))
                             (progn
                               (setq

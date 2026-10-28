@@ -10,6 +10,15 @@
   (import "node:fs/promises" lstat)
   (import "node:crypto" randomUUID)
 
+  (defun codexInputRequest (id text running client-message-id)
+    (let* ((input (js-array (js-object :type "text" :text text :text_elements (js-array))))
+      (restore (js-object :text text :context (js-object))))
+      (js-object :method (if running "thread-follower-steer-turn" "thread-follower-start-turn")
+        :version (if running 1 2)
+        :parameters (if running
+          (js-object :conversationId id :input input :restoreMessage restore :clientUserMessageId client-message-id)
+          (js-object :conversationId id :turnStart (js-object :request (js-object :threadId id :input input)
+            :context (js-object :restoreMessage restore :inheritThreadSettings t)))))))
   (defun codexTurns (state)
     (let* ((history (nativeGet (nativeGet state "turnHistory") "history"))
            (turns (js-array)))
@@ -152,6 +161,7 @@
              (js-call endpoints :every (lambda (endpoint) (nativeGet endpoint "control_manifest_path")))))
            (capabilities (js-object :session_list "supported" :session_messages "supported"
              :session_probe "supported" :session_send "supported" :start_idle "supported"
+             :message_during_run (if (= tool "codex") "supported" "unsupported")
              :session_create (if create-enabled "supported" "unsupported") :instance_start "unsupported" :instance_stop "unsupported"
              :native_idempotency "unsupported" :lookup_send "unsupported" :lookup_create (if create-enabled "supported" "unsupported")
              :observe "unsupported" :max_input_frame_bytes 262144))
@@ -303,7 +313,7 @@
       (setq submit (async (binding envelope mode key context)
         (let ((started false))
           (try
-            (unless (= mode "start_idle") (throw (desktopError "desktop_send_mode")))
+            (unless (js-call (js-array "start_idle" "steer") :includes mode) (throw (desktopError "desktop_send_mode")))
             (let* ((endpoint (funcall endpointFor binding)) (id (nativeGet binding "native_session_id"))
                    (text (encodeEnvelope envelope 250000)))
               (if (= tool "cursor")
@@ -337,16 +347,15 @@
                           :evidence_level "native_protocol"))
                       (t (js-object :state "unknown" :kind "unknown" :definite_not_sent false :evidence_level "none")))))
                 (await (funcall codexSnapshot endpoint id context (async (channel result)
-                  (unless (and (= (codexRuntime (nativeGet result "state")) "idle")
+                  (unless (and (or (= (codexRuntime (nativeGet result "state")) "idle")
+                                 (and (= mode "steer") (js-call (js-array "busy" "waiting_permission") :includes (codexRuntime (nativeGet result "state")))))
                                (= (nativeGet channel "instance_epoch") (nativeGet binding "instance_epoch")))
                     (throw (desktopError "desktop_target_changed")))
                   (setq started t)
-                  (let ((answer (await (js-call channel :call "thread-follower-start-turn"
-                    (js-object :conversationId id :turnStart (js-object
-                      :request (js-object :threadId id :input
-                        (js-array (js-object :type "text" :text text :text_elements (js-array))))
-                      :context (js-object :restoreMessage (js-object :text text :context (js-object))
-                        :inheritThreadSettings t))) 2 (nativeGet result "owner")))))
+                  (let* ((running (not (= (codexRuntime (nativeGet result "state")) "idle")))
+                    (request (codexInputRequest id text running (randomUUID)))
+                    (answer (await (js-call channel :call (nativeGet request "method")
+                      (nativeGet request "parameters") (nativeGet request "version") (nativeGet result "owner")))))
                     (js-object :state "accepted" :kind "accepted" :native_receipt_key (nativeGet answer "requestId")
                       :evidence_level "native_protocol")))))))
             (catch unavailable
@@ -425,4 +434,4 @@
         :observe (async (binding ref cursor budget context)
           (js-object :items (js-array) :complete t :coverage "partial" :next_cursor nil))
         :close (async () (setq closed t)))))
-  (export createDesktopPort codexRuntime cursorRuntime))
+  (export codexInputRequest createDesktopPort codexRuntime cursorRuntime))

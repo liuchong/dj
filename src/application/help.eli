@@ -224,7 +224,7 @@
           :delivery_policy
           (js-object
             :busy
-            "queue"
+            "steer"
             :offline
             "hold"
             :ttl_seconds
@@ -263,7 +263,7 @@
             :delivery_policy
             (js-object
               :busy
-              "queue"
+              "steer"
               :offline
               "hold"
               :ttl_seconds

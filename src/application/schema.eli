@@ -158,7 +158,7 @@
     (Object/assign
       (js-object
         :busy
-        "queue"
+        "steer"
         :offline
         "hold"
         :ttl_seconds

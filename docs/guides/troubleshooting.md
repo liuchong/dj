@@ -51,4 +51,4 @@ dj status --client-profile PRIVATE_PROFILE --json
 
 ## 私聊没有立即唤醒
 
-原消息已命中订阅但投递为 `deferred / target_busy` 时，说明原助手仍在执行上一项任务。消息保持原序排队，不创建替身、不重复提交、不打断原任务。排队阶段没有 Typing；它只在原生接收后表示已交给助手。可通过 `task.list` / `task.tree` 或已配置身份的 IM 私聊 `/dj tasks` 检查等待原因；`accepted` 与业务完成仍需分开核对。
+显式配置 `busy=queue` 后，原消息已命中订阅但投递为 `deferred / target_busy` 时，说明正在等待原助手空闲。默认 `busy=steer` 则使用原生忙时输入，不等上一项业务结束；端口缺少此能力时显示 `busy_input_unsupported`，不会静默改为排队。两种模式都不创建替身、不重复提交、不取消原任务。排队阶段没有 Typing；它只在原生接收后表示已交给助手。可通过 `task.list` / `task.tree` 或已配置身份的 IM 私聊 `/dj tasks` 检查等待原因；`accepted` 与业务完成仍需分开核对。

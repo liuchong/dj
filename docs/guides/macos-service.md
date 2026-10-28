@@ -43,6 +43,6 @@ dj status --json
 launchctl bootout "gui/$(id -u)/dev.dispatch-junction.local"
 ```
 
-等待 DJ 排空已提交工作并释放租约。不要强杀已有 AI 客户端，也不要在旧进程仍持有状态目录时拉起第二个 DJ。升级前备份私有配置和数据库，停止旧服务后切换目录包，再 bootstrap 并检查新 build_id。真实消息、规则、身份和幂等台账需要保留，不能当作编译临时文件删除。
+等待 DJ 排空自身尚未确认的传输和写入并释放租约；已有客户端已接收的业务继续由它运行，不等待模型完成、不重发已接收消息。不要强杀已有 AI 客户端，也不要在旧进程仍持有状态目录时拉起第二个 DJ。升级前备份私有配置和数据库，停止旧服务后切换目录包，再 bootstrap 并检查新 build_id。真实消息、规则、身份和幂等台账需要保留，不能当作编译临时文件删除。
 
 没有配置 launchd 时，可前台运行 `dj serve --config PRIVATE_SERVICE`，使用 SIGTERM/SIGINT 请求停止。服务生成与系统安装是独立步骤，打包本身不会修改 launchd。

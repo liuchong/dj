@@ -6,7 +6,7 @@
   (import "node:url" pathToFileURL)
   (defconst antigravityCapabilities (Object/freeze
     (js-object :session_list "supported" :session_messages "supported" :session_probe "supported"
-      :session_send "supported" :start_idle "supported" :session_create "unsupported"
+      :session_send "supported" :start_idle "supported" :message_during_run "unsupported" :session_create "unsupported"
       :instance_start "unsupported" :instance_stop "unsupported" :native_idempotency "unsupported"
       :lookup_send "unsupported" :lookup_create "unsupported" :observe "unsupported" :max_input_frame_bytes 262144)))
   (defun cascadeState (status)
@@ -135,7 +135,7 @@
         :submit (async (binding envelope mode key context)
           (let ((started false))
             (try
-              (unless (= mode "start_idle") (throw (new globalThis.Error "unsupported Antigravity mode")))
+              (unless (js-call (js-array "start_idle" "steer") :includes mode) (throw (new globalThis.Error "unsupported Antigravity mode")))
               (let* ((checked (await (funcall inspect binding context))) (row (nativeGet checked "row"))
                      (endpoint (nativeGet checked "endpoint")) (id (nativeGet binding "native_session_id"))
                      (offset (nativeGet row "lastUserInputStepIndex")) (total (nativeGet row "stepCount"))

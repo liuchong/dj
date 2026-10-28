@@ -142,6 +142,7 @@
               (Reflect/deleteProperty copy "principals")
               (Reflect/deleteProperty copy "client_profiles")
               (Reflect/deleteProperty copy "task_inspection")
+              (Reflect/deleteProperty copy "message_delivery")
               (hashValue copy))))
 (setq admission (lambda
             (descriptor &optional startup)
@@ -463,6 +464,7 @@
                   (put config :principals (nativeGet candidate "principals"))
                   (put config :client_profiles (nativeGet candidate "client_profiles"))
                   (put config :task_inspection (nativeGet candidate "task_inspection"))
+                  (put config :message_delivery (nativeGet candidate "message_delivery"))
                   (success
                     (js-object
                       :state
