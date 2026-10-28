@@ -15,7 +15,7 @@
   (import "../policy/registry.eli" reconcilePrincipals)
   (import "./ownership.eli" ownerGuard)
   (defconst knownTools
-    (js-array "opencode" "pi" "codex" "claude" "cursor" "antigravity"))
+    (js-array "opencode" "pi" "codex" "claude" "cursor" "antigravity" "kimi" "dsh"))
   (defun connectionIdentity
     (connection)
     (hashValue
@@ -53,7 +53,7 @@
               (tool)
               (let*
                 ((old (js-call repository :get "tools" tool))
-                  (supported (js-call (js-array "opencode" "pi" "codex" "cursor" "claude" "antigravity") :includes tool))
+                  (supported (js-call knownTools :includes tool))
                   (record
                     (js-object
                       :tool_id
@@ -148,6 +148,11 @@
                           "history_database"
                           "window_id"
                           "native_namespace"
+                          "native_provider"
+                          "registry_path"
+                          "data_root"
+                          "cookie_database"
+                          "process_binding"
                           "directory"
                           "credential_ref"
           "user_identity"

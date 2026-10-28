@@ -143,7 +143,10 @@
     (obj
       (js-object
         :tool
-        (enumOf "opencode" "pi" "codex" "cursor" "claude" "antigravity")
+        (enumOf "opencode" "pi" "codex" "cursor" "claude" "antigravity" "kimi" "dsh")
+        :native_provider (enumOf "kimi-desktop" "kimi-web" "dsh-desktop" "dsh-web")
+        :data_root id
+        :cookie_database id
         :instance_id
         id
         :native_namespace
@@ -163,7 +166,9 @@
         :native_session_id id
         :process_binding
         (obj (js-object :pid (js-object :type "integer" :minimum 1)
-          :process_birth id :process_helper_ref id :certificate_sha256 id)
+          :process_birth id :process_helper_ref id :certificate_sha256 id :executable_ref id
+          :parent_pid (js-object :type "integer" :minimum 1) :parent_birth id :parent_executable_ref id
+          :entry_ref id :package_ref id)
           (js-array "pid" "process_birth" "process_helper_ref"))
         :snapshot_max_bytes
         (js-object :type "integer" :minimum 1048576 :maximum 16777216)
@@ -378,6 +383,22 @@
             :forEach
             (lambda (endpoint)
               (let ((tool (nativeGet endpoint "tool")))
+                (when (js-call (js-array "kimi" "dsh") :includes tool)
+                  (let ((provider (nativeGet endpoint "native_provider")) (binding (nativeGet endpoint "process_binding")))
+                    (unless (and (js-call (if (= tool "kimi") (js-array "kimi-desktop" "kimi-web") (js-array "dsh-desktop" "dsh-web")) :includes provider)
+                      (nativeGet endpoint "directory") (nativeGet endpoint "workspace_ref") (nativeGet endpoint "base_url")
+                      binding (nativeGet binding "executable_ref")
+                      (not (nativeGet endpoint "native_api")) (not (nativeGet endpoint "manifest_path"))
+                      (not (nativeGet endpoint "control_manifest_path")) (not (nativeGet endpoint "socket_path"))
+                      (if (js-call (js-array "kimi-desktop" "dsh-desktop") :includes provider)
+                        (and (nativeGet binding "parent_pid") (nativeGet binding "parent_birth") (nativeGet binding "parent_executable_ref")) t)
+                      (cond ((= provider "kimi-desktop") (nativeGet endpoint "registry_path"))
+                        ((= provider "kimi-web") (and (nativeGet endpoint "registry_path") (nativeGet endpoint "data_root") (nativeGet endpoint "credential_ref")))
+                        ((= provider "dsh-desktop") (or (nativeGet endpoint "cookie_database") (nativeGet endpoint "credential_ref")))
+                        (t (and (nativeGet binding "entry_ref") (nativeGet binding "package_ref")))))
+                      (throw (new globalThis.TypeError "Kimi/DSH requires an exact existing native provider, process and workspace")))))
+                (when (and (nativeGet endpoint "native_provider") (not (js-call (js-array "kimi" "dsh") :includes tool)))
+                  (throw (new globalThis.TypeError "Native provider belongs only to Kimi or DSH")))
                 (when (js-call (js-array "claude" "antigravity") :includes tool)
                   (unless (and (nativeGet endpoint "directory") (nativeGet endpoint "workspace_ref")
                                (nativeGet endpoint "process_binding")
@@ -572,13 +593,14 @@
               :forEach
               (lambda
                 (endpoint)
-                (js-call (js-array "socket_path" "manifest_path" "control_manifest_path" "history_database" "registry_path" "history_log" "credential_ref") :forEach
+                (js-call (js-array "socket_path" "manifest_path" "control_manifest_path" "history_database" "registry_path" "history_log" "credential_ref" "data_root" "cookie_database") :forEach
                   (lambda (field)
                     (when (nativeGet endpoint field)
                       (put endpoint field (resolve base (nativeGet endpoint field))))))
                 (when (nativeGet endpoint "process_binding")
-                  (put (nativeGet endpoint "process_binding") :process_helper_ref
-                    (resolve base (nativeGet (nativeGet endpoint "process_binding") "process_helper_ref"))))
+                  (js-call (js-array "process_helper_ref" "executable_ref" "parent_executable_ref" "entry_ref" "package_ref") :forEach
+                    (lambda (field) (when (nativeGet (nativeGet endpoint "process_binding") field)
+                      (put (nativeGet endpoint "process_binding") field (resolve base (nativeGet (nativeGet endpoint "process_binding") field)))))))
                 (when (nativeGet (nativeGet endpoint "native_api") "process_helper_ref")
                   (put (nativeGet endpoint "native_api") :process_helper_ref
                     (resolve base (nativeGet (nativeGet endpoint "native_api") "process_helper_ref"))))
@@ -589,7 +611,7 @@
                     (unless
                       (and
                         (js-call
-                          (js-array "http:" "https:")
+                          (if (= (nativeGet endpoint "native_provider") "kimi-desktop") (js-array "ws:") (js-array "http:" "https:"))
                           :includes
                           (nativeGet url "protocol"))
                         (js-call (js-array "localhost" "127.0.0.1" "[::1]") :includes (nativeGet url "hostname"))

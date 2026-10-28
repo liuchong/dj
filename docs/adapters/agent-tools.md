@@ -7,6 +7,8 @@ DJ 只连接已有进程的原生接口，核对实例、原生会话与工作�
 | 工具 | 接收方式 | 约束与说明 |
 | --- | --- | --- |
 | Codex | 已有 Desktop 的本机 IPC | 核对 owner、原会话与工作区；历史记录不等于活 receiver |
+| Kimi | 已有 Desktop Work WS 或 Code Web REST | [四形态接入](../guides/kimi-dsh.md)；普通 Chat/TUI 不在该声明内 |
+| DSH | 已有 Desktop Host 或 Web RPC | 准确进程、安装包、监听与 Cookie；不隐式迁移共享历史 |
 | Cursor | Desktop Bridge，或显式 native_api | native_api 可由 DJ 按需管理本机 Inspector，操作后关闭自己开启的端口；[详细配置](desktop.md) |
 | OpenCode | 已运行实例的 loopback HTTP API | 准确工作区、私有凭据与原生会话；有界消息分页，不将 message ID 猜成游标 |
 | Pi | 原 TUI 内加载的接收扩展，经私有 UDS | 扩展在原进程调用接收接口；临时加载与持久配置分别核对；[扩展说明](../../connectors/pi/README.md) |

@@ -16,10 +16,12 @@
     :claude (js-object :user ".claude/skills" :project ".claude/skills")
     :opencode (js-object :user ".config/opencode/skills" :project ".opencode/skills")
     :pi (js-object :user ".agents/skills" :project ".agents/skills")
+    :kimi (js-object :user ".agents/skills" :project ".agents/skills")
+    :dsh (js-object :user ".dsh/skills" :project ".dsh/skills")
     :antigravity (js-object :user ".gemini/config/skills" :project ".agents/skills")
     :agy (js-object :user ".gemini/antigravity-cli/skills" :project ".agents/skills"))))
   (defconst skillHelp
-    "dj skill targets\ndj skill install|check --target TOOL --scope user|project [--project DIRECTORY] [--dry-run]\ndj skill config --target TOOL --client-profile FILE\ndj skill hooks --target codex|cursor --client-profile FILE --agent ID --subscription ID\nTargets: agents, codex, cursor, claude, opencode, pi, antigravity, agy.\nCopies the complete bundled dj Skill. Different existing files or links are conflicts, never overwritten. Config/hooks print snippets only; no client configuration changes or Agent starts.\n")
+    "dj skill targets\ndj skill install|check --target TOOL --scope user|project [--project DIRECTORY] [--dry-run]\ndj skill config --target TOOL --client-profile FILE\ndj skill hooks --target codex|cursor --client-profile FILE --agent ID --subscription ID\nTargets: agents, codex, cursor, claude, opencode, pi, kimi, dsh, antigravity, agy.\nCopies the complete bundled dj Skill. Different existing files or links are conflicts, never overwritten. Config/hooks print snippets only; no client configuration changes or Agent starts.\n")
   (defasync fileInfo (path)
     (try (await (lstat path))
       (catch error (if (= (nativeGet error "code") "ENOENT") nil (throw error)))))
@@ -118,7 +120,7 @@
                "\nargs = " (JSON/stringify args) "\n"))
              ((= target "opencode") (js-object :mcp (js-object :dj (js-object :type "local"
                :command (js-call (js-array command) :concat args) :enabled t))))
-             ((js-call (js-array "agents" "pi") :includes target) nil)
+             ((js-call (js-array "agents" "pi" "dsh") :includes target) nil)
              (t (js-object :mcpServers (js-object :dj server))))))
       (success (js-object :target target :format (if (= target "codex") "toml" "json")
         :config config :cli_command command :client_profile profile

@@ -52,3 +52,4 @@
 - [历史资料](archive/README.md)：旧研究、施工计划、检查清单及验收批次。历史中的状态和建议不作为当前使用或开发指令。
 
 - [0011 可读的 AI 消息通知](specs/0011-readable-notifications.md) · [使用说明](guides/notifications.md)
+- [0012 Kimi 与 DSH 已有实例](specs/0012-kimi-dsh-existing-sessions.md) · [接入说明](guides/kimi-dsh.md)

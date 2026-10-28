@@ -33,6 +33,7 @@
   (import "../adapters/agent/pi-native.eli" createPiNativePort)
   (import "../adapters/agent/antigravity.eli" createAntigravityPort)
   (import "../adapters/agent/claude-inbox.eli" createClaudeInboxPort)
+  (import "../adapters/agent/kimi-dsh.eli" createKimiDshPort)
   (import "./config.eli" prepareConfig)
   (import "./ownership.eli" acquireOwner ownerGuard setOwnerState releaseOwner)
   (import "./recovery.eli" seedConfiguration recoverState)
@@ -211,6 +212,10 @@
                           (js-object :instance_epoch (nativeGet instance "instance_epoch"))))))))
               ;; Production Agent ports connect to existing receivers only.
               ;; Process-owning protocol adapters are not assembled here.
+              (js-call (js-array "kimi" "dsh") :forEach (lambda (tool)
+                (let ((selected (js-call endpoints :filter (lambda (endpoint) (= (nativeGet endpoint "tool") tool)))))
+                  (when (and (> (js-length selected) 0) (not (js-call agent-ports :has tool)))
+                    (js-call agent-ports :set tool (createKimiDshPort tool (js-object :endpoints selected) ports))))))
               (unless (js-call agent-ports :has "opencode")
                 (let ((selected (js-call endpoints :filter
                                   (lambda (endpoint) (= (nativeGet endpoint "tool") "opencode")))))

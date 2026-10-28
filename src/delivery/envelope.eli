@@ -108,7 +108,7 @@
                 :parts
                 (js-array (js-object :type "text" :text message))))
             ((= tool "pi") (js-object :id dispatch-key :type "prompt" :message message))
-            ((js-call (js-array "codex" "cursor" "claude" "antigravity") :includes tool)
+            ((js-call (js-array "codex" "cursor" "claude" "antigravity" "kimi" "dsh") :includes tool)
               (js-object :text message))
             (t (throw (new globalThis.TypeError "unsupported native input codec")))))
         (wire (JSON/stringify value)))

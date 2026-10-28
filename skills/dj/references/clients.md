@@ -1,5 +1,7 @@
 # 本机客户端安装与接线
 
+Kimi Work / Code Web 与 DSH Desktop / Web 的形态、既有实例接收及独立身份说明见 [Kimi 与 DSH](kimi-dsh.md)。Kimi Code 可使用 mcpServers.dj 片段；Work/DSH 的宿主 MCP 接线按原生能力配置，CLI/GEPO 与同一独立主体共用服务，不借用其他会话凭据。
+
 ## 安装完整 Skill
 
 - inspect: 使用已生成目录包的 bin/dj；先运行 `dj skill targets` 查看目录，再选择目标与 scope。安装不会修改客户端设置、启动模型或建立订阅。

@@ -19,6 +19,8 @@
 | 工具 | 已有证据 | 仍需区分 |
 | --- | --- | --- |
 | Codex | 已有 Desktop 原会话通知、Lark 订阅、独立 recipient API、原消息回复与 Skill 采用 | 不据此推断所有 MCP/Hook 配置均已启用 |
+| Kimi Desktop Work / Code Web | 两种现有实例均经完整 Core 创建、输入、原文读回；Work 返回准确回复 | Web 本次未取得模型回复；不覆盖普通 Chat/TUI，未重启用户 App |
+| DSH Desktop / Web | 两种现有实例均经完整 Core 创建、输入、原文读回；Desktop 返回准确回复 | Web 模型执行与传输受理分开；未验证窗口像素、未迁移历史 |
 | Cursor | 已有 Desktop 原会话通知、订阅与原消息回复；按需 Inspector 开关 | 客户端升级、重启或工作区变化后需重新核对原生接口 |
 | OpenCode | 原 Desktop 会话直发、原生消息读回、去重、独立 recipient 与 Lark 原消息回复 | 原生分页覆盖和模型任务完成分别观察 |
 | Pi | 原 TUI 进程接收扩展、原会话通知、去重、独立 recipient 与原消息回复 | 临时加载不等于重启后持续安装 |

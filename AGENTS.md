@@ -45,6 +45,8 @@ Lark 必须直连官方 WebSocket 与 HTTPS API，禁止 SDK、CLI 及其子进�
 
 ## 正式规格与接续要求
 
+- Kimi / DSH 现有实例接入按 [0012](docs/specs/0012-kimi-dsh-existing-sessions.md)：区分 Desktop Work、Desktop Host 与 Web，不以普通 TUI、新托管进程、共用历史或桌面像素替代准确原生接口证据。
+
 - AI 通知展示按 [0011](docs/specs/0011-readable-notifications.md)：MDP 元数据和 Markdown 原文块；原生 API 外壳、结构化接口和审计快照分别处理，不改写接收者规则，不把通知布局强加给普通回复。
 
 - 消息消费按 [0010](docs/specs/0010-message-consumption.md)：默认不等上一项业务完成，复用已存在会话的原生忙时输入；显式配置才排队。持久队列、全局传输并发和 AI 业务完成分别处理。

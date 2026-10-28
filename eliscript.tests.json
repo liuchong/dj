@@ -47,7 +47,10 @@
     "tests/integration/message-recovery.test.eli",
     "tests/unit/message-recovery.test.eli",
     "tests/integration/tasks.test.eli",
-    "tests/unit/tasks.test.eli"
+    "tests/unit/tasks.test.eli",
+    "tests/support/harness-receiver.eli",
+    "tests/integration/kimi-dsh.test.eli",
+    "tests/unit/kimi-dsh.test.eli"
   ],
   "outDir": "dist-tests"
 }

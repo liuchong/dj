@@ -22,6 +22,8 @@ metadata:
 
 ## 会话控制
 
+- kimi_dsh: kimi/dsh 通过既有 Desktop Work/Web 原生接口接入，native_namespace 和实例必须精确区分；Kimi 普通 Chat/TUI 不因品牌相同就算可投递。使用、安装和配置见 [Kimi 与 DSH](references/kimi-dsh.md)。模型额度错误与原生接收分别判断，不新建 CLI 进程替代原会话。
+
 - reference: 查询、免订阅直发及已有实例内创建见[会话控制](references/control.md)，不要求订阅或已登记agent_id。
 - selectors: tools和instance_ids筛选工具或实例；agent_id仅表示已登记的单个会话。检查覆盖和新鲜度，不把空缓存当不存在。
 - effects: 查询不启动，发送不创建；create必须通过已有实例接口且显式获准；正式配置不接受argv启动profile，不启动Agent子进程代替原目标。session.send发给Agent，message.send/reply发给IM。不要让DJ判断任务应该在哪；DJ不提供IM操作界面。

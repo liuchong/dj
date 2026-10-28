@@ -518,7 +518,7 @@
                     (js-call repository :get "instances" (nativeGet session "instance_id"))))
                 (busy-policy (effectiveBusyPolicy context record))
                 (port (agentPort context instance))
-                (capabilities (nativeGet port "capabilities"))
+                (capabilities (nativeGet observation "capabilities" (nativeGet port "capabilities")))
                 (head (and route (selectDispatchHead context (nativeGet route "route_id"))))
                 (event nil)
                 (agent nil)
