@@ -2,7 +2,7 @@
 
 ## 运行结构
 
-Eliscript 业务源码编译为 ESM，由 Bun 装配常驻 Core、SQLite、IM 与 Agent 适配器。CLI 是短命客户端，MCP 是连接同一服务的 stdio 薄代理，GEPO 与 JSON API 共用私有 UDS。客户端退出不删除订阅，也不停止 Core。
+Eliscript 业务源码编译为 ESM，由 Bun 执行，Core 通过独立 Rack 包装配 IM、Agent 适配器和业务操作处理器。CLI 是短命客户端，MCP 是连接同一服务的 stdio 薄代理，GEPO 与 JSON API 共用私有 UDS。客户端退出不删除订阅，也不停止 Core。
 
 ```mermaid
 flowchart LR
@@ -23,6 +23,17 @@ flowchart LR
 ```
 
 Lark 使用官方 WebSocket 与 HTTPS；Agent 使用已有实例的 IPC/socket/loopback API。正式装配不接受非空 managed_profiles，不启动替代 Agent 子进程。具体模块与支持边界见[技术栈](technical-stack.md)和[适配说明](adapters/agent-tools.md)。
+
+## 模块装配
+
+[Rack](../packages/rack/README.md) 是独立的 Eliscript 包，提供上下文、服务依赖、
+隔离作用域、插件生命周期、事件和资源回收，不依赖本应用。Core 完成数据库与
+所有权准备后提供 application 服务，再等待适配器、连接和处理器激活。
+`core.moduleStatus()` 返回不含配置秘密的模块状态，供嵌入宿主诊断。
+
+连接仍由扁平注册表分发，不按账号昵称分叉；插件退出不会替代业务 drain。
+Core 先排空原生在途工作，确认端口停止，再卸载注册、释放租约并关闭数据库。
+精确接线见 [0014 服务模块装配](specs/0014-module-composition.md)。
 
 ## 确定性边界
 
@@ -87,10 +98,10 @@ catalog 的读取与 direct 的发送可以独立于 registry/subscriptions；Ta
 
 ## 存储与嵌入
 
-单机持久事务存储采用 bun:sqlite、WAL/FULL 与一个受控写连接；精确生产依赖将在实现阶段锁定。同步事务与 checkpoint 的阻塞边界必须测量，不能把 async 业务函数当成异步 SQLite。核心只依赖 Store 端口，可嵌入宿主；嵌入模式仍须有唯一调度所有者、持久状态和相同授权契约。多个 CLI/MCP 进程不是多个调度所有者。
+单机持久事务存储采用 bun:sqlite、WAL/FULL 与一个受控写连接；生产依赖由工具链锁定。同步事务与 checkpoint 的阻塞边界必须测量，不能把 async 业务函数当成异步 SQLite。核心只依赖 Store 端口，可嵌入宿主；嵌入模式仍须有唯一调度所有者、持久状态和相同授权契约。多个 CLI/MCP 进程不是多个调度所有者。
 
 ## 目标目录职责
 
-当前实际树仅含本文档集。技术方向见 [技术选型](technical-stack.md)；未来精确 `.eli` 路径、符号和编写依赖统一维护于 [施工手册](archive/construction-plan.md)，目标签名/事务接线见 [施工接口](archive/construction-contracts.md)，不创建占位源码。完整启动接线见 [启动到回复](startup-to-reply.md)。
-
-本轮交付的是产品、协议和技术设计，不是已完成实现或可执行施工验收。
+当前代码分为 `packages/rack/` 独立装配包、`src/` 业务与宿主、`tests/` 分层验收、
+`tools/` 构建打包及 `skills/dj/` 使用接口。当前产品规格在 `docs/specs/`，历史
+施工记录在 `docs/archive/`。完整启动接线见 [启动到回复](startup-to-reply.md)。

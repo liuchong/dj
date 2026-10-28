@@ -1,6 +1,8 @@
 (module dj.library
   (import "./service/core.eli" createCore)
   (import "./connections/manager.eli" createConnectionManager)
+  (import "../packages/rack/src/index.eli" createContext Context Service createService Inject FiberState)
+  (import "../packages/rack/src/loader.eli" createLoader applyEntryPatches validateEntries)
   (import "./application/operations.eli"
     operationCatalog
     operationCatalogDigest
@@ -9,6 +11,8 @@
   (export
     createCore
     createConnectionManager
+    createContext Context Service createService Inject FiberState
+    createLoader applyEntryPatches validateEntries
     operationCatalog
     operationCatalogDigest
     descriptorData

@@ -34,6 +34,7 @@
   (import "../adapters/agent/antigravity.eli" createAntigravityPort)
   (import "../adapters/agent/claude-inbox.eli" createClaudeInboxPort)
   (import "../adapters/agent/kimi-dsh.eli" createKimiDshPort)
+  (import "./composition.eli" createComposition mountPort)
   (import "./config.eli" prepareConfig)
   (import "./ownership.eli" acquireOwner ownerGuard setOwnerState releaseOwner)
   (import "./recovery.eli" seedConfiguration recoverState)
@@ -59,7 +60,8 @@
     (host config)
     ;; Construction has no filesystem, listener, subprocess or scheduling side
     ;; effect. Only start acquires state and only tick runs configured work.
-    (let* ((ports (Object/assign (js-object) host))
+    (let* ((rack (createComposition))
+        (ports (Object/assign (js-object) host))
         (runtime
           (js-object
             :state
@@ -192,60 +194,35 @@
                 principal
                 :admissionGuard
                 (lambda (descriptor) (admission descriptor false))))))
-(setq assemblePorts (lambda
-            ()
-            (let* ((repository (nativeGet base "repository")) (agent-ports (nativeGet ports "agent_ports")) (im-ports (nativeGet ports "im_ports")) (endpoints
-                  (js-call
-                    (nativeGet config "agent_endpoints")
-                    :map
-                    (lambda
-                      (endpoint)
-                      (let ((instance
-                            (js-call
-                              repository
-                              :get
-                              "instances"
-                              (nativeGet endpoint "instance_id"))))
-                        (Object/assign
-                          (js-object)
-                          endpoint
-                          (js-object :instance_epoch (nativeGet instance "instance_epoch"))))))))
-              ;; Production Agent ports connect to existing receivers only.
-              ;; Process-owning protocol adapters are not assembled here.
-              (js-call (js-array "kimi" "dsh") :forEach (lambda (tool)
-                (let ((selected (js-call endpoints :filter (lambda (endpoint) (= (nativeGet endpoint "tool") tool)))))
-                  (when (and (> (js-length selected) 0) (not (js-call agent-ports :has tool)))
-                    (js-call agent-ports :set tool (createKimiDshPort tool (js-object :endpoints selected) ports))))))
-              (unless (js-call agent-ports :has "opencode")
-                (let ((selected (js-call endpoints :filter
-                                  (lambda (endpoint) (= (nativeGet endpoint "tool") "opencode")))))
-                  (when (> (js-length selected) 0)
-                    (js-call agent-ports :set "opencode"
-                      (createOpenCodePort (js-object :endpoints selected :profiles (js-array) :existing_only t) ports)))))
-              (unless (js-call agent-ports :has "pi")
-                (let ((selected (js-call endpoints :filter
-                                  (lambda (endpoint) (= (nativeGet endpoint "tool") "pi")))))
-                  (when (> (js-length selected) 0)
-                    (js-call agent-ports :set "pi"
-                      (createPiNativePort (js-object :endpoints selected) ports)))))
-              (js-call (js-array "claude" "antigravity") :forEach
-                (lambda (tool)
-                  (let ((selected (js-call endpoints :filter (lambda (endpoint) (= (nativeGet endpoint "tool") tool)))))
-                    (when (and (not (js-call agent-ports :has tool)) (> (js-length selected) 0))
-                      (js-call agent-ports :set tool
-                        (if (= tool "claude") (createClaudeInboxPort (js-object :endpoints selected) ports)
-                          (createAntigravityPort (js-object :endpoints selected) ports)))))))
-              (js-call (js-array "codex" "cursor") :forEach
-                (lambda (tool)
-                  (let ((selected (js-call endpoints :filter
-                                   (lambda (endpoint) (= (nativeGet endpoint "tool") tool)))))
-                    (when (and (not (js-call agent-ports :has tool)) (> (js-length selected) 0))
-                      (js-call agent-ports :set tool
-                        (createDesktopPort tool (js-object :endpoints selected) ports))))))
-              (unless (nativeGet ports "connections")
-                (put ports :connections (createConnectionManager (nativeGet config "connections") ports im-ports)))
-              (js-call (nativeGet ports "connections") :assemble))))
-(setq installHandlers (lambda
+(setq assemblePorts (async ()
+  (let* ((repository (nativeGet base "repository")) (agent-ports (nativeGet ports "agent_ports"))
+    (im-ports (nativeGet ports "im_ports"))
+    (endpoints (js-call (nativeGet config "agent_endpoints") :map (lambda (endpoint)
+      (let ((instance (js-call repository :get "instances" (nativeGet endpoint "instance_id"))))
+        (Object/assign (js-object) endpoint (js-object :instance_epoch (nativeGet instance "instance_epoch")))))))
+    (factories (new globalThis.Map (js-array
+      (js-array "kimi" (lambda (tool selected) (createKimiDshPort tool (js-object :endpoints selected) ports)))
+      (js-array "dsh" (lambda (tool selected) (createKimiDshPort tool (js-object :endpoints selected) ports)))
+      (js-array "opencode" (lambda (tool selected) (createOpenCodePort (js-object :endpoints selected :profiles (js-array) :existing_only t) ports)))
+      (js-array "pi" (lambda (tool selected) (createPiNativePort (js-object :endpoints selected) ports)))
+      (js-array "claude" (lambda (tool selected) (createClaudeInboxPort (js-object :endpoints selected) ports)))
+      (js-array "antigravity" (lambda (tool selected) (createAntigravityPort (js-object :endpoints selected) ports)))
+      (js-array "codex" (lambda (tool selected) (createDesktopPort tool (js-object :endpoints selected) ports)))
+      (js-array "cursor" (lambda (tool selected) (createDesktopPort tool (js-object :endpoints selected) ports))))))
+    (loaded (js-array)))
+    (js-call rack :provide "application" base)
+    (js-call factories :forEach (lambda (factory tool)
+      (let ((selected (js-call endpoints :filter (lambda (endpoint) (= (nativeGet endpoint "tool") tool)))))
+        (when (and (> (js-length selected) 0) (not (js-call agent-ports :has tool)))
+          (js-call loaded :push (mountPort rack (str "agent:" tool) agent-ports tool
+            (lambda () (funcall factory tool selected))))))))
+    ;; Supplied ports are managed by the same lifetime owner as native adapters.
+    (js-call (Array/from (js-call agent-ports :entries)) :forEach (lambda (entry)
+      (js-call loaded :push (mountPort rack (str "agent:" (aref entry 0)) agent-ports (aref entry 0) (lambda () (aref entry 1))))))
+    (await (Promise/all loaded))
+    (put ports :connections (createConnectionManager (nativeGet config "connections") ports im-ports rack))
+    (await (js-call (nativeGet ports "connections") :assemble)))))
+(setq installHandlers (async
             ()
             (let ((handlers (new globalThis.Map)))
               (js-call
@@ -270,18 +247,20 @@
                 :forEach
                 (lambda
                   (entry)
-                  (js-call
-                    handlers
-                    :set
-                    (aref entry 0)
-                    (lambda
-                      (context operation args)
-                      (js-call (aref entry 1) :handleOperation context operation args)))))
+                  (js-call rack :plugin (js-object :name (str "operations:" (aref entry 0)) :inject (js-array "application")
+                    :apply (lambda (scope config)
+                      (let ((handler (lambda (context operation args)
+                        (js-call (aref entry 1) :handleOperation context operation args))))
+                        (js-call scope :provide (str "operations:" (aref entry 0)) handler)
+                        (js-call scope :effect (lambda ()
+                          (js-call handlers :set (aref entry 0) handler)
+                          (lambda () (js-call handlers :delete (aref entry 0)))))))))))
               (js-call
                 handlers
                 :set
                 "service"
                 (lambda (context operation args) (serviceStatus context)))
+              (await (js-call rack :settle))
               (put base :handlers handlers)
               (put
                 base
@@ -348,8 +327,8 @@
                       (js-object :records (nativeGet (nativeGet base "repository") "handleRecords"))))
                   (put runtime :startup_stage "seed_configuration")
 (must (seedConfiguration base))
-                  (assemblePorts)
-                  (installHandlers)
+                  (await (assemblePorts))
+                  (await (installHandlers))
                   (let ((unique (new globalThis.Set)))
                     (js-call
                       (nativeGet ports "agent_ports")
@@ -377,8 +356,8 @@
                   (catch unavailable
                     (when (eq unavailable djReturn2Token) (throw unavailable))
                     (put runtime :state "failed")
-                    ;; No lifecycle scheduler has run during start. Do not close
-                    ;; injected Agent ports that may belong to the embedding host.
+                    ;; Roll back all resources acquired by the failed assembly.
+                    (try (await (js-call rack :dispose)) (catch cleanup-error nil))
                     (when (and owner-acquired (not store-closed))
                       (try
                         (releaseOwner base)
@@ -535,6 +514,7 @@
                                                   :deadline_reached
                                                   t)))
                                             (throw djReturn6Token)))))))))
+                            (await (js-call rack :dispose))
                             (must (releaseOwner base))
                             (setq owner-acquired false)
                             (js-call (nativeGet base "store") :close)
@@ -566,6 +546,8 @@
                     :execute
                     (lambda (principal operation args)
                       (funcall store-call (lambda () (funcall execute principal operation args))))
+                    :moduleStatus
+                    (lambda () (js-call rack :inspect))
                     :reloadConfig
                     (lambda (candidate)
                       (funcall store-call (lambda () (funcall reloadConfig candidate))))

@@ -2,6 +2,7 @@
 
 ## 目录与语言
 
+- `packages/rack/`：独立 Eliscript 插件装配包，含自己的源码、构建配置和测试。
 - `src/`：Eliscript 业务、接口、适配器、存储和宿主代码。
 - `tests/`：分层测试与 `cases.json` 用例目录。
 - `tools/`：构建、打包和验证工具。
@@ -36,6 +37,12 @@ bun run build
 bun run test:unit
 bun run test:integration
 bun run test:system
+```
+
+Rack 和服务装配的定向验收也可消费已构建产物：
+
+```sh
+bun test dist-tests/packages/rack/tests dist-tests/tests/integration/composition.test.mjs
 ```
 
 这些入口消费已构建产物。真实 IM/Agent 与性能组需要明确的账号、目标和运行范围，不能因为改文档、README 或站点而执行。消息发送结果未知时先查原操作，不为验证重发。验收层次与证据边界见[验收说明](../acceptance.md)。

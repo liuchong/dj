@@ -58,6 +58,7 @@ dj skill install --target codex --scope user --dry-run
 - [完整文档索引](docs/index.md)
 - [故障排查](docs/guides/troubleshooting.md)与[当前能力、验证边界](docs/status.md)
 - [业务操作](docs/interfaces/operations.md)、[CLI](docs/interfaces/cli.md)、[MCP](docs/interfaces/mcp.md)、[GEPO](docs/interfaces/gepo.md)
+- [独立 Rack 装配包](packages/rack/README.md)
 - [架构](docs/architecture.md)、[安全边界](docs/security.md)、[开发与打包](docs/guides/development.md)
 - [Pages 本地预览](docs/pages/README.md)与[待办](TODO.md)
 

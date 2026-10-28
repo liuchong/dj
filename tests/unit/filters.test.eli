@@ -104,7 +104,7 @@
         (people (js-array (js-object :id "person-one" :identities (js-array
           (js-object :platform "lark" :scope "app:app-a:open_id" :id "ou_a")
           (js-object :platform "lark" :scope "app:app-b:open_id" :id "ou_b"))))))
-        (js-call manager :assemble)
+        (await (js-call manager :assemble))
         (js-call manager :initialize (js-object))
         (js-call manager :initialize (js-object))
         (js-call (expect started) :toBe 2)

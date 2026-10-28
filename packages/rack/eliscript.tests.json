@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 2,
+  "sourceRoot": ".",
+  "entries": [
+    "tests/integration.test.eli",
+    "tests/protection.test.eli"
+  ],
+  "outDir": "dist-tests"
+}

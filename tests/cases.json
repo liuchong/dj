@@ -27285,6 +27285,28 @@
       "given": "Authenticated principals with absent message grants and a stale narrow grant, configured IM accounts and a real SQLite Core",
       "when": "Read, subscribe, send, reply and inspect own send records across chats and platforms without granting message scopes",
       "then": "Communication defaults open, blacklist only suppresses triggers, retries deduplicate, while disabled identities, foreign reply references, other ledgers and admin changes remain blocked"
+    },
+    {
+      "case_id": "T40.module-composition.sqlite",
+      "parent_id": "T40",
+      "file": "tests/integration/composition.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "requirements": [
+        "module-composition"
+      ],
+      "acceptance_ids": [
+        "A05"
+      ],
+      "given": "A real SQLite Core assembled through independently owned modules",
+      "when": "Receive and deduplicate a message, dispatch it, reply once and stop twice",
+      "then": "Modules are active, delivery and reply persist once, and shutdown releases every module"
     }
   ],
   "source_extension_base": "c1eb7b1"

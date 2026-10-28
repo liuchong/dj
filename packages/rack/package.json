@@ -1,0 +1,27 @@
+{
+  "name": "@liuchong/rack",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Plugin composition and resource lifecycle runtime",
+  "exports": {
+    ".": "./dist/src/index.mjs",
+    "./loader": "./dist/src/loader.mjs"
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "docs",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "peerDependencies": {
+    "eliscript": ">=0.1.0"
+  },
+  "license": "LicenseRef-1PL",
+  "scripts": {
+    "build": "eliscript-build --config eliscript.json",
+    "build:test": "eliscript-build --config eliscript.tests.json",
+    "test": "bun test dist-tests/tests"
+  }
+}
