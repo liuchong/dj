@@ -847,6 +847,11 @@
       (strings
         "api_version build_id operation_catalog_digest service_id state"
         (js-object
+          :module_runtime
+          stringSchema
+          :modules
+          (arr (obj (strings "name state" (js-object
+            :uid integerSchema :dependencies (arr stringSchema) :effects integerSchema :error nullableString))))
           :visible_operations
           (arr stringSchema)
           :ai_enabled

@@ -56,7 +56,8 @@
     "tests/integration/hybrid-inbox.test.eli",
     "packages/rack/tests/integration.test.eli",
     "tests/integration/composition.test.eli",
-    "packages/rack/tests/protection.test.eli"
+    "packages/rack/tests/protection.test.eli",
+    "packages/rack/tests/behavior.test.eli"
   ],
   "outDir": "dist-tests"
 }

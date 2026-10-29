@@ -93,3 +93,73 @@ cleanup has settled, even if a provider has already been unpublished.
 This contract describes the runtime itself. It does not claim native engine
 module-cache eviction, a filesystem compiler, process isolation, or support for
 all third-party extensions. A module resolver is a host integration boundary.
+
+## Public state and exact boundaries
+
+`FiberState` is the numeric table `PENDING=0`, `LOADING=1`, `ACTIVE=2`,
+`FAILED=3`, `DISPOSED=4`, `UNLOADING=5`. Human diagnostics from `inspect()` use
+lowercase names. A fiber's `parent` is its parent context; `runtime` is shared
+by identical callbacks and owns the callback, name, schema and live fiber list.
+`store` retains the activation's implementation records through cleanup, then
+becomes undefined. `inertia` exposes the current lifecycle transition.
+
+`get(name)` tests provider activation, independently of its readiness predicate.
+Only dependency refresh evaluates readiness; explicit `reflect.notify(names)`
+refreshes matching consumers and returns them. Direct root reads can see a
+loading provider; injected plugin reads retain their activation snapshot.
+Services may forward associated computed members using their tracker metadata.
+Context extension preserves all own descriptors, symbols and the actual parent
+prototype. Symbols, underscore-prefixed names, numeric strings, `prototype` and
+`then` bypass service lookup.
+
+`update(raw,noSave=false)` retains raw input before resolution, validation or
+update interception. A configuration hook cannot bypass schema validation.
+A veto preserves the current effective config, not the rejected raw input.
+Pending updates resolve on activation. Updates return undefined; use `await()`
+to join a transition. `restart()` joins cleanup and reactivation. Plugin
+notifications observe the initial pending state and final removal; a failing
+teardown observer cannot prevent resource cleanup. Root `fiber.dispose()`
+releases root resources while leaving the root usable; `context.dispose()` is
+final application shutdown.
+
+Effect setup runs with its fiber as receiver. A synchronous cleanup runs before
+its disposer returns. Repeated public disposal is a no-op; the structural owner
+still joins asynchronous cleanup already started by another caller. Promises
+may resolve to a function or a nullish value; iterable setup may yield cleanup
+functions and return a final cleanup. Asynchronous iteration checks ownership
+before its next step. A cleanup error stops later steps in that effect while
+other independently owned resources still release. Metadata reports labels and
+nested effects without internal activation bookkeeping.
+
+Event callbacks receive receiver and arguments traced to the listener context.
+An explicit null receiver is valid. `internal/listener` can intercept registration;
+local update hooks precede global hooks. Once listeners detach before callback
+invocation. Listener removal after a dispatch snapshot does not cancel that
+snapshot. Waterfall continuations receive the payload arguments and next hook.
+
+Logger intercepts resolve at call time. Exporter messages are independent objects,
+with a shared sequence and timestamp per log call; exporter mutation cannot
+change another exporter's message fields. Level zero is a valid threshold.
+Logger buffers, exporter registrations, recursive causes and aggregate errors
+remain observable. The package exports the built-in service constructors,
+`Fiber`, `RackError`, `ValidationError`, tracking, callable, stack and type helpers.
+
+
+## Expanded acceptance inventory
+
+- [x] R08 descriptor-preserving context prototypes, symbols, reserved keys and branding.
+- [x] R09 readiness-only dependency checks, optional reads, shared isolation and loading visibility.
+- [x] R10 raw/effective config separation, hook validation, local veto and pending updates.
+- [x] R11 synchronous cleanup, structural async joins, partial iterator rollback and cancelled startup.
+- [x] R12 listener interception, traced arguments, snapshot removal and waterfall payloads.
+- [x] R13 initial/removal notifications, runtime identity and failing teardown observers.
+- [x] R14 dynamic logger intercepts, detached methods, exporter isolation and zero thresholds.
+- [x] R15 atomic mixin failure, associated members and rejected computed-property writes.
+- [x] R16 direct fibers, root lifetime, callable helpers and method-decorator ownership.
+- [x] R17 isolated cleanup failure, cancelled async iteration and no-read label allocation.
+
+These checks exercise public behavior through interacting plugins, services,
+resources and the host boundary. The application integration additionally checks
+operator-visible module status, persistent message deduplication, reply routing,
+port draining and final database shutdown. Runtime extensions outside this
+contract remain separate host integrations.

@@ -283,6 +283,8 @@
       (put projection :sources sources)
       (put projection :targets targets)
       (when operator
+        (put projection :module_runtime "rack")
+        (put projection :modules (funcall (nativeGet context "moduleStatus")))
         (let*
           ((catalog (catalogMetrics context))
             (lost

@@ -1,5 +1,5 @@
 (module rack.tests.integration
-  (import "../src/index.eli" createContext createService Service Context symbols Logger)
+  (import "../src/index.eli" createContext createService Service Context symbols Logger FiberState)
   (import "../src/loader.eli" createLoader applyEntryPatches)
   (import "../src/util.eli" field)
   (import "bun:test" test expect)
@@ -20,19 +20,19 @@
             (lambda () (js-call stops :push value)))))))
       (provider nil))
       (try
-        (await feature) (is (field feature "state") "pending")
+        (await feature) (is (field feature "state") (field FiberState "PENDING"))
         (setq provider (js-call app :plugin (js-object :name "database" :apply
           (lambda (ctx config) (js-call ctx :provide "database" (js-object :value 1))))))
         (await provider) (await (js-call app :settle))
-        (is (field feature "state") "active") (equal starts (js-array 1))
+        (is (field feature "state") (field FiberState "ACTIVE")) (equal starts (js-array 1))
         (await (js-call provider :dispose)) (await (js-call app :settle))
-        (is (field feature "state") "pending") (equal stops (js-array 1))
+        (is (field feature "state") (field FiberState "PENDING")) (equal stops (js-array 1))
         (setq provider (js-call app :plugin (js-object :name "replacement" :apply
           (lambda (ctx config) (js-call ctx :provide "database" (js-object :value 2))))))
         (await provider) (await (js-call app :settle))
         (equal starts (js-array 1 2))
         (await (js-call app :dispose))
-        (equal stops (js-array 1 2)) (is (field feature "state") "disposed")
+        (equal stops (js-array 1 2)) (is (field feature "state") (field FiberState "DISPOSED"))
         (throws (lambda () (js-call (field feature "ctx") :effect (lambda () nil))))
         (finally (await (js-call app :dispose)))))) 5000)
   (defun subscribe ()
@@ -68,7 +68,7 @@
           (setq release (lambda () (funcall resolve (lambda () (setq cleaned (1+ cleaned)))))))))))
       (is cleaned 0) (funcall release)
       (await disposal) (await (funcall effect)) (await (funcall effect)) (is cleaned 1)
-      (is (field (field app "fiber") "state") "disposed"))) 5000)
+      (is (field (field app "fiber") "state") (field FiberState "DISPOSED")))) 5000)
   (test "Rack R03 failed initialization rolls back partial listeners and resources" (async ()
     (let* ((errors (js-array)) (app (createContext (js-object :onError (lambda (error) (js-call errors :push error)))))
       (cleaned 0) (feature (js-call app :plugin (js-object :name "broken"
@@ -79,7 +79,7 @@
       (try
         (await (rejects (lambda () (js-call feature :await))))
         (await (js-call app :settle))
-        (is cleaned 1) (is (field feature "state") "failed")
+        (is cleaned 1) (is (field feature "state") (field FiberState "FAILED"))
         (is (js-length (js-call (field app "events") :dispatch "emit" (js-array "leak"))) 0)
         (is (> (js-length errors) 0) t)
         (finally (await (js-call app :dispose)))))) 5000)
@@ -107,7 +107,7 @@
         (setq feature (js-call app :plugin (js-object :name "update-hook"
           :apply (lambda (ctx config) (js-call ctx :on "internal/update" (lambda (candidate noSave next) false))))))
         (await feature) (await (js-call feature :update (js-object :ignored t)))
-        (is (field feature "rawConfig") undefined)
+        (equal (field feature "rawConfig") (js-object :ignored t))
         (finally (await (js-call app :dispose)))))) 5000)
   (test "Rack R05 config composition, nested replacement and preflight failures" (async ()
     (let* ((app (createContext)) (seen (js-array)) (stops (js-array))

@@ -3,7 +3,8 @@
   "sourceRoot": ".",
   "entries": [
     "tests/integration.test.eli",
-    "tests/protection.test.eli"
+    "tests/protection.test.eli",
+    "tests/behavior.test.eli"
   ],
   "outDir": "dist-tests"
 }

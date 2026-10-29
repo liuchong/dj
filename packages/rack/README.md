@@ -6,8 +6,9 @@ Applications provide capabilities; plugins declare dependencies and own their
 registrations and cleanup.
 
 The public entry exports `Context`, `createContext`, `Service`, `createService`,
-`Inject`, `FiberState`, `symbols`, `Logger`, `LoggerLevel`, logging formatters,
-`DisposableList`, `withProps`, and prototype helpers. The loader
+`Inject`, `Fiber`, `FiberState`, built-in service constructors, `RackError`,
+`ValidationError`, `isBailed`, `symbols`, `Logger`, `LoggerLevel`, logging formatters,
+`DisposableList`, `withProps`, tracking, callable, stack and prototype helpers. The loader
 entry exports `createLoader`, `validateEntries`, and `applyEntryPatches`.
 
 ```elisp

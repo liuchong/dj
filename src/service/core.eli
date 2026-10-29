@@ -210,6 +210,7 @@
       (js-array "codex" (lambda (tool selected) (createDesktopPort tool (js-object :endpoints selected) ports)))
       (js-array "cursor" (lambda (tool selected) (createDesktopPort tool (js-object :endpoints selected) ports))))))
     (loaded (js-array)))
+    (put base :moduleStatus (lambda () (js-call rack :inspect)))
     (js-call rack :provide "application" base)
     (js-call factories :forEach (lambda (factory tool)
       (let ((selected (js-call endpoints :filter (lambda (endpoint) (= (nativeGet endpoint "tool") tool)))))

@@ -1,5 +1,6 @@
 (module rack.loader
-  (import "./util.eli" field kind objectLike rackError)
+  (import "./util.eli" field kind objectLike)
+  (import "./errors.eli" RackError)
   (defun validateEntries (entries)
     (unless (Array/isArray entries) (throw (new globalThis.TypeError "Plugin configuration must be an array")))
     (let ((ids (new globalThis.Set)) (index 0))
@@ -27,10 +28,10 @@
                 (anchor (or before after))
                 (found (if anchor (js-call result :findIndex (lambda (entry) (= (field entry "id") anchor))) (js-length result)))
                 (at (+ found (if after 1 0))))
-                (when (< found 0) (throw (rackError "UNKNOWN_ENTRY" "Patch insertion target is absent")))
+                (when (< found 0) (throw (RackError "UNKNOWN_ENTRY" "Patch insertion target is absent")))
                 (js-call items :forEach (lambda (entry offset)
                   (js-call result :splice (+ at offset) 0 (Object/assign (js-object) entry))))))
-            ((< index 0) (throw (rackError "UNKNOWN_ENTRY" (str "Unknown plugin entry: " id))))
+            ((< index 0) (throw (RackError "UNKNOWN_ENTRY" (str "Unknown plugin entry: " id))))
             ((field patch "remove") (js-call result :splice index 1))
             (t (let ((entry (Object/assign (js-object) (aref result index) patch)))
               (Reflect/deleteProperty entry "remove") (js-call result :splice index 1 entry)))))
@@ -78,7 +79,8 @@
                 (unless (field entry "disabled")
                   (if existing
                     (unless (eq (field existing "config") (field entry "config"))
-                      (await (js-call (field existing "fiber") :update (field entry "config")))
+                      (js-call (field existing "fiber") :update (field entry "config"))
+                      (await (js-call (field existing "fiber") :await))
                       (put existing :config (field entry "config")))
                     (let ((scope context))
                       (js-call (or (field entry "isolate") (js-array)) :forEach
@@ -98,7 +100,7 @@
             (lambda (record) (js-call (field record "fiber") :await)))))
           (Array/from (js-call records :keys)))))
       (setq enqueue (lambda (prepare)
-        (when closed (throw (rackError "LOADER_CLOSED" "Loader is closed")))
+        (when closed (throw (RackError "LOADER_CLOSED" "Loader is closed")))
         (let ((result (js-call (js-call serial :catch (lambda (error) nil)) :then
           (async () (await (applyPrepared (await (funcall prepare))))))))
           (setq serial result) result)))
