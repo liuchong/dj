@@ -6,7 +6,7 @@
   <a href="docs/index.html">主页源码</a> · <a href="docs/delivery.md">安装与使用</a> · <a href="docs/index.md">文档</a> · <a href="skills/dj/SKILL.md">Skill</a> · <a href="LICENSE">1PL</a>
 </p>
 
-# DJ — Dispatch Junction
+# <img src="docs/pages/assets/dj-wordmark.svg" width="324" height="44" alt="Dispatch Junction">
 
 DJ 把 IM 消息按规则送进已有的 AI 编程对话，并为 AI 提供读取上下文、管理订阅和回复原消息的接口。一个对话可以订阅多个来源，一个来源也可以通知多个对话。
 

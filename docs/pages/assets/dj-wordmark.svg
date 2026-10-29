@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="324" height="44" viewBox="0 0 324 44" role="img" aria-labelledby="title desc">
+  <title id="title">Dispatch Junction</title>
+  <desc id="desc">D 为草绿色，J 为紫红色，两者加粗；其余字母使用正常字重。</desc>
+  <style>
+    text { fill: #1f2328; }
+    @media (prefers-color-scheme: dark) { text { fill: #f0f6fc; } }
+  </style>
+  <text x="1" y="35" font-family="Arial, Helvetica, sans-serif" font-size="36" font-weight="400"><tspan fill="#d7ff3f" font-weight="800" stroke="#574166" stroke-width="0.5" paint-order="stroke">D</tspan>ispatch <tspan fill="#ff40b4" font-weight="800">J</tspan>unction</text>
+</svg>
