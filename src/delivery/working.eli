@@ -97,7 +97,16 @@
             (nativeGet reply "expires_at") (addSeconds (utcNow context) 1800)) :attempted_create false :owned false)
           (safeFields reply (js-array "delivery_id" "source_destination" "source_identity_revision"))))
         (js-call repository :insert "work_marks" mark))
-      (projectAcknowledgement context mark)))
+      (let ((result (projectAcknowledgement context mark)))
+        (when (nativeGet result "ok")
+          ;; The acknowledgement explicitly settles this input, not its parent task.
+          ;; It can arrive while native submission is still awaiting its receipt:
+          ;; register then settle the lease now so late acceptance cannot revive it.
+          (let ((delivery (and (nativeGet reply "delivery_id")
+            (js-call repository :get "deliveries" (nativeGet reply "delivery_id")))))
+            (when delivery (trackWorking context delivery)
+              (finishWorking context (nativeGet delivery "delivery_id") "no_reply"))))
+        result)))
   (defun handleOperation (context operation args)
     (if (= operation "message.acknowledge.get")
       (let ((mark (js-call (nativeGet context "repository") :get "work_marks" (nativeGet args "acknowledgement_id"))))

@@ -78,7 +78,7 @@
       :message.send
       "向 destination_ref 固定的 IM 地址发送一条纯文本；已认证主体默认可使用已配置连接，无需逐群发送授权。"
       :message.acknowledge
-      "按固定回复身份与原消息添加Get收到确认；持久去重，官方读回后才确认成功，不发送文字。"
+      "显式确认当前消息已理解或收录、暂时无需文字回复：按固定身份添加Get，同一事务结束当前delivery的Working；不结束其他消息或任务。原生Get存在须官方读回确认。"
       :message.acknowledge.get
       "读取收到确认的持久状态；native_acknowledged为true才已核实原生Get存在。"
       :message.reply

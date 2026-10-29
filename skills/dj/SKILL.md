@@ -86,10 +86,11 @@ metadata:
 
 ## 处理中标记与完成
 
-- acknowledge: 明确原生@本人或机器人、按本对话规则判断无需文字回复时，可message.acknowledge(reply_context_id,idempotency_key)用Get表示收到；通过message.acknowledge.get查native_acknowledged，未确认不声称已点。原消息/身份由DJ固定，不改为主动发送；随后仍需delivery.complete(no_reply)清理Typing。Get保留，不自动转发普通输出，不把每条通知都变成任务或文字回复。
+- acknowledge: Get表示当前消息已理解或已收录、暂时无需文字回复，不是投递回执或开始处理的必经步骤。正在处理本条问题时只保留Working，不额外点Get；按持久规则决定只需确认时，调用message.acknowledge(reply_context_id,idempotency_key)，DJ在同一事务登记Get并结束当前delivery的Working，无需另调complete才清理。通过message.acknowledge.get查native_acknowledged，未确认不声称已点；Get保留，原消息和身份仍由DJ固定。
+- supplemental_acknowledgement: 补充消息已纳入已有任务且暂时无需文字回复时，可在补充消息上点Get；只结束补充消息自身的Working，原任务仍在处理则保留原消息的Working。是否属于补充、是否需要处理或回复由AI判断，DJ不推断任务关系；完成并回复后不必再补Get。
 
 - working: Lark的IM投递获原生accepted后，DJ按固定出口自动登记Typing（敲键盘）表情；它只表示正在交给会话处理，不自动创建任务或发送回答。delivery.working查询本条处理与清理状态。
-- complete: 每条已处理通知在完成/无需回复/失败/取消时调用delivery.complete，参数delivery_id、reason=completed/no_reply/failed/cancelled、稳定idempotency_key；不能只用普通输出或最终回答表示结束。若已通过DJ回复并获accepted，DJ自动结束对应租约，仍可幂等complete。
+- complete: 已通过message.acknowledge确认，或通过DJ文字回复并获accepted的当前通知，由DJ自动结束对应Working租约；其他完成/无需回复/失败/取消的通知调用delivery.complete，参数delivery_id、reason=completed/no_reply/failed/cancelled、稳定idempotency_key。不能只用普通输出或最终回答表示结束；自动收尾后仍可幂等complete。
 - cleanup: 多接收方共享同一表情，全部结束后才删；清理持久化且超时、重启自动续试，原有人工Typing不删除。cleanup_state=done才是撤销确认，其余为待清理，不能谎报已撤销；无需回复时不得为了清理而额外发IM。处理租约30分钟，到期自动收回表情，不阻止业务后续推进。
 - native_recovery: 用户明确要求补处理尚未入库的漏收消息时，由操作员使用message.recover指定同一连接下最多16个准确native_message_ids、reason及固定幂等键；普通查询不触发任务或Typing，恢复后复用原case/owner和统一投递/处理租约，不把补处理说成实时事件。
 - replay: 明确授权恢复漏投历史时，用原subscription_id、当前expected_revision、最多16个准确event_ids及稳定键调用subscription.replay；使用当前来源/规则/授权并保留原消息身份，不篡改事件或恢复定时器。不能把更新订阅说成已自动回补。

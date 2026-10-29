@@ -5,7 +5,7 @@ DJ将Lark `Typing`（敲键盘）作为已交给接收会话处理的标记，�
 ## 状态与接口
 
 - 每条delivery持久保存独立处理租约，同一出口身份、版本和原消息共享一个原生reaction，多个接收方均结束才撤销。
-- `delivery.working(delivery_id)`查询处理状态及cleanup_state；`delivery.complete(delivery_id,reason,idempotency_key)`显式报告completed/no_reply/failed/cancelled，仅原接收主体或获准operator可操作。无需IM回复时也必须调用complete，不能用普通文本或最终回答代替。
+- `delivery.working(delivery_id)`查询处理状态及cleanup_state；`delivery.complete(delivery_id,reason,idempotency_key)`显式报告completed/no_reply/failed/cancelled，仅原接收主体或获准operator可操作。无需IM文字回复时，显式Get确认在同一事务自动收尾；未走自动收尾的通知仍须调用complete，不能用普通文本或最终回答代替。
 - 原消息回复通过DJ获得原生accepted时自动结束对应处理租约。已绑定的原生ended/settled/turn_finished等结束观察亦可结束；不会将这些观察作为自动IM回复指令。
 - 30分钟处理租约到期触发回收，避免客户端退出、异常、模型未调用complete等情况永久遗留。服务停止持久登记撤销意图，重启继续清理，不依赖对话上下文。长时间业务可继续推进，但过期后不再显示working。
 
@@ -29,6 +29,19 @@ DJ将Lark `Typing`（敲键盘）作为已交给接收会话处理的标记，�
 
 ## 收到确认与无需文字回复
 
-明确原生@本人或机器人后，AI判断无需文字回复时，可以显式调用message.acknowledge(reply_context_id,idempotency_key)留一个Get（收到/知道了）确认；是否调用由原接收对话的持久规则决定，不因普通输出自动发送，不对所有关键词或私聊事件一律确认。DJ沿0005固定的原消息与user/bot身份执行，AI不选择chat、message_id或身份。此操作复用message.reply授权与受控回复引用，不适用于资源事件。
+Get表示内容已理解或已收录、暂时无需文字回复，不是普通收件回执，也不是Working之后的必经步骤。AI按原接收对话的持久规则明确选择message.acknowledge(reply_context_id,idempotency_key)，不因普通输出自动发送，不对所有关键词或私聊事件一律确认。DJ沿0005固定的原消息与user/bot身份执行，AI不选择chat、message_id或身份。此操作复用message.reply授权与受控回复引用，不适用于资源事件。
 
-Get是持久收到确认，Typing只是临时处理中：AI仍须delivery.complete(no_reply)结束处理；DJ撤销Typing，保留Get，不为了确认发文字。两者共用现有持久表情队列，按emoji区分；Get在官方GET核对存在后才native_acknowledged=true，可通过message.acknowledge.get查询。已存在的本人同类Get直接确认，不删除人工表情；网络未知或丢失POST响应时只重查，不盲目重发POST。执行前复核当前主体授权、账号栅栏、源读取有效期；失效则终止待发送确认并保留明确状态，不借新账号发送。
+| AI对当前消息的决定 | 表情行为 |
+| --- | --- |
+| 正在处理本条要求或问题 | 只保留Working，不额外点Get |
+| 已理解、知道了，暂时无需文字回复 | Get，并结束本条消息的Working |
+| 补充已收录进正在处理的任务 | 补充消息Get；原任务的Working继续保留 |
+| 完成并回复 | 撤销Working，不必再补Get |
+
+确认意图与当前delivery处理租约在同一事务持久提交，结束原因为no_reply，不依赖AI再调一次delivery.complete。若确认发生于submitting、原生接收回执尚未落盘时，先登记并结束本条处理租约，后到的accepted不能重新点起Working。只结束回复引用所绑定的delivery，不按群、thread、会话或AI猜测的任务批量结束；补充消息不会结束原任务，其他接收方的处理租约仍独立存在。这里的结束仅表示本条输入已处理，不代表整个业务任务完成，也不禁止后续明确回复。
+
+Get是持久内容确认，Typing是临时处理中。原生Get创建与Typing撤销仍异步执行，故可短暂共存；同一原消息存在其他接收方未完成的租约时，Working依原有共享规则保留。两者共用现有持久表情队列，按emoji区分；Get在官方GET核对存在后才native_acknowledged=true，可通过message.acknowledge.get查询。已存在的本人同类Get直接确认，不删除人工表情；网络未知或丢失POST响应时只重查，不盲目重发POST。执行前复核当前主体授权、账号栅栏、源读取有效期；失效则终止待发送确认并保留明确状态，不借新账号发送。Get发送失败不将已确认处理完的当前输入重新标记为处理中，保留真实确认/清理错误并重试。
+
+## 当前策略验收
+
+定向集成6项通过：真实SQLite/Core与明确替换的原生表情端口验证确认意图和Working结束原子提交、失败回滚、补充不结束原任务、多接收方共享标记、submitting期确认不被后到accepted复活、丢失原生响应及重启后清理。36项保护检查、331条断言通过。此证据不冒充真实平台的表情删除时延；原生Get和清理仍分别以官方读回及cleanup_state确认。

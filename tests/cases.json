@@ -27439,6 +27439,52 @@
       "given": "A bounded disposable observation cache with a controlled clock",
       "when": "Reuse successful reads, remove and re-add a reaction, roll back time and exceed cache capacity",
       "then": "Claims coalesce, interest stays bounded, stale observations expire and eviction never acknowledges messages"
+    },
+    {
+      "case_id": "T40.acknowledgement-isolation.integration",
+      "parent_id": "T40",
+      "file": "tests/integration/working.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "acceptance_ids": [
+        "A01",
+        "A03"
+      ],
+      "requirements": [
+        "SPEC-0006"
+      ],
+      "given": "A real SQLite Core with two inputs and a controlled native reaction peer",
+      "when": "Acknowledge a supplement and acknowledge another input before native acceptance returns",
+      "then": "Only the acknowledged input settles; original work stays active and late acceptance cannot recreate Typing"
+    },
+    {
+      "case_id": "T38.acknowledged-lease.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/working.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "pure",
+      "acceptance_ids": [
+        "A01",
+        "A03"
+      ],
+      "requirements": [
+        "SPEC-0006"
+      ],
+      "given": "An input lease already settled by an explicit acknowledgement",
+      "when": "Native acceptance later attempts to register Working",
+      "then": "The settled lease is preserved without recreating a marker"
     }
   ],
   "source_extension_base": "c1eb7b1"
