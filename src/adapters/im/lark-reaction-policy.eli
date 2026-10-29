@@ -3,7 +3,7 @@
   ;; DJ scheduling defaults, deliberately below the documented API ceiling.
   ;; They are not limits imposed by the platform and do not imply coverage/SLA.
   (defconst defaults (Object/freeze (js-object :requests_per_second 10 :max_concurrency 2
-    :new_poll_ms 200 :recent_seconds 600 :recent_messages 64 :recent_poll_seconds 2 :archive_poll_seconds 30)))
+    :new_poll_ms 200 :recent_seconds 600 :recent_messages 64 :recent_poll_seconds 2 :engaged_messages 16 :engaged_poll_seconds 10 :archive_cycle_seconds 60)))
   (defconst budgets (new globalThis.WeakMap))
   (defun reactionPollPolicy (config)
     (Object/assign (js-object) defaults (nativeGet config "reaction_poll" (js-object))))

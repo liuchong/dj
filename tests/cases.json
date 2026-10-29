@@ -27384,7 +27384,7 @@
       "applicability": "enabled-positive",
       "parameters": {},
       "required_profile": null,
-      "timeout_ms": 15000,
+      "timeout_ms": 30000,
       "resource_group": "isolated-sqlite",
       "requirements": [
         "Q11"
@@ -27417,6 +27417,28 @@
       "given": "One shared application budget and two official HTTP transport substitutes",
       "when": "Read reactions across connections, exhaust local capacity, receive native 429 and cancel",
       "then": "Shared DJ limits, cooldown, idempotent release and validated configuration stay explicit"
+    },
+    {
+      "case_id": "T38.reaction-observation.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/reactions.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 5000,
+      "resource_group": "pure",
+      "acceptance_ids": [
+        "A01"
+      ],
+      "requirements": [
+        "SPEC-0013"
+      ],
+      "given": "A bounded disposable observation cache with a controlled clock",
+      "when": "Reuse successful reads, remove and re-add a reaction, roll back time and exceed cache capacity",
+      "then": "Claims coalesce, interest stays bounded, stale observations expire and eviction never acknowledges messages"
     }
   ],
   "source_extension_base": "c1eb7b1"

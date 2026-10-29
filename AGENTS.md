@@ -68,7 +68,7 @@ Lark 必须直连官方 WebSocket 与 HTTPS API，禁止 SDK、CLI 及其子进�
 - 多IM、多账号及user/bot身份共用扁平连接注册表和路由分发，人员身份与原生会话地址分离；以 [0003](docs/specs/0003-connections-and-routing.md) 为准，不按部署昵称分叉业务。
 - 人员、字符与后续消息过滤策略以 [0002](docs/specs/0002-message-trigger-filters.md) 为准；当前黑名单只拦截订阅触发，不改变消息接收、记录和查询可见性。
 - Lark 收件、本人收发、订阅过滤和通知原 AI 对话以 [0001](docs/specs/0001-lark-realtime-subscriptions.md) 为准；开始、恢复或压缩后处理相关工作时先读它。
-- 正常链路是获准消息接入 → Core 持久化和订阅过滤 → 精确原生会话投递。Lark user/bot 共用 WebSocket＋HTTP 补收实现，各自独立实例、凭据、断点和限流；HTTP 默认 2 秒，可用 inbox_poll_seconds 配置，复用统一去重和历史存储，如实报告实时／轮询来源及实际覆盖。不得用周期性 AI 巡检或绕过订阅的 relay 替代服务收件。
+- 正常链路是获准消息接入 → Core 持久化和订阅过滤 → 精确原生会话投递。Lark user/bot 共用 WebSocket＋HTTP 补收实现，各自独立实例、凭据和断点；普通消息使用每连接DJ预算，表情GET按应用共享预算；普通消息HTTP默认2秒，可用inbox_poll_seconds配置，表情策略见0013，不把DJ默认值当作平台额度或送达保证，复用统一去重和历史存储，如实报告实时／轮询来源及实际覆盖。不得用周期性 AI 巡检或绕过订阅的 relay 替代服务收件。
 - 默认 @ 是订阅规则，复杂过滤由统一接口设置，操作流程必须写入 DJ Skill。区分 user 与 bot，接好 DJ 不授权重写接收对话的业务规则。
 - 规格要求、已有实现、未提交原型和真实验收分别记录；旧文档与 spec 冲突时同步纠正，不因夹具、现有代码或一次读写成功降低规格。
 
