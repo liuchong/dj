@@ -546,7 +546,7 @@
     :identity_revision integerSchema :event_ids (arr stringSchema) :created_count integerSchema :realtime boolSchema))))
   (put definitions :resource_watch (obj (strings "watch_id operation_id state event_channel"
     (js-object :resource (ref "lark_resource") :identity_revision integerSchema :native_error (js-object)))))
-  (put definitions :reaction (obj (strings "native_event_id emoji_type action_time"
+  (put definitions :reaction (obj (strings "native_event_id native_reaction_id emoji_type action_time"
     (js-object :message_source_time nullableString :operator (obj (strings "id kind"
       (js-object :is_self boolSchema :identities (arr (obj (strings "platform scope id"))))))))))
   (put definitions :ingress_evidence (obj (strings "kind operation_id requested_by reason recovered_at")))

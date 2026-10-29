@@ -5,6 +5,7 @@
   (import "../../application/write-batch.eli" enqueueWrite)
   (import "../../service/ownership.eli" ownerGuard)
   (import "./lark.eli" createReadLimiter)
+  (import "./lark-reactions.eli" pollLarkReactions)
 
   (defun normalizeInboxMessage (config message chat-type normalize)
     (let* ((sender (nativeGet message "sender"))
@@ -92,6 +93,17 @@
           (db (nativeGet (nativeGet application "store") "db"))
           (events (js-array)) (chats (js-array)) (native nil) (messages (js-array))
           (response nil) (data nil) (page-more false) (page-token nil) (queried false))
+          (if (= kind "reactions")
+            (let ((result (await (pollLarkReactions config application base checkpoint context))))
+              (put checkpoint :last_success_at now) (put checkpoint :native_error nil)
+              (put checkpoint :next_due_at (if (nativeGet result "more") now
+                (js-call (new globalThis.Date (+ (Date/parse now) (* interval 1000))) :toISOString)))
+              (await (funcall persist checkpoint (nativeGet result "events") (js-array)))
+              (put status :reaction_poll (js-object :state "ready" :last_success_at now
+                :coverage "retained_local_messages" :interval_seconds interval
+                :sweep_complete (not (nativeGet result "more"))))
+              (put status :state "ready") (put status :last_success_at now))
+            (progn
           (while (and (> (js-length pending) 0)
             (or (js-call (js-call db :query "SELECT 1 FROM events WHERE connection_id=? AND source_key=?")
                   :get id (str (aref pending 0) ":created"))
@@ -179,7 +191,7 @@
               (* (if (= kind "discovery") 30 interval) 1000))) :toISOString)))
           (await (funcall persist checkpoint events chats))
           (put status :state "ready") (put status :last_success_at now) (put status :native_error nil)
-          (when (> (js-length events) 0) (put status :last_received_at now)))))
+          (when (> (js-length events) 0) (put status :last_received_at now)))))))
       (setq pump (lambda ()
         (when (and application (not closed) (not running)
           (>= (js-call (nativeGet host "clock") :monoNow) next-launch))
@@ -191,6 +203,8 @@
               (setq running (funcall turn checkpoint))
               (setq running (js-call running :catch (async (error)
                 (put status :state "degraded")
+                (when (= (nativeGet checkpoint "kind") "reactions")
+                  (put status :reaction_poll (js-object :state "degraded" :coverage "retained_local_messages")))
                 (put status :native_error (js-object :code (nativeGet error "native_code"
                   (nativeGet (nativeGet error "details") "native_code" -1))
                   :missing_scopes (nativeGet error "missing_scopes"
@@ -218,6 +232,7 @@
           (setq application context closed false)
           (must (inTransaction context (lambda (tx)
             (must (ownerGuard context))
+            (funcall ensure "inbox:reactions" "reactions" (utcNow context))
             (if user
               (js-call (js-array "p2p_chat" "group_chat") :forEach (lambda (kind)
                 (funcall ensure (str "inbox:" kind) kind (utcNow context))))

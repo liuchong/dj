@@ -5,7 +5,8 @@
 - configure: 先读回当前订阅，保留来源、目标、上下文、instructions、投递策略和其他业务规则；selector.event_kinds 加入 message.reaction.added，原规则限定在原事件分支，另用 any 增加表情分支，再 preview/update。已有订阅不可用新建重复替代。
 - message: 接收原正文、来源 thread、原作者和 reaction 元数据。原文提及仅作上下文，不作为新的提及；回复身份和位置由 DJ 固定。按持久规则决定是否做事/回复；无需回复也走既有 complete/acknowledge 闭环。
 - filters: 原作者、表情添加者均受统一人员黑名单控制，字符黑名单检查原文；被屏蔽仍可读。自动 Typing/Get 不得造成自触发循环。
-- realtime: 需要平台订阅 im.message.reaction.created_v1。只能收到机器人所在会话中的事件；HTTP 读到原文和 Pin 记录不证明长连接已收到事件。缺权限或事件配置时报告具体缺口，不做历史轮询，不把重放说成实时。
+- realtime: WebSocket需平台订阅im.message.reaction.created_v1，其会话覆盖按平台实际授权核对；未覆盖会话由DJ用同一连接的官方HTTPS表情列表补收。只扫描已保留本地消息，默认2秒扫完间隔、逐页轮巡，消息多时有延迟。receive_transport=poll不算WebSocket实时证据；缺权限或异常需报告，不让AI另建定时器。
+- activation: 新表情补收观察器启动前已存在的图钉不自动建任务；正常重启保留观察边界，移除后重新添加是新动作。HTTP保留native_reaction_id，不编造原生推送事件ID；与WebSocket对同一动作共用去重键。
 
 ## 三种触发组合示例
 
