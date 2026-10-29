@@ -33,6 +33,9 @@ flowchart LR
 
 ## 开始使用
 
+> **DJ 怎么安装、怎么配置？我也不会，丢给 AI 吧。**
+> 把这个仓库链接交给你的 AI 编程助手，告诉它要接哪个 IM、通知哪个对话，让它照着[安装文档](docs/delivery.md)和[DJ Skill](skills/dj/SKILL.md)帮你装好、接好、验好。
+
 使用已生成的目录包。运行环境为 macOS arm64 与 Bun 1.4.4；账号凭据和对话身份由私有配置提供。
 
 ```sh
