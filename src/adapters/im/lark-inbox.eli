@@ -6,6 +6,7 @@
   (import "../../service/ownership.eli" ownerGuard)
   (import "./lark.eli" createReadLimiter)
   (import "./lark-reactions.eli" pollLarkReactions)
+  (import "./lark-reaction-policy.eli" reactionPollPolicy)
 
   (defun normalizeInboxMessage (config message chat-type normalize)
     (let* ((sender (nativeGet message "sender"))
@@ -31,21 +32,25 @@
     (let* ((interval (nativeGet config "inbox_poll_seconds" 2))
       (id (nativeGet config "connection_id")) (user (= (nativeGet config "identity") "user"))
       (limiter (createReadLimiter (nativeGet host "clock")))
-      (application nil) (running nil) (closed false) (next-launch 0)
+      (policy (reactionPollPolicy config)) (running (new globalThis.Map))
+      (application nil) (closed false)
       (status (js-object :state "starting" :transport "poll" :interval_seconds interval
         :coverage (if user "authorized_user_messages" "discoverable_groups_and_known_private_chats")
-        :last_success_at nil :last_received_at nil))
+        :last_success_at nil :last_received_at nil
+        :reaction_poll (js-object :coverage "retained_local_messages" :limits_owner "dj"
+          :budget_scope "application_across_connections" :policy policy :lanes (js-object))))
       (load nil) (ensure nil) (persist nil) (turn nil) (pump nil) (known nil))
       (setq load (lambda (key)
         (js-call (nativeGet application "repository") :get "poll_checkpoints"
           (js-object :connection_id id :conversation_key key))))
-      (setq ensure (lambda (key kind activation &optional chat)
+      (setq ensure (lambda (key kind activation &optional chat fields)
         (let* ((repository (nativeGet application "repository")) (old (funcall load key))
           (identity (nativeGet (js-call repository :get "connections" id) "identity_revision")))
           (unless (and old (= (nativeGet old "identity_revision") identity))
             (let ((fresh (js-object :connection_id id :conversation_key key :kind kind :chat_id chat
               :generation (if old (1+ (nativeGet old "generation")) 1) :identity_revision identity
               :activation_at activation :next_due_at activation :pending_ids (js-array))))
+              (when fields (Object/assign fresh fields))
               (if old (must (js-call repository :replace "poll_checkpoints" fresh))
                 (js-call repository :insert "poll_checkpoints" fresh)))))))
       (setq known (lambda (activation)
@@ -96,12 +101,19 @@
           (if (= kind "reactions")
             (let ((result (await (pollLarkReactions config application base checkpoint context))))
               (put checkpoint :last_success_at now) (put checkpoint :native_error nil)
-              (put checkpoint :next_due_at (if (nativeGet result "more") now
-                (js-call (new globalThis.Date (+ (Date/parse now) (* interval 1000))) :toISOString)))
-              (await (funcall persist checkpoint (nativeGet result "events") (js-array)))
-              (put status :reaction_poll (js-object :state "ready" :last_success_at now
-                :coverage "retained_local_messages" :interval_seconds interval
-                :sweep_complete (not (nativeGet result "more"))))
+              (let* ((lane (nativeGet checkpoint "reaction_lane" "archive"))
+                (delay (cond ((= lane "new") (nativeGet policy "new_poll_ms"))
+                  ((= lane "recent") (* 1000 (nativeGet policy "recent_poll_seconds")))
+                  (t (* 1000 (nativeGet policy "archive_poll_seconds"))))))
+                (put checkpoint :next_due_at (if (nativeGet result "more") now
+                  (js-call (new globalThis.Date (+ (Date/parse now) delay)) :toISOString)))
+                (await (funcall persist checkpoint (nativeGet result "events") (js-array)))
+                (unless (nativeGet status "reaction_poll")
+                  (put status :reaction_poll (js-object :coverage "retained_local_messages"
+                    :limits_owner "dj" :budget_scope "application_across_connections"
+                    :policy policy :lanes (js-object))))
+                (put (nativeGet (nativeGet status "reaction_poll") "lanes") lane
+                  (js-object :state "ready" :last_success_at now :sweep_complete (not (nativeGet result "more")))))
               (put status :state "ready") (put status :last_success_at now))
             (progn
           (while (and (> (js-length pending) 0)
@@ -193,29 +205,39 @@
           (put status :state "ready") (put status :last_success_at now) (put status :native_error nil)
           (when (> (js-length events) 0) (put status :last_received_at now)))))))
       (setq pump (lambda ()
-        (when (and application (not closed) (not running)
-          (>= (js-call (nativeGet host "clock") :monoNow) next-launch))
-          (let* ((rows (js-call (js-call (nativeGet (nativeGet application "store") "db") :query
-            "SELECT payload FROM poll_checkpoints WHERE connection_id=? AND conversation_key LIKE 'inbox:%' AND next_due_at<=? ORDER BY next_due_at,conversation_key LIMIT 1") :all id (utcNow application)))
-            (checkpoint (and (> (js-length rows) 0) (JSON/parse (nativeGet (aref rows 0) "payload"))))
-            (saved (and checkpoint (JSON/stringify checkpoint))))
-            (when (and checkpoint (js-call limiter :acquire))
-              (setq running (funcall turn checkpoint))
-              (setq running (js-call running :catch (async (error)
-                (put status :state "degraded")
-                (when (= (nativeGet checkpoint "kind") "reactions")
-                  (put status :reaction_poll (js-object :state "degraded" :coverage "retained_local_messages")))
-                (put status :native_error (js-object :code (nativeGet error "native_code"
-                  (nativeGet (nativeGet error "details") "native_code" -1))
-                  :missing_scopes (nativeGet error "missing_scopes"
-                    (nativeGet (nativeGet error "details") "missing_scopes" (js-array)))))
-                (let ((retry (JSON/parse saved)))
-                  (put retry :native_error (nativeGet status "native_error"))
-                  (put retry :next_due_at (js-call (new globalThis.Date (+ (Date/parse (utcNow application)) 5000)) :toISOString))
-                  (try (await (funcall persist retry (js-array) (js-array)))
-                    (catch stale (setq closed t) (put status :state "blocked"))))
-                (setq next-launch (+ (js-call (nativeGet host "clock") :monoNow) 1000)))))
-              (setq running (js-call running :finally (lambda () (js-call limiter :release) (setq running nil)))))))))
+        (when (and application (not closed))
+          ;; Separate one normal-message job from one reaction-page job. Jobs use
+          ;; independent checkpoints, while the HTTP transport owns app-wide quotas.
+          (js-call (js-array "messages" "reactions") :forEach (lambda (role)
+            (unless (js-call running :has role)
+              (let* ((reaction (= role "reactions"))
+                (rows (js-call (js-call (nativeGet (nativeGet application "store") "db") :query
+                  (str "SELECT payload FROM poll_checkpoints WHERE connection_id=? AND conversation_key LIKE 'inbox:%' AND next_due_at<=? AND json_extract(payload,'$.kind')"
+                    (if reaction "='reactions'" "<>'reactions'") " ORDER BY next_due_at,conversation_key LIMIT 1")) :all id (utcNow application)))
+                (checkpoint (and (> (js-length rows) 0) (JSON/parse (nativeGet (aref rows 0) "payload"))))
+                (saved (and checkpoint (JSON/stringify checkpoint))))
+                (when (and checkpoint (or reaction (js-call limiter :acquire)))
+                  (js-call running :set role t)
+                  (let ((job (funcall turn checkpoint)))
+                    (setq job (js-call job :catch (async (error)
+                      (put status :state "degraded")
+                      (when reaction
+                        (put (nativeGet (nativeGet status "reaction_poll") "lanes")
+                          (nativeGet checkpoint "reaction_lane" "archive") (js-object :state "degraded")))
+                      (put status :native_error (js-object :code (nativeGet error "native_code"
+                        (nativeGet (nativeGet error "details") "native_code" -1))
+                        :missing_scopes (nativeGet error "missing_scopes"
+                          (nativeGet (nativeGet error "details") "missing_scopes" (js-array)))))
+                      (let* ((retry (JSON/parse saved))
+                        (seconds (Math/max 5 (nativeGet error "retry_after_seconds" 0))))
+                        (unless (Number/isFinite seconds) (setq seconds 5))
+                        (put retry :native_error (nativeGet status "native_error"))
+                        (put retry :next_due_at (js-call (new globalThis.Date (+ (Date/parse (utcNow application)) (* seconds 1000))) :toISOString))
+                        (try (await (funcall persist retry (js-array) (js-array)))
+                          (catch stale (setq closed t) (put status :state "blocked")))))))
+                    (js-call job :finally (lambda ()
+                      (unless reaction (js-call limiter :release))
+                      (js-call running :delete role))))))))))))
       (js-object :pump pump :status (lambda ()
         (let ((failed (when application (js-call (js-call (nativeGet (nativeGet application "store") "db") :query
           "SELECT json_extract(payload,'$.native_error') AS error FROM poll_checkpoints WHERE connection_id=? AND conversation_key LIKE 'inbox:%' AND json_extract(payload,'$.native_error') IS NOT NULL LIMIT 1") :get id))))
@@ -233,6 +255,12 @@
           (must (inTransaction context (lambda (tx)
             (must (ownerGuard context))
             (funcall ensure "inbox:reactions" "reactions" (utcNow context))
+            (let* ((activation (nativeGet (funcall load "inbox:reactions") "activation_at"))
+              (row (js-call (js-call (nativeGet (nativeGet context "store") "db") :query
+                "SELECT CAST(COALESCE(MAX(ingress_seq),0) AS TEXT) AS seq FROM events WHERE connection_id=?") :get id)))
+              (funcall ensure "inbox:reaction-new" "reactions" activation nil
+                (js-object :reaction_lane "new" :reaction_new_after_seq (nativeGet row "seq")))
+              (funcall ensure "inbox:reaction-recent" "reactions" activation nil (js-object :reaction_lane "recent")))
             (if user
               (js-call (js-array "p2p_chat" "group_chat") :forEach (lambda (kind)
                 (funcall ensure (str "inbox:" kind) kind (utcNow context))))
@@ -240,5 +268,5 @@
                 (funcall known (nativeGet (funcall load "inbox:discovery") "activation_at"))))
             (success nil)))))
         :close (lambda () (setq closed t))
-        :pendingWork (lambda () (if running 1 0)))))
+        :pendingWork (lambda () (nativeGet running "size")))))
   (export createLarkInboxPoller normalizeInboxMessage))

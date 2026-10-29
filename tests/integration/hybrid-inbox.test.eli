@@ -10,11 +10,11 @@
 
   (defconst socketFactory (js-object))
   (defun receiver (url) (funcall (nativeGet socketFactory "make") url))
-  (defasync advance (f count)
+  (defasync advance (f count &optional native-wait-ms)
     (let ((i 0))
       (while (< i count)
         (js-call (nativeGet f "clock") :advance 1000)
-        (await (new globalThis.Promise (lambda (done) (nativeSetTimeout done 0))))
+        (await (new globalThis.Promise (lambda (done) (nativeSetTimeout done (or native-wait-ms 0)))))
         (let ((result (await (js-call f :tick))))
           (js-call (expect (nativeGet result "ok")) :toBe t))
         (setq i (1+ i)))))
@@ -208,7 +208,9 @@
                 (await (callOk f "A" "delivery.complete" (js-object :delivery_id (nativeGet envelope "delivery_id")
                   :reason "no_reply" :idempotency_key (str "hybrid-complete-" i))))))
             (setq i (1+ i))))
-        (await (advance f 12))
+        ;; GET reaction readbacks now share the real transport budget; let its
+        ;; short native wait timers run as well as advancing the injected clock.
+        (await (advance f 12 30))
         (js-call (expect (nativeGet (nativeGet f "marks") "size")) :toBe 0)
         (js-call (expect (js-length (nativeGet f "replies"))) :toBe 1)
         (js-call (expect (nativeGet (aref (nativeGet f "replies") 0) "key")) :toBe "user")

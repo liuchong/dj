@@ -1,0 +1,50 @@
+(module dj.adapters.im.lark-reaction-policy
+  (import "../../core/native.eli" nativeGet)
+  ;; DJ scheduling defaults, deliberately below the documented API ceiling.
+  ;; They are not limits imposed by the platform and do not imply coverage/SLA.
+  (defconst defaults (Object/freeze (js-object :requests_per_second 10 :max_concurrency 2
+    :new_poll_ms 200 :recent_seconds 600 :recent_messages 64 :recent_poll_seconds 2 :archive_poll_seconds 30)))
+  (defconst budgets (new globalThis.WeakMap))
+  (defun reactionPollPolicy (config)
+    (Object/assign (js-object) defaults (nativeGet config "reaction_poll" (js-object))))
+  (defun createReactionReadBudget (clock policy)
+    (let ((rate (nativeGet policy "requests_per_second")) (concurrency (nativeGet policy "max_concurrency"))
+      (waiting (new globalThis.Set)) (active 0) (tokens 1) (last (js-call clock :monoNow)) (until 0))
+      (js-object
+        :restrict (lambda (other)
+          (setq rate (Math/min rate (nativeGet other "requests_per_second"))
+            concurrency (Math/min concurrency (nativeGet other "max_concurrency"))))
+        :pause (lambda (seconds)
+          (setq until (Math/max until (+ (js-call clock :monoNow) (* 1000 seconds))))
+          ;; Do not accumulate a retry burst while the platform asks us to wait.
+          (setq tokens 0 last until))
+        :join (lambda ()
+          (when (>= (nativeGet waiting "size") 1024)
+            (throw (new globalThis.RangeError "reaction request budget full")))
+          (let ((ticket (js-object))) (js-call waiting :add ticket) ticket))
+        :leave (lambda (ticket) (js-call waiting :delete ticket))
+        :tryAcquire (lambda (&optional ticket)
+          (let ((now (js-call clock :monoNow)))
+            (when (>= now last)
+              (setq tokens (Math/min 1 (+ tokens (* (/ (- now last) 1000) rate))) last now))
+            (when (and (>= now until) (< active concurrency) (>= tokens 1)
+              (or (= (nativeGet waiting "size") 0)
+                (= ticket (nativeGet (js-call (js-call waiting :values) :next) "value"))))
+              (when ticket (js-call waiting :delete ticket))
+              (setq active (1+ active) tokens (- tokens 1))
+              (let ((released false))
+                (js-object :release (lambda ()
+                  (unless released (setq released t active (Math/max 0 (1- active))))))))))
+        :status (lambda () (js-object :limits_owner "dj" :requests_per_second rate
+          :max_concurrency concurrency :active active :waiting (nativeGet waiting "size") :retry_until_mono until)))))
+  (defun reactionReadBudget (config host application-id)
+    ;; All transports sharing the service clock and app share one GET-reactions
+    ;; budget. Deliberately aggregate tenants too; never grant user/bot a quota each.
+    (let* ((clock (nativeGet host "clock")) (apps (js-call budgets :get clock))
+      (key (str (nativeGet config "brand" "lark") ":" application-id))
+      (policy (reactionPollPolicy config)) (budget nil))
+      (unless apps (setq apps (new globalThis.Map)) (js-call budgets :set clock apps))
+      (setq budget (js-call apps :get key))
+      (if budget (js-call budget :restrict policy)
+        (progn (setq budget (createReactionReadBudget clock policy)) (js-call apps :set key budget))) budget))
+  (export reactionPollPolicy createReactionReadBudget reactionReadBudget))

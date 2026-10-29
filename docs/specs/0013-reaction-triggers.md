@@ -33,26 +33,108 @@
 同一应用可以使用用户与应用 token 调用各自支持的 HTTP API。官方允许同一应用多个 WebSocket，但消息是集群随机分发，不能把两个客户端命名 user/bot 就当成独立用户收件流。多个逻辑身份应共用该应用的事件接入后分发；换 OAuth 身份不扩大 IM 事件的会话覆盖。同应用身份切换还需对应应用签发的用户授权，不能复用另一个应用的 token 或 OpenID。
 
 
-## HTTP 表情变化补收
+## HTTP 表情变化补收与调度
 
-复用每条连接现有 inbox 轮询、凭据、读限流器、持久断点和去重入口。只有当前
-连接存在有效 message.reaction.added 订阅时才读取该连接已保留且正文未过期的
-本地消息；按 ingress_seq 降序循环扫描，每次至多一个原生表情列表页（50项）。
-复用 inbox_poll_seconds（默认2秒）控制扫完后的间隔；同一个读限流器限制所有
-HTTP 消息/表情请求。消息多时逐页轮巡有延迟，不承诺每条旧消息每2秒被扫到。
-查询使用 events_reaction_scan 索引；每页内存最多50项，扫描断点持久化，不全表
-物化。不额外唤醒 AI 扫描，也不为每个订阅建立独立轮询。
+WebSocket 新增事件仍优先直接接入。HTTP 用同一身份的官方表情列表弥补事件覆盖
+缺口，不模拟推送，不改变订阅或消息可见度。只有连接存在有效
+message.reaction.added 订阅时才读取本地仍保留、正文未过期且属于当前连接身份的消息。旧身份缓存仍保留供审计，但不参与当前身份的表情扫描，避免在身份栅栏上反复失败。
 
-新增观察断点的 activation_at 取启动时刻。早于该时刻的既有表情不生成任务；
-断点在正常重启后保留，之后的新动作可以补收，移除后重加以新的 action_time
-区分。同页/跨页/重启及与 WebSocket 的重复观察由统一 source_key 去重。
-HTTP 记录保留 native_reaction_id，native_event_id 为空字符串，不伪造推送事件ID；
-receive_transport=poll，不声称 WebSocket 已收到。缺权限或分页异常保留错误与
-原断点后重试，不将失败页提交成成功进度。
+### 职责与共享边界
 
-原消息作者与添加者仍按当前全局过滤规则检查，Pin 不绕过黑名单；普通机器人
-消息继续遵守全局禁止触发。此补收只解决消息表情入口，不修改订阅者业务规则。
+| 模块 | 唯一职责 | 共享范围 |
+| --- | --- | --- |
+| lark-events | 官方长连接、持久 inbox、事件确认 | 该来源连接 |
+| lark-inbox | 消息与表情各一个异步岗位；持久断点、失败重试和公平调度 | user/bot 同一实现，连接间独立状态 |
+| lark-reactions | 选择待检查消息、读取一页表情、规范化动作 | 三条扫描线共用；HTTP/WS 共用动作键 |
+| lark-reaction-policy | DJ 默认值、按应用共享的表情读取预算 | 同一服务内、同品牌和应用的全部连接 |
+| lark-http | 在所有 GET 表情列表请求执行前取得预算；处理取消、超时、429退避 | 包括补收、上下文及工作表情读回，不给每个入口另算额度 |
+| Core | 去重、黑名单、订阅匹配与原会话投递 | 沿用统一消息入口 |
 
+普通消息轮询与表情检查不互相占用唯一串行岗位。它们仍共用原有凭据、
+官方 HTTP 传输、持久 inbox、事务所有权与入库流程；不为每条订阅新建轮询器。
+普通消息读取保留每连接2次/秒的 DJ 保守预算；表情 GET 有独立的应用级 DJ 预算。
+预算等待按HTTP请求先后取得名额（最多1024个等待项，超出拒绝），取消/超时删除等待项，防止后台补扫抢占工作表情读回。它不是业务任务队列，不等待 AI 完成任务。
+
+### 三条持久扫描线
+
+| 扫描线 | 选择范围与顺序 | 空闲/扫完后的 DJ 默认等待 |
+| --- | --- | --- |
+| new | 从已检查的 ingress_seq 水位向后取新入库消息，先立即检查一次 | 200毫秒后再检查是否有新消息 |
+| recent | 最近10分钟入库、最新64条保留消息，从新到旧循环 | 扫完后2秒 |
+| archive | 全部仍保留消息，从新到旧循环，兜底旧消息上的后加表情 | 扫完后30秒 |
+
+每次最多一个表情列表页（50项），分页完成后推进当前扫描线。按 next_due_at
+最早到期者轮换，同一时间以固定键排序；持续到来的新消息不能永久饿死历史扫描。
+表情岗位一次只跑一页，普通消息岗位可同时工作。recent 查询仅在最多128条的
+有界候选集上筛选；archive 用 events_reaction_scan 索引及 keyset，不全表物化。
+
+新消息检查从消息已由 Core 入库开始，不从平台发送时刻开始。new 首次初始化
+记录当前入库水位，重启保留水位；启动前已缓存消息由 recent/archive 兜底。
+三条线复用原观察器 activation_at，不因升级重置观察边界或重放已有动作。
+缓存外、正文已过期的历史消息不在补扫覆盖内。
+
+200毫秒、2秒、30秒均为调度等待，不是逐条送达保证。尤其recent/ archive
+必须计算整轮消息数、分页数、同应用其他连接/调用、网络延迟与限流；不能将
+“扫完等2秒”写成“所有消息每2秒查一次”。新消息的第一次查询可能尚无表情，
+之后的添加仍靠实时事件或recent/archive发现。
+
+### 平台约束和 DJ 选择必须分开
+
+2026-10-29 查阅官方 IM v1 文档：GET /im/v1/messages/{message_id}/reactions
+支持 tenant_access_token 或 user_access_token；公开限额为1000次/分钟、50次/秒。
+通常按API、应用、租户计算，不是每个连接、token或订阅各有一份。
+新增/删除事件为 im.message.reaction.created_v1 / im.message.reaction.deleted_v1，
+事件会话覆盖受平台规则限制；HTTP可读取不等于长连接覆盖。
+
+DJ 当前默认表情读取10次/秒、并发2、突发1，低于上述公开限额；全部GET表情
+请求在传输层统一约束。服务内同一应用连接共享，保守地连不同租户也合并预算；
+不同进程不能据此宣称共享了额度。多个连接配置不同时采用已登记的最小预算，
+提高已收紧的共享预算需要重启服务。其他应用或程序的调用仍可能消耗平台额度，
+因此必须遵守实际429及 x-ogw-ratelimit-reset / Retry-After 返回的退避时间。
+
+表情列表只有 reaction_type、page_token、page_size、user_id_type 查询参数，
+action_time为输出字段，未公开按since拉取新增动作或批量查询多消息表情的机制。
+page_token只是本次列表分页，不是变化同步水位。消息update_time不保证随表情改变，
+不得用消息编辑时间替代表情同步。
+
+依据：[新增事件](https://open.larksuite.com/document/server-docs/im-v1/message-reaction/event/created.md)、
+[删除事件](https://open.larksuite.com/document/server-docs/im-v1/message-reaction/event/deleted.md)、
+[表情查询](https://open.larksuite.com/document/server-docs/im-v1/message-reaction/list.md)、
+[频控规则](https://open.larksuite.com/document/ukTMukTMukTM/uUzN04SN3QjL1cDN.md)。
+API路径中的v1是平台协议标识，不是DJ自建多版本接口。
+
+### 配置与运行状态
+
+连接上的可选 reaction_poll 字段如下；省略时全部采用 DJ 默认值。
+
+```json
+{
+  "reaction_poll": {
+    "requests_per_second": 10,
+    "max_concurrency": 2,
+    "new_poll_ms": 200,
+    "recent_seconds": 600,
+    "recent_messages": 64,
+    "recent_poll_seconds": 2,
+    "archive_poll_seconds": 30
+  }
+}
+```
+
+requests_per_second范围1..10，max_concurrency为1..2；new_poll_ms为100..2000，
+recent_seconds为60..3600，recent_messages为1..128，recent_poll_seconds为1..60，
+archive_poll_seconds为1..300。inbox_poll_seconds只控制普通消息补收，不再代指
+表情扫描间隔。connection.probe 的 poll_fallback.reaction_poll 报告 limits_owner=dj、
+budget_scope=application_across_connections、policy及new/recent/archive各自最近成功时间、
+扫完与错误状态；policy是本连接配置目标，不是平台配额读回，多连接共享时实际执行较小预算。不得从配置推定实时覆盖或承诺检测时限。
+
+新增观察断点的 activation_at 取首次启用时刻；早于该时刻的既有表情不生成任务。
+正常重启保存扫描与分页断点，失败页不推进；失败仅退避自己的扫描线，其他线及
+普通收件继续。移除后重加以新action_time区别，统一source_key防止跨线/跨通道重复。
+HTTP保留native_reaction_id，native_event_id为空字符串；receive_transport=poll。
+Pin不绕过原作者、添加者及字符黑名单，自动Typing/Get继续遵守原回声过滤。
+
+## 历次验收事实
 
 补收定向验收：6项集成、254条断言通过；23项保护性用例、141条断言通过，另1项
 原有未来用例保持未实施。集成覆盖真实SQLite与Core、明确替换的官方HTTP和WS边界，
@@ -65,3 +147,14 @@ receive_transport=poll，不声称 WebSocket 已收到。缺权限或分页异�
 重放或修改接收者规则。其中一条从原生 action_time 到入库约264秒，延迟发生在
 轮巡表情列表阶段，事件入库后正常派发，不是模型任务排队；accepted不代表任务完成。
 此证据只确认 HTTP 补收链路，不作为即时触发或 WebSocket 覆盖证明。
+
+调度优化定向验收：6项集成、854条断言通过；32项保护性检查通过。真实SQLite/Core
+接入80条缓存消息，验证新消息优先检查、后加表情近期发现、普通HTTP请求挂起时
+表情仍派发、旧消息后加图钉仍由archive发现、旧身份记录不阻塞扫描、分页/重启/跨通道去重及黑名单保持。
+共享预算检查覆盖同应用多连接、不同应用隔离、并发/速率/突发、有序等待与取消、
+官方429等待头传播、配置边界；原生HTTP/WS在这些测试中使用明确替身，不作为
+真实平台延迟保证。本机服务接线与运行进度另行核对。
+
+本机常驻服务已更新，公开connection.probe读回两条连接的new/recent/archive均为ready，
+持久断点持续推进且无原生错误；订阅、持久规则、全局过滤配置摘要保持一致。此项
+确认新调度已部署并运行，不将其冒充升级后新图钉的真实端到端延迟测量。

@@ -10,6 +10,8 @@ Lark 应用后台启用长连接与 im.message.receive_v1，使用受保护 app_
 
 user 与 bot 连接使用同一套 WebSocket＋HTTP 收件器，各自独立实例、凭据和断点。`inbox_poll_seconds` 默认 2 秒，可配置 1–300 秒；它是调度目标，实际延迟仍受官方索引和限流影响。本人身份按群聊／私聊全局增量查询，机器人身份补读可发现的群和已知私聊，未知私聊不能宣称已覆盖。两种传输统一去重和保存历史后进入原订阅，不要求 AI 定时巡检，也不自动重放启用前消息。
 
+表情补收独立调度：新消息优先检查、近期消息高频检查、历史消息兜底；`inbox_poll_seconds`不控制表情检查。DJ表情读取默认每应用10次/秒、并发2，同应用多身份共享；这是DJ预算，不是平台额度。配置`reaction_poll`、实际覆盖与延迟边界见[规格0013](../specs/0013-reaction-triggers.md#http-表情变化补收与调度)。
+
 ## 2. 找到来源与原会话
 
 先用 session.resolve/probe 核对工具、实例、namespace、native_session_id 与 live_receiver；使用真实 candidate 登记 Agent，绑定独立 recipient。历史记录只用于发现，登记和提交都必须重新核验原生 receiver。不能凭标题选择同名替身。

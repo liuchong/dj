@@ -123,6 +123,14 @@
         :event_subject_id id
         :event_scope (enumOf "configured" "all_authorized")
         :inbox_poll_seconds (js-object :type "integer" :minimum 1 :maximum 300)
+        :reaction_poll (obj (js-object
+          :requests_per_second (js-object :type "integer" :minimum 1 :maximum 10)
+          :max_concurrency (js-object :type "integer" :minimum 1 :maximum 2)
+          :new_poll_ms (js-object :type "integer" :minimum 100 :maximum 2000)
+          :recent_seconds (js-object :type "integer" :minimum 60 :maximum 3600)
+          :recent_messages (js-object :type "integer" :minimum 1 :maximum 128)
+          :recent_poll_seconds (js-object :type "integer" :minimum 1 :maximum 60)
+          :archive_poll_seconds (js-object :type "integer" :minimum 1 :maximum 300)))
         :user_identity
         (obj (js-object :app_id id :open_id id) (js-array "app_id" "open_id"))
         :credential_ref
@@ -454,7 +462,7 @@
             :forEach
             (lambda
               (connection)
-              (when (nativeGet connection "inbox_poll_seconds")
+              (when (or (nativeGet connection "inbox_poll_seconds") (nativeGet connection "reaction_poll"))
                 (unless (and (= (nativeGet connection "platform") "lark")
                   (= (nativeGet connection "source_delivery") "events"))
                   (throw (new globalThis.TypeError "inbox polling requires a Lark event connection"))))

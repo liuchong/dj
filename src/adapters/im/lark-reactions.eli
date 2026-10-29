@@ -3,6 +3,7 @@
   (import "../../application/context.eli" nativeCallContext must)
   (import "../../core/types.eli" hashValue)
   (import "./lark-identities.eli" larkIdentities)
+  (import "./lark-reaction-policy.eli" reactionPollPolicy)
   (defun normalizeLarkReaction (config wire original)
     (let* ((header (nativeGet wire "header")) (notice (nativeGet wire "event"))
       (id (nativeGet header "event_id")) (message (nativeGet notice "message_id"))
@@ -63,14 +64,23 @@
       (events (js-array)) (now (js-call (nativeGet (nativeGet application "ports") "clock") :utcNow))
       (pending (nativeGet checkpoint "reaction_message_id"))
       (before (nativeGet checkpoint "reaction_before_seq" ""))
+      (lane (nativeGet checkpoint "reaction_lane" "archive")) (policy (reactionPollPolicy config))
       (row nil))
       (when (js-call (js-call db :query
         "SELECT 1 FROM subscription_sources i JOIN subscriptions s ON s.subscription_id=i.subscription_id AND s.revision=i.revision WHERE i.connection_id=? AND i.event_kind='message.reaction.added' AND s.state='active' LIMIT 1") :get id)
-        (setq row (if pending
-          (js-call (js-call db :query "SELECT CAST(ingress_seq AS TEXT) AS seq,payload FROM events WHERE connection_id=? AND native_message_id=? AND event_kind='message.created' AND tombstone=0 AND body_expires_at>? LIMIT 1") :get id pending now)
-          (let ((query (js-call db :query (str "SELECT CAST(ingress_seq AS TEXT) AS seq,payload FROM events WHERE connection_id=? AND event_kind='message.created' AND tombstone=0 AND body_expires_at>?"
+        (setq row (cond
+          (pending (js-call (js-call db :query "SELECT CAST(ingress_seq AS TEXT) AS seq,payload FROM events WHERE connection_id=? AND native_message_id=? AND event_kind='message.created' AND tombstone=0 AND json_extract(payload,'$.identity_revision')=? AND body_expires_at>? LIMIT 1") :get id pending (nativeGet config "identity_revision") now))
+          ((= lane "new") (js-call (js-call db :query
+            "SELECT CAST(ingress_seq AS TEXT) AS seq,payload FROM events WHERE connection_id=? AND event_kind='message.created' AND tombstone=0 AND json_extract(payload,'$.identity_revision')=? AND body_expires_at>? AND ingress_seq>CAST(? AS INTEGER) ORDER BY ingress_seq LIMIT 1")
+            :get id (nativeGet config "identity_revision") now (nativeGet checkpoint "reaction_new_after_seq" "0")))
+          ((= lane "recent")
+            (js-call (js-call db :query
+              "SELECT CAST(ingress_seq AS TEXT) AS seq,payload FROM (SELECT ingress_seq,received_at,payload FROM events WHERE connection_id=? AND event_kind='message.created' AND tombstone=0 AND json_extract(payload,'$.identity_revision')=? AND body_expires_at>? ORDER BY ingress_seq DESC LIMIT ?) WHERE received_at>=? AND (?='' OR ingress_seq<CAST(? AS INTEGER)) ORDER BY ingress_seq DESC LIMIT 1")
+              :get id (nativeGet config "identity_revision") now (nativeGet policy "recent_messages")
+              (js-call (new globalThis.Date (- (Date/parse now) (* 1000 (nativeGet policy "recent_seconds")))) :toISOString) before before))
+          (t (let ((query (js-call db :query (str "SELECT CAST(ingress_seq AS TEXT) AS seq,payload FROM events WHERE connection_id=? AND event_kind='message.created' AND tombstone=0 AND json_extract(payload,'$.identity_revision')=? AND body_expires_at>?"
             (if (= before "") "" " AND ingress_seq<CAST(? AS INTEGER)") " ORDER BY ingress_seq DESC LIMIT 1"))))
-            (if (= before "") (js-call query :get id now) (js-call query :get id now before))))))
+            (if (= before "") (js-call query :get id (nativeGet config "identity_revision") now) (js-call query :get id (nativeGet config "identity_revision") now before)))))))
       (if (not row)
         (progn (put checkpoint :reaction_before_seq "") (put checkpoint :reaction_message_id nil)
           (put checkpoint :reaction_page_token nil) (put checkpoint :reaction_seen_tokens (js-array))
@@ -90,7 +100,8 @@
             (items (nativeGet data "items")) (more (nativeGet data "has_more"))
             (next (nativeGet data "page_token")))
             (unless (and (= (nativeGet response "status") 200) (= (nativeGet wire "code") 0))
-              (throw (js-object :native_code (nativeGet wire "code") :http_status (nativeGet response "status"))))
+              (throw (js-object :native_code (nativeGet wire "code") :http_status (nativeGet response "status")
+                :retry_after_seconds (nativeGet response "retry_after" 0))))
             (unless (and (Array/isArray items) (<= (js-length items) 50)
               (= (nativeTypeOf more) "boolean")
               (or (not more) (and (= (nativeTypeOf next) "string") (> (js-length next) 0)
@@ -102,7 +113,9 @@
                 (when (>= (NativeNumber (nativeGet (nativeGet event "reaction") "action_time"))
                   (Date/parse (nativeGet checkpoint "activation_at")))
                   (js-call events :push event)))))
-            (put checkpoint :reaction_before_seq (nativeGet row "seq"))
+            (if (= lane "new")
+              (unless more (put checkpoint :reaction_new_after_seq (nativeGet row "seq")))
+              (put checkpoint :reaction_before_seq (nativeGet row "seq")))
             (put checkpoint :reaction_message_id (if more message nil))
             (put checkpoint :reaction_page_token (if more next nil))
             (put checkpoint :reaction_seen_tokens (if more (progn (js-call seen :push next) seen) (js-array)))

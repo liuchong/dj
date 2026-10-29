@@ -5,6 +5,7 @@
   (import "./telegram.eli" readJson)
 
   (import "./lark-identities.eli" larkIdentities)
+  (import "./lark-reaction-policy.eli" reactionReadBudget)
   (defun formatLarkMessage (message thread &optional brand app)
     (let ((text nil))
       (when (= (nativeGet message "msg_type") "text")
@@ -34,13 +35,20 @@
                (remaining (Math/min 15000 (- (nativeGet context "deadline"
                     (+ (js-call (nativeGet host "clock") :monoNow) 15000))
                     (js-call (nativeGet host "clock") :monoNow))))
-               (timer nil))
+               (timer nil) (reaction-budget nil) (lease nil) (ticket nil))
           (when (or (<= remaining 0) (nativeGet parent "aborted"))
             (throw (new globalThis.Error "Lark request cancelled")))
           (js-call active :add controller)
           (when parent (js-call parent :addEventListener "abort" abort (js-object :once t)))
           (setq timer (nativeSetTimeout abort remaining))
           (try
+            (when (and (= method "GET") (js-call (new globalThis.RegExp "^/open-apis/im/v1/messages/[^/]+/reactions(?:\\?|$)") :test path))
+              (setq reaction-budget (reactionReadBudget config host application-id) ticket (js-call reaction-budget :join))
+              (while (not lease)
+                (when (nativeGet (nativeGet controller "signal") "aborted")
+                  (throw (new globalThis.Error "Lark request cancelled")))
+                (setq lease (js-call reaction-budget :tryAcquire ticket))
+                (unless lease (await (new globalThis.Promise (lambda (done) (nativeSetTimeout done 25)))))))
             (let* ((headers (js-object :content-type "application/json; charset=utf-8"))
                    (options (js-object :method method :headers headers
                               :signal (nativeGet controller "signal") :redirect "error")))
@@ -48,9 +56,16 @@
               (when body (put options :body (JSON/stringify body)))
               (let* ((response (await (js-call (nativeGet host "http") :fetch (str base path) options)))
                      (wire (await (readJson response 1048576))))
-                (js-object :status (nativeGet response "status") :wire wire
-                  :retry_after (NativeNumber (js-call (nativeGet response "headers") :get "retry-after")))))
+                (let* ((headers (nativeGet response "headers"))
+                  (retry (Math/max 0 (or (NativeNumber (js-call headers :get "retry-after")) 0)
+                    (or (NativeNumber (js-call headers :get "x-ogw-ratelimit-reset")) 0))))
+                  (unless (Number/isFinite retry) (setq retry 5))
+                  (when (and reaction-budget (= (nativeGet response "status") 429))
+                    (js-call reaction-budget :pause (Math/max 1 retry)))
+                  (js-object :status (nativeGet response "status") :wire wire :retry_after retry))))
             (finally
+              (when (and reaction-budget ticket) (js-call reaction-budget :leave ticket))
+              (when lease (js-call lease :release))
               (nativeClearTimeout timer)
               (when parent (js-call parent :removeEventListener "abort" abort))
               (js-call active :delete controller))))))

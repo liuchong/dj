@@ -27395,6 +27395,28 @@
       "given": "A local Core with real SQLite, existing session peer and explicit native HTTP and WebSocket substitutes",
       "when": "Observe an old and a new reaction over HTTP, receive its WebSocket duplicate and restart",
       "then": "Ignore pre-activation marks, dispatch new Pin once across transports and restart, and allow a later re-add"
+    },
+    {
+      "case_id": "T38.reaction-read-budget.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/reactions.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 5000,
+      "resource_group": "pure",
+      "acceptance_ids": [
+        "A01"
+      ],
+      "requirements": [
+        "SPEC-0013"
+      ],
+      "given": "One shared application budget and two official HTTP transport substitutes",
+      "when": "Read reactions across connections, exhaust local capacity, receive native 429 and cancel",
+      "then": "Shared DJ limits, cooldown, idempotent release and validated configuration stay explicit"
     }
   ],
   "source_extension_base": "c1eb7b1"
