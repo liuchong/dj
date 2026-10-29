@@ -1,7 +1,7 @@
 # Lark 实时订阅与本人身份
 
 - specification: 以项目正式规格0001“Lark实时收件、本人收发与订阅通知”为准。规格定义要求，service.status、接口schema与真实接收证据定义当前可用状态；未实现能力不能因本Skill存在而宣称支持。
-- transport: Lark由DJ直接使用官方WebSocket和HTTPS API，不通过SDK或外部CLI；user/bot共用收件实现并各自独立实例、凭据和断点。HTTP补收默认2秒，可用inbox_poll_seconds配置；WebSocket用应用密钥，user HTTP用OAuth，bot HTTP用应用授权，实际覆盖分别核对。消息统一去重、保存历史，再进入黑名单与订阅链路。
+- transport: DJ程序的Lark接入直接使用官方WebSocket和HTTPS API，不通过SDK或外部CLI；user/bot共用收件实现并各自独立实例、凭据和断点。HTTP补收默认2秒，可用inbox_poll_seconds配置；WebSocket用应用密钥，user HTTP用OAuth，bot HTTP用应用授权，实际覆盖分别核对。消息统一去重、保存历史，再进入黑名单与订阅链路。此实现约束不是其他未对接DJ的对话使用Lark CLI的禁令。
 - receive: DJ保持Lark事件长连接，收取获准消息，经Core持久化与订阅匹配后通知精确的原始AI对话。默认@是订阅条件，不是只收@事件的理由。历史查询、周期性AI巡检或绕过订阅的转发不能替代实时链路。
 - identity: 使用宿主分配的连接核对user或bot。user代表已授权本人，bot代表应用；机器人范围不等于个人收件箱范围。connection.probe的transport、personal_inbox及poll_fallback明确报告实际来源；不得将轮询接收称为实时，也不因本人的读取权限存在就推定全量实时覆盖。
 - access: 身份认证后默认可读和收发所有已配置连接中平台可访问的信息，不需要逐群、逐私聊消息grants。默认订阅所有来源和实际过滤命中分别处理；主动发送用准确目的地引用，回复用原reply_context_id，不能把默认开放当作自动外发业务内容的指令。

@@ -11,13 +11,19 @@ metadata:
 - trigger: 用户需要跨工具会话查询与控制，或通过DJ登记订阅、接收推送和回复来源会话。普通代码修改或IM管理界面不使用本Skill。
 - boundary: 本Skill仅提供调用说明，不包含模型服务、常驻脚本或安装器，不授予额外外发、启动进程或修改权限的许可。调用方负责理解意图、选择精确目标并生成回复；DJ没有模型和自然语言理解。
 
+## 适用范围
+
+- connected_conversations: 已对接DJ的AI对话应使用DJ提供的收发消息、上下文、订阅、回复及处理状态能力，通过DJ CLI、MCP或GEPO完成相关消息交互，不绕过DJ另用Lark CLI、SDK或直接API替代这条链路。
+- other_conversations: 上述要求只约束对接DJ的对话，不是所有AI对话的全局禁令。未对接DJ的其他对话仍按用户授权及各自规则使用Lark CLI等工具；仅安装或读取本Skill不等于已经对接DJ。
+- implementation_boundary: DJ程序内部直连官方API、不依赖SDK或外部CLI，是DJ自身的实现要求；不得将它扩大成所有对话的工具禁令。
+
 ## 运行时与身份
 
 - status: 先用当前主体的`dj status --json`或MCP `dj_service_status`核对运行时、能力和目录摘要。源码或Skill存在不证明服务已启动或验收通过；服务不可达或目录不兼容时报告限制，不自建服务或假装成功。
 - profile: 默认客户端配置为`~/.dj/client.json`。使用宿主分配的独立profile，不读取或借用operator或其他Agent凭据。
 - communication: 身份认证后默认可发现、读取、订阅及收发已配置连接中平台可访问的信息，无需message或resource的逐连接／逐群grants；自己的消息操作和出站台账也可核验。订阅过滤不是读取或回复许可。仍使用真实账号、当前引用和原幂等键，平台权限、停用状态、回复身份及其他Agent控制／管理边界继续生效。
 - identity: 用`agent.whoami`核对真实主体及绑定；目标可由操作员代登记，共享宿主配置不证明当前会话身份。不能凭标题、cwd或宿主猜原生会话；未绑定时只读discover并登记允许的candidate_ref。只有历史而无收件口时报告限制，不用新进程替代。
-- transport: Lark user/bot共用官方WebSocket＋HTTPS增量补收实现，每条连接独立实例、凭据和断点；普通消息使用每连接DJ预算，表情GET按应用共享预算。普通消息HTTP默认2秒，可由操作员用inbox_poll_seconds配置；表情采用新消息、近期、活动及历史调度，DJ参数不是平台额度或送达保证；统一持久化、去重和订阅，不使用SDK或Lark外部CLI。user/bot授权与实际覆盖分别核对，轮询不称作实时。
+- transport: DJ的Lark user/bot传输共用官方WebSocket＋HTTPS增量补收实现，每条连接独立实例、凭据和断点；普通消息使用每连接DJ预算，表情GET按应用共享预算。普通消息HTTP默认2秒，可由操作员用inbox_poll_seconds配置；表情采用新消息、近期、活动及历史调度，DJ参数不是平台额度或送达保证；统一持久化、去重和订阅，DJ实现不使用SDK或Lark外部CLI。user/bot授权与实际覆盖分别核对，轮询不称作实时。
 - scope: Lark正式职责是长连接接收获准消息，经Core订阅规则过滤后通知指定工具的原始对话，默认按原生@且支持复杂过滤。user代表本人、bot代表应用，不能混用或把未完成的本人接线说成仅bot可用。实际能力以当前服务状态和schema为准；查询式收件不能冒充实时长连接。AI工具通过已有实例跨进程接口接收，不新建Agent进程代替原目标。
 - rules: 规则必须是结构化条件，不提交“重要消息”或“找合适Agent”等描述让DJ判断；不要求DJ总结正文或猜参数。
 
