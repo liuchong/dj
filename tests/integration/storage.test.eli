@@ -978,7 +978,7 @@
               (try
                 (successful (inTransaction w2-context (lambda (tx)
                   (js-call repository :insert "connections" (js-object :connection_id "w2-conn" :platform "telegram"
-                    :allowed_chats (js-array "chat-1") :allowed_sender_kinds (js-array "human")
+                    :allowed_chats (js-array "chat-1")
                     :revision 1 :identity_revision 1 :state "online"))
                   (js-call repository :insert "routes" (js-object :route_id "w2-route" :canonical_target_key "w2-target"
                     :session_key "sess-1" :next_delivery_seq "0" :claim_epoch 0))
@@ -1726,7 +1726,7 @@
                       :agent_id "l2-agent" :owner_principal_id "O" :context_policy "message_only"
                       :delivery_policy (js-object :busy "queue" :ttl_seconds 300))))
                     (funcall original-insert "connections" (js-object :connection_id "l2-conn" :platform "telegram"
-                      :allowed_chats (js-array "chat-1") :allowed_sender_kinds (js-array "human")
+                      :allowed_chats (js-array "chat-1")
                       :revision 1 :identity_revision 1 :state "online"))
                     (funcall original-insert "routes" (js-object :route_id "l2-route-plan" :canonical_target_key "l2-target-plan"
                       :session_key "sess-1" :next_delivery_seq "0" :claim_epoch 0))
@@ -1832,7 +1832,7 @@
         ;;    once in commit, and reads routes once in commit via withEventPlans;
         ;; 2) Prepare throw resolves all waiting slots without hanging and performs 0 writes;
         ;; 3) Out-of-order prepare still commits in ingress_seq order; single-item revision_conflict rolls back
-        ;;    only that event while neighbors commit and publish metrics; not_found/done/sender_not_allowed coexist;
+        ;;    only that event while neighbors commit and publish metrics; not_found/done/bot no-match coexist;
         ;; 4) Unknown write exception rolls back entire batch and publishes 0 metrics.
         (let* ((db (nativeGet store "db"))
           (faults (createFaults))
@@ -1860,7 +1860,7 @@
               :state state :revision 1)))))
           (successful (js-call store :transaction (js-object) (lambda (tx)
             (js-call repository :insert "connections" (js-object :connection_id "mt-conn" :platform "telegram"
-              :allowed_chats (js-array "chat-1") :allowed_sender_kinds (js-array "human")
+              :allowed_chats (js-array "chat-1")
               :revision 1 :identity_revision 1 :state "online"))
             (js-call repository :insert "instances" (js-object :instance_id "mt-inst" :tool "must-neighbor-0"
               :native_namespace "mt-ns" :instance_epoch "epoch-1" :ownership "existing" :state "ready" :revision 1))
@@ -1883,7 +1883,9 @@
                     :delivery_policy (js-object :busy "queue" :ttl_seconds 300)
                     :resolved_sources (js-array (js-object :connection_id "mt-conn" :native_chat_id "chat-1"
                       :native_thread_id nil :include_threads t :event_kinds (js-array "message")))
-                    :predicate (js-object :op "contains" :field "text" :value "match")))
+                    :predicate (js-object :all (js-array
+                      (js-object :op "contains" :field "text" :value "match")
+                      (js-object :not (js-object :field "sender.kind" :op "eq" :value "bot"))))))
                   (js-call db :run
                     "INSERT INTO subscription_sources(subscription_id,revision,connection_id,native_chat_id,thread_key,include_threads,event_kind) VALUES (?,?,?,?,?,?,?)"
                     (js-array sub-id 1 "mt-conn" "chat-1" "null" 1 "message")))
@@ -2034,13 +2036,14 @@
             (let ((turn-res (successful (await (matchTurn mt-context
                 (js-array "mt-missing" "mt-done" "mt-bot" "mt-ev-1" "mt-ev-2" "mt-ev-3"))))))
               (js-call faults :install "routing.before_checkpoint_commit" nil)
-              (js-call (expect (js-call prepare-order :slice 0 2)) :toEqual (js-array "mt-ev-2" "mt-ev-3"))
-              (js-call (expect (aref prepare-order 2)) :toBe "mt-ev-1")
+              (js-call (expect (js-call prepare-order :slice 0 3)) :toEqual (js-array "mt-bot" "mt-ev-2" "mt-ev-3"))
+              (js-call (expect (aref prepare-order 3)) :toBe "mt-ev-1")
               (js-call (expect (nativeGet (aref turn-res 0) "ok")) :toBe false)
               (js-call (expect (nativeGet (nativeGet (aref turn-res 0) "error") "code")) :toBe "not_found")
               (js-call (expect (nativeGet (aref turn-res 1) "ok")) :toBe t)
               (js-call (expect (nativeGet (aref turn-res 2) "ok")) :toBe t)
-              (js-call (expect (nativeGet (js-call repository :get "routing_work" "mt-bot") "reason")) :toBe "sender_not_allowed")
+              (js-call (expect (nativeGet (js-call repository :get "routing_work" "mt-bot") "state")) :toBe "done")
+              (js-call (expect (js-call (js-call db :query "SELECT 1 FROM deliveries WHERE event_id='mt-bot'") :get)) :toBe nil)
               (js-call (expect (nativeGet (aref turn-res 3) "ok")) :toBe t)
               ;; N-A5: a non-fatal per-event revision_conflict stays inside success(results);
               ;; routeEvents therefore keeps ok=true and the second matching group stays eligible by more.
@@ -2058,8 +2061,8 @@
                 (js-call (expect (nativeGet d3 "delivery_seq")) :toBe "3")
                 (js-call (expect (= (NativeBigInt (nativeGet d3 "delivery_seq"))
                   (+ (NativeBigInt (nativeGet d1 "delivery_seq")) (NativeBigInt 1)))) :toBe t))
-              ;; Metrics published only for the 2 committed candidate-evaluated events (mt-ev-1 and mt-ev-3).
-              (js-call (expect (- (js-length (nativeGet runtime "routing_samples")) samples-before)) :toBe 2)))
+              ;; Bot exclusion is a subscription predicate, so its no-match evaluation also publishes a sample.
+              (js-call (expect (- (js-length (nativeGet runtime "routing_samples")) samples-before)) :toBe 3)))
           ;; 4) Unknown write exception rolls back the entire write-batch transaction and publishes 0 metrics.
           (let ((samples-before (js-length (nativeGet runtime "routing_samples")))
             (original-replace (nativeGet repository "replace")))
@@ -2558,7 +2561,7 @@
           (successful (inTransaction eg-context (lambda (tx)
             (js-call eg-repository :insert "connections"
               (js-object :connection_id "eg-conn" :platform "telegram"
-                :allowed_chats (js-array "chat-1" "chat-2") :allowed_sender_kinds (js-array "human")
+                :allowed_chats (js-array "chat-1" "chat-2")
                 :revision 1 :identity_revision 1 :state "online"))
             (js-call eg-repository :insert "tools" (js-object :tool_id "eg-tool" :configured t))
             (js-call eg-repository :insert "instances"
@@ -2608,6 +2611,8 @@
                 (js-call eg-repository :insert "outbound"
                   (js-object :outbound_id (str "eg-out-" i) :operation_id (str "eg-op-" i)
                     :principal_id "O" :connection_id "eg-conn" :conversation_key eg-conv
+                    :identity_revision 1
+                    :destination (js-object :connection_id "eg-conn" :native_chat_id "chat-1" :native_thread_id nil :thread_kind "main")
                     :state "accepted" :revision 1))
                 (setq i (1+ i))))
             (funcall eg-seed-event "eg-ev-1" 2001 "match eg one" nil nil)

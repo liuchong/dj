@@ -57,7 +57,9 @@
     "packages/rack/tests/integration.test.eli",
     "tests/integration/composition.test.eli",
     "packages/rack/tests/protection.test.eli",
-    "packages/rack/tests/behavior.test.eli"
+    "packages/rack/tests/behavior.test.eli",
+    "tests/integration/composable-subscriptions.test.eli",
+    "tests/unit/composable-subscriptions.test.eli"
   ],
   "outDir": "dist-tests"
 }

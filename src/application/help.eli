@@ -42,7 +42,7 @@
       :agent.unregister
       "关闭登记并撤销未提交订阅贡献；保留共享 route、unknown 和独立直发。"
       :subscription.preview
-      "校验并冻结结构化订阅，返回固定 preview_id；样例只读，不生成投递。"
+      "按 all/any/not 组合提及、私聊、作者、机器人、会话、话题和关键词条件；预览返回固定 preview_id，样例只读并标明全局触发屏蔽，不生成投递。"
       :subscription.create
       "提交固定 preview_id；不接收第二份 spec，从 start_seq 起处理新事件。"
       :subscription.list

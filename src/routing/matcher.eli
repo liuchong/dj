@@ -5,7 +5,8 @@
   (import "../core/errors.eli" success failure)
   (import "../core/types.eli" stableJson utf8Bytes)
   (import "../core/limits.eli" limits)
-  (import "../core/rules.eli" evaluatePredicate matchesSource)
+  (import "../core/rules.eli" matchesSource predicateUsesPerson)
+  (import "../filtering/policy.eli" evaluateSubscriptionPredicate)
   (import "../application/context.eli" inTransaction utcNow must)
   (import "../ingestion/visibility.eli" eventContentAvailable)
   (import "../delivery/service.eli" planContribution)
@@ -177,13 +178,9 @@
             (progn (setq djReturn2Value (success work)) (throw djReturn2Token)))
           (setq connection (js-call repository :get "connections" (nativeGet event "connection_id")))
           (let*
-            ((echo (echoState context event))
-              (allowed-kinds (nativeGet connection "allowed_sender_kinds" (js-array "human"))))
+            ((echo (echoState context event)))
             (unless
-              (and
-                (= echo "clear")
-                (js-call allowed-kinds :includes (nativeGet (if (= (nativeGet event "event_kind") "message.reaction.added")
-                  (nativeGet (nativeGet event "reaction") "operator") (nativeGet event "sender")) "kind")))
+              (= echo "clear")
               (progn
                 (setq
                   djReturn2Value
@@ -196,7 +193,7 @@
                         :reason
                         (cond ((= echo "held") "echo_gate")
                           ((= echo "echo") "own_echo")
-                          (t "sender_not_allowed")))
+                          (t "own_echo")))
                       (must (js-call repository :replace "routing_work" work))
                       (success work))))
                 (throw djReturn2Token))))
@@ -242,8 +239,8 @@
                                   source
                                   (nativeGet source "include_threads")
                                   event))))
-                          (evaluatePredicate
-                            (nativeGet version "predicate")
+                          (evaluateSubscriptionPredicate
+                            context (nativeGet version "predicate")
                             event
                             memo
                             meter-budget)
@@ -317,7 +314,12 @@
                             (let*
                               ((plan (aref prepared position))
                                 (version (nativeGet plan "version"))
-                                (answer (nativeGet plan "answer"))
+                                (answer (if (predicateUsesPerson (nativeGet version "predicate"))
+                                  (if (and (eventContentAvailable context event connection)
+                                    (js-call (nativeGet version "resolved_sources") :some (lambda (source)
+                                      (matchesSource source (nativeGet source "include_threads") event))))
+                                    (evaluateSubscriptionPredicate context (nativeGet version "predicate") event) "false")
+                                  (nativeGet plan "answer")))
                                 (decision
                                   (js-object
                                     :event_id

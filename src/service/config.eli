@@ -134,11 +134,7 @@
         :watches
         (arr watchSchema 100)
         :allowed_chats
-        (arr (js-object :anyOf (js-array id watchSchema)) 100)
-        :allowed_sender_kinds
-        (Object/assign
-          (arr (enumOf "human" "bot" "agent" "unknown") 4 1)
-          (js-object :uniqueItems t)))
+        (arr (js-object :anyOf (js-array id watchSchema)) 100))
       (js-array "connection_id" "platform" "identity")))
   (defconst endpointSchema
     (obj
@@ -590,9 +586,7 @@
                 (unless (object-has? connection :source_mode)
                   (put connection :source_mode "direct"))
                 (unless (object-has? connection :source_delivery)
-                  (put connection :source_delivery "poll"))
-                (unless (object-has? connection :allowed_sender_kinds)
-                  (put connection :allowed_sender_kinds (js-array "human")))))
+                  (put connection :source_delivery "poll"))))
             (js-call
               (nativeGet config "agent_endpoints")
               :forEach

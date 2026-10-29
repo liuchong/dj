@@ -70,6 +70,17 @@ spec 可选 instruction_policy：`prompt` 为固定提示词，`task_template` �
 
 配置随 subscription revision、preview hash 与不可变 version 保存，再复制到 contribution；提交时仍逐条重检 owner/revision/TTL/授权，仅有效贡献生成 instructions。信封 instructions 按 matched 的订阅顺序携带 subscription_id、subscription_revision 及可选 prompt/task_template/task。task 是配置模板的机械渲染，不是 DJ 调用模型或执行任务；正文及其插值仍是外部数据，不提高优先级或权限。单 task 超 32768 UTF-8 字节或最终帧超原上限时阻塞为 limit_exceeded，不发送部分任务。旧订阅未设置该字段时不增加 instructions 字段，原 accepted attempt 快照不变。
 
+订阅 predicate 使用统一 all/any/not 条件树；包含与排除可以交叉组合。mentions.any
+表示任意原生提及，chat_type=p2p 表示私聊；sender.id/kind/person_id、
+conversation.native_chat_id、native_message_id、thread.id、topic.key、reply_to.id
+与 text 可组合人员、机器人、会话、消息列和关键词。sender.person_id 使用服务级
+已核实人员别名表。省略来源仍订阅全部获准来源，省略 predicate 仍为 addressed_self。
+
+每条订阅独立匹配，允许同一事件进入不同订阅线；同目标合并有效贡献，不同目标
+分别投递。服务级 message.filter 的 suppress_trigger 优先；preview.samples.result
+只表示订阅条件，reason_codes 中的 trigger_suppressed 表示全局禁止触发。所有
+排除仅控制自动动作，不隐藏消息历史。配置示例见 [可组合订阅](../../skills/dj/references/subscriptions.md)。
+
 spec 定义见 [模型](../domain-model.md)。sources 使用 conversation_ref，selector.event_kinds 形成明确类型范围。preview 更新模式必须同时给 subscription_id/expected_revision；create 模式不能给这两个字段。update 的 preview 必须属于同一对象/revision，且 spec.agent_id 不变。
 
 create/update 不接收 spec，不能将 preview 的解释与另一份输入组合。票据失效/状态漂移返回 preview_expired/preview_stale，不能自动修改再提交。只签发无 blocking_issues 的票据；warnings 不等于人工审批要求。sample_event_ids 最多 20，缺省不遍历历史。start 首轮仅 now，backfill 返回 unsupported。

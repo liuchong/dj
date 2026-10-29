@@ -50,12 +50,11 @@
           (let ((user (aref (nativeGet config "connections") 0)))
             (Object/assign user (js-object :source_delivery "events" :event_scope "all_authorized"
               :event_app_id "cli_user" :event_subject_id "ou_self"
-              :user_identity (js-object :app_id "cli_user" :open_id "ou_self")
-              :allowed_sender_kinds (js-array "human" "bot")))
+              :user_identity (js-object :app_id "cli_user" :open_id "ou_self")))
             (js-call (nativeGet config "connections") :push (js-object :connection_id "lark-bot"
               :platform "lark" :brand "lark" :identity "bot" :source_delivery "events"
               :event_scope "all_authorized" :event_app_id "cli_bot" :event_subject_id "ou_bot"
-              :credential_ref "test:lark-bot" :watches (js-array) :allowed_sender_kinds (js-array "human" "bot")))
+              :credential_ref "test:lark-bot" :watches (js-array)))
             (put ports :credentials (js-object :resolve (lambda (ref)
               (js-object :app_id (if (= ref "test:lark-bot") "cli_bot" "cli_user")
                 :app_secret "fixture" :user_access_token "user-token"))))

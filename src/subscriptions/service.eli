@@ -10,7 +10,9 @@
     stableJson
     addSeconds)
   (import "../core/limits.eli" limits)
-  (import "../core/rules.eli" evaluatePredicate matchesSource)
+  (import "../core/rules.eli" matchesSource predicateUsesPerson)
+  (import "../filtering/policy.eli" readFilterPolicy evaluateSubscriptionPredicate evaluateTriggerFilters)
+  (import "../people/registry.eli" validatePersonReferences)
   (import "../application/context.eli"
     utcNow
     nextId
@@ -207,6 +209,9 @@
                 :every
                 (lambda (kind) (js-call (js-array "message.created" "resource.changed" "message.reaction.added") :includes kind))))
             (progn (setq djReturn4Value (failure "unsupported")) (throw djReturn4Token)))
+          (when (predicateUsesPerson (nativeGet spec "predicate"))
+            (must (validatePersonReferences (js-array (js-object :predicate (nativeGet spec "predicate")))
+              (nativeGet (readFilterPolicy context) "people" (js-array)))))
           (let*
             ((target (targetState context agent))
               (resolved (resolveSources context (nativeGet spec "selector") recipient)))
@@ -259,10 +264,11 @@
                           id
                           :result
                           (if matched
-                            (evaluatePredicate (nativeGet spec "predicate") event)
+                            (evaluateSubscriptionPredicate context (nativeGet spec "predicate") event)
                             "false")
                           :reason_codes
-                          (js-array)))))))
+                          (if (nativeGet (evaluateTriggerFilters context event) "suppressed")
+                            (js-array "trigger_suppressed") (js-array))))))))
               (unless
                 (js-call
                   sources

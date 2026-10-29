@@ -22,7 +22,7 @@
       (js-call
         (expect
           (evaluatePredicate
-            (js-object :not (js-object :field "reply_to.id" :op "eq" :value "missing"))
+            (js-object :not (js-object :field "mentions.any" :op "eq" :value t))
             event))
         :toBe
         "indeterminate")))
@@ -78,7 +78,7 @@
         (js-object
           :any
           (js-array
-            (js-object :field "reply_to.id" :op "eq" :value "x")
+            (js-object :field "mentions.any" :op "eq" :value t)
             (js-object :field "sender.id" :op "eq" :value "none")))
         :result
         "indeterminate")
@@ -90,7 +90,7 @@
           :all
           (js-array
             (js-object :field "sender.id" :op "eq" :value "none")
-            (js-object :field "reply_to.id" :op "eq" :value "x")))
+            (js-object :field "mentions.any" :op "eq" :value t)))
         :result
         "false")))
   (js-call

@@ -12,7 +12,6 @@
   (import "node:path" resolve)
   (defasync setup () (await (createFixture "resources" "one" (js-object :configure (lambda (config ports)
     (put config :managed_profiles (js-array))
-    (put (aref (nativeGet config "connections") 0) :allowed_sender_kinds (js-array "human" "unknown"))
     (put (aref (nativeGet config "agent_endpoints") 0) :instance_epoch "epoch-1")
     (js-call (nativeGet (aref (nativeGet config "principals") 2) "grants") :push
       (js-object :action "resource.read" :resources (js-array (js-object :connection_id "lark" :kind "resource" :resource_kind "wiki" :resource_token "wikiToken") (js-object :connection_id "lark" :kind "resource" :resource_kind "bitable" :resource_token "baseToken")))

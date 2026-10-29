@@ -132,3 +132,10 @@ metadata:
 ## 表情触发
 
 - reactions: 可将添加指定表情与原生提及、私聊并列订阅；按原生 emoji_type 精确配置，见[表情触发](references/reactions.md)。不把原消息已有提及当作新的提及，不以旧表情记录代替实时事件。
+
+
+## 可组合订阅线
+
+- rules: 订阅者自行组合all交集、any并集、not排除。来源默认全部获准群/私聊/thread，条件与来源分开；任意提及、私聊、指定发送者、机器人、会话、thread/topic及关键词可正反组合，字段表和可执行示例见[订阅分发](references/subscriptions.md)。
+- robots: 用sender.kind选择human/bot/agent/unknown，用准确sender.id或已核实sender.person_id限定个体。不要把机器人昵称当身份，不为机器人写另一套接收逻辑。管理员全局屏蔽优先；只屏蔽触发，消息仍可读。
+- overlap: 一条消息可命中多条订阅线，不是竞争消费。不同目标各自收到，同目标可合并为一条信封并保留各subscription贡献及instructions；暂停/排除某一条线不撤销其他线。

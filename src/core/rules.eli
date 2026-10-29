@@ -9,6 +9,7 @@
         :event_kind
         "string"
         :connection_id "string"
+        :conversation.native_chat_id "string" :native_message_id "string" :mentions.any "boolean"
         :mentions.id "string"
         :reaction.emoji_type "string" :reaction.operator.id "string" :reaction.operator.kind "string" :reaction.operator.is_self "boolean"
         :people.id "string" :topic.key "string" :topic.kind "string" :thread.id "string" :resource.kind "string" :resource.token "string" :resource.table_id "string" :resource.record_id "string"
@@ -26,7 +27,7 @@
         :text
         "string")))
   (defun validatePredicate
-    (predicate &optional allow-person)
+    (predicate)
     (let ((leaves 0) (bad nil))
       (let ((visit nil))
         (setq
@@ -76,7 +77,6 @@
                         (unless
                           (and
                             (object-has? fields field)
-                            (or allow-person (not (= field "sender.person_id")))
                             (<= leaves (nativeGet limits "rule_leaves"))
                             (cond ((= op "eq") (= (nativeTypeOf value) type))
                               ((= op "in")
@@ -107,20 +107,30 @@
     (event field)
     (cond ((= field "text") (nativeGet (nativeGet event "content") "text"))
       ((= field "mentions.id") (nativeGet event "mentions"))
+      ((= field "mentions.any")
+        (cond ((or (= (nativeGet event "addressed_self") t) (= (nativeGet event "addressed_bot") t)) t)
+          ((Array/isArray (nativeGet event "mentions")) (> (js-length (nativeGet event "mentions")) 0))
+          (t undefined)))
+      ((= field "conversation.native_chat_id") (or (nativeGet (nativeGet event "conversation") "native_chat_id") ""))
       ((= field "reaction.emoji_type") (nativeGet (nativeGet event "reaction") "emoji_type" ""))
       ((js-call field :startsWith "reaction.operator.")
         (nativeGet (nativeGet (nativeGet event "reaction") "operator") (js-call field :slice 18)
           (if (= field "reaction.operator.is_self") false "")))
       ((= field "people.id") (nativeGet event "people"))
-      ((= field "topic.key") (nativeGet (nativeGet event "topic") "topic_key"))
+      ((= field "topic.key") (or (nativeGet (nativeGet event "topic") "topic_key") ""))
       ((= field "topic.kind") (nativeGet (nativeGet event "topic") "kind"))
-      ((= field "thread.id") (nativeGet (nativeGet event "conversation") "native_thread_id"))
+      ((= field "thread.id") (or (nativeGet (nativeGet event "conversation") "native_thread_id") ""))
       ((js-call field :startsWith "resource.") (nativeGet (nativeGet event "resource") (js-call field :slice 9)))
       ((= field "sender.id") (nativeGet (nativeGet event "sender") "id"))
       ((= field "sender.person_id") (nativeGet (nativeGet event "sender") "person_id"))
       ((= field "sender.kind") (nativeGet (nativeGet event "sender") "kind"))
-      ((= field "reply_to.id") (nativeGet (nativeGet event "reply_to") "id"))
+      ((= field "reply_to.id") (or (nativeGet (nativeGet event "reply_to") "id") ""))
       (t (nativeGet event field))))
+  (defun predicateUsesPerson (predicate)
+    (cond ((object-has? predicate :all) (js-call (nativeGet predicate "all") :some predicateUsesPerson))
+      ((object-has? predicate :any) (js-call (nativeGet predicate "any") :some predicateUsesPerson))
+      ((object-has? predicate :not) (predicateUsesPerson (nativeGet predicate "not")))
+      (t (= (nativeGet predicate "field") "sender.person_id"))))
   (defconst predicateHashes (new globalThis.WeakMap))
   (defun evaluatePredicate
     (predicate event &optional memo budget)
@@ -220,4 +230,4 @@
             (nativeGet address "native_thread_id" nil)
             (nativeGet conversation "native_thread_id" nil))
           (and (= include-threads t) (nativeNullish (nativeGet address "native_thread_id")))))))
-  (export validatePredicate evaluatePredicate matchesSource))
+  (export validatePredicate evaluatePredicate matchesSource predicateUsesPerson))

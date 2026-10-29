@@ -27307,6 +27307,72 @@
       "given": "A real SQLite Core assembled through independently owned modules",
       "when": "Receive and deduplicate a message, dispatch it, reply once and stop twice",
       "then": "Modules are active, delivery and reply persist once, and shutdown releases every module"
+    },
+    {
+      "case_id": "T38.composable-subscriptions.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/composable-subscriptions.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "requirements": [
+        "Q11"
+      ],
+      "acceptance_ids": [
+        "A05"
+      ],
+      "given": "An isolated DJ Core and real SQLite with two existing session peers",
+      "when": "Composable positive and negative rules fan out independently, allow selected bots and preserve suppressed messages",
+      "then": "Only matching unsuppressed subscriptions deliver, while all received messages remain in local history"
+    },
+    {
+      "case_id": "T38.person-subscriptions.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/composable-subscriptions.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "requirements": [
+        "Q11"
+      ],
+      "acceptance_ids": [
+        "A05"
+      ],
+      "given": "An isolated DJ Core and real SQLite with two existing session peers",
+      "when": "Subscription predicates resolve scoped people with fresh mappings and reject unknown person references",
+      "then": "Only matching unsuppressed subscriptions deliver, while all received messages remain in local history"
+    },
+    {
+      "case_id": "T38.composable-subscriptions.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/composable-subscriptions.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 5000,
+      "resource_group": "pure",
+      "requirements": [
+        "Q11"
+      ],
+      "acceptance_ids": [
+        "A05"
+      ],
+      "given": "Typed predicates and scoped identity aliases",
+      "when": "Compose mention, source, bot and negative thread predicates and change person mappings",
+      "then": "Known absence differs from unknown evidence; person evaluations never reuse stale memo or mutate the event"
     }
   ],
   "source_extension_base": "c1eb7b1"

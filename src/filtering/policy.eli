@@ -1,7 +1,7 @@
 (module dj.filtering.policy
   (import "../core/native.eli" nativeGet nativeTypeOf)
   (import "../core/types.eli" utf8Bytes)
-  (import "../core/rules.eli" validatePredicate evaluatePredicate)
+  (import "../core/rules.eli" validatePredicate evaluatePredicate predicateUsesPerson)
   (import "../core/errors.eli" success invalidField)
   (import "../people/registry.eli" resolvePerson eventIdentities)
   (defconst filterPolicyId "service")
@@ -32,12 +32,22 @@
               (= (nativeGet rule "effect") "suppress_trigger") (= (js-length keys) 4)
               (js-call keys :every (lambda (key) (js-call (js-array "id" "enabled" "effect" "predicate") :includes key)))))
               (setq problem (invalidField (str "/rules/" index) "a unique id, boolean enabled, supported effect and predicate"))
-              (let ((valid (validatePredicate predicate t)))
+              (let ((valid (validatePredicate predicate)))
                 (if (nativeGet valid "ok")
                   (progn (js-call ids :add id) (funcall visit predicate))
                   (setq problem (invalidField (str "/rules/" index "/predicate") "a bounded typed all/any/not predicate"))))))
           (setq index (1+ index))))
       (or problem (success rules))))
+  (defun eventWithPerson (context event people)
+    (Object/assign (js-object) event (js-object :sender
+      (Object/assign (js-object) (nativeGet event "sender") (js-object :person_id
+        (if (= (js-length people) 0) "" (resolvePerson people (eventIdentities context event))))))))
+  (defun evaluateSubscriptionPredicate (context predicate event &optional memo budget)
+    (if (predicateUsesPerson predicate)
+      ;; The identity registry can change between routing turns; these predicates
+      ;; must not reuse the persisted per-event memo from a previous mapping.
+      (evaluatePredicate predicate (eventWithPerson context event (nativeGet (readFilterPolicy context) "people" (js-array))) nil budget)
+      (evaluatePredicate predicate event memo budget)))
   (defun evaluateTriggerFilters (context event)
     ;; A fresh policy is read inside the synchronous event/submission transaction.
     ;; No result is reused across events, policy revisions, or visibility checks.
@@ -47,9 +57,7 @@
       ;; Both the message author and the person causing the trigger use the same blacklist.
       (when operator (js-call subjects :push (Object/assign (js-object) event (js-object :sender operator))))
       (js-call subjects :forEach (lambda (original)
-      (let ((subject (Object/assign (js-object) original (js-object :sender
-        (Object/assign (js-object) (nativeGet original "sender") (js-object :person_id
-          (if (= (js-length people) 0) "" (resolvePerson people (eventIdentities context original)))))))))
+      (let ((subject (eventWithPerson context original people)))
       (js-call (nativeGet policy "rules") :forEach (lambda (rule)
         (when (and (nativeGet rule "enabled") (= (nativeGet rule "effect") "suppress_trigger"))
           (let ((answer (evaluatePredicate (nativeGet rule "predicate") subject)))
@@ -59,4 +67,4 @@
         :suppressed (> (+ (js-length matches) (js-length uncertain)) 0)
         :matched_rule_ids (Object/freeze (Array/from (new globalThis.Set matches)))
         :indeterminate_rule_ids (Object/freeze (Array/from (new globalThis.Set uncertain)))))))
-  (export filterPolicyId filterResource readFilterPolicy validateFilterRules evaluateTriggerFilters))
+  (export filterPolicyId filterResource readFilterPolicy validateFilterRules evaluateTriggerFilters evaluateSubscriptionPredicate))

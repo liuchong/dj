@@ -117,6 +117,7 @@
             (enumSchema
               "event_kind"
               "connection_id"
+              "conversation.native_chat_id" "native_message_id" "mentions.any"
               "sender.id"
               "sender.kind"
               "mentions.id"
