@@ -69,6 +69,25 @@
       (js-call (expect (nativeGet (nativeGet (nativeGet event "reaction") "operator") "is_self")) :toBe t)
       (js-call (expect (nativeGet (validatePredicate predicate) "ok")) :toBe t)
       (js-call (expect (evaluatePredicate predicate event)) :toBe "true")
+      ;; An explicit self Pin must not depend on the original author or the
+      ;; passive addressed-self response branch.
+      (js-call (js-array "ou_self" "other-human" "other-bot") :forEach (lambda (author)
+        (let* ((message (Object/assign (js-object) original
+                        (js-object :sender (js-object :id author :kind (if (= author "other-bot") "bot" "human")))))
+               (marked (normalizeLarkReaction config (wire) message)))
+          (put marked :interaction (js-object :addressed_self false :kind "reaction"))
+          (js-call (expect (nativeGet marked "event_kind")) :toBe "message.reaction.added")
+          (js-call (expect (evaluatePredicate predicate marked)) :toBe "true"))))
+      (let ((self-wire (js-object :type "im.message.receive_v1" :message_id "self-mark" :chat_id "any-chat" :chat_type "group"
+              :sender_id "ou_self" :sender_type "user" :create_time "1767225600000"
+              :content "主动标记正文" :mentions (js-array))))
+        (js-call (js-array "ou_self" "cli_test") :forEach (lambda (target)
+          (put self-wire :mentions (js-array (js-object :id target)))
+          (let* ((marked (normalizeLarkEvent config self-wire))
+                 (mentions (js-object :field "mentions.id" :op "eq" :value target)))
+            (js-call (expect (nativeGet marked "event_kind")) :toBe "message.created")
+            (js-call (expect (nativeGet (nativeGet marked "content") "text")) :toBe "主动标记正文")
+            (js-call (expect (evaluatePredicate mentions marked)) :toBe "true")))))
       (js-call (expect (evaluatePredicate predicate (normalizeLarkReaction config (wire "Fire") original))) :toBe "true")
       (js-call (expect (evaluatePredicate predicate (normalizeLarkReaction config (wire "pin") original))) :toBe "false")
       (js-call (expect (evaluatePredicate predicate (normalizeLarkReaction config (wire "📌") original))) :toBe "false")

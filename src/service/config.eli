@@ -178,7 +178,7 @@
           :entry_ref id :package_ref id)
           (js-array "pid" "process_birth" "process_helper_ref"))
         :snapshot_max_bytes
-        (js-object :type "integer" :minimum 1048576 :maximum 16777216)
+        (js-object :type "integer" :minimum 1048576 :maximum 67108864)
         :manifest_path
         id
         :control_manifest_path

@@ -240,8 +240,9 @@
           (catch unavailable (js-object :runtime_state
             (if (js-call (js-array "ENOENT" "desktop_no_owner") :includes (nativeGet unavailable "code"))
               "offline" "unknown") :live_receiver false :evidence_level "none"
-            :reason (if (= (nativeGet unavailable "code") "desktop_bridge_disabled")
-              "desktop_bridge_disabled" "desktop_receiver_unavailable"))))))
+            :reason (if (js-call (js-array "desktop_bridge_disabled" "desktop_frame_limit")
+                            :includes (nativeGet unavailable "code"))
+              (nativeGet unavailable "code") "desktop_receiver_unavailable"))))))
       (setq listSessions (async (scope cursor budget context)
         (desktopDeadline context)
         (when closed (throw (desktopError "desktop_closed")))
@@ -402,8 +403,9 @@
           (catch unavailable (js-object :state
             (if (= (nativeGet unavailable "code") "ENOENT") "offline" "unknown")
             :evidence_level "none"
-            :reason (if (= (nativeGet unavailable "code") "desktop_bridge_disabled")
-              "desktop_bridge_disabled" "desktop_receiver_unavailable"))))))
+            :reason (if (js-call (js-array "desktop_bridge_disabled" "desktop_frame_limit")
+                            :includes (nativeGet unavailable "code"))
+              (nativeGet unavailable "code") "desktop_receiver_unavailable"))))))
       (js-object :create (when create-enabled (async (instance workspace key context)
                     (await (funcall createSession instance workspace key context false))))
         :lookupCreate (when create-enabled (async (instance key ref context)

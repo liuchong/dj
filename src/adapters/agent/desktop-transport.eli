@@ -9,6 +9,7 @@
   (import "node:crypto" randomUUID)
 
   (defconst desktopFrameLimit 16777216)
+  (defconst codexSnapshotLimit 67108864)
   (defun desktopError (code)
     (let ((error (new globalThis.Error "Desktop native interface unavailable")))
       (put error :code code)
@@ -116,10 +117,11 @@
            (identity (await (socketIdentity (nativeGet endpoint "socket_path"))))
            ;; Native IPC snapshots are indivisible vendor frames. The explicit
            ;; endpoint limit applies to that frame, not the projected port page.
-           (frame-limit (Math/min desktopFrameLimit
+           (frame-limit (Math/min codexSnapshotLimit
              (nativeGet endpoint "snapshot_max_bytes" (nativeGet context "max_response_bytes" 1048576))))
            (socket (createConnection (js-object :path (nativeGet endpoint "socket_path"))))
-           (buffer (Buffer/alloc 0)) (frames (js-array)) (queued-bytes 0)
+           (header (Buffer/alloc 4)) (header-bytes 0)
+           (body nil) (body-bytes 0) (frames (js-array)) (queued-bytes 0)
            (waiting nil) (broken nil) (closed false) (client-id nil)
            (timer nil) (signal (nativeGet context "abort_signal"))
            (fail nil) (write nil) (next nil) (call nil) (abort nil) (close nil))
@@ -165,35 +167,46 @@
           (when timer (nativeClearTimeout timer))
           (when signal (js-call signal :removeEventListener "abort" abort))
           (funcall fail (desktopError "desktop_closed"))
-          (setq frames (js-array) buffer (Buffer/alloc 0) queued-bytes 0))))
+          (setq frames (js-array) body nil body-bytes 0 header-bytes 0 queued-bytes 0))))
+      ;; Read each byte once into a bounded frame; never repeatedly concatenate
+      ;; the growing snapshot when the socket fragments a long native history.
       (js-call socket :on "data" (lambda (chunk)
         (try
-          (setq buffer (Buffer/concat (js-array buffer chunk)))
-          (while (>= (js-length buffer) 4)
-            (let ((size (js-call buffer :readUInt32LE 0)))
-              (when (or (= size 0) (> size frame-limit))
-                (throw (desktopError "desktop_frame_limit")))
-              (if (< (js-length buffer) (+ size 4))
-                (progn (setq chunk nil) (throw "desktop_partial_frame"))
-                (let* ((text (js-call (new globalThis.TextDecoder "utf-8" (js-object :fatal t))
-                              :decode (js-call buffer :subarray 4 (+ size 4))))
-                       (value (JSON/parse text)))
-                  (setq buffer (js-call buffer :subarray (+ size 4)))
-                  (cond
-                    ((= (nativeGet value "type") "client-discovery-request")
-                      (funcall write (js-object :type "client-discovery-response"
-                        :requestId (nativeGet value "requestId") :response (js-object :canHandle false))))
-                    (waiting
-                      (let ((current waiting)) (setq waiting nil)
-                        (funcall (nativeGet current "resolve") value)))
-                    (t
-                      (setq queued-bytes (+ queued-bytes size))
-                      (when (or (>= (js-length frames) 32) (> queued-bytes desktopFrameLimit))
-                        (throw (desktopError "desktop_frame_limit")))
-                      (js-call frames :push (js-object :value value :bytes size))))))))
+          (let ((offset 0))
+            (while (and (not broken) (< offset (js-length chunk)))
+              (when (< header-bytes 4)
+                (let ((count (Math/min (- 4 header-bytes) (- (js-length chunk) offset))))
+                  (js-call chunk :copy header header-bytes offset (+ offset count))
+                  (setq offset (+ offset count) header-bytes (+ header-bytes count)))
+                (when (= header-bytes 4)
+                  (let ((size (js-call header :readUInt32LE 0)))
+                    (when (or (= size 0) (> size frame-limit))
+                      (throw (desktopError "desktop_frame_limit")))
+                    (setq body (Buffer/allocUnsafe size) body-bytes 0))))
+              (when body
+                (let ((count (Math/min (- (js-length body) body-bytes) (- (js-length chunk) offset))))
+                  (js-call chunk :copy body body-bytes offset (+ offset count))
+                  (setq offset (+ offset count) body-bytes (+ body-bytes count)))
+                (when (= body-bytes (js-length body))
+                  (let* ((size body-bytes)
+                         (text (js-call (new globalThis.TextDecoder "utf-8" (js-object :fatal t)) :decode body))
+                         (value (JSON/parse text)))
+                    (setq body nil body-bytes 0 header-bytes 0)
+                    (cond
+                      ((= (nativeGet value "type") "client-discovery-request")
+                        (funcall write (js-object :type "client-discovery-response"
+                          :requestId (nativeGet value "requestId") :response (js-object :canHandle false))))
+                      (waiting
+                        (let ((current waiting)) (setq waiting nil)
+                          (funcall (nativeGet current "resolve") value)))
+                      (t
+                        (setq queued-bytes (+ queued-bytes size))
+                        (when (or (>= (js-length frames) 32) (> queued-bytes frame-limit))
+                          (throw (desktopError "desktop_frame_limit")))
+                        (js-call frames :push (js-object :value value :bytes size)))))))))
           (catch error
-            (unless (= error "desktop_partial_frame")
-              (funcall fail (desktopError "desktop_response")))))))
+            (funcall fail (desktopError (if (= (nativeGet error "code") "desktop_frame_limit")
+              "desktop_frame_limit" "desktop_response")))))))
       (js-call socket :on "error" (lambda (unused) (funcall fail (desktopError "desktop_transport"))))
       (js-call socket :on "close" (lambda ()
         (unless closed (funcall fail (desktopError "desktop_eof")))))

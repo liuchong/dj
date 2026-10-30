@@ -1,5 +1,5 @@
 (module dj.tests.integration.desktop
-  (import "../../src/core/native.eli" nativeGet)
+  (import "../../src/core/native.eli" nativeGet nativeSetTimeout)
   (import "../../src/service/config.eli" validateStructure)
   (import "../../src/delivery/envelope.eli" renderEnvelope)
   (import "../../src/adapters/agent/desktop.eli" createDesktopPort)
@@ -7,7 +7,7 @@
   (import "../../src/storage/repository.eli" createRepository)
   (import "../../src/service/core.eli" createCore)
   (import "../../src/adapters/agent/cursor-control.eli" activateCursorControl cursorCreationId)
-  (import "../../src/adapters/agent/desktop-transport.eli" cursorRequest)
+  (import "../../src/adapters/agent/desktop-transport.eli" cursorRequest openCodexChannel)
   (import "../../src/adapters/agent/cursor-native.eli" cursorRenderer)
   (import "node:vm" runInNewContext)
   (import "bun:test" expect)
@@ -81,7 +81,17 @@
             (setq send (lambda (value)
               (let* ((body (Buffer/from (JSON/stringify value))) (head (Buffer/alloc 4)))
                 (js-call head :writeUInt32LE (js-length body) 0)
-                (js-call socket :write (Buffer/concat (js-array head body))))))
+                (if (> (js-length body) 16777216)
+                  (progn
+                    (js-call socket :write (js-call head :subarray 0 2))
+                    (nativeSetTimeout (lambda ()
+                      (unless (nativeGet socket "destroyed")
+                        (js-call socket :write (js-call head :subarray 2))
+                        (let ((offset 0))
+                          (while (< offset (js-length body))
+                            (js-call socket :write (js-call body :subarray offset (+ offset 65536)))
+                            (setq offset (+ offset 65536)))))) 0))
+                  (js-call socket :write (Buffer/concat (js-array head body)))))))
             (js-call socket :on "error" (lambda (unused) nil))
             (js-call socket :on "close" (lambda () (js-call (nativeGet h "connections") :delete socket)))
             (js-call socket :on "data" (lambda (chunk)
@@ -111,6 +121,7 @@
                         :params (js-object :hostId "local" :conversationId "codex-thread"
                           :change (js-object :type "snapshot" :revision 1
                             :conversationState (js-object :id "codex-thread" :cwd workspace
+                              :fixture_padding (nativeGet h "codex_padding" "")
                               :title "Codex native fixture" :resumeState "resumed" :requests (js-array)
                               :threadRuntimeStatus (js-object :type (nativeGet h "codex_status"))
                               :turnHistory (when (nativeGet h "codex_incomplete")
@@ -173,6 +184,47 @@
                   (js-object :tool "cursor" :native_namespace "cursor-window" :native_session_id "cursor-thread")))))))))))
         h
         (catch error (await (cleanupDesktop h)) (throw error)))))
+
+  (defasync checkCodexSnapshotFrames (h)
+    ;; The real length-prefixed UDS path accepts a long native owner snapshot
+    ;; without changing the caller's small public response budget.
+    (let* ((f (nativeGet h "fixture"))
+           (endpoint (Object/assign (js-object)
+             (aref (nativeGet (nativeGet f "config") "agent_endpoints") 0)
+             (js-object :snapshot_max_bytes 33554432)))
+           (port (createDesktopPort "codex" (js-object :endpoints (js-array endpoint)) (js-object)))
+           (target (js-object :native_session_id "codex-thread")) (channel nil)
+           (before (js-length (nativeGet h "inputs"))))
+      (put h :codex_status "idle")
+      (put h :codex_padding (js-call "x" :repeat 17825792))
+      (try
+        (setq channel (await (openCodexChannel endpoint
+          (js-object :max_response_bytes 1024 :deadline (+ (performance/now) 5000)))))
+        (let ((snapshot (await (js-call channel :snapshot "codex-thread"))))
+          (js-call (expect (js-length (nativeGet (nativeGet snapshot "state") "fixture_padding"))) :toBe 17825792))
+        (js-call channel :close) (setq channel nil)
+        (let* ((observation (await (js-call port :probe target endpoint
+                              (js-object :max_response_bytes 1024 :deadline (+ (performance/now) 5000)))))
+               (binding (Object/assign (js-object) endpoint target
+                          (js-object :instance_epoch (nativeGet observation "instance_epoch"))))
+               (result (await (js-call port :submit binding
+                 (js-object :schema_version 1 :kind "external_message" :allowed_actions (js-array)
+                   :content (js-object :text "large snapshot native delivery")) "start_idle" "large-input"
+                 (js-object :deadline (+ (performance/now) 5000))))))
+          (js-call (expect (nativeGet observation "runtime_state")) :toBe "idle")
+          (js-call (expect (nativeGet result "state")) :toBe "accepted")
+          (js-call (expect (js-length (nativeGet h "inputs"))) :toBe (1+ before)))
+        ;; An over-budget header is rejected before receiving/allocating its body.
+        (put endpoint :snapshot_max_bytes 16777216)
+        (let ((rejected (await (js-call port :probe target endpoint
+                          (js-object :deadline (+ (performance/now) 5000))))))
+          (js-call (expect (nativeGet rejected "runtime_state")) :toBe "unknown")
+          (js-call (expect (nativeGet rejected "reason")) :toBe "desktop_frame_limit")
+          (js-call (expect (js-length (nativeGet h "inputs"))) :toBe (1+ before)))
+        (finally
+          (when channel (js-call channel :close))
+          (await (js-call port :close))
+          (put h :codex_padding "")))))
 
   (defasync checkDesktopRecovery (h)
     ;; Real native UDS + persistent Core: a running DJ must refresh stale desktop
@@ -590,6 +642,7 @@
           (js-call deliveries :forEach (lambda (delivery)
             (js-call (expect (nativeGet delivery "state")) :toBe "accepted"))))
         (await (checkDesktopRecovery h))
+        (await (checkCodexSnapshotFrames h))
         ;; Real UDS control server + native-command fixture + existing Bridge
         ;; readback. This does not claim that a real Cursor extension is installed.
         (let* ((workspace (resolve (nativeGet h "root") "workspace")) (calls (js-array))
