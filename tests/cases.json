@@ -27485,6 +27485,73 @@
       "given": "An input lease already settled by an explicit acknowledgement",
       "when": "Native acceptance later attempts to register Working",
       "then": "The settled lease is preserved without recreating a marker"
+    },
+    {
+      "case_id": "T40.message-interactions.integration",
+      "parent_id": "T40",
+      "file": "tests/integration/reactions.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-lark-events",
+      "acceptance_ids": [
+        "A01"
+      ],
+      "requirements": [
+        "SPEC-0015"
+      ],
+      "given": "A connected native message source and an interaction subscription",
+      "when": "Humans react to or reply to the connected identities messages",
+      "then": "Native relations trigger the original recipient with deduplication and actor filtering"
+    },
+    {
+      "case_id": "T40.interaction-replies.integration",
+      "parent_id": "T40",
+      "file": "tests/integration/mention-replies.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "acceptance_ids": [
+        "A01",
+        "A03"
+      ],
+      "requirements": [
+        "SPEC-0015"
+      ],
+      "given": "An interaction subscription with exact user and bot reply identities",
+      "when": "Humans reply without repeating native mentions",
+      "then": "The original target identity replies to the current triggering message"
+    },
+    {
+      "case_id": "T38.message-interactions.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/reactions.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 5000,
+      "resource_group": "pure",
+      "acceptance_ids": [
+        "A01"
+      ],
+      "requirements": [
+        "SPEC-0015"
+      ],
+      "given": "Native parent and root identifiers with bounded local and native readers",
+      "when": "Resolve message relations under current identity and conversation fences",
+      "then": "No inferred relation or fake mention; actual actors and deterministic reply identity remain exact"
     }
   ],
   "source_extension_base": "c1eb7b1"

@@ -329,6 +329,7 @@
                       (when (Array/isArray (nativeGet normalized "people")) (put event :people (nativeGet normalized "people")))
                       (when (= (nativeGet normalized "event_kind") "message.reaction.added")
                         (put event :reaction (nativeGet normalized "reaction")))
+                      (when (nativeGet normalized "interaction") (put event :interaction (nativeGet normalized "interaction")))
                       (when (nativeGet normalized "root_message_id") (put event :root_message_id (nativeGet normalized "root_message_id")))
                       (when (nativeGet normalized "reply_to")
                         (put

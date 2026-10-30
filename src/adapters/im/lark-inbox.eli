@@ -6,6 +6,7 @@
   (import "../../service/ownership.eli" ownerGuard)
   (import "./lark.eli" createReadLimiter)
   (import "./lark-reactions.eli" pollLarkReactions)
+  (import "./lark-interactions.eli" resolveLarkInteraction)
   (import "./lark-reaction-policy.eli" reactionPollPolicy)
   (import "./lark-reaction-cache.eli" createReactionObservationCache)
 
@@ -69,6 +70,10 @@
               (let ((chat (nativeGet watch "chat_id")))
                 (funcall ensure (str "inbox:chat:" chat) "group" activation chat))))))))
       (setq persist (async (checkpoint events chats)
+        (let ((index 0))
+          (while (< index (js-length events))
+            (await (resolveLarkInteraction config (aref events index) application base normalize))
+            (setq index (1+ index))))
         (await (enqueueWrite application (lambda ()
           (inTransaction application (lambda (tx)
             (must (ownerGuard application))

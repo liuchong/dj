@@ -1,6 +1,7 @@
 (module dj.adapters.im.lark-events
   (import "./lark-resource-events.eli" resourceEvents normalizeResourceEvents recipientNoticeAllowed)
   (import "./lark-reactions.eli" resolveLarkReaction)
+  (import "./lark-interactions.eli" resolveLarkInteraction)
   (import "../../core/native.eli" nativeGet nativeTypeOf NativeNumber nativeSetTimeout nativeClearTimeout nativeSetInterval nativeClearInterval)
   (import "../../core/types.eli" utf8Bytes)
   (import "../../core/errors.eli" success)
@@ -154,7 +155,7 @@
                                   (while (< i count) (js-call parts :push (js-call (nativeGet entry "parts") :get i)) (setq i (1+ i)))
                                   (let ((native (JSON/parse (js-call (Buffer/concat parts) :toString "utf8"))))
                                     (let* ((type (nativeGet (nativeGet native "header") "event_type"))
-                                      (events (cond ((= type "im.message.receive_v1") (js-array (normalizeLarkEvent config (flattenLarkEvent native))))
+                                      (events (cond ((= type "im.message.receive_v1") (js-array (await (resolveLarkInteraction config (normalizeLarkEvent config (flattenLarkEvent native)) application base normalizeLarkEvent))))
                                         ((= type "im.message.reaction.created_v1")
                                           (js-array (await (resolveLarkReaction config native application base normalizeLarkEvent))))
                                         ((js-call resourceEvents :includes type) (normalizeResourceEvents config native)) (t (js-array))))

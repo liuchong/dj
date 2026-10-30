@@ -18,7 +18,11 @@
 | 全部私聊 | chat_type | eq / "p2p" |
 | 某人全部消息 | sender.id | eq / "native-sender-id" |
 | 跨身份已核实人员 | sender.person_id | eq / "registered-person-id" |
-| 是否包含机器人 | sender.kind | in / ["human", "bot"] |
+| 消息原作者身份 | sender.kind | in / ["human", "bot"] |
+| 实际动作发起者身份 | trigger.kind | in / ["human", "bot"] |
+| 回应当前本人/机器人消息 | interaction.addressed_self | eq / true |
+| 回应指定原作者 | interaction.target_id | in / ["native-person-id", "native-bot-id"] |
+| 回应方式 | interaction.kind | in / ["reaction", "reply", "thread"] |
 | 指定会话 | conversation.native_chat_id | eq / "native-chat-id" |
 | 指定消息 | native_message_id | eq / "native-message-id" |
 | 原生消息列/thread | thread.id | eq / "native-thread-id" |
@@ -74,3 +78,10 @@
 
 - global: 管理员若要所有订阅都禁止这两名机器人触发，用message.filter.update将上面all内部的条件保存成enabled=true、effect=suppress_trigger的规则；先get并保留已有rules/people。跨应用使用sender.person_id及已核实身份表，参见[全局触发过滤](filters.md)。
 - visibility: 机器人回执仍进入本地历史和上下文，AI可在另一条消息触发后读取；DJ自己的出站回声继续走防回声与幂等机制，不与普通机器人来源混同。
+
+## 对本人或机器人消息的表情、引用与话题回应
+
+- append: 保留已有predicate并用any追加interaction.addressed_self=true；selector.event_kinds包含message.created和message.reaction.added。跨出口用当前来源作用域核实的interaction.target_id；这是原作者ID，不是回应者。需只收人类回应时与trigger.kind=human取all。
+- evidence: interaction.state=resolved才有已确认作者；unavailable表示准确目标不可读/不在本地且补取失败，不猜。thread以原生根消息确认，不因本人参与过就扩大整条话题；缺少原生根/父关联的普通群聊不会命中。
+- routing: 无新@时由DJ按回应目标作者沿既有reply_routes固定身份，有新@则原生提及优先。AI不选择出口或收件人。
+- robots: 若规则目的是屏蔽机器人动作，使用trigger.kind；sender.kind仍为原消息作者，单独按它排除会连人类对机器人消息的表情一起过滤。人员与字符黑名单仍优先，消息可见性不变。

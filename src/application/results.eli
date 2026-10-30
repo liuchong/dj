@@ -549,6 +549,8 @@
   (put definitions :reaction (obj (strings "native_event_id native_reaction_id emoji_type action_time"
     (js-object :message_source_time nullableString :operator (obj (strings "id kind"
       (js-object :is_self boolSchema :identities (arr (obj (strings "platform scope id"))))))))))
+  (put definitions :interaction (obj (strings "kind state target_message_id target_id target_kind"
+    (js-object :addressed_self boolSchema))))
   (put definitions :ingress_evidence (obj (strings "kind operation_id requested_by reason recovered_at")))
   (put definitions :topic (obj (strings "topic_key kind root_message_id" (js-object :native_thread_id nullableString :parent_message_id nullableString))))
   (put definitions :inbox_envelope (obj (js-object
@@ -557,7 +559,7 @@
     :source (ref "delivery_source") :sender (ref "sender") :content (ref "content")
     :attachments (arr (ref "attachment")) :reply_context_id nullableString :allowed_actions (arr stringSchema)
     :matched (arr (obj (js-object :subscription_id stringSchema :subscription_revision integerSchema :result stringSchema)))
-    :conversation_rules (ref "conversation_rules") :people (arr (ref "mention")) :mentions (arr (ref "mention")) :reaction (ref "reaction") :reply_route (ref "reply_route")
+    :conversation_rules (ref "conversation_rules") :people (arr (ref "mention")) :mentions (arr (ref "mention")) :reaction (ref "reaction") :interaction (ref "interaction") :reply_route (ref "reply_route")
     :resource (ref "lark_resource") :context (ref "message_context") :topic (ref "topic") :ingress_evidence (ref "ingress_evidence")
     :instructions (arr (obj (js-object :subscription_id stringSchema :subscription_revision integerSchema
       :prompt stringSchema :task_template stringSchema :task stringSchema))))))
@@ -597,7 +599,7 @@
           (ref "address")
           :sender
           (ref "sender")
-          :mentions (arr (ref "mention")) :reaction (ref "reaction") :people (arr (ref "mention")) :resource (ref "lark_resource")
+          :mentions (arr (ref "mention")) :reaction (ref "reaction") :interaction (ref "interaction") :people (arr (ref "mention")) :resource (ref "lark_resource")
           :reply_to (obj (strings "id sender_id")) :topic (ref "topic")
           :content
           (ref "content")

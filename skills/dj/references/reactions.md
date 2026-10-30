@@ -3,7 +3,7 @@
 - source: 复用获准来源和准确 Agent 目标；事件为 message.reaction.added。Lark 图钉原生标识是区分大小写的 Pin，不是“图钉”、📌或置顶消息。emoji_type 是平台不透明字符串，不按显示图形猜；一个或多个使用 eq/in。
 - identity: reaction.operator.id/kind/is_self 表示实际添加者；sender 仍是原消息作者。is_self 相对当前 user/bot 连接身份。可限定本人或显式添加者；不擅自扩大到所有人。
 - configure: 先读回当前订阅，保留来源、目标、上下文、instructions、投递策略和其他业务规则；selector.event_kinds 加入 message.reaction.added，原规则限定在原事件分支，另用 any 增加表情分支，再 preview/update。已有订阅不可用新建重复替代。
-- message: 接收原正文、来源 thread、原作者和 reaction 元数据。原文提及仅作上下文，不作为新的提及；回复身份和位置由 DJ 固定。按持久规则决定是否做事/回复；无需回复也走既有 complete/acknowledge 闭环。
+- message: 接收原正文、来源 thread、原作者和 reaction 元数据。原文提及仅作上下文，不作为新的提及；回复身份和位置由 DJ 固定；可按interaction订阅对本人或机器人已发消息的回应，见[订阅分发](subscriptions.md)。按持久规则决定是否做事/回复；无需回复也走既有 complete/acknowledge 闭环。
 - filters: 原作者、表情添加者均受统一人员黑名单控制，字符黑名单检查原文；被屏蔽仍可读。自动 Typing/Get 不得造成自触发循环。
 - realtime: WebSocket需平台订阅im.message.reaction.created_v1，其会话覆盖按平台实际授权核对；未覆盖会话由DJ用同一连接的官方HTTPS表情列表补收。只检查已保留本地消息；新入库消息优先检查，最近10分钟最新64条高频轮巡，已观察到表情的旧消息加入有界优先检查，其余历史按整轮目标兜底。重复检查共享观察缓存；空闲探测不反复写数据库。200毫秒是检查新消息的空闲等待，2秒是近期轮巡扫完的等待，均非逐条送达保证。receive_transport=poll不算WebSocket实时证据；缺权限或异常需报告，不让AI另建定时器。
 - limits: 普通消息与表情分开调度，表情GET在传输层按应用共享DJ默认10次/秒、并发2的预算，本人/机器人不各算一份。它是DJ选择，不是平台限额；以实际限流与等待时间为准。操作员可配置connection.reaction_poll，详见项目规格0013；订阅者不另建扫描器。

@@ -121,6 +121,7 @@
               "sender.id"
               "sender.kind"
               "mentions.id"
+              "interaction.kind" "interaction.state" "interaction.target_id" "interaction.target_kind" "interaction.target_message_id" "interaction.addressed_self" "trigger.kind"
               "reaction.emoji_type" "reaction.operator.id" "reaction.operator.kind" "reaction.operator.is_self"
               "people.id" "topic.key" "topic.kind" "thread.id" "resource.kind" "resource.token" "resource.table_id" "resource.record_id"
               "sender.person_id"

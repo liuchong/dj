@@ -5,7 +5,7 @@
 ## 当前规范与实现
 
 - 官方 im.message.reaction.created_v1 → message.reaction.added。保留原 native_message_id、chat/thread、消息作者和正文；reaction 独立记录原生事件 ID、添加时间、emoji_type、operator.id/kind/is_self。source_key 使用同一消息、表情、原生添加者及 action_time 的稳定摘要；WebSocket 与 HTTP 对同一次动作共用该键。删除表情不触发，也不撤销已受理输入；移除后重新添加是新动作。
-- 原消息的 mentions 仅是上下文，不伪造新提及，addressed_self/addressed_bot=false。回复走当前来源连接身份及原消息位置，不套用原消息其他人的提及回复路由。
+- 原消息的 mentions 仅是上下文，不伪造新提及，addressed_self/addressed_bot=false。回复不套用原消息其他人的提及；已确认回应目标的作者可按0015及同一reply_routes固定出口，未命中保持来源身份和原消息位置。
 - 先读当前身份的本地消息缓存；缺失时只按事件给出的准确消息 ID 直接读取官方 HTTPS API，不搜索、不改写原文。缺权限、消息已删或不可读时不凭空补正文，保留原生未确认重试和源错误。持久入 inbox 后才 ACK。
 - selector.event_kinds 显式加入 message.reaction.added；predicate 支持 reaction.emoji_type、reaction.operator.id/kind/is_self。没有 reaction 的普通消息对应空字符串/false。默认订阅仍只有原生 @，不会自动扩大全部用户的触发范围。
 - 原消息作者与表情添加者均经过同一服务级人员黑名单；字符黑名单使用原正文。消息仍记录、可读，只限制触发。提交时继续重检授权、身份、订阅和过滤规则。

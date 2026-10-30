@@ -47,6 +47,8 @@ Lark 必须直连官方 WebSocket 与 HTTPS API，禁止 SDK、CLI 及其子进�
 
 ## 正式规格与接续要求
 
+- 对本人或机器人已发消息的表情、引用及原生话题回应按 [0015](docs/specs/0015-message-interactions.md)：原生关系定位目标，复用订阅与回复路由；机器人触发过滤按实际动作发起者，不误挡人类对机器人消息的回应。
+
 - 可配置表情触发按 [0013](docs/specs/0013-reaction-triggers.md)：使用原生表情标识和添加者，复用订阅与统一黑名单；不把表情当作新的提及，不让自动工作/已阅表情自触发。
 
 - Kimi / DSH 现有实例接入按 [0012](docs/specs/0012-kimi-dsh-existing-sessions.md)：区分 Desktop Work、Desktop Host 与 Web，不以普通 TUI、新托管进程、共用历史或桌面像素替代准确原生接口证据。

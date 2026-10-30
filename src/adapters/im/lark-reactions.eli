@@ -3,6 +3,7 @@
   (import "../../application/context.eli" nativeCallContext must)
   (import "../../core/types.eli" hashValue)
   (import "./lark-identities.eli" larkIdentities)
+  (import "./lark-interactions.eli" messageInteraction)
   (import "./lark-reaction-policy.eli" reactionPollPolicy)
   (defun normalizeLarkReaction (config wire original)
     (let* ((header (nativeGet wire "header")) (notice (nativeGet wire "event"))
@@ -36,6 +37,7 @@
       :event_kind "message.reaction.added" :source_revision "1"
       :source_time (js-call (new globalThis.Date (NativeNumber action-time)) :toISOString)
       :addressed_self false :addressed_bot false
+      :interaction (messageInteraction config original "reaction")
       :reaction (js-object :native_event_id (or native-event-id "") :emoji_type emoji :action_time action-time
         :message_source_time (nativeGet original "source_time" nil) :operator operator)))))
       (when native-reaction-id (put (nativeGet event "reaction") :native_reaction_id native-reaction-id)) event))

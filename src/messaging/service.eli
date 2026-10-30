@@ -475,6 +475,7 @@
                   "sender"
                   "mentions"
                   "reaction"
+                  "interaction"
                   "people" "resource"
                   "reply_to"
                   "root_message_id"

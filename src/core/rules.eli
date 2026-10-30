@@ -11,6 +11,9 @@
         :connection_id "string"
         :conversation.native_chat_id "string" :native_message_id "string" :mentions.any "boolean"
         :mentions.id "string"
+        :interaction.kind "string" :interaction.state "string" :interaction.target_id "string"
+        :interaction.target_kind "string" :interaction.target_message_id "string" :interaction.addressed_self "boolean"
+        :trigger.kind "string"
         :reaction.emoji_type "string" :reaction.operator.id "string" :reaction.operator.kind "string" :reaction.operator.is_self "boolean"
         :people.id "string" :topic.key "string" :topic.kind "string" :thread.id "string" :resource.kind "string" :resource.token "string" :resource.table_id "string" :resource.record_id "string"
         :sender.id
@@ -112,6 +115,11 @@
           ((Array/isArray (nativeGet event "mentions")) (> (js-length (nativeGet event "mentions")) 0))
           (t undefined)))
       ((= field "conversation.native_chat_id") (or (nativeGet (nativeGet event "conversation") "native_chat_id") ""))
+      ((js-call field :startsWith "interaction.")
+        (nativeGet (nativeGet event "interaction") (js-call field :slice 12)
+          (if (= field "interaction.addressed_self") false "")))
+      ((= field "trigger.kind") (nativeGet
+        (or (nativeGet (nativeGet event "reaction") "operator") (nativeGet event "sender")) "kind" "unknown"))
       ((= field "reaction.emoji_type") (nativeGet (nativeGet event "reaction") "emoji_type" ""))
       ((js-call field :startsWith "reaction.operator.")
         (nativeGet (nativeGet (nativeGet event "reaction") "operator") (js-call field :slice 18)

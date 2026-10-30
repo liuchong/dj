@@ -62,7 +62,7 @@
         (let ((id (nativeGet args "native_message_id" (nativeGet event "native_message_id" (nativeGet handle "native_message_id")))))
           (success (js-object :address address :identity_revision fence :connection connection :anchor event :native_message_id id :topic (nativeGet handle "topic" (and event (trackedTopic context event)))))))))
   (defun projectMessage (context message maximum &optional offset)
-    (let* ((result (safeFields message (js-array "event_id" "native_message_id" "connection_id" "conversation" "sender" "mentions" "reaction" "reply_to" "root_message_id" "source_time" "received_at" "attachments")))
+    (let* ((result (safeFields message (js-array "event_id" "native_message_id" "connection_id" "conversation" "sender" "mentions" "reaction" "interaction" "reply_to" "root_message_id" "source_time" "received_at" "attachments")))
       (body (nativeGet message "content")) (page (sliceUtf8 (nativeGet body "text" "") (or offset 0) (Math/max 4 maximum))))
       (unless (nativeGet page "ok") (must page))
       (Object/assign result (safeFields page (js-array "offset_bytes" "next_offset_bytes" "complete" "total_bytes")))
