@@ -152,3 +152,7 @@ metadata:
 - rules: 订阅者自行组合all交集、any并集、not排除。来源默认全部获准群/私聊/thread，条件与来源分开；任意提及、私聊、指定发送者、机器人、会话、thread/topic及关键词可正反组合，字段表和可执行示例见[订阅分发](references/subscriptions.md)。
 - robots: 用sender.kind选择human/bot/agent/unknown，用准确sender.id或已核实sender.person_id限定个体。不要把机器人昵称当身份，不为机器人写另一套接收逻辑。管理员全局屏蔽优先；只屏蔽触发，消息仍可读。
 - overlap: 一条消息可命中多条订阅线，不是竞争消费。不同目标各自收到，同目标可合并为一条信封并保留各subscription贡献及instructions；暂停/排除某一条线不撤销其他线。
+
+## 已发消息与表情
+
+- lifecycle: 支持 message.recall、message.edit、message.reaction.add/list/remove 和 message.action.get，目标、幂等与结果核对见[已发消息操作](references/message-actions.md)。已发撤回和未发取消分开；不把外层 ok 当作原生变更已完成。

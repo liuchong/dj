@@ -76,6 +76,12 @@
       "按当前消息或context_ref读取前后文与引用链；native通过官方API补取，不触发订阅。"
       :message.history
       "在context_ref或conversation_ref绑定的会话内有界分页读取历史，区分local/native覆盖。"
+      :message.recall "撤回准确连接中已发出的原生消息；不是取消待发送项。先持久登记，未知结果不自动重试，平台决定撤回权限与期限。"
+      :message.edit "编辑准确连接中本人已发文本；保留原生消息ID，不重新发一条。平台决定可编辑期限。"
+      :message.reaction.add "为准确原生消息添加指定emoji_type表情，使用连接的本人或机器人身份。"
+      :message.reaction.remove "按reaction_id撤销当前连接身份添加的表情；不删除其他人的表情。"
+      :message.reaction.list "有界读取消息原生表情记录，返回reaction_id与添加者，has_more时按page_token续页。"
+      :message.action.get "按action_id读取撤回、编辑、手动表情操作的持久结果；unknown不等于失败，不换键盲目重试。"
       :message.send
       "向 destination_ref 固定的 IM 地址发送一条纯文本；已认证主体默认可使用已配置连接，无需逐群发送授权。"
       :message.acknowledge
@@ -337,6 +343,7 @@
         (js-array "instance_start" "approved_profile" "managed_slot"))
       ((= name "instance.stop")
         (js-array "instance_stop" "verified_managed_ownership" "native_drain"))
+      ((= group "message_actions") (js-array "exact_native_message" "same_connection_identity" "native_message_action"))
       ((js-call (js-array "message.send" "message.reply") :includes name)
         (js-array "send" "exact_thread" "single_text"))
       ((= group "subscriptions")

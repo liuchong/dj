@@ -327,4 +327,4 @@
                   :coverage_complete false :coverage_reason (if native "authorized_native_page" "bounded_local_and_recent_native_cache")
                   :truncated (or unfinished (< budget 256)))))))))
       (catch error (or (nativeGet error "domain_result") (failure "unavailable")))))
-  (export handleOperation envelopeContext collectContext matchesAddress projectMessage messageKey policyFor))
+  (export resolveScope handleOperation envelopeContext collectContext matchesAddress projectMessage messageKey policyFor))
