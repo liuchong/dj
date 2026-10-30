@@ -120,9 +120,11 @@
             (let
               (
                 (text
+                  (if (js-call (js-array "lark.api.read" "lark.api.call") :includes operation)
+                    (stableJson (nativeGet json "query"))
                   (if (= (nativeTypeOf (nativeGet json "query")) "string")
                     (nativeGet json "query")
-                    (nativeGet (nativeGet json "query") "text"))))
+                    (nativeGet (nativeGet json "query") "text")))))
               (when (> (utf8Bytes text) (nativeGet limits "query_bytes"))
                 (progn
                   (setq

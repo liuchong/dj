@@ -8,7 +8,8 @@
     operationCatalogDigest
     descriptorData)
   (import "./application/schema.eli" validateRequest normalizeArgs)
-  (export
+  (import "../packages/lark/src/index.eli" createLarkClient apiUrl)
+  (export createLarkClient apiUrl
     createCore
     createConnectionManager
     createContext Context Service createService Inject FiberState

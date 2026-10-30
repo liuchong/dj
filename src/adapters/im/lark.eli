@@ -866,6 +866,8 @@
                           commitPollPage
                           :userNotices (async (context) (await (ensureUserNotices http context)))
                           :resource (async (command parameters context) (await (requestResource http command parameters context)))
+                          :apiCall (async (record context)
+                            (await (js-call http :apiRequest (nativeGet record "request") context)))
                           :nativeRequest (async (path method body context) (await (js-call http :request path method body context)))
                           :history (async (parameters context)
                             (let ((response (await (js-call http :perform (if (nativeGet parameters "message_id") "get" "list") parameters context))))

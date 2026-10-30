@@ -624,6 +624,29 @@
     (js-object :exclusive messageTargetFields :result "message_reactions" :action "message.read"))
   (addOperation "message.action.get" "message_actions" (js-array "action_id") (js-object :action_id idSchema)
     (js-object :result "message_action" :action "operation.inspect"))
+  ;; Native OpenAPI access is transport-complete rather than a fixed list of
+  ;; hand-written endpoint wrappers. The selected connection supplies identity.
+  (defconst larkApiProperties
+    (js-object :connection_id idSchema :identity_revision revisionSchema
+      :path (js-object :type "string" :minLength 12 :maxLength 2048)
+      :query (js-object :type "object" :maxProperties 64 :additionalProperties
+        (js-object :anyOf (js-array (js-object :type (js-array "string" "number" "boolean" "null"))
+          (js-object :type "array" :maxItems 128 :items (js-object :type (js-array "string" "number" "boolean" "null"))))))
+      :headers (objectSchema (js-object :accept idSchema :content-type idSchema :content-disposition idSchema
+        :range idSchema :if-match idSchema :if-none-match idSchema :x-lark-request-id idSchema))
+      :response_mode (enumSchema "json" "text" "bytes")))
+  (addOperation "lark.api.read" "lark_api" (js-array "connection_id" "identity_revision" "path") larkApiProperties
+    (js-object :result "lark_api" :action "message.read"))
+  (addOperation "lark.api.call" "lark_api" (js-array "connection_id" "identity_revision" "path" "method")
+    (Object/assign (js-object :method (enumSchema "POST" "PUT" "PATCH" "DELETE") :body (js-object)
+      :form (js-object :type "object" :maxProperties 32 :additionalProperties
+        (js-object :anyOf (js-array (js-object :type (js-array "string" "number" "boolean"))
+          (objectSchema (js-object :base64 (js-object :type "string" :maxLength 699052)
+            :filename (js-object :type "string" :minLength 1 :maxLength 255) :content_type idSchema)
+            (js-array "base64" "filename")))))) larkApiProperties)
+    (js-object :result "lark_api" :action "message.send" :effect "accept"))
+  (addOperation "lark.api.get" "lark_api" (js-array "action_id") (js-object :action_id idSchema)
+    (js-object :result "lark_api" :action "operation.inspect"))
   (addOperation "message.reply_context" "messaging" (js-array "delivery_id")
     (js-object :delivery_id idSchema) (js-object :result "reply_context"))
   (addOperation "message.acknowledge" "messaging" (js-array "reply_context_id")

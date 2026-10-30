@@ -12,3 +12,5 @@
 
 packages/rack/dist/
 packages/rack/dist-tests/
+
+packages/lark/dist/

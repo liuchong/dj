@@ -1,5 +1,5 @@
-(module dj.adapters.im.lark-wire
-  (import "../../core/native.eli" nativeGet NativeBigInt NativeNumber)
+(module lark.wire
+  (import "./native.eli" nativeGet NativeBigInt NativeNumber)
   (defun writeVarint (value)
     (let ((n (NativeBigInt value)) (bytes (js-array)))
       (unless (and (>= n (NativeBigInt 0)) (<= n (NativeBigInt "18446744073709551615")))

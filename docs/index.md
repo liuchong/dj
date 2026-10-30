@@ -57,3 +57,5 @@
 
 - [0011 可读的 AI 消息通知](specs/0011-readable-notifications.md) · [使用说明](guides/notifications.md)
 - [0012 Kimi 与 DSH 已有实例](specs/0012-kimi-dsh-existing-sessions.md) · [接入说明](guides/kimi-dsh.md)
+
+- [0017：独立 Lark 包与官方 API 入口](specs/0017-lark-package.md)

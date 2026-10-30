@@ -12,7 +12,8 @@
     "dj": "bin/dj"
   },
   "exports": {
-    ".": "./dist/src/library.mjs"
+    ".": "./dist/src/library.mjs",
+    "./lark": "./dist/packages/lark/src/index.mjs"
   },
   "files": [
     "bin/dj",

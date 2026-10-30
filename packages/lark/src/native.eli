@@ -1,0 +1,10 @@
+(module lark.native
+  (defconst NativeNumber (get (js* "globalThis") :Number))
+  (defconst NativeBigInt (get (js* "globalThis") :BigInt))
+  (defconst nativeSetTimeout (get (js* "globalThis") :setTimeout))
+  (defconst nativeClearTimeout (get (js* "globalThis") :clearTimeout))
+  (defun nativeTypeOf (value) (js* "typeof value"))
+  (defun nativeGet (object key &rest fallback)
+    (let ((value (js* "object == null ? undefined : object[key]")))
+      (if (undefined? value) (if (> (js-length fallback) 0) (aref fallback 0) undefined) value)))
+  (export nativeGet nativeTypeOf NativeNumber NativeBigInt nativeSetTimeout nativeClearTimeout))

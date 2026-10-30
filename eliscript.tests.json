@@ -62,7 +62,9 @@
     "tests/unit/composable-subscriptions.test.eli",
     "tests/integration/reaction-poll.test.eli",
     "tests/integration/message-actions.test.eli",
-    "tests/unit/message-actions.test.eli"
+    "tests/unit/message-actions.test.eli",
+    "tests/integration/lark-api.test.eli",
+    "tests/unit/lark-api.test.eli"
   ],
   "outDir": "dist-tests"
 }

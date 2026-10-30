@@ -179,6 +179,7 @@
               "identity"
               "source_delivery"
               "revision"))))
+      (put projection :identity_revision (nativeGet connection "identity_revision" (nativeGet connection "revision")))
       (put projection :source_health (sourceHealth context connection))
       (put projection :state (nativeGet (nativeGet projection "source_health") "state"))
       (put

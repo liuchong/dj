@@ -1,7 +1,7 @@
 (module dj.tests.integration.reaction-poll
   (import "../../src/core/native.eli" nativeGet NativeGlobal nativeSetTimeout)
   (import "../../src/adapters/im/lark-events.eli" createLarkEventPort)
-  (import "../../src/adapters/im/lark-wire.eli" encodeLarkFrame)
+  (import "../../packages/lark/src/wire.eli" encodeLarkFrame)
   (import "../support/fixtures.eli" createFixture closeFixture callOk bindRecipient createdEvent)
   (import "../support/case.eli" withCase)
   (import "bun:sqlite" Database)

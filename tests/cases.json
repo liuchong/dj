@@ -27627,6 +27627,79 @@
       "given": "Current schemas and exact native identity evidence",
       "when": "Validate message action contracts and response versus marker predicates",
       "then": "Strict targets and distinct response/marker branches remain intact"
+    },
+    {
+      "case_id": "T40.lark-package.integration",
+      "parent_id": "T40",
+      "file": "tests/integration/lark-api.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {
+        "identity": "user-and-bot"
+      },
+      "required_profile": null,
+      "timeout_ms": 10000,
+      "resource_group": "isolated-sqlite-http",
+      "requirements": [
+        "Q11",
+        "Q12"
+      ],
+      "acceptance_ids": [
+        "A05"
+      ],
+      "given": "Independent native HTTP endpoint and configured DJ identity",
+      "when": "Request native APIs through the independent package and DJ operation catalog",
+      "then": "Identity, multipart, binary, durable write and no-replay boundaries hold"
+    },
+    {
+      "case_id": "T40.lark-api.integration",
+      "parent_id": "T40",
+      "file": "tests/integration/lark-api.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {
+        "identity": "user-and-bot"
+      },
+      "required_profile": null,
+      "timeout_ms": 10000,
+      "resource_group": "isolated-sqlite-http",
+      "requirements": [
+        "Q11",
+        "Q12"
+      ],
+      "acceptance_ids": [
+        "A05"
+      ],
+      "given": "Independent native HTTP endpoint and configured DJ identity",
+      "when": "Request native APIs through the independent package and DJ operation catalog",
+      "then": "Identity, multipart, binary, durable write and no-replay boundaries hold"
+    },
+    {
+      "case_id": "T38.lark-api.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/lark-api.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 5000,
+      "resource_group": "in-process",
+      "requirements": [
+        "Q11",
+        "Q12"
+      ],
+      "acceptance_ids": [
+        "A05"
+      ],
+      "given": "Native API transport and current operation schemas",
+      "when": "Reject invalid paths and identity, cancel deadlines and bound payloads",
+      "then": "No credential override or identity fallback, bounded cancellation and strict schema"
     }
   ],
   "source_extension_base": "c1eb7b1"

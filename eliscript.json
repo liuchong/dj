@@ -6,7 +6,8 @@
     "src/interfaces/cli.eli",
     "src/interfaces/mcp.eli",
     "src/library.eli",
-    "src/connectors/pi.eli"
+    "src/connectors/pi.eli",
+    "packages/lark/src/index.eli"
   ],
   "outDir": "dist"
 }

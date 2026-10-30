@@ -13,6 +13,9 @@
           (js-array
             "src/host/darwin/process-info.c"
             "package.json"
+            "packages/lark/package.json"
+            "packages/lark/eliscript.json"
+            "packages/lark/LICENSE"
             "packages/rack/package.json"
             "packages/rack/eliscript.json"
             "packages/rack/eliscript.tests.json"
@@ -65,6 +68,7 @@
                       (js-call paths :push path))))
                 (setq index (1+ index))))))
         (await (visit "src"))
+        (await (visit "packages/lark/src"))
         (await (visit "packages/rack/src"))
         (await (visit "packages/rack/tests"))
         (await (visit "tests"))

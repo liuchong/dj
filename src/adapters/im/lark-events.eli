@@ -9,7 +9,7 @@
   (import "../../application/write-batch.eli" enqueueWrite)
   (import "../../service/ownership.eli" ownerGuard)
   (import "./lark.eli" createLarkPort)
-  (import "./lark-wire.eli" decodeLarkFrame encodeLarkFrame)
+  (import "../../../packages/lark/src/wire.eli" decodeLarkFrame encodeLarkFrame)
   (import "./telegram.eli" readJson)
   (import "./lark-identities.eli" larkIdentities)
   (import "./lark-inbox.eli" createLarkInboxPoller)

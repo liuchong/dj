@@ -19,7 +19,7 @@
   (import "../../src/adapters/agent/cursor-native.eli" cursorRenderer)
   (import "node:vm" runInNewContext)
   (import "../../src/adapters/im/lark-http.eli" formatLarkMessage)
-  (import "../../src/adapters/im/lark-wire.eli" encodeLarkFrame decodeLarkFrame)
+  (import "../../packages/lark/src/wire.eli" encodeLarkFrame decodeLarkFrame)
   (import "../../src/adapters/im/lark-events.eli" normalizeLarkEvent)
   (import "../../src/adapters/im/lark-inbox.eli" normalizeInboxMessage)
   (import "../../src/adapters/agent/json-rpc.eli" createJsonRpcChannel)

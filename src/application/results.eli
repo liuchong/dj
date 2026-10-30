@@ -264,6 +264,12 @@
     (js-object :source_identity_revision integerSchema :reply_identity_revision integerSchema))))
   (put definitions :acknowledgement (obj (strings "acknowledgement_id emoji_type state reaction_id last_error"
     (js-object :delivery_id nullableString :native_acknowledged boolSchema))))
+  (put definitions :lark_api (obj
+    (strings "action_id connection_id identity state method path updated_at error_code response_mode"
+      (js-object :identity_revision integerSchema :http_status integerSchema :native_ok boolSchema
+        :retry_after_seconds (js-object :type "number" :minimum 0) :headers (js-object :type "object" :additionalProperties stringSchema)
+        :response (js-object)))
+    (js-array "connection_id" "identity_revision" "identity" "state")))
   (put definitions :message_action (obj (strings "action_id operation connection_id native_message_id state updated_at error_code"
     (js-object :identity_revision integerSchema :destination (ref "address") :confirmed boolSchema
       :reaction_id nullableString :emoji_type nullableString :native_code integerSchema :required_scopes (arr stringSchema)))
@@ -460,6 +466,8 @@
       (strings
         "connection_id platform tenant_ref account_ref display_name brand identity source_delivery state"
         (js-object
+          :identity_revision
+          integerSchema
           :revision
           integerSchema
           :source_health

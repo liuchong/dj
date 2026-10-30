@@ -2,7 +2,7 @@
   (import "../../src/core/native.eli" nativeGet nativeSetTimeout NativeGlobal)
   (import "../../src/adapters/im/lark-events.eli" createLarkEventPort)
   (import "../../src/core/rules.eli" evaluatePredicate)
-  (import "../../src/adapters/im/lark-wire.eli" encodeLarkFrame decodeLarkFrame)
+  (import "../../packages/lark/src/wire.eli" encodeLarkFrame decodeLarkFrame)
   (import "../support/fixtures.eli" createFixture closeFixture callOk bindRecipient)
   (import "../support/case.eli" withCase)
   (import "bun:sqlite" Database)
