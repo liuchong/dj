@@ -1,6 +1,8 @@
 (module dj.adapters.im.lark-interactions
   (import "../../core/native.eli" nativeGet nativeTypeOf)
   (import "../../application/context.eli" nativeCallContext utcNow)
+  (import "../../core/types.eli" conversationKey addSeconds)
+  (import "../../core/limits.eli" limits)
   ;; A relation is native evidence, never a textual @ or a guessed topic.
   (defun messageInteraction (config target kind)
     (let* ((sender (nativeGet target "sender")) (id (nativeGet sender "id")))
@@ -38,7 +40,47 @@
           (catch error (setq target nil))))
       (and target (= (nativeGet (nativeGet target "conversation") "native_chat_id")
         (nativeGet (nativeGet event "conversation") "native_chat_id")) target)))
-  (defasync resolveLarkInteraction (config event application port normalize)
+  ;; Native thread membership is exact even when the root belongs to someone
+  ;; else. Use retained self-authored messages or confirmed native sends only;
+  ;; a matching group, mention, or pending/unknown outbound is not evidence.
+  (defun threadParticipation (config event application preceding)
+    (let* ((address (nativeGet event "conversation")) (key (conversationKey address))
+      (connection (nativeGet config "connection_id")) (revision (nativeGet config "identity_revision"))
+      (subject (nativeGet config "event_subject_id" ""))
+      (bot (= (nativeGet config "identity") "bot")) (app (if bot (nativeGet config "event_app_id" "") subject))
+      (kind (if bot "bot" "human")) (time (nativeGet event "source_time"))
+      (now (utcNow application)) (oldest (addSeconds now (- (nativeGet limits "body_retention_seconds"))))
+      (db (nativeGet (nativeGet application "store") "db")) (target nil))
+      ;; Earlier rows in a single HTTP page have not been ingested yet.
+      (js-call (or preceding (js-array)) :forEach (lambda (candidate)
+        (when (and (= (nativeGet candidate "connection_id") connection)
+          (= (conversationKey (nativeGet candidate "conversation")) key)
+          (= (nativeGet candidate "event_kind") "message.created")
+          (not (nativeGet candidate "tombstone"))
+          (not (= (nativeGet candidate "native_message_id") (nativeGet event "native_message_id")))
+          (>= (nativeGet candidate "source_time") oldest) (<= (nativeGet candidate "source_time") time)
+          (nativeGet (messageInteraction config candidate "thread") "addressed_self"))
+          (setq target candidate))))
+      (unless target
+        (let ((row (js-call (js-call db :query
+          "SELECT payload FROM events WHERE connection_id=? AND conversation_key=? AND event_kind='message.created' AND tombstone=0 AND body_expires_at>? AND json_extract(payload,'$.identity_revision')=? AND json_extract(payload,'$.sender.kind')=? AND json_extract(payload,'$.sender.id') IN (?,?) AND json_extract(payload,'$.source_time')<=? AND native_message_id<>? ORDER BY ingress_seq DESC LIMIT 1")
+          :get connection key now revision kind subject app time (nativeGet event "native_message_id"))))
+          (when row (setq target (JSON/parse (nativeGet row "payload"))))))
+      (unless target
+        (let ((row (js-call (js-call db :query
+          "SELECT payload FROM context_messages WHERE connection_id=? AND identity_revision=? AND conversation_key=? AND expires_at>? AND source_time<=? AND native_message_id<>? AND json_extract(payload,'$.sender.kind')=? AND json_extract(payload,'$.sender.id') IN (?,?) ORDER BY source_time DESC LIMIT 1")
+          :get connection revision key now time (nativeGet event "native_message_id") kind subject app)))
+          (when row (setq target (JSON/parse (nativeGet row "payload"))))))
+      (unless target
+        (let ((row (js-call (js-call db :query
+          "SELECT p.native_message_id FROM outbound o JOIN parts p ON p.part_id=json_extract(o.payload,'$.part_id') WHERE o.connection_id=? AND o.conversation_key=? AND o.state='accepted' AND p.state='accepted' AND p.native_message_id IS NOT NULL AND json_extract(o.payload,'$.identity_revision')=? AND json_extract(o.payload,'$.created_at')>=? AND json_extract(o.payload,'$.created_at')<=? AND EXISTS(SELECT 1 FROM receipts r WHERE r.attempt_id=json_extract(o.payload,'$.attempt_id') AND r.evidence_level='native_protocol' AND json_extract(r.payload,'$.state')='accepted' AND json_extract(r.payload,'$.native_message_id')=p.native_message_id AND json_extract(r.payload,'$.observed_at')<=?) ORDER BY o.rowid DESC LIMIT 1")
+          :get connection key revision oldest time time)))
+          (when row (setq target (js-object :native_message_id (nativeGet row "native_message_id")
+            :sender (js-object :id (if bot app subject) :kind kind))))))
+      (when target
+        (let ((interaction (messageInteraction config target "thread")))
+          (put interaction :basis "thread_participation") interaction))))
+  (defasync resolveLarkInteraction (config event application port normalize &optional preceding)
     (when (= (nativeGet event "event_kind") "message.created")
       (let* ((parent (nativeGet (nativeGet event "reply_to") "id")) (root (nativeGet event "root_message_id"))
         (thread (nativeGet (nativeGet event "conversation") "native_thread_id"))
@@ -54,7 +96,11 @@
             (when (and interaction (or (not selected) (nativeGet interaction "addressed_self")))
               (setq selected interaction)))
           (setq index (1+ index)))
-        (when (> (js-length ids) 0)
+        (when (and (= (nativeTypeOf thread) "string") (> (js-length thread) 0)
+          (not (nativeGet selected "addressed_self")))
+          (let ((participation (threadParticipation config event application preceding)))
+            (when participation (setq selected participation))))
+        (when (or selected (> (js-length ids) 0))
           (put event :interaction (or selected (js-object :kind (if thread "thread" "reply") :state "unavailable"
             :target_message_id (aref ids 0) :addressed_self false))))))
     event)

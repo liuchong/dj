@@ -29,6 +29,23 @@
         "string"
         :text
         "string")))
+  ;; Defaults are ordinary editable predicate branches, not a separate router.
+  ;; Callers can keep any subset, combine filters, or supply their own predicate.
+  (defun defaultSubscriptionPredicate ()
+    (js-object :any (js-array
+      (js-object :field "addressed_self" :op "eq" :value t)
+      (js-object :all (js-array
+        (js-object :field "event_kind" :op "eq" :value "message.created")
+        (js-object :field "chat_type" :op "eq" :value "p2p")))
+      (js-object :all (js-array
+        (js-object :field "interaction.addressed_self" :op "eq" :value t)
+        (js-object :field "interaction.kind" :op "eq" :value "reply")))
+      (js-object :all (js-array
+        (js-object :field "interaction.addressed_self" :op "eq" :value t)
+        (js-object :field "interaction.kind" :op "eq" :value "thread")))
+      (js-object :all (js-array
+        (js-object :field "interaction.addressed_self" :op "eq" :value t)
+        (js-object :field "interaction.kind" :op "eq" :value "reaction"))))))
   (defun validatePredicate
     (predicate)
     (let ((leaves 0) (bad nil))
@@ -238,4 +255,4 @@
             (nativeGet address "native_thread_id" nil)
             (nativeGet conversation "native_thread_id" nil))
           (and (= include-threads t) (nativeNullish (nativeGet address "native_thread_id")))))))
-  (export validatePredicate evaluatePredicate matchesSource predicateUsesPerson))
+  (export defaultSubscriptionPredicate validatePredicate evaluatePredicate matchesSource predicateUsesPerson))

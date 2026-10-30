@@ -2,7 +2,7 @@
 
 - ownership: 由订阅者决定自己的规则。修改先subscription.get，再以原subscription_id/expected_revision调用subscription.preview，核对normalized_spec、样例和阻断项后subscription.update；保留原来源、目标、提示词及投递策略。不新建重复订阅替代修改。
 - source: selector.sources省略或[]为全部获准群、私聊及thread。可用conversation_ref/include_threads收窄。条件中的conversation.native_chat_id是平台原始ID，不是conversation_ref；应从DJ的消息/来源接口读取，不凭标题猜测。
-- algebra: all表示全部满足，any表示至少一项，not表示取反。所有字段都可放在not下；排除也只是排除本次触发，不是删除消息。默认predicate仍为addressed_self=true；无条件接收显式使用all=[]。
+- algebra: all表示全部满足，any表示至少一项，not表示取反。所有字段都可放在not下；排除也只是排除本次触发，不是删除消息。省略predicate时，默认以any选中原生@、私聊、引用链回复、话题回应和已发消息的表情回应；规范化后的每个分支可独立保留或删除。显式predicate完全按调用方选择，不追加默认分支；无条件接收显式使用all=[]。
 - precedence: 服务级message.filter的suppress_trigger优先于订阅；预览样例result表示本订阅条件，reason_codes包含trigger_suppressed时仍不会触发。先处理全局策略限制，不通过新订阅绕过。
 - overlap: 不同订阅独立匹配同一事件。不同目标分别交付；同目标可能合并投递，matched/instructions保留所有有效贡献。事件重送去重不等于只允许一条订阅匹配。
 - unknown: 缺失证据或截断内容保留indeterminate，not不会把未知变成命中。已知没有thread/topic/引用的字段值为空字符串。
@@ -79,9 +79,15 @@
 - global: 管理员若要所有订阅都禁止这两名机器人触发，用message.filter.update将上面all内部的条件保存成enabled=true、effect=suppress_trigger的规则；先get并保留已有rules/people。跨应用使用sender.person_id及已核实身份表，参见[全局触发过滤](filters.md)。
 - visibility: 机器人回执仍进入本地历史和上下文，AI可在另一条消息触发后读取；DJ自己的出站回声继续走防回声与幂等机制，不与普通机器人来源混同。
 
+## 默认全选与独立选择
+
+- defaults: 新订阅省略predicate时默认选择@、私聊、引用链、原生话题及表情回应；event_kinds省略时为message.created/message.reaction.added。原有已保存规则不自动改变。
+- choose: 私聊用chat_type=p2p；@用addressed_self=true；引用链、话题、表情分别用interaction.addressed_self=true与interaction.kind=reply/thread/reaction取all，再用any合并所选项。关闭某项就从any删除该分支；其他选项不受影响。需要额外关键词、人员或排除条件时继续用all/any/not组合。
+- dispatch: 选项只决定是否通知既有订阅目标，关系元数据仍供查询；不自动建立thread与AI对话绑定。
+
 ## 对本人或机器人消息的表情、引用与话题回应
 
 - append: 保留已有predicate并用any追加interaction.addressed_self=true；selector.event_kinds包含message.created和message.reaction.added。跨出口用当前来源作用域核实的interaction.target_id；这是原作者ID，不是回应者。需只收人类回应时与trigger.kind=human取all。
-- evidence: interaction.state=resolved才有已确认作者；unavailable表示准确目标不可读/不在本地且补取失败，不猜。thread以原生根消息确认，不因本人参与过就扩大整条话题；缺少原生根/父关联的普通群聊不会命中。
+- evidence: interaction.state=resolved才有已确认作者；unavailable表示准确目标不可读/不在本地且补取失败，不猜。thread可由本人/机器人根消息，或同一原生chat/thread内当前身份的既有已发消息确认；后者标记basis=thread_participation，后续回复不必再@。普通群聊参与、其他话题、待发送或未知出站不算依据。
 - routing: 无新@时由DJ按回应目标作者沿既有reply_routes固定身份，有新@则原生提及优先。AI不选择出口或收件人。
 - robots: 若规则目的是屏蔽机器人动作，使用trigger.kind；sender.kind仍为原消息作者，单独按它排除会连人类对机器人消息的表情一起过滤。人员与字符黑名单仍优先，消息可见性不变。

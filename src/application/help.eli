@@ -1,6 +1,7 @@
 (module dj.application.help
   (import "../core/native.eli" nativeGet)
   (import "../core/limits.eli" limits)
+  (import "../core/rules.eli" defaultSubscriptionPredicate)
   (defconst summaries
     (js-object
       :message.reply_context "原接收者在原有效期内重新取得固定回复引用；重检当前授权和原身份，不改目标、不延长有效期。"
@@ -249,7 +250,7 @@
           :spec
           (js-object
             :predicate
-            (js-object :all (js-array))
+            (defaultSubscriptionPredicate)
             :start
             "now"
             :context_policy
@@ -269,7 +270,7 @@
               :ttl_seconds
               (nativeGet limits "ttl_default_seconds"))
             :selector
-            (js-object :event_kinds (js-array "message.created")))))
+            (js-object :event_kinds (js-array "message.created" "message.reaction.added")))))
       defaults))
   (defun limitReferences
     (properties)

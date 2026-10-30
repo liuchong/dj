@@ -3,7 +3,7 @@
   (import "ajv/dist/2020.js" :default Ajv2020)
   (import "./operations.eli" operationCatalog)
   (import "../core/types.eli" utf8Bytes isUtcTime stableJson)
-  (import "../core/rules.eli" validatePredicate)
+  (import "../core/rules.eli" validatePredicate defaultSubscriptionPredicate)
   (import "../core/instructions.eli" validateInstructionPolicy)
   (import "../core/limits.eli" limits)
   (import "../core/errors.eli" success failure invalidField)
@@ -204,7 +204,7 @@
       (when (= operation "subscription.preview")
         (let* ((spec (nativeGet args "spec")) (selector (nativeGet spec "selector")))
           (unless (object-has? spec :predicate)
-            (put spec :predicate (js-object :field "addressed_self" :op "eq" :value t)))
+            (put spec :predicate (defaultSubscriptionPredicate)))
           (unless (object-has? spec :start) (put spec :start "now"))
           (unless (object-has? spec :delivery_mode) (put spec :delivery_mode "push"))
           (put
@@ -221,7 +221,7 @@
               (nativeGet spec "context_policy")))
           (put spec :delivery_policy (normalizedPolicy (nativeGet spec "delivery_policy")))
           (unless (object-has? selector :event_kinds)
-            (put selector :event_kinds (js-array "message.created")))
+            (put selector :event_kinds (js-array "message.created" "message.reaction.added")))
           (put
             selector
             :event_kinds
