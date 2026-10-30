@@ -1,6 +1,6 @@
 # 已发消息操作
 
-- entry: 先读 operation.describe 的当前 schema。CLI、MCP、GEPO 共用同一套操作，不绕到其他工具完成 DJ 托管消息的撤回或编辑。
+- entry: 先读具体操作的CLI --help、MCP tools/list或GEPO操作说明。CLI、MCP、GEPO共用同一套DJ操作；DJ已有撤回、编辑与表情能力，优先使用。其他功能确实不足时可用[同身份Lark CLI补充](lark.md#功能不足时使用-lark-cli)，未知结果不换工具重发。
 - target: outbound_id/event_id/message_ref/context_ref/conversation_ref 五选一。context_ref/conversation_ref 另带准确 native_message_id；event_id/message_ref 不覆盖 ID。outbound_id 仅适用于 accepted 且只有一个 native_message_id 的出站记录。
 - recall: message.recall 撤回已经发出的原生消息；取消尚未发送的记录仍用 outbound.cancel。撤回不会删除本地审计历史，也不会取消已触发的任务。
 - edit: message.edit 的 content 使用 type=text 和完整新 text，只编辑文本。不能靠改写本地 outbound 或原事件来冒充原生编辑。

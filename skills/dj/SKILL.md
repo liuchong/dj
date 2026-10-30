@@ -1,6 +1,6 @@
 ---
 name: dj
-description: 通过 DJ 的 CLI/MCP/GEPO 机械查询跨工具会话和消息、免订阅定向输入、通过已有实例接口创建会话，以及登记 IM 订阅和回复原话题。由调用方选择精确目标和结构化规则；普通代码修改或 IM 管理界面不使用此 Skill。
+description: 通过 DJ 的 CLI/MCP/GEPO 机械查询跨工具会话和消息、免订阅定向输入、通过已有实例接口创建会话，以及 Lark 消息收发、上下文、撤回编辑、表情和规则订阅。由调用方选择精确目标和结构化规则；普通代码修改或 IM 管理界面不使用此 Skill。
 metadata:
   stage: native-api-integration
 ---
@@ -13,13 +13,33 @@ metadata:
 
 ## 适用范围
 
-- connected_conversations: 已对接DJ的AI对话应使用DJ提供的收发消息、上下文、订阅、回复及处理状态能力，通过DJ CLI、MCP或GEPO完成相关消息交互，不绕过DJ另用Lark CLI、SDK或直接API替代这条链路。
+- connected_conversations: 已对接DJ的AI对话优先通过DJ CLI、MCP或GEPO使用现有收发、上下文、订阅、回复和处理状态能力；Lark能力入口见下表。DJ确实缺少所需功能时，允许使用Lark CLI补充，按[能力与同身份补充](references/lark.md)核对原账号身份；不是一律禁止使用CLI。
+- cli_identity: 使用Lark CLI时，必须与本来准备在DJ中使用的连接保持相同Lark账号及user/bot身份。回复按该通知已固定的reply_route核对；本人不换成机器人，机器人不换成另一个机器人，不以昵称或CLI默认账号判断身份相同。
 - other_conversations: 上述要求只约束对接DJ的对话，不是所有AI对话的全局禁令。未对接DJ的其他对话仍按用户授权及各自规则使用Lark CLI等工具；仅安装或读取本Skill不等于已经对接DJ。
 - implementation_boundary: DJ程序内部直连官方API、不依赖SDK或外部CLI，是DJ自身的实现要求；不得将它扩大成所有对话的工具禁令。
 
+## Lark 能力导航
+
+下表汇总当前DJ接口，参数以操作的CLI --help、MCP tools/list或GEPO操作说明为准；先核对当前服务和连接能力，不把文档中列出当作原生权限已获准。完整边界及同身份CLI补充见[能力与同身份补充](references/lark.md)。
+
+| 需要做什么 | DJ接口 | 详细说明 |
+| --- | --- | --- |
+| 核对连接账号、健康、群/私聊/话题目的地 | connection.list、connection.get、connection.probe；conversation.list、conversation.resolve | [本人身份](references/user-inbox.md) |
+| 读取、搜索消息与更多历史/引用上下文 | message.list、message.search、message.get；message.context、message.history | [上下文](references/context.md) |
+| 主动发消息、回复原消息 | message.send、message.reply、message.reply_context | [工作流](references/workflows.md) |
+| 撤回已发消息、编辑文本 | message.recall、message.edit、message.action.get | [已发消息操作](references/message-actions.md) |
+| 查看、添加、移除消息表情 | message.reaction.list、message.reaction.add、message.reaction.remove | [已发消息操作](references/message-actions.md) |
+| 工作中、知道了、无需回复与结束处理 | delivery.working、delivery.complete；message.acknowledge、message.acknowledge.get | 下方处理中标记与完成 |
+| 设置/更新/暂停订阅、主动拉取通知 | subscription.preview、subscription.create、subscription.list、subscription.get、subscription.update、subscription.pause、subscription.resume、subscription.delete、subscription.pull、subscription.ack | [订阅分发](references/subscriptions.md) |
+| 配置@、私聊、引用、话题、📌及组合过滤 | 订阅selector/predicate；message.filter.get、message.filter.update为全局触发过滤 | [表情触发](references/reactions.md)、[过滤](references/filters.md) |
+| 持久保存本对话规则、提示词与回复身份映射 | session.rules.get、session.rules.update；订阅instructions | [对话规则](references/session-rules.md) |
+| 读取文档、Wiki、表格、多维表格和评论；登记原生资源变更 | resource.resolve、resource.read、resource.watch、resource.watch.get | [资源接入](references/resources.md) |
+| 查投递、出站和操作结果，取消尚未发送项 | delivery.list、delivery.get；outbound.get、outbound.cancel；operation.get | [投递诊断](references/delivery.md) |
+| 查看来源到AI对话的任务树 | task.list、task.tree、task.link | [任务巡查](references/tasks.md) |
+
 ## 运行时与身份
 
-- status: 先用当前主体的`dj status --json`或MCP `dj_service_status`核对运行时、能力和目录摘要。源码或Skill存在不证明服务已启动或验收通过；服务不可达或目录不兼容时报告限制，不自建服务或假装成功。
+- status: 先用当前主体的`dj service status --json`或MCP `dj_service_status`核对运行时、能力和目录摘要。源码或Skill存在不证明服务已启动或验收通过；服务不可达或目录不兼容时报告限制，不自建服务或假装成功。
 - profile: 默认客户端配置为`~/.dj/client.json`。使用宿主分配的独立profile，不读取或借用operator或其他Agent凭据。
 - communication: 身份认证后默认可发现、读取、订阅及收发已配置连接中平台可访问的信息，无需message或resource的逐连接／逐群grants；自己的消息操作和出站台账也可核验。订阅过滤不是读取或回复许可。仍使用真实账号、当前引用和原幂等键，平台权限、停用状态、回复身份及其他Agent控制／管理边界继续生效。
 - identity: 用`agent.whoami`核对真实主体及绑定；目标可由操作员代登记，共享宿主配置不证明当前会话身份。不能凭标题、cwd或宿主猜原生会话；未绑定时只读discover并登记允许的candidate_ref。只有历史而无收件口时报告限制，不用新进程替代。
