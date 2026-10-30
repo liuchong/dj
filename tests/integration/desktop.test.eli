@@ -113,6 +113,9 @@
                             :conversationState (js-object :id "codex-thread" :cwd workspace
                               :title "Codex native fixture" :resumeState "resumed" :requests (js-array)
                               :threadRuntimeStatus (js-object :type (nativeGet h "codex_status"))
+                              :turnHistory (when (nativeGet h "codex_incomplete")
+                                (js-object :kind "canonical" :history (js-object :isComplete false
+                                  :islands (js-array) :entitiesByKey (js-object))))
                               :turnsPagination (js-object :hasLoadedOldest t)
                               :turns (js-array (js-object :turnId "native-turn" :status "completed"
                                 :items (js-array (js-object :id "codex-message" :type "userMessage"
@@ -170,6 +173,60 @@
                   (js-object :tool "cursor" :native_namespace "cursor-window" :native_session_id "cursor-thread")))))))))))
         h
         (catch error (await (cleanupDesktop h)) (throw error)))))
+
+  (defasync checkDesktopRecovery (h)
+    ;; Real native UDS + persistent Core: a running DJ must refresh stale desktop
+    ;; fences without restarting itself, mutating old bindings or opening a gate.
+    (let* ((f (nativeGet h "fixture"))
+           (db (new Database (nativeGet (nativeGet (nativeGet f "config") "storage") "database")))
+           (repository (createRepository (js-object :db db :inTransaction (lambda () (nativeGet db "inTransaction")))))
+           (session-row (js-call (js-call db :query "SELECT payload FROM sessions WHERE tool_id='codex'") :get))
+           (session (JSON/parse (nativeGet session-row "payload")))
+           (session-key (nativeGet session "session_key"))
+           (original-epoch (nativeGet session "instance_epoch"))
+           (bindings (js-call (js-call db :query "SELECT binding_id,payload FROM bindings") :all))
+           (start (js-length (nativeGet h "inputs")))
+           (stale nil))
+      (setq stale (lambda (closed)
+        (funcall (js-call db :transaction (lambda ()
+          (let ((instance (js-call repository :get "instances" "codex-native"))
+                (gate (js-call repository :get "instance_gates" "codex-native"))
+                (current (js-call repository :get "sessions" session-key)))
+            (js-call (js-array instance gate current) :forEach (lambda (record)
+              (put record :instance_epoch "desktop-prior-process")
+              (put record :revision (1+ (nativeGet record "revision" 0)))))
+            (put gate :state (if closed "closed" "open"))
+            (successful (js-call repository :replace "instances" instance))
+            (successful (js-call repository :replace "instance_gates" gate))
+            (successful (js-call repository :replace "sessions" current))))))))
+      (try
+        (put h :codex_status "systemError")
+        (put h :codex_incomplete t)
+        (funcall stale false)
+        (successful (await (js-call f :ingest (createdEvent "lark" "desktop-recovered" "recover original native recipient"))))
+        (await (until "native restart recovery without DJ restart" (async ()
+          (successful (await (js-call f :tick)))
+          (= (js-length (nativeGet h "inputs")) (+ start 2))) 5000))
+        (js-call (js-array "instances" "instance_gates") :forEach (lambda (table)
+          (js-call (expect (nativeGet (js-call repository :get table "codex-native") "instance_epoch")) :toBe original-epoch)))
+        (js-call (expect (nativeGet (js-call repository :get "sessions" session-key) "instance_epoch")) :toBe original-epoch)
+        (funcall stale t)
+        (successful (await (js-call f :ingest (createdEvent "lark" "desktop-closed-gate" "do not reopen closed native gate"))))
+        (await (until "other native route while gate stays closed" (async ()
+          (successful (await (js-call f :tick)))
+          (= (js-length (nativeGet h "inputs")) (+ start 3))) 5000))
+        (js-call (expect (js-length (nativeGet h "inputs"))) :toBe (+ start 3))
+        (js-call (expect (nativeGet (js-call repository :get "instances" "codex-native") "instance_epoch")) :toBe "desktop-prior-process")
+        (js-call (expect (nativeGet (js-call repository :get "instance_gates" "codex-native") "state")) :toBe "closed")
+        (funcall stale false)
+        (await (until "original pending input after gate opens" (async ()
+          (successful (await (js-call f :tick)))
+          (= (js-length (nativeGet h "inputs")) (+ start 4))) 5000))
+        (js-call bindings :forEach (lambda (row)
+          (js-call (expect (nativeGet (js-call (js-call db :query "SELECT payload FROM bindings WHERE binding_id=?")
+            :get (nativeGet row "binding_id")) "payload")) :toBe (nativeGet row "payload"))))
+        (js-call (expect (nativeGet h "agent_spawns")) :toBe 0)
+        (finally (put h :codex_status "idle") (put h :codex_incomplete false) (js-call db :close)))))
 
   (defasync checkCursorRestore ()
     (let* ((renderer (runInNewContext (str "(" cursorRenderer ")")
@@ -532,6 +589,7 @@
           (js-call (expect (js-length deliveries)) :toBe 4)
           (js-call deliveries :forEach (lambda (delivery)
             (js-call (expect (nativeGet delivery "state")) :toBe "accepted"))))
+        (await (checkDesktopRecovery h))
         ;; Real UDS control server + native-command fixture + existing Bridge
         ;; readback. This does not claim that a real Cursor extension is installed.
         (let* ((workspace (resolve (nativeGet h "root") "workspace")) (calls (js-array))

@@ -40,7 +40,10 @@
         ((and requests (> (js-length (Object/keys requests)) 0)) "waiting_permission")
         ((or pending (= runtime "active") (= (nativeGet state "resumeState") "resuming")
            (js-call (codexTurns state) :some (lambda (turn) (= (nativeGet turn "status") "inProgress")))) "busy")
-        ((= runtime "idle") "idle")
+        ;; A native systemError is a terminal turn failure, not a missing receiver.
+        ;; Permission requests, pending submissions and active turns above still win.
+        ((or (= runtime "idle")
+             (and (= runtime "systemError") (= (nativeGet state "resumeState") "resumed"))) "idle")
         ((and (= (nativeGet state "resumeState") "resumed")
               (or (not (= (nativeGet (nativeGet state "turnHistory") "kind") "canonical"))
                   (= (nativeGet (nativeGet (nativeGet state "turnHistory") "history") "isComplete") t))

@@ -6,7 +6,7 @@
   (import "./working.eli" trackWorking finishWorking)
   (import "../connections/echo.eli" echoState)
   (import "../connections/manager.eli" imPort)
-  (import "../core/native.eli" nativeNullish nativeGet)
+  (import "../core/native.eli" nativeNullish nativeGet nativeTypeOf)
   (import "../core/errors.eli" success failure)
   (import "../core/types.eli"
     addSeconds
@@ -27,6 +27,7 @@
     nativeCallContext
     safeFields)
   (import "../application/write-batch.eli" enqueueWrite)
+  (import "../service/ownership.eli" ownerGuard)
   (import "../filtering/policy.eli" evaluateTriggerFilters)
   (import "../policy/principals.eli" configuredPrincipal)
   (import "../policy/authorize.eli" authorize)
@@ -987,7 +988,7 @@
     (when (nativeGet (nativeGet context "ports") "faults")
       (await (js-call (nativeGet (nativeGet context "ports") "faults") :hit point data))))
   (defun refreshObservedSession
-    (context session observation)
+    (context session observation &optional verified-instance)
     ;; Instance recovery can verify a new process without refreshing its sessions.
     ;; Adopt only fresh proof of this same target under the already-open gate.
     (let ((identity-fields (js-array "tool" "native_namespace" "native_session_id" "instance_id" "workspace_ref")))
@@ -995,6 +996,8 @@
         (not (= (nativeGet session "instance_epoch") (nativeGet observation "instance_epoch")))
         (= (nativeGet observation "live_receiver") t)
         (= (nativeGet observation "evidence_level") "native_protocol")
+        (= (nativeTypeOf (nativeGet observation "instance_epoch")) "string")
+        (> (js-length (nativeGet observation "instance_epoch")) 0)
         (js-call identity-fields :every
           (lambda (field) (= (nativeGet session field) (nativeGet observation field)))))
         (let* ((repository (nativeGet context "repository"))
@@ -1002,12 +1005,35 @@
                (instance (and current (js-call repository :get "instances" (nativeGet current "instance_id")))))
           (when (and current instance
             (= (nativeGet instance "ownership") "existing")
-            (= (nativeGet instance "instance_epoch") (nativeGet observation "instance_epoch"))
             (js-call identity-fields :every
-              (lambda (field) (= (nativeGet current field) (nativeGet observation field))))
-            (nativeGet (assertGate (nativeGet context "store") (nativeGet instance "instance_id")
-              (nativeGet observation "instance_epoch") "open") "ok"))
-            (must (putSession context (Object/assign (js-object) current observation) instance)))))))
+              (lambda (field) (= (nativeGet current field) (nativeGet observation field)))))
+            ;; A desktop can restart while DJ remains running. Recheck the same
+            ;; endpoint independently before advancing its open instance fence.
+            ;; Historical attempts and their immutable binding snapshots stay put.
+            (when (and
+              (js-call (js-array "codex" "cursor") :includes (nativeGet instance "tool"))
+              (= (nativeGet (nativeGet context "runtime") "state") "ready")
+              (= (nativeGet instance "state") "ready")
+              (= (nativeGet instance "instance_epoch") (nativeGet session "instance_epoch"))
+              (= (nativeGet current "instance_epoch") (nativeGet session "instance_epoch"))
+              (= (nativeGet verified-instance "state") "ready")
+              (= (nativeGet verified-instance "evidence_level") "native_protocol")
+              (= (nativeGet verified-instance "native_namespace") (nativeGet instance "native_namespace"))
+              (= (nativeGet verified-instance "instance_epoch") (nativeGet observation "instance_epoch")))
+              (let ((gate (js-call repository :get "instance_gates" (nativeGet instance "instance_id"))))
+                (when (and (= (nativeGet gate "state") "open")
+                  (= (nativeGet gate "instance_epoch") (nativeGet instance "instance_epoch")))
+                  (must (ownerGuard context))
+                  (put instance :instance_epoch (nativeGet observation "instance_epoch"))
+                  (put instance :revision (nextRevision (nativeGet instance "revision")))
+                  (put gate :instance_epoch (nativeGet observation "instance_epoch"))
+                  (put gate :revision (nextRevision (nativeGet gate "revision")))
+                  (must (js-call repository :replace "instances" instance))
+                  (must (js-call repository :replace "instance_gates" gate)))))
+            (when (and (= (nativeGet instance "instance_epoch") (nativeGet observation "instance_epoch"))
+              (nativeGet (assertGate (nativeGet context "store") (nativeGet instance "instance_id")
+                (nativeGet observation "instance_epoch") "open") "ok"))
+              (must (putSession context (Object/assign (js-object) current observation) instance))))))))
   (defasync dispatchRoute
     (context route-id)
     (let ((djReturn6Token (js-object)) (djReturn6Value nil))
@@ -1023,7 +1049,8 @@
               (instance
                 (js-call repository :get "instances" (nativeGet session "instance_id")))
               (port (agentPort context instance))
-              (observation (js-object :runtime_state "unknown")))
+              (observation (js-object :runtime_state "unknown"))
+              (verified-instance nil))
             (try
               (when port
                 (try
@@ -1034,11 +1061,20 @@
                   (catch unavailable
                     (when (eq unavailable djReturn6Token) (throw unavailable))
                     nil)))
+              (when (and port (nativeGet port "probeInstance")
+                (= (nativeGet instance "ownership") "existing")
+                (js-call (js-array "codex" "cursor") :includes (nativeGet instance "tool"))
+                (= (nativeGet observation "live_receiver") t)
+                (= (nativeGet observation "evidence_level") "native_protocol")
+                (not (= (nativeGet observation "instance_epoch") (nativeGet instance "instance_epoch"))))
+                (try
+                  (setq verified-instance (await (js-call port :probeInstance instance (nativeCallContext context))))
+                  (catch unavailable nil)))
               (let*
                 (
                   (prepared
                     (await (enqueueWrite context (lambda ()
-                      (refreshObservedSession context session observation)
+                      (refreshObservedSession context session observation verified-instance)
                       (beginSubmission context (nativeGet claim "delivery_id") claim observation)))))
                   (frozen (nativeGet prepared "data")))
                 (unless (and (nativeGet prepared "ok") (nativeGet frozen "submitted"))
