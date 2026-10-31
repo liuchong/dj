@@ -28272,6 +28272,182 @@
       "given": "A native event receipt",
       "when": "Exercise errors boundary",
       "then": "Stable deduplication, bounded retry and secret-safe diagnostics"
+    },
+    {
+      "case_id": "T38.fixed-routes-fanout.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/fixed-routes.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-lark-events",
+      "acceptance_ids": [
+        "A01"
+      ],
+      "requirements": [
+        "SPEC-0021"
+      ],
+      "given": "A configured Core with isolated SQLite, two bot accounts and two existing native Agent peers",
+      "when": "Apply declarative fixed routes and exercise fanout",
+      "then": "Exact routing, ownership and persistence match SPEC-0021"
+    },
+    {
+      "case_id": "T38.fixed-routes-reload.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/fixed-routes.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-lark-events",
+      "acceptance_ids": [
+        "A01"
+      ],
+      "requirements": [
+        "SPEC-0021"
+      ],
+      "given": "A configured Core with isolated SQLite, two bot accounts and two existing native Agent peers",
+      "when": "Apply declarative fixed routes and exercise reload",
+      "then": "Exact routing, ownership and persistence match SPEC-0021"
+    },
+    {
+      "case_id": "T38.fixed-routes-offline.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/fixed-routes.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-lark-events",
+      "acceptance_ids": [
+        "A01"
+      ],
+      "requirements": [
+        "SPEC-0021"
+      ],
+      "given": "A configured Core with isolated SQLite, two bot accounts and two existing native Agent peers",
+      "when": "Apply declarative fixed routes and exercise offline",
+      "then": "Exact routing, ownership and persistence match SPEC-0021"
+    },
+    {
+      "case_id": "T38.fixed-routes-race.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/fixed-routes.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-lark-events",
+      "acceptance_ids": [
+        "A01"
+      ],
+      "requirements": [
+        "SPEC-0021"
+      ],
+      "given": "A configured Core with isolated SQLite, two bot accounts and two existing native Agent peers",
+      "when": "Apply declarative fixed routes and exercise race",
+      "then": "Exact routing, ownership and persistence match SPEC-0021"
+    },
+    {
+      "case_id": "T38.fixed-routes-conflict.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/fixed-routes.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-lark-events",
+      "acceptance_ids": [
+        "A01"
+      ],
+      "requirements": [
+        "SPEC-0021"
+      ],
+      "given": "A configured Core with isolated SQLite, two bot accounts and two existing native Agent peers",
+      "when": "An AI-owned binding already exists for the configured recipient",
+      "then": "Configuration reports conflict without taking over or deleting the original binding"
+    },
+    {
+      "case_id": "T38.fixed-routes-config.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/fixed-routes.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 1000,
+      "resource_group": "pure",
+      "requirements": [
+        "SPEC-0021"
+      ],
+      "acceptance_ids": [
+        "A05"
+      ],
+      "given": "A declarative route configuration",
+      "when": "Exercise config boundary",
+      "then": "Invalid references/policies are rejected and reconciliation identity is stable"
+    },
+    {
+      "case_id": "T38.fixed-routes-fingerprint.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/fixed-routes.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 1000,
+      "resource_group": "pure",
+      "requirements": [
+        "SPEC-0021"
+      ],
+      "acceptance_ids": [
+        "A05"
+      ],
+      "given": "A declarative route configuration",
+      "when": "Exercise fingerprint boundary",
+      "then": "Invalid references/policies are rejected and reconciliation identity is stable"
+    },
+    {
+      "case_id": "T38.fixed-routes-backoff.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/fixed-routes.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 1000,
+      "resource_group": "pure",
+      "requirements": [
+        "SPEC-0021"
+      ],
+      "acceptance_ids": [
+        "A05"
+      ],
+      "given": "A declarative route configuration",
+      "when": "Exercise backoff boundary",
+      "then": "Invalid references/policies are rejected and reconciliation identity is stable"
     }
   ],
   "source_extension_base": "c1eb7b1"

@@ -70,7 +70,9 @@
     "tests/integration/supervision.test.eli",
     "tests/unit/supervision.test.eli",
     "tests/integration/event-receipts.test.eli",
-    "tests/unit/event-receipts.test.eli"
+    "tests/unit/event-receipts.test.eli",
+    "tests/integration/fixed-routes.test.eli",
+    "tests/unit/fixed-routes.test.eli"
   ],
   "outDir": "dist-tests"
 }

@@ -34,6 +34,7 @@
             "config/compiler-provenance.json"
             "bin/dj"
             "config/service.example.json"
+            "config/fixed-routes.example.json"
             "config/client.example.json"
             "packaging/runtime.md"
             "packaging/launchd.example.plist"

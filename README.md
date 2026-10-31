@@ -59,6 +59,10 @@ dj skill install --target codex --scope user --dry-run
 
 安装 Skill 不会自动建立订阅，也不会修改客户端信任或启动 AI。
 
+### 固定账号接固定对话
+
+不必等待 AI 主动订阅。管理员可用服务配置 `fixed_routes` 将多个机器人/本人账号分别接到准确的 Codex、Cursor 或其他已有对话，也能多对多组合。配置示例见 [固定接线片段](config/fixed-routes.example.json)，配置方法与状态说明见 [固定接线](skills/dj/references/fixed-routes.md)。
+
 ## 文档
 
 - [完整文档索引](docs/index.md)

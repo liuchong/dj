@@ -38,6 +38,7 @@
       record
       (js-array
         "subscription_id"
+        "configuration_id"
         "owner_principal_id"
         "agent_id"
         "selector"
@@ -51,6 +52,16 @@
         "cutover_seq"
         "state"
         "revision")))
+  (defun inspectSubscriptionAllowed (context record)
+    (or (can context "subscription.manage" record)
+      (and (nativeGet record "configuration_id")
+        (= (nativeGet record "recipient_principal_id") (nativeGet (currentPrincipal context) "principal_id")))))
+  (defun configurationManaged (context subscription)
+    (let ((id (nativeGet subscription "configuration_id")))
+      (and id (not (= id (nativeGet context "fixed_route_id")))
+        (js-call (js-call (nativeGet (nativeGet context "store") "db") :query
+          "SELECT 1 FROM fixed_routes WHERE id=? AND json_extract(payload,'$.subscription_id')=?")
+          :get id (nativeGet subscription "subscription_id")))))
   (defun targetManageAllowed
     (context agent)
     (or
@@ -172,6 +183,8 @@
               (and
                 (nativeGet args "subscription_id")
                 (js-call repository :get "subscriptions" (nativeGet args "subscription_id")))))
+          (when (and existing (configurationManaged context existing))
+            (setq djReturn4Value (failure "forbidden")) (throw djReturn4Token))
           (unless (and agent recipient (targetManageAllowed context agent))
             (progn (setq djReturn4Value (failure "forbidden")) (throw djReturn4Token)))
           (let
@@ -492,6 +505,8 @@
                       (nativeGet spec "agent_id"))))))
             (unless (nativeGet permission "ok")
               (progn (setq djReturn6Value permission) (throw djReturn6Token)))
+            (when (and current (configurationManaged context current))
+              (setq djReturn6Value (failure "forbidden")) (throw djReturn6Token))
             (unless (and agent (targetManageAllowed context agent))
               (progn (setq djReturn6Value (failure "forbidden")) (throw djReturn6Token)))
             (js-call
@@ -518,6 +533,7 @@
                               :get
                               "subscriptions"
                               (nativeGet args "subscription_id")))))
+                      (when (and old (configurationManaged context old)) (must (failure "forbidden")))
                       (when (nativeGet ticket "committed_operation_id")
                         (progn
                           (setq djReturn7Value (failure "already_committed"))
@@ -628,6 +644,8 @@
               (js-call repository :get "subscriptions" (nativeGet args "subscription_id"))))
           (unless subscription
             (progn (setq djReturn8Value (failure "not_found")) (throw djReturn8Token)))
+          (when (configurationManaged context subscription)
+            (setq djReturn8Value (failure "forbidden")) (throw djReturn8Token))
           (let
             ((permission (requirePermission context "subscription.manage" subscription)))
             (unless (nativeGet permission "ok")
@@ -648,6 +666,7 @@
                           "subscriptions"
                           (nativeGet subscription "subscription_id")))
                       (cutover (js-call repository :currentSequence "ingress")))
+                    (when (configurationManaged context current) (must (failure "forbidden")))
                     (unless (= (nativeGet current "revision") (nativeGet args "expected_revision"))
                       (progn
                         (setq djReturn9Value (failure "revision_conflict"))
@@ -747,7 +766,7 @@
                 (setq last-key (nativeGet record "subscription_id"))
                 (when
                   (and
-                    (can context "subscription.manage" record)
+                    (inspectSubscriptionAllowed context record)
                     (js-call
                       (Object/keys filters)
                       :every
@@ -804,7 +823,7 @@
                     :get
                     "subscriptions"
                     (nativeGet args "subscription_id"))))
-              (unless (and record (can context "subscription.manage" record))
+              (unless (and record (inspectSubscriptionAllowed context record))
                 (progn
                   (setq djReturn11Value (failure "forbidden"))
                   (throw djReturn11Token)))

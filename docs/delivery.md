@@ -47,6 +47,8 @@ dj status --client-profile PRIVATE_PROFILE --json
 
 历史文件不等于活接收端。没有 receiver 时如实报告，不启动新 Agent CLI 来代替原会话。可选空会话创建受独立授权与实际原生能力约束，不是核心通知的前置条件。
 
+管理员也可在 service.json 添加 `fixed_routes`，由 DJ 自动登记准确目标并建立订阅，无需 AI 主动操作。先按[固定接线](../skills/dj/references/fixed-routes.md)准备 operator、recipient、已有 endpoint 和来源连接，再合入包内 config/fixed-routes.example.json 的配置片段。首次尚未接通前不会补投历史消息。
+
 ## 4. 安装 Skill 和调用接口
 
 ```sh

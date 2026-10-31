@@ -47,6 +47,8 @@ DJ 程序内部的 Lark 接入必须直连官方 WebSocket 与 HTTPS API，禁�
 
 ## 正式规格与接续要求
 
+- 管理员配置固定接线按 [0021](docs/specs/0021-fixed-routes.md)：复用 Agent/订阅/投递；稳定配置 ID、准确实例/会话、原子停用与重载、配置所有权和离线恢复。不创建替代对话，不覆盖 AI 自建订阅或持久业务规则。
+
 - 对话主动登记的持久督工按 [0020](docs/specs/0020-session-supervision.md)：只通过原实例接口续接原会话，直到明确取消；busy/许可/预算/unknown 边界不可绕过，督工通知不等同于原生 Goal 恢复。
 
 - Slack 接线遵守 [0019](docs/specs/0019-slack.md)，独立原生包直连官方 API；同应用共享 Socket Mode 流、连接身份与补收断点独立，复用公共订阅/回复/工作状态，不复制 user/bot 逻辑。不得套用 Lark 轮询预算或混淆两个平台的 emoji、消息 ID 与 thread。

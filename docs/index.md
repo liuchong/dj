@@ -6,6 +6,7 @@
 | --- | --- |
 | 安装运行包、准备账号与 AI 会话 | [安装与使用](delivery.md) |
 | 让 DJ 随 macOS 登录持续运行 | [macOS 常驻服务](guides/macos-service.md) |
+| 直接配置账号到固定 AI 对话 | [固定接线](../skills/dj/references/fixed-routes.md) |
 | 设置 Lark / 飞书消息订阅 | [实时订阅指南](guides/lark-realtime.md) |
 | 安装 Skill、配置 MCP 或 GEPO | [客户端接线](../skills/dj/references/clients.md) |
 | 收到通知后读取、处理与回复 | [DJ Skill](../skills/dj/SKILL.md)、[消息闭环](startup-to-reply.md) |
@@ -39,6 +40,7 @@
 | [0009 任务巡查](specs/0009-task-inspection.md) | 来源树、管理员／本人连接权限及确定性 IM 查询 |
 | [0010 消息消费](specs/0010-message-consumption.md) | 默认忙时直达、可配置排队及全局异步消费 |
 | [0020 对话督工](specs/0020-session-supervision.md) | 主动登记、持久空闲检测、原会话续接与明确取消 |
+| [0021 固定接线](specs/0021-fixed-routes.md) | 配置多账号到准确对话，原子更新、管理权和离线恢复 |
 
 ## 技术与维护
 

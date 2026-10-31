@@ -89,3 +89,9 @@ Claude Code and Antigravity use existing local receivers via `dj native configur
 目录包的 `LICENSE` 是 DJ 自有代码与文档的 [One Public License 1.0](https://license.pub/1pl/) 完整文本；`licenses/` 与 manifest 中的 dependencies 保留第三方依赖各自许可，不被项目许可证替代。
 
 需要用户级 launchd 常驻运行时，参考[macOS 服务配置](https://github.com/liuchong/dj/blob/master/docs/guides/macos-service.md)。固定 label 为 `dev.dispatch-junction.local`；打包不自动安装或启用它。故障定位见[排查指南](https://github.com/liuchong/dj/blob/master/docs/guides/troubleshooting.md)。
+
+## 配置固定接线
+
+服务配置可增加 `fixed_routes`，按包内 `config/fixed-routes.example.json` 片段声明来源账号/群、准确实例和原生对话、独立 recipient 及条件。启动自动装配；目标首次离线会显示待接通，恢复后继续，不能把历史文件当作活接收端。`service.status.fixed_routes` 读取真实装配状态。
+
+现有 SIGHUP/Core.reloadConfig 支持替换 fixed_routes、主体策略及客户端配置；端点、账号身份和数据库仍须独立管理重启。修改、停用或移除固定接线会先暂停其配置订阅，不改 AI 自建订阅或持久业务规则。相同配置重载和重启不改变已活动订阅的水位。详情见 Skill 的 `references/fixed-routes.md`。

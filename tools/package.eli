@@ -326,6 +326,7 @@
       (await (copyTree "connectors/pi" staging "connectors/pi"))
       (await
         (copyAsset "config/service.example.json" staging "config/service.example.json"))
+      (await (copyAsset "config/fixed-routes.example.json" staging "config/fixed-routes.example.json"))
       (await
         (copyAsset "config/client.example.json" staging "config/client.example.json"))
       (await

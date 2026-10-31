@@ -10,6 +10,7 @@
   (import "../lark/service.eli" projectApi)
   (import "../sessions/rules.eli" projectRules)
   (import "../sessions/supervision.eli" projectSupervision)
+  (import "./fixed-routes.eli" projectFixedRoutes)
   (import "../filtering/service.eli" projectFilterPolicy)
   (import "../application/context.eli" can safeFields)
   (import "../application/operations.eli" operationCatalog operationCatalogDigest)
@@ -252,6 +253,7 @@
               (visibleOperations principal)
               :map
               (lambda (descriptor) (nativeGet descriptor "operation")))
+            :fixed_routes (projectFixedRoutes context)
             :ai_enabled
             false
             :model_requests

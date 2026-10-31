@@ -548,6 +548,10 @@
                 (lambda (data) (js-array (typedRef "agent" (nativeGet data "agent_id"))))))))
         (catch djReturn4Error
           (if (eq djReturn4Error djReturn4Token) djReturn4Value (throw djReturn4Error))))))
+  (defun configurationUsesAgent (context agent)
+    (js-call (js-call (nativeGet (nativeGet context "store") "db") :query
+      "SELECT 1 AS found FROM fixed_routes WHERE state<>'disabled' AND json_extract(payload,'$.agent_id')=? LIMIT 1")
+      :get (nativeGet agent "agent_id")))
   (defasync rebindAgent
     (context args)
     (let ((djReturn6Token (js-object)) (djReturn6Value nil))
@@ -558,6 +562,8 @@
             (candidate-result (candidateFor context (nativeGet args "candidate_ref"))))
           (unless (and agent (can context "agent.bind" agent))
             (progn (setq djReturn6Value (failure "forbidden")) (throw djReturn6Token)))
+          (when (configurationUsesAgent context agent)
+            (setq djReturn6Value (failure "forbidden")) (throw djReturn6Token))
           (unless (nativeGet candidate-result "ok")
             (progn (setq djReturn6Value candidate-result) (throw djReturn6Token)))
           (let*
@@ -601,6 +607,8 @@
                           (progn
                             (setq djReturn7Value (failure "revision_conflict"))
                             (throw djReturn7Token)))
+                        (when (configurationUsesAgent context current)
+                          (setq djReturn7Value (failure "forbidden")) (throw djReturn7Token))
                         (unless
                           (and
                             recipient
@@ -647,6 +655,8 @@
             (agent (js-call repository :get "agents" (nativeGet args "agent_id"))))
           (unless agent
             (progn (setq djReturn8Value (failure "not_found")) (throw djReturn8Token)))
+          (when (configurationUsesAgent context agent)
+            (setq djReturn8Value (failure "forbidden")) (throw djReturn8Token))
           (let ((permission (requirePermission context "agent.bind" agent)))
             (unless (nativeGet permission "ok")
               (progn (setq djReturn8Value permission) (throw djReturn8Token))))
@@ -665,6 +675,8 @@
                       (progn
                         (setq djReturn9Value (failure "revision_conflict"))
                         (throw djReturn9Token)))
+                    (when (configurationUsesAgent context current)
+                      (setq djReturn9Value (failure "forbidden")) (throw djReturn9Token))
                     (when
                       (js-call
                         (js-call

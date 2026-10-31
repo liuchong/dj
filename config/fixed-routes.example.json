@@ -1,0 +1,20 @@
+{
+  "fixed_routes": [
+    {
+      "id": "support-to-codex",
+      "owner_principal_id": "operator",
+      "recipient_principal_id": "recipient-codex",
+      "target": {"instance_id": "codex-desktop", "native_session_id": "replace-codex-thread-id"},
+      "sources": [{"connection_id": "lark-support"}]
+    },
+    {
+      "id": "development-to-cursor",
+      "owner_principal_id": "operator",
+      "recipient_principal_id": "recipient-cursor",
+      "target": {"instance_id": "cursor-desktop", "native_session_id": "replace-cursor-thread-id"},
+      "sources": [{"connection_id": "lark-development", "native_chat_id": "replace-chat-id", "include_threads": true}],
+      "predicate": {"all": [{"field": "mentions.any", "op": "eq", "value": true}]},
+      "delivery_policy": {"busy": "steer", "offline": "hold", "ttl_seconds": 86400}
+    }
+  ]
+}

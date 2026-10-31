@@ -465,6 +465,10 @@
           (ref "capabilities")
           :limitations
           (arr stringSchema)))))
+  (put definitions :fixed_route
+    (obj (strings "id state owner_principal_id recipient_principal_id next_attempt_at"
+      (js-object :agent_id nullableString :subscription_id nullableString :last_error nullableString :attempts integerSchema
+        :target (obj (strings "tool native_namespace native_session_id instance_id" (js-object :workspace_ref nullableString)))))))
   (put definitions :event_receipt
     (obj (strings "event_id event_type state received_at next_attempt_at"
       (js-object :identity_revision integerSchema :processed_at nullableString :attempts integerSchema
@@ -545,7 +549,7 @@
     :subscription
     (obj
       (strings
-        "subscription_id owner_principal_id agent_id start_seq state"
+        "subscription_id configuration_id owner_principal_id agent_id start_seq state"
         (js-object
           :cutover_seq nullableString
           :revision
@@ -879,6 +883,7 @@
       (strings
         "api_version build_id operation_catalog_digest service_id state"
         (js-object
+          :fixed_routes (arr (ref "fixed_route"))
           :module_runtime
           stringSchema
           :modules

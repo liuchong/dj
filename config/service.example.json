@@ -197,6 +197,7 @@
   ],
   "agent_endpoints": [],
   "managed_profiles": [],
+  "fixed_routes": [],
   "client_profiles": [
     "client-codex.json",
     "client-cursor.json"

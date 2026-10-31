@@ -9,6 +9,9 @@
   (import "../policy/principals.eli" credentialDigest)
   (import "../adapters/agent/cursor-native.eli" cursorNativeUrl)
   (import "../people/registry.eli" identityKey)
+  (import "../application/operations.eli" specSchema predicateSchema)
+  (import "../application/schema.eli" validateRequest)
+  (import "../policy/authorize.eli" targetAllowed)
   (defconst id
     (js-object :type "string" :minLength 1 :maxLength 1024 :pattern "^[^\\u0000]+$"))
   (defconst revision
@@ -254,6 +257,54 @@
         :endpoint
         managedEndpointSchema)
       (js-array "profile_id" "tool" "revision" "argv" "workspace_refs")))
+  (defconst fixedRouteSchema
+    (obj (Object/assign (js-object
+      :id id :owner_principal_id id :recipient_principal_id id
+      :event_kinds (nativeGet (nativeGet (nativeGet (nativeGet specSchema "properties") "selector") "properties") "event_kinds") :enabled (js-object :type "boolean")
+      :target (obj (js-object :instance_id id :native_session_id id) (js-array "instance_id" "native_session_id"))
+      :sources (arr (obj (js-object :connection_id id :native_chat_id id :native_thread_id nullableId
+        :include_threads (js-object :type "boolean")) (js-array "connection_id")) 100 1))
+      (let ((fields (js-object)))
+        (js-call (js-array "predicate" "context_policy" "delivery_policy" "instruction_policy") :forEach
+          (lambda (key) (put fields key (nativeGet (nativeGet specSchema "properties") key)))) fields))
+      (js-array "id" "owner_principal_id" "recipient_principal_id" "target" "sources")))
+  (defun fixedRouteTarget (config route)
+    (let ((endpoint (js-call (nativeGet config "agent_endpoints" (js-array)) :find
+      (lambda (item) (= (nativeGet item "instance_id") (nativeGet (nativeGet route "target") "instance_id"))))))
+      (when endpoint (js-object :tool (nativeGet endpoint "tool") :native_namespace (nativeGet endpoint "native_namespace")
+        :instance_id (nativeGet endpoint "instance_id") :native_session_id (nativeGet (nativeGet route "target") "native_session_id")
+        :workspace_ref (nativeGet endpoint "workspace_ref" nil)))))
+  (defun validateFixedRoutes (config)
+    (let ((seen (new globalThis.Set)) (recipients (new globalThis.Map)))
+      (js-call (nativeGet config "fixed_routes" (js-array)) :forEach (lambda (route)
+        (let* ((key (nativeGet route "id")) (owner (js-call (nativeGet config "principals") :find
+          (lambda (item) (= (nativeGet item "principal_id") (nativeGet route "owner_principal_id")))))
+          (recipient (js-call (nativeGet config "principals") :find
+            (lambda (item) (= (nativeGet item "principal_id") (nativeGet route "recipient_principal_id")))))
+          (target (fixedRouteTarget config route)) (recipient-id (nativeGet route "recipient_principal_id"))
+          (fingerprint (and target (hashValue target))))
+          (unless (and (not (js-call seen :has key)) owner (= (nativeGet owner "kind") "operator") (not (nativeGet owner "disabled"))
+            recipient (= (nativeGet recipient "kind") "agent") (not (nativeGet recipient "disabled"))
+            target (targetAllowed recipient target)
+            (or (not (js-call recipients :has recipient-id)) (= (js-call recipients :get recipient-id) fingerprint)))
+            (throw (new globalThis.TypeError "invalid fixed route identity or target")))
+          (js-call seen :add key) (js-call recipients :set recipient-id fingerprint)
+          (js-call (nativeGet route "sources") :forEach (lambda (source)
+            (unless (and
+              (js-call (nativeGet config "connections" (js-array)) :some (lambda (connection)
+                (and (= (nativeGet connection "connection_id") (nativeGet source "connection_id")) (not (nativeGet connection "disabled")))))
+              (or (not (object-has? source :native_thread_id)) (nativeGet source "native_chat_id"))
+              (not (and (nativeGet source "native_thread_id") (= (nativeGet source "include_threads") t))))
+              (throw (new globalThis.TypeError "invalid fixed route source")))))
+          (let* ((spec (js-object :agent_id "configuration-validation" :selector (js-object :sources
+            (js-call (nativeGet route "sources") :map (lambda (source) (js-object :connection_id (nativeGet source "connection_id")))))))
+            (args (js-object :spec spec)))
+            (when (nativeGet route "event_kinds") (put (nativeGet spec "selector") :event_kinds (nativeGet route "event_kinds")))
+            (js-call (js-array "predicate" "context_policy" "delivery_policy" "instruction_policy") :forEach
+              (lambda (key) (when (object-has? route key) (put spec key (nativeGet route key)))))
+            (unless (nativeGet (validateRequest "subscription.preview" args) "ok")
+              (throw (new globalThis.TypeError "invalid fixed route subscription policy")))))))
+      (success nil)))
   (defconst serviceConfigSchema
     (obj
       (js-object
@@ -285,6 +336,7 @@
             :identities (arr (obj (js-object :platform id :scope id :id id) (js-array "platform" "scope" "id")) 32)
             :connections (arr (obj (js-object :connection_id id :identity_revision revision) (js-array "connection_id" "identity_revision")) 1000))
             (js-array "principal_id" "identities" "connections")) 128)) (js-array "administrators" "users"))
+        :fixed_routes (arr fixedRouteSchema 128)
         :principals
         (arr principalSchema 4096)
         :connections
@@ -297,6 +349,7 @@
         :client_profiles
         (arr id 256))
       (js-array "schema_version" "service" "principals")))
+  (put serviceConfigSchema :$defs (js-object :predicate predicateSchema))
   (defconst ajv
     (new
       Ajv2020
@@ -345,6 +398,7 @@
                         :received_type
                         "invalid"))))))
             (throw djReturn1Token)))
+        (validateFixedRoutes config)
         (let* ((policy (nativeGet config "task_inspection")) (principals (nativeGet config "principals"))
           (users (nativeGet policy "users" (js-array))) (ids (new globalThis.Set)) (aliases (new globalThis.Set)) (bad false))
           (js-call users :forEach (lambda (user)
@@ -587,6 +641,7 @@
             (put config :storage storage)
             (js-call
               (js-array
+                "fixed_routes"
                 "connections"
                 "agent_endpoints"
                 "managed_profiles"
@@ -745,4 +800,5 @@
     validateStructure
     ensurePrivateDirectory
     ensurePrivateDescendant
+    fixedRouteTarget
     serviceConfigSchema))

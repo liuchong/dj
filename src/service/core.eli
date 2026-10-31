@@ -39,6 +39,7 @@
   (import "../adapters/agent/kimi-dsh.eli" createKimiDshPort)
   (import "./composition.eli" createComposition mountPort)
   (import "./config.eli" prepareConfig)
+  (import "./fixed-routes.eli" seedFixedRoutes)
   (import "./ownership.eli" acquireOwner ownerGuard setOwnerState releaseOwner)
   (import "./recovery.eli" seedConfiguration recoverState)
   (import "./projections.eli" projectOperation serviceStatus visibleOperations)
@@ -150,6 +151,7 @@
               (Reflect/deleteProperty copy "client_profiles")
               (Reflect/deleteProperty copy "task_inspection")
               (Reflect/deleteProperty copy "message_delivery")
+              (Reflect/deleteProperty copy "fixed_routes")
               (hashValue copy))))
 (setq admission (lambda
             (descriptor &optional startup)
@@ -367,6 +369,7 @@
                         (when (nativeGet port "initialize") (js-call port :initialize base)))))
                   (put runtime :startup_stage "recover_state")
 (must (await (recoverState base)))
+                  (must (seedFixedRoutes base config))
                   (js-call (nativeGet ports "connections") :initialize base)
                   ;; Client launch is separate from messaging; no argv-based Agent auto-start.
                   (put runtime :startup_stage "publish_ready")
@@ -431,7 +434,7 @@
                   (setq djReturn5Value (failure "unavailable"))
                   (throw djReturn5Token)))
               (try
-                ;; Only policy/client-profile replacement is supported in place.
+                ;; Policy, client profiles and fixed routes can be replaced in place.
                 ;; Endpoints, storage, IM identities and process profiles retain their
                 ;; existing ownership and gates until a separately managed restart.
                 (let ((root (nativeGet candidate "config_root" (nativeGet config "config_root"))))
@@ -467,13 +470,15 @@
                         (lambda
                           (tx)
                           (must (ownerGuard base))
-                          (reconcilePrincipals base (nativeGet candidate "principals"))))))
+                          (must (reconcilePrincipals base (nativeGet candidate "principals")))
+                          (seedFixedRoutes base candidate)))))
                   (unless (nativeGet recorded "ok")
                     (progn (setq djReturn5Value recorded) (throw djReturn5Token)))
                   (put config :principals (nativeGet candidate "principals"))
                   (put config :client_profiles (nativeGet candidate "client_profiles"))
                   (put config :task_inspection (nativeGet candidate "task_inspection"))
                   (put config :message_delivery (nativeGet candidate "message_delivery"))
+                  (put config :fixed_routes (nativeGet candidate "fixed_routes"))
                   (success
                     (js-object
                       :state
