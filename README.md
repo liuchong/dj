@@ -22,6 +22,7 @@ DJ 负责身份核对、订阅匹配、持久排队和投递；AI 负责判断�
 - **Lark 官方 API**：独立 Eliscript [Lark 包](packages/lark/README.md)提供鉴权、JSON、上传下载及 WebSocket 帧编解码；DJ 的通用入口沿指定连接调用办公 API，与 IM 分发分层。
 - **持久规则与待办**：对话保存自己的规则，也可以使用 `subscription.pull/ack` 主动领取和确认消息。
 - **任务巡查**：从 IM 原消息查看 AI 会话和登记子对话，按管理员白名单／本人连接隔离权限，未知归属明确标注。见[使用说明](docs/guides/task-inspection.md)。
+- **持久督工**：对话主动登记，在意外空闲后续接原会话，直到明确取消；[行为边界](docs/specs/0020-session-supervision.md)和 [Skill 用法](skills/dj/references/supervision.md)。
 - **统一接口**：CLI、本地 API、MCP、GEPO 与 Skill 共用权限、操作目录和幂等台账。
 
 ```mermaid

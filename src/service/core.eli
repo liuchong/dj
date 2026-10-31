@@ -6,7 +6,7 @@
   (import "../application/context.eli" must nextId inTransaction)
   (import "../application/execute.eli" executeOperation)
   (import "../application/operations.eli" operationCatalog)
-  (import "../policy/principals.eli" authenticate)
+  (import "../policy/principals.eli" authenticate configuredPrincipal)
   (import "../policy/handles.eli" createHandleAuthority)
   (import "../policy/registry.eli" reconcilePrincipals)
   (import "../storage/sqlite.eli" openStore)
@@ -15,6 +15,7 @@
   (import "../subscriptions/service.eli" :as Subscriptions)
   (import "../filtering/service.eli" :as Filters)
   (import "../sessions/rules.eli" :as SessionRules)
+  (import "../sessions/supervision.eli" :as Supervision)
   (import "../delivery/working.eli" :as Working)
   (import "../tasks/service.eli" :as Tasks)
   (import "../catalog/service.eli" :as Catalog)
@@ -44,6 +45,7 @@
   (import "./runtime.eli" :as Runtime)
   (defconst drainMutations
     (js-array
+      "session.supervision.cancel"
       "delivery.complete"
       "delivery.cancel"
       "delivery.resolve"
@@ -196,6 +198,23 @@
                 principal
                 :admissionGuard
                 (lambda (descriptor) (admission descriptor false))))))
+        ;; Background continuation uses the same authenticated ledger/outbox as session.send.
+        (put base :sendSupervision (async (record args)
+          (let* ((principal (configuredPrincipal (nativeGet config "principals") (nativeGet record "principal_id")))
+            (scoped (contextFor principal)))
+            ;; Stable logical reference keeps the idempotency hash unchanged after a crash.
+            ;; Only this private context resolves it to the persisted exact session key.
+            (put args :session_ref (str "supervision:" (nativeGet record "generation")))
+            (put scoped :supervision record)
+            (put scoped :admissionGuard (lambda (descriptor)
+              (let ((current (js-call (nativeGet base "repository") :get "session_supervisions" (nativeGet record "session_key"))))
+                (if (and current (= (nativeGet current "state") "active")
+                  (= (nativeGet current "generation") (nativeGet record "generation"))
+                  (= (nativeGet current "pending_key") (nativeGet args "idempotency_key"))
+                  (= (nativeGet principal "authorization_revision") (nativeGet record "authorization_revision")))
+                  (let ((owner (ownerGuard base))) (if (nativeGet owner "ok") (admission descriptor false) owner))
+                  (failure "forbidden")))))
+            (await (executeOperation scoped "session.send" args)))))
 (setq assemblePorts (async ()
   (let* ((repository (nativeGet base "repository")) (agent-ports (nativeGet ports "agent_ports"))
     (im-ports (nativeGet ports "im_ports"))
@@ -232,6 +251,7 @@
                 (js-array
                   (js-array "tasks" Tasks)
                   (js-array "working" Working)
+                  (js-array "supervision" Supervision)
                   (js-array "session_rules" SessionRules)
                   (js-array "filters" Filters)
                   (js-array "registry" Registry)

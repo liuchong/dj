@@ -137,6 +137,8 @@
           "CREATE INDEX IF NOT EXISTS outbound_conversation ON outbound(connection_id,conversation_key)"
           "CREATE INDEX IF NOT EXISTS echo_native_message ON echo_index(native_message_id)"
           "CREATE INDEX IF NOT EXISTS work_marks_due ON work_marks(state,next_due_at)"
+          "CREATE TABLE IF NOT EXISTS session_supervisions(session_key TEXT PRIMARY KEY,principal_id TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('active','cancelled')),next_check_at TEXT NOT NULL,revision INTEGER NOT NULL CHECK(revision>=1),payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+          "CREATE INDEX IF NOT EXISTS session_supervisions_due ON session_supervisions(state,next_check_at,session_key)"
           "CREATE TABLE IF NOT EXISTS session_rules(session_key TEXT PRIMARY KEY,revision INTEGER NOT NULL CHECK(revision>=1),payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
           "CREATE TABLE IF NOT EXISTS message_filter_policies(policy_id TEXT PRIMARY KEY,revision INTEGER NOT NULL CHECK(revision>=1),payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
           "CREATE TABLE IF NOT EXISTS im_event_inbox(seq INTEGER PRIMARY KEY AUTOINCREMENT,connection_id TEXT NOT NULL REFERENCES connections(connection_id),source_key TEXT NOT NULL,payload TEXT NOT NULL CHECK(json_valid(payload)),UNIQUE(connection_id,source_key)) STRICT"

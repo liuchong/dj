@@ -66,7 +66,9 @@
     "tests/integration/lark-api.test.eli",
     "tests/unit/lark-api.test.eli",
     "tests/integration/slack.test.eli",
-    "tests/unit/slack.test.eli"
+    "tests/unit/slack.test.eli",
+    "tests/integration/supervision.test.eli",
+    "tests/unit/supervision.test.eli"
   ],
   "outDir": "dist-tests"
 }

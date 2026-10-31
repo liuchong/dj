@@ -17,6 +17,7 @@
       "inbox"
       "inbox_pull"
       "message_filter"
+      "supervision"
       "session_rules"
       "working"
       "acknowledgement"

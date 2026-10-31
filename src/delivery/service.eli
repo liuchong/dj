@@ -343,7 +343,7 @@
     (context args)
     (let ((djReturn3Token (js-object)) (djReturn3Value nil))
       (try
-        (let* ((repository (nativeGet context "repository")) (target-args args) (alias nil))
+        (let* ((repository (nativeGet context "repository")) (target-args args) (action (if (nativeGet context "supervision") "session.supervise" "session.send")) (alias nil))
           (when (nativeGet args "agent_id")
             (setq alias (js-call repository :get "agents" (nativeGet args "agent_id")))
             (unless (and alias (= (nativeGet alias "state") "registered"))
@@ -352,7 +352,9 @@
                 (throw djReturn3Token)))
             (let ((route (js-call repository :get "routes" (nativeGet alias "route_id"))))
               (setq target-args (js-object :session_key (nativeGet route "session_key")))))
-          (let ((resolved (resolveSessionRecord context target-args "session.send")))
+          (when (nativeGet context "supervision")
+            (setq target-args (js-object :session_key (nativeGet (nativeGet context "supervision") "session_key"))))
+          (let ((resolved (resolveSessionRecord context target-args action)))
             (unless (nativeGet resolved "ok")
               (progn (setq djReturn3Value resolved) (throw djReturn3Token)))
             (let*
@@ -360,7 +362,7 @@
                 (instance
                   (js-call repository :get "instances" (nativeGet session "instance_id")))
                 (port (agentPort context instance))
-                (permission (requirePermission context "session.send" session))
+                (permission (requirePermission context action session))
                 (id (nextId context "delivery"))
                 (dispatch (nextId context "dispatch"))
                 (envelope
@@ -468,7 +470,7 @@
                               "open")))
                         (unless (nativeGet gate "ok")
                           (progn (setq djReturn4Value gate) (throw djReturn4Token)))
-                        (unless (can context "session.send" current)
+                        (unless (can context action current)
                           (progn
                             (setq djReturn4Value (failure "forbidden"))
                             (throw djReturn4Token)))
@@ -523,6 +525,9 @@
                                   nil
                                   :allowed_actions
                                   (js-array))))
+                            (when (nativeGet context "supervision")
+                              (put record :supervision_key (nativeGet (nativeGet context "supervision") "session_key"))
+                              (put record :supervision_generation (nativeGet (nativeGet context "supervision") "generation")))
                             (js-call repository :insert "deliveries" record)
                             (success (projectDelivery context record)))))
                       (catch djReturn4Error

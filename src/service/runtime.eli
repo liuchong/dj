@@ -1,4 +1,5 @@
 (module dj.service.runtime
+  (import "../sessions/supervision.eli" processSupervisions)
   (import "../core/native.eli" nativeClearTimeout nativeSetTimeout nativeGet)
   (import "../core/errors.eli" success failure)
   (import "../core/limits.eli" limits)
@@ -665,6 +666,8 @@
                 (put runtime :storage_blocked (not (nativeGet probe "ok"))))))
           (launch context "working-reactions" (async () (await (processWorking context))))
           (queueControlJobs context)
+          (when (and (= (nativeGet runtime "state") "ready") (not (nativeGet runtime "storage_blocked")))
+            (launch context "session-supervision" (async () (await (processSupervisions context)))))
           (when (= (nativeGet runtime "state") "ready")
             (queueSourceJobs context)
             (queueCatalogJobs context))

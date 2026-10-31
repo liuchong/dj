@@ -474,8 +474,9 @@
             (when (nativeGet instructions "overflow") (put envelope :instruction_overflow t))
             envelope)))))
   (defun effectiveBusyPolicy (context record)
-    (nativeGet (nativeGet (nativeGet context "config") "message_delivery") "busy"
-      (nativeGet (nativeGet record "delivery_policy") "busy" "steer")))
+    (if (nativeGet record "supervision_key") "queue"
+      (nativeGet (nativeGet (nativeGet context "config") "message_delivery") "busy"
+        (nativeGet (nativeGet record "delivery_policy") "busy" "steer"))))
   (defun selectDispatchHead (context route-id)
     (let* ((override (nativeGet (nativeGet (nativeGet context "config") "message_delivery") "busy" nil))
       (db (nativeGet (nativeGet context "store") "db"))
@@ -540,6 +541,16 @@
                 (progn
                   (setq djReturn4Value (failure "revision_conflict"))
                   (throw djReturn4Token)))
+              ;; Cancellation is checked in the same transaction as the submitting cut.
+              (when (nativeGet record "supervision_key")
+                (let ((watch (js-call repository :get "session_supervisions" (nativeGet record "supervision_key"))))
+                  (unless (and watch (= (nativeGet watch "state") "active")
+                    (= (nativeGet watch "generation") (nativeGet record "supervision_generation")))
+                    (put record :state "cancelled")
+                    (put record :revision (nextRevision (nativeGet record "revision")))
+                    (must (js-call repository :replaceProgress "deliveries" record))
+                    (releaseClaim context claim)
+                    (setq djReturn4Value (success nil)) (throw djReturn4Token))))
               (unless (serviceOpen context)
                 (progn
                   (setq
@@ -574,7 +585,7 @@
                     (principalAllows
                       context
                       (nativeGet record "principal_id")
-                      "session.send"
+                      (if (nativeGet record "supervision_key") "session.supervise" "session.send")
                       session)
                     (progn
                       (setq

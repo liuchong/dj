@@ -111,6 +111,13 @@
                 (not (js-call operatorOnly :includes action))
                 (= (nativeGet principal "kind") "operator")))
             (progn (setq djReturn3Value denied) (throw djReturn3Token)))
+          ;; A trusted exact caller binding permits supervision of its own conversation only.
+          (when (and (= action "session.supervise")
+            (js-call (js-array "tool" "native_namespace" "native_session_id") :every
+              (lambda (field) (= (nativeTypeOf (nativeGet (nativeGet principal "target_constraint") field)) "string")))
+            (matchesConstraint (nativeGet principal "target_constraint") resource))
+            (setq djReturn3Value (js-object :allowed t :authorization_revision authorization-revision :policy "bound_supervision"))
+            (throw djReturn3Token))
           (when (or (js-call communicationActions :includes action)
             (and (js-call ownCommunicationActions :includes action) (isOwnResource principal resource)))
             (setq djReturn3Value (js-object :allowed t

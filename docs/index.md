@@ -38,6 +38,7 @@
 | [0008 资源来源](specs/0008-resource-sources.md) | 文档、表格、Wiki 和原生事件 |
 | [0009 任务巡查](specs/0009-task-inspection.md) | 来源树、管理员／本人连接权限及确定性 IM 查询 |
 | [0010 消息消费](specs/0010-message-consumption.md) | 默认忙时直达、可配置排队及全局异步消费 |
+| [0020 对话督工](specs/0020-session-supervision.md) | 主动登记、持久空闲检测、原会话续接与明确取消 |
 
 ## 技术与维护
 

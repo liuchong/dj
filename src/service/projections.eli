@@ -9,6 +9,7 @@
   (import "../messaging/actions.eli" projectAction)
   (import "../lark/service.eli" projectApi)
   (import "../sessions/rules.eli" projectRules)
+  (import "../sessions/supervision.eli" projectSupervision)
   (import "../filtering/service.eli" projectFilterPolicy)
   (import "../application/context.eli" can safeFields)
   (import "../application/operations.eli" operationCatalog operationCatalogDigest)
@@ -35,7 +36,9 @@
             (= (nativeGet principal "kind") "operator"))
           (or
             (nativeGet (authorize principal (nativeGet descriptor "action")
-              (js-object :principal_id (nativeGet principal "principal_id"))
+              (if (= (nativeGet descriptor "handler_group") "supervision")
+                (nativeGet principal "target_constraint" (js-object))
+                (js-object :principal_id (nativeGet principal "principal_id")))
               (nativeGet principal "authorization_revision")) "allowed")
             (js-call
               (js-array "service.status" "agent.whoami")
@@ -69,6 +72,7 @@
                   :resource_watch "resource_watches"
                   :working "work_items"
                   :acknowledgement "work_marks"
+                  :supervision "session_supervisions"
                   :session_rules "session_rules"
                   :message_filter "message_filter_policies"
                   :inbox "inbox_entries"
@@ -103,6 +107,7 @@
             ((= kind "resource_watch") (projectWatch context record))
             ((= kind "working") (projectWorking context record))
             ((= kind "acknowledgement") (projectAcknowledgement context record))
+            ((= kind "supervision") (projectSupervision context record))
             ((= kind "session_rules") (projectRules context record))
             ((= kind "message_filter") (projectFilterPolicy context record))
             ((= kind "inbox") (projectInbox context record))

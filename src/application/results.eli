@@ -278,6 +278,12 @@
     (js-object :items (arr (obj (strings "reaction_id emoji_type operator_id operator_type action_time")))
       :has_more boolSchema :page_token nullableString :identity_revision integerSchema))))
   (put definitions :working (obj (strings "delivery_id state reason expires_at cleanup_state last_error")))
+  (put definitions :supervision (obj (strings
+    "session_key tool native_namespace native_session_id principal_id state status prompt generation created_at updated_at next_check_at"
+    (js-object :revision integerSchema :authorization_revision integerSchema :idle_seconds integerSchema :check_seconds integerSchema
+      :wake_sequence integerSchema :failures integerSchema :idle_since nullableString :delivery_id nullableString
+      :pending_key nullableString :last_error nullableString :last_wake_at nullableString))
+    (js-array "session_key" "state" "status")))
   (put definitions :session_rules (obj (strings "session_key tool native_namespace native_session_id text sha256 updated_at updated_by"
     (js-object :revision integerSchema :reply_routes (arr (ref "reply_binding")))) (js-array "session_key" "tool" "native_namespace" "native_session_id" "text" "sha256" "revision")))
   (put definitions :conversation_rules (obj (strings "session_key text sha256" (js-object :revision integerSchema))

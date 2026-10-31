@@ -1,6 +1,6 @@
 ---
 name: dj
-description: 通过 DJ 的 CLI/MCP/GEPO 机械查询跨工具会话和消息、免订阅定向输入、通过已有实例接口创建会话，以及 Lark、Slack 消息收发、上下文、撤回编辑、表情和规则订阅。由调用方选择精确目标和结构化规则；普通代码修改或 IM 管理界面不使用此 Skill。
+description: 通过 DJ 的 CLI/MCP/GEPO 机械查询跨工具会话和消息、免订阅定向输入、通过已有实例接口创建会话，以及持久对话督工和 Lark、Slack 消息收发、上下文、撤回编辑、表情和规则订阅。由调用方选择精确目标和结构化规则；普通代码修改或 IM 管理界面不使用此 Skill。
 metadata:
   stage: native-api-integration
 ---
@@ -17,6 +17,11 @@ metadata:
 - cli_identity: 使用Lark CLI时，必须与本来准备在DJ中使用的连接保持相同Lark账号及user/bot身份。回复按该通知已固定的reply_route核对；本人不换成机器人，机器人不换成另一个机器人，不以昵称或CLI默认账号判断身份相同。
 - other_conversations: 上述要求只约束对接DJ的对话，不是所有AI对话的全局禁令。未对接DJ的其他对话仍按用户授权及各自规则使用Lark CLI等工具；仅安装或读取本Skill不等于已经对接DJ。
 - implementation_boundary: DJ程序内部直连官方API、不依赖第三方SDK或外部CLI，是DJ自身的实现要求；不得将它扩大成所有对话的工具禁令。
+
+## 对话督工
+
+- operations: session.supervision.start / get / cancel；[用法与恢复边界](references/supervision.md)。长期任务可主动登记，在意外空闲后由 DJ 通过原实例接口续接，完成或主动暂停时取消。
+- distinction: 督工不等同于订阅、IM任务完成或平台Goal；不自动恢复预算受限/主动暂停的Goal，不新建替代会话。默认忙时不打扰，离线和过载退避，取消前持久保留。
 
 ## Slack 能力导航
 

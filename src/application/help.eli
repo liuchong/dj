@@ -11,6 +11,9 @@
       :task.list "按当前管理员白名单或本人连接范围分页巡查任务；accepted 不代表完成。"
       :task.tree "展示原 IM 消息、准确 AI 会话与登记的子对话；未知关联明确标注。"
       :task.link "为已接收投递登记明确父子会话关系；未原生核验，不猜任务归属。"
+      :session.supervision.start "为准确原会话持续督工：prompt为续接指令，idle_seconds默认120、check_seconds默认30。按session.supervise权限登记并持久保存，空闲超时才经原实例接口续接；忙、等待许可、不确定送达不重复打断。完成或主动暂停必须cancel。"
+      :session.supervision.get "读取准确会话督工状态、检查时间及最近投递。未登记返回inactive；active不代表原生Goal已恢复。"
+      :session.supervision.cancel "持久取消督工及尚未提交的督工通知；已越过submitting的原生输入不能撤回，不停止当前任务。"
       :service.status
       "读取当前服务状态、可用操作、限制和获准来源；不启动工具。"
       :message.filter.get
