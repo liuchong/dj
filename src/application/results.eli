@@ -465,6 +465,15 @@
           (ref "capabilities")
           :limitations
           (arr stringSchema)))))
+  (put definitions :event_receipt
+    (obj (strings "event_id event_type state received_at next_attempt_at"
+      (js-object :identity_revision integerSchema :processed_at nullableString :attempts integerSchema
+        :last_error nullableString :normalized_count integerSchema))))
+  (put definitions :event_receipts
+    (obj (addTypedFields (strings "receipt_policy" (js-object
+      :last_error nullableString :oldest_pending_at nullableString :last_received_at nullableString
+      :last_document_notice_at nullableString :latest (arr (ref "event_receipt"))))
+      "retained pending retrying processed ignored raw_bytes other_identity_pending retention_seconds terminal_limit pending_limit raw_byte_limit" integerSchema)))
   (put
     definitions
     :connection
@@ -481,7 +490,7 @@
           :capabilities
           (ref "capabilities")
           :event_source
-          (obj (js-object :state stringSchema :reason nullableString :identity stringSchema :send_identity stringSchema :native_code integerSchema :transport stringSchema :coverage stringSchema :last_received_at nullableString :reaction_event_type stringSchema :last_reaction_at nullableString :missing_scopes (arr stringSchema) :console_url nullableString :required_events (arr stringSchema)))
+          (obj (js-object :event_receipts (ref "event_receipts") :user_document_notices (js-object :type "object" :additionalProperties t) :poll_fallback (js-object :type "object" :additionalProperties t) :requested_coverage stringSchema :personal_inbox stringSchema :state stringSchema :reason nullableString :identity stringSchema :send_identity stringSchema :native_code integerSchema :transport stringSchema :coverage stringSchema :last_received_at nullableString :reaction_event_type stringSchema :last_reaction_at nullableString :missing_scopes (arr stringSchema) :console_url nullableString :required_events (arr stringSchema)))
           :credential_state
           stringSchema
           :checked_at

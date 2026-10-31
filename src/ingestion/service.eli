@@ -14,7 +14,7 @@
       (= (nativeGet connection "connection_id") (nativeGet address "connection_id"))
       (cond
         ((and (= (nativeGet connection "platform") "lark") (= (nativeGet address "kind") "resource"))
-          (and (js-call (js-array "docx" "sheet" "bitable") :includes (nativeGet address "resource_kind"))
+          (and (js-call (js-array "doc" "docx" "sheet" "bitable" "slides" "file") :includes (nativeGet address "resource_kind"))
             (= (nativeTypeOf (nativeGet address "resource_token")) "string")))
         ((js-call (js-array "lark" "slack") :includes (nativeGet connection "platform"))
           (or (and (= (nativeGet connection "source_delivery") "events")

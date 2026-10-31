@@ -45,7 +45,7 @@ Drive v1 的 `POST /drive/v1/user/subscription` 与文件级 `POST /drive/v1/fil
 
 user 长连接接入时使用同一授权用户凭据，先 GET `/drive/v1/user/subscription_status`，仅明确 false 时 POST 开启，然后 GET 核实 true；未知状态不当作未订阅盲发，失败保留具体状态，不降级为定时读消息。该动作只在接入初始化执行，既不是周期扫描，也不替代应用后台事件配置。connection.probe 的 `event_source.user_document_notices` 区分 subscribed 与 blocked/native_unknown；subscribed 仅证明订阅开启，不声称已收到真实新事件。
 
-同一官方 WebSocket 接收该事件，严格校验 app_id 与 notice_meta.to_user_id.open_id 必须属于当前 user 连接。通知不依赖 resource.watch 文件管理权限；文件级变更仍走原 watch。文档、表格、多维表格通知沿现有持久 inbox、resource.changed、统一黑名单和原订阅路由，禁止把另一个登录用户的通知混入。保留 comment_id、reply_id、recipient_id、is_mentioned 和原生发送者；仅 is_mentioned=true 才构成真正的 mentions.id/addressed_self，不把普通评论通知冒充 @。文件级字段关联仍只是 people.id。
+同一官方 WebSocket 接收该事件，严格校验 app_id 与 notice_meta.to_user_id.open_id 必须属于当前 user 连接。通知不依赖 resource.watch 文件管理权限；文件级变更仍走原 watch。官方 doc/docx/sheet/bitable/slides/file 六种评论通知均接入；接收通知元数据不代表相应正文读取视图已支持。通知沿现有持久 inbox、resource.changed、统一黑名单和原订阅路由，禁止把另一个登录用户的通知混入。保留 comment_id、reply_id、recipient_id、is_mentioned 和原生发送者；仅 is_mentioned=true 才构成真正的 mentions.id/addressed_self，不把普通评论通知冒充 @。文件级字段关联仍只是 people.id。
 
 评论使用 comment_id 跟踪原生话题，不猜测不存在于事件中的 table_id/record_id；已有指定数据表订阅不会自动覆盖缺少表 ID 的评论事件。接收 AI 可自行配置连接范围的 resource.changed 加 addressed_self=true 条件，再用 resource.read(view=comments) 读取获准原文；不自动建任务、不写评论、不向 IM 发文字。具体实时覆盖须以新的真实原生事件及准确目标投递验证，不能用旧 BUG 重放或本地夹具冒充。
 

@@ -11,3 +11,6 @@
 - task_rules: 命中已配置的原生@条件即可通知；不要要求DJ先证明它是你的任务。由你在订阅提示词/持久对话规则中保存任务归属检测、处理和回复条件，收到上下文后自行判断；用户指挥设置时按其要求配置。人员字段关联不是原生@。
 
 - recovery: 只有用户明确要求补处理准确记录时，操作员才可resource.recover(resource_ref,reason,idempotency_key)；引用必须绑定Bitable table_id和record_id。先由原接收对话自行建立准确资源订阅，再恢复当前官方快照；realtime=false和ingress_evidence明确区分重放与实时，不能伪装成原生@。快照sender.kind=unknown，须操作员在连接允许unknown来源，不能冒充原编辑者或绕过sender/黑名单。相同快照去重，需补投已有事件另走subscription.replay；不修改BUG、不绕过过滤或任务归属规则。
+
+- receipt_recovery: connection.probe 的 event_source.event_receipts 区分原始事件已保存、待规范化、重试与明确忽略，并列最近事件的原生 ID/类型/失败码；不含正文或验证 token。pending/retrying 在重启后恢复，不需要重新创建订阅或重放任务。平台确认在原始事件事务提交后完成，后续解析及 Agent 投递由 DJ 自己恢复；订阅开启不等于平台已经推送。
+- notice_history: 用户订阅状态接口没有历史、since 或 resume cursor，客户端已读不等于 DJ 已确认。没有原始回执时不得声称已经收到；检查原生事件日志及应用事件权限，不把已知链接轮询、旧记录重放冒充全局实时通知。doc/docx/sheet/bitable/slides/file 评论通知均可触发订阅，正文读取仍按实际视图能力判断。

@@ -28091,6 +28091,187 @@
       "given": "A supervised exact conversation and independent caller permissions",
       "when": "Exercise busy-policy boundary",
       "then": "Bounded retry timing, exact self binding and queue-only wake policy"
+    },
+    {
+      "case_id": "T38.event-receipt-routing.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/event-receipts.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-lark-events",
+      "acceptance_ids": [
+        "A01"
+      ],
+      "requirements": [
+        "SPEC-0018",
+        "SPEC-0008"
+      ],
+      "given": "Synthetic official WebSocket frames and exact message HTTP responses",
+      "when": "Receive all six native comment resource types then restart and repeat the native event",
+      "then": "Only one delivery per event, raw receipt visible at ACK, restart retains observed evidence"
+    },
+    {
+      "case_id": "T38.event-receipt-slow-restart.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/event-receipts.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-lark-events",
+      "acceptance_ids": [
+        "A01"
+      ],
+      "requirements": [
+        "SPEC-0018",
+        "SPEC-0008"
+      ],
+      "given": "Synthetic official WebSocket frames and exact message HTTP responses",
+      "when": "Hold reaction enrichment until after ACK, fail it and restart before retry",
+      "then": "ACK does not wait for HTTP; durable retry resumes on restart and delivers once"
+    },
+    {
+      "case_id": "T38.event-receipt-atomic-retry.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/event-receipts.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-lark-events",
+      "acceptance_ids": [
+        "A01"
+      ],
+      "requirements": [
+        "SPEC-0018",
+        "SPEC-0008"
+      ],
+      "given": "Synthetic official WebSocket frames and exact message HTTP responses",
+      "when": "Fail normalized inbox insertion, then recover and inspect malformed/ignored events",
+      "then": "Receipt and inbox update are atomic; parse failure remains retryable and ignores have reasons"
+    },
+    {
+      "case_id": "T38.event-receipt-no-ack.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/event-receipts.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-lark-events",
+      "acceptance_ids": [
+        "A01"
+      ],
+      "requirements": [
+        "SPEC-0018",
+        "SPEC-0008"
+      ],
+      "given": "Synthetic official WebSocket frames and exact message HTTP responses",
+      "when": "Fail raw receipt commit and send a colliding native event ID",
+      "then": "No success ACK on failed persistence or collision; original receipt is preserved"
+    },
+    {
+      "case_id": "T38.event-receipt-capacity.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/event-receipts.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-lark-events",
+      "acceptance_ids": [
+        "A01"
+      ],
+      "requirements": [
+        "SPEC-0018",
+        "SPEC-0008"
+      ],
+      "given": "Synthetic official WebSocket frames and exact message HTTP responses",
+      "when": "Fill pending receipts to capacity, retain another identity and prune old terminal metadata",
+      "then": "No ACK at capacity, no cross-identity processing and no pending event is pruned"
+    },
+    {
+      "case_id": "T38.event-receipt-envelope.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/event-receipts.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 1000,
+      "resource_group": "pure",
+      "requirements": [
+        "SPEC-0018"
+      ],
+      "acceptance_ids": [
+        "A05"
+      ],
+      "given": "A native event receipt",
+      "when": "Exercise envelope boundary",
+      "then": "Stable deduplication, bounded retry and secret-safe diagnostics"
+    },
+    {
+      "case_id": "T38.event-receipt-backoff.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/event-receipts.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 1000,
+      "resource_group": "pure",
+      "requirements": [
+        "SPEC-0018"
+      ],
+      "acceptance_ids": [
+        "A05"
+      ],
+      "given": "A native event receipt",
+      "when": "Exercise backoff boundary",
+      "then": "Stable deduplication, bounded retry and secret-safe diagnostics"
+    },
+    {
+      "case_id": "T38.event-receipt-errors.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/event-receipts.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 1000,
+      "resource_group": "pure",
+      "requirements": [
+        "SPEC-0018"
+      ],
+      "acceptance_ids": [
+        "A05"
+      ],
+      "given": "A native event receipt",
+      "when": "Exercise errors boundary",
+      "then": "Stable deduplication, bounded retry and secret-safe diagnostics"
     }
   ],
   "source_extension_base": "c1eb7b1"

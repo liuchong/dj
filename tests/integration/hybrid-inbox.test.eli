@@ -30,11 +30,11 @@
           (put socket :send (lambda (bytes)
             (let ((frame (decodeLarkFrame bytes)))
               (when (= (js-call (nativeGet frame "payload") :toString "utf8") "{\"code\":200}")
-                ;; ACK must follow durable inbox insertion, before Core consumption.
+                ;; ACK must follow the durable native receipt, before enrichment or Core consumption.
                 (let ((db (new Database (resolve (nativeGet state "root") "state/dj.sqlite") (js-object :readonly t))))
                   (try
                     (js-call (expect (> (nativeGet (js-call (js-call db :query
-                      "SELECT COUNT(*) AS n FROM im_event_inbox") :get) "n") 0)) :toBe t)
+                      "SELECT COUNT(*) AS n FROM lark_event_receipts") :get) "n") 0)) :toBe t)
                     (finally (js-call db :close))))
                 (put state :acks (1+ (nativeGet state "acks")))))))
           (put socket :close (lambda (&rest ignored)

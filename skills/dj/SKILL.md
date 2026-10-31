@@ -191,4 +191,5 @@ metadata:
 
 ## 故障恢复
 
-- behavior: Lark 断线后自动按持久水位补收；明确未发送的可重试通知自动退避恢复，Codex 不确定投递只做正向原生读回核实，禁止盲目重发。健康状态与调用方处理见 [delivery](references/delivery.md)。
+- native_events: Lark 原始 WebSocket 事件先持久保存再确认，解析/原文补取失败退避恢复，重启继续；connection.probe 的 event_source.event_receipts 可核对待处理、重试、忽略原因及最近事件。文档通知没有历史游标，未收到的通知不能凭空补推；详见[资源接入](references/resources.md)。
+- behavior: Lark 普通 IM 消息断线后自动按持久 HTTP 水位补收；明确未发送的可重试通知自动退避恢复，Codex 不确定投递只做正向原生读回核实，禁止盲目重发。健康状态与调用方处理见 [delivery](references/delivery.md)。

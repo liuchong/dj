@@ -68,7 +68,9 @@
     "tests/integration/slack.test.eli",
     "tests/unit/slack.test.eli",
     "tests/integration/supervision.test.eli",
-    "tests/unit/supervision.test.eli"
+    "tests/unit/supervision.test.eli",
+    "tests/integration/event-receipts.test.eli",
+    "tests/unit/event-receipts.test.eli"
   ],
   "outDir": "dist-tests"
 }

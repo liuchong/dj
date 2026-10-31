@@ -31,10 +31,11 @@
         (= (nativeTypeOf recipient) "string") (= (nativeTypeOf (nativeGet sender "open_id")) "string")
         (= (nativeTypeOf comment) "string") (> (js-length comment) 0) (Number/isSafeInteger stamp) (>= stamp 0)
         (= (nativeTypeOf mentioned) "boolean")
+        (js-call (js-array "doc" "docx" "sheet" "bitable" "slides" "file") :includes kind)
         (js-call (js-array "add_comment" "add_reply") :includes (nativeGet meta "notice_type")))
         (throw (new globalThis.TypeError "invalid native recipient notice")))
-      ;; Unsupported resource types and notifications for another login are not admitted.
-      (if (not (and (js-call (js-array "docx" "sheet" "bitable") :includes kind)
+      ;; Recipient notices are independent of file watches and content-reader coverage.
+      (if (not (and (js-call (js-array "doc" "docx" "sheet" "bitable" "slides" "file") :includes kind)
         (= (nativeGet config "identity") "user") (= recipient (nativeGet (nativeGet config "user_identity") "open_id")))) (js-array)
         (js-array (js-object :connection_id (nativeGet config "connection_id") :source_key (str "notice:" id)
           :native_message_id (str "notice:" id) :event_kind "resource.changed" :source_revision "1"
