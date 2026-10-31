@@ -149,7 +149,7 @@
                 (= (nativeGet reasons "size") 0)))
             (put health :state (if (nativeGet health "ready")
               (if (> (nativeGet health "lag_seconds" 0)
-                (Math/max 5 (* 3 (nativeGet connection "inbox_poll_seconds" 2)))) "catching_up" "online")
+                (Math/max 30 (* 3 (js-length rows) (nativeGet connection "inbox_poll_seconds" 2)))) "catching_up" "online")
               "degraded"))))
         (when progress
           (put health :last_success_at (nativeGet progress "last_success_at"))

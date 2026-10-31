@@ -244,6 +244,7 @@
           (let* ((connections (nativeGet (await (callOk f "O" "connection.list" (js-object))) "items"))
             (user (js-call connections :find (lambda (row) (= (nativeGet row "connection_id") "lark")))))
             (js-call (expect (nativeGet (nativeGet user "source_health") "lag_seconds")) :toBeLessThan 15)
+            (js-call (expect (nativeGet (nativeGet user "source_health") "state")) :toBe "online")
             (js-call (expect (nativeGet (nativeGet user "source_health") "ready")) :toBe t))
           (await (js-call f :restart))
           (await (advance f 20))
