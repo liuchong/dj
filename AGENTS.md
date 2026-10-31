@@ -47,6 +47,8 @@ DJ 程序内部的 Lark 接入必须直连官方 WebSocket 与 HTTPS API，禁�
 
 ## 正式规格与接续要求
 
+- Slack 接线遵守 [0019](docs/specs/0019-slack.md)，独立原生包直连官方 API；同应用共享 Socket Mode 流、连接身份与补收断点独立，复用公共订阅/回复/工作状态，不复制 user/bot 逻辑。不得套用 Lark 轮询预算或混淆两个平台的 emoji、消息 ID 与 thread。
+
 - 离线补收、通知重试和不确定投递核实按 [0018](docs/specs/0018-offline-recovery.md)；追赶水位与连接健康分开，unknown 查不到不是未发送。
 
 - Lark 官方 API 基础能力归独立 [Lark 包](packages/lark/README.md)，DJ 连接选择、订阅、过滤、台账和消息语义归 IM 层；按 [0017](docs/specs/0017-lark-package.md) 接线。不得按 user/bot、部署昵称或 API 领域复制请求栈，不把平台权限不足当成 DJ 缺少接口。

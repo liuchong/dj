@@ -27,6 +27,7 @@
     (let* ((principal (js-object :principal_id "recipient" :kind "agent" :authorization_revision 1
         :grants (js-array (js-object :action "delivery.inspect" :resources (js-array "self")))))
       (context (js-object :principal principal :config (js-object :principals (js-array principal))
+        :ports (js-object :im_ports (new globalThis.Map (js-array (js-array "connection" (js-object :acknowledgement_emoji "eyes")))))
         :repository (js-object :get (lambda (table id) (throw (new globalThis.Error "unmarked delivery must not query a reaction"))))))
       (delivery (js-object :delivery_id "resource-delivery" :recipient_principal_id "recipient" :state "accepted"))
       (result (projectWorking context delivery)))
@@ -36,11 +37,12 @@
       (js-call (expect (nativeGet delivery "state")) :toBe "accepted")
       (js-call (expect (nativeGet (projectWorking context (Object/assign (js-object) delivery (js-object :recipient_principal_id "other"))) "ok")) :toBe false)
       (js-call (nativeGet principal "grants") :push (js-object :action "message.reply" :resources (js-array "connection")))
-      (let* ((mark (js-object :mark_id "ack" :acknowledgement t :principal_id "recipient" :state "posting"
+      (let* ((mark (js-object :mark_id "ack" :connection_id "connection" :acknowledgement t :principal_id "recipient" :state "posting"
           :destination (js-object :connection_id "connection")))
         (pending (projectAcknowledgement context mark)))
         ;; Accepted intent is not native confirmation. A foreign owner cannot inspect it.
         (js-call (expect (nativeGet (nativeGet pending "data") "native_acknowledged")) :toBe false)
+        (js-call (expect (nativeGet (nativeGet pending "data") "emoji_type")) :toBe "eyes")
         (put mark :acknowledged t) (put mark :state "done")
         (js-call (expect (nativeGet (nativeGet (projectAcknowledgement context mark) "data") "native_acknowledged")) :toBe t)
         (put mark :principal_id "other")

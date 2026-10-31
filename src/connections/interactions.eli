@@ -1,8 +1,8 @@
-(module dj.adapters.im.lark-interactions
-  (import "../../core/native.eli" nativeGet nativeTypeOf)
-  (import "../../application/context.eli" nativeCallContext utcNow)
-  (import "../../core/types.eli" conversationKey addSeconds)
-  (import "../../core/limits.eli" limits)
+(module dj.connections.interactions
+  (import "../core/native.eli" nativeGet nativeTypeOf)
+  (import "../application/context.eli" nativeCallContext utcNow)
+  (import "../core/types.eli" conversationKey addSeconds)
+  (import "../core/limits.eli" limits)
   ;; A relation is native evidence, never a textual @ or a guessed topic.
   (defun messageInteraction (config target kind)
     (let* ((sender (nativeGet target "sender")) (id (nativeGet sender "id")))
@@ -10,7 +10,7 @@
         (js-object :kind kind :state "resolved" :target_message_id (nativeGet target "native_message_id")
           :target_id id :target_kind (nativeGet sender "kind" "unknown")
           :addressed_self (and (or (= id (nativeGet config "event_subject_id"))
-            (and (= (nativeGet config "identity") "bot") (= id (nativeGet config "event_app_id"))))
+            (and (= (nativeGet config "identity") "bot") (= id (if (= (nativeGet config "platform" "lark") "lark") (nativeGet config "event_app_id") (nativeGet config "event_subject_id")))))
             (= (nativeGet sender "kind") (if (= (nativeGet config "identity") "bot") "bot" "human")))))))
   (defasync readInteractionTarget (config id event application port normalize)
     (let* ((db (nativeGet (nativeGet application "store") "db"))
@@ -32,11 +32,11 @@
             (message (and (nativeGet response "ok") (Array/isArray messages) (= (js-length messages) 1) (aref messages 0)))
             (sender (nativeGet message "sender")))
             (when (and message (= (nativeGet message "message_id") id) (not (nativeGet message "deleted")))
-              (setq target (funcall normalize config (js-object :type "im.message.receive_v1"
+              (setq target (or (nativeGet message "normalized") (funcall normalize config (js-object :type "im.message.receive_v1"
                 :message_id id :chat_id (nativeGet message "chat_id") :chat_type (nativeGet message "chat_type" "unknown")
                 :content (nativeGet message "content") :create_time (nativeGet message "create_time")
                 :sender_id (nativeGet sender "id") :sender_type (nativeGet sender "sender_type")
-                :mentions (js-array))))))
+                :mentions (js-array)))))))
           (catch error (setq target nil))))
       (and target (= (nativeGet (nativeGet target "conversation") "native_chat_id")
         (nativeGet (nativeGet event "conversation") "native_chat_id")) target)))
@@ -47,7 +47,7 @@
     (let* ((address (nativeGet event "conversation")) (key (conversationKey address))
       (connection (nativeGet config "connection_id")) (revision (nativeGet config "identity_revision"))
       (subject (nativeGet config "event_subject_id" ""))
-      (bot (= (nativeGet config "identity") "bot")) (app (if bot (nativeGet config "event_app_id" "") subject))
+      (bot (= (nativeGet config "identity") "bot")) (app (if (and bot (= (nativeGet config "platform" "lark") "lark")) (nativeGet config "event_app_id" "") subject))
       (kind (if bot "bot" "human")) (time (nativeGet event "source_time"))
       (now (utcNow application)) (oldest (addSeconds now (- (nativeGet limits "body_retention_seconds"))))
       (db (nativeGet (nativeGet application "store") "db")) (target nil))
@@ -80,7 +80,7 @@
       (when target
         (let ((interaction (messageInteraction config target "thread")))
           (put interaction :basis "thread_participation") interaction))))
-  (defasync resolveLarkInteraction (config event application port normalize &optional preceding)
+  (defasync resolveMessageInteraction (config event application port normalize &optional preceding)
     (when (= (nativeGet event "event_kind") "message.created")
       (let* ((parent (nativeGet (nativeGet event "reply_to") "id")) (root (nativeGet event "root_message_id"))
         (thread (nativeGet (nativeGet event "conversation") "native_thread_id"))
@@ -104,4 +104,4 @@
           (put event :interaction (or selected (js-object :kind (if thread "thread" "reply") :state "unavailable"
             :target_message_id (aref ids 0) :addressed_self false))))))
     event)
-  (export messageInteraction resolveLarkInteraction))
+  (export messageInteraction resolveMessageInteraction))

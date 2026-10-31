@@ -1,6 +1,6 @@
 ---
 name: dj
-description: 通过 DJ 的 CLI/MCP/GEPO 机械查询跨工具会话和消息、免订阅定向输入、通过已有实例接口创建会话，以及 Lark 消息收发、上下文、撤回编辑、表情和规则订阅。由调用方选择精确目标和结构化规则；普通代码修改或 IM 管理界面不使用此 Skill。
+description: 通过 DJ 的 CLI/MCP/GEPO 机械查询跨工具会话和消息、免订阅定向输入、通过已有实例接口创建会话，以及 Lark、Slack 消息收发、上下文、撤回编辑、表情和规则订阅。由调用方选择精确目标和结构化规则；普通代码修改或 IM 管理界面不使用此 Skill。
 metadata:
   stage: native-api-integration
 ---
@@ -17,6 +17,12 @@ metadata:
 - cli_identity: 使用Lark CLI时，必须与本来准备在DJ中使用的连接保持相同Lark账号及user/bot身份。回复按该通知已固定的reply_route核对；本人不换成机器人，机器人不换成另一个机器人，不以昵称或CLI默认账号判断身份相同。
 - other_conversations: 上述要求只约束对接DJ的对话，不是所有AI对话的全局禁令。未对接DJ的其他对话仍按用户授权及各自规则使用Lark CLI等工具；仅安装或读取本Skill不等于已经对接DJ。
 - implementation_boundary: DJ程序内部直连官方API、不依赖第三方SDK或外部CLI，是DJ自身的实现要求；不得将它扩大成所有对话的工具禁令。
+
+## Slack 能力导航
+
+- guide: Slack 使用同一套 connection、conversation、message、subscription、session.rules 和 delivery 操作；参数与平台差异见 [Slack](references/slack.md)。不把 Lark 专有 lark.api 或 resource 办公接口用于 Slack。
+- identity: user/bot 分别核对 workspace、event_subject_id 和原生 OAuth 身份；回复沿 reply_context 固定路线，不借用另一身份。
+- transport: 官方 Socket Mode 实时收件，应用流共享、身份可见性独立；HTTP 有界补收默认60秒，遵守Retry-After，不把Lark的2秒预算用于Slack。无凭据或权限时如实报告。
 
 ## Lark 能力导航
 

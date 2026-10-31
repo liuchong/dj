@@ -16,6 +16,9 @@
             "packages/lark/package.json"
             "packages/lark/eliscript.json"
             "packages/lark/LICENSE"
+            "packages/slack/package.json"
+            "packages/slack/eliscript.json"
+            "packages/slack/LICENSE"
             "packages/rack/package.json"
             "packages/rack/eliscript.json"
             "packages/rack/eliscript.tests.json"
@@ -69,6 +72,7 @@
                 (setq index (1+ index))))))
         (await (visit "src"))
         (await (visit "packages/lark/src"))
+        (await (visit "packages/slack/src"))
         (await (visit "packages/rack/src"))
         (await (visit "packages/rack/tests"))
         (await (visit "tests"))

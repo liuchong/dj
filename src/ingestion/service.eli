@@ -16,7 +16,7 @@
         ((and (= (nativeGet connection "platform") "lark") (= (nativeGet address "kind") "resource"))
           (and (js-call (js-array "docx" "sheet" "bitable") :includes (nativeGet address "resource_kind"))
             (= (nativeTypeOf (nativeGet address "resource_token")) "string")))
-        ((= (nativeGet connection "platform") "lark")
+        ((js-call (js-array "lark" "slack") :includes (nativeGet connection "platform"))
           (or (and (= (nativeGet connection "source_delivery") "events")
                    (= (nativeGet connection "event_scope" "all_authorized") "all_authorized"))
           (js-call
@@ -26,7 +26,8 @@
               (watch)
               (and
                 (= (nativeGet watch "chat_id") (nativeGet address "native_chat_id"))
-                (= (nativeGet watch "thread_id" nil) (nativeGet address "native_thread_id" nil)))))))
+                (or (and (= (nativeGet connection "platform") "slack") (not (nativeGet watch "thread_id")))
+                  (= (nativeGet watch "thread_id" nil) (nativeGet address "native_thread_id" nil))))))))
         ((= (nativeGet connection "platform") "telegram")
           (js-call
             (nativeGet connection "allowed_chats" (js-array))

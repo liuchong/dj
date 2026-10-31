@@ -46,7 +46,7 @@
       (if (nativeNullish thread) "main" "thread")))
   (defun configuredAddresses
     (connection)
-    (if (= (nativeGet connection "platform") "lark")
+    (if (js-call (js-array "lark" "slack") :includes (nativeGet connection "platform"))
       (js-call
         (nativeGet connection "watches" (js-array))
         :map

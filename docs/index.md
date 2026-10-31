@@ -59,3 +59,5 @@
 - [0012 Kimi 与 DSH 已有实例](specs/0012-kimi-dsh-existing-sessions.md) · [接入说明](guides/kimi-dsh.md)
 
 - [0017：独立 Lark 包与官方 API 入口](specs/0017-lark-package.md)
+
+- [Slack：Socket Mode、身份、订阅与消息操作](guides/slack.md)

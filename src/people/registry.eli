@@ -76,5 +76,6 @@
             (and app (= (nativeGet identity "scope") (str "app:" app ":open_id")))
             (and tenant (= (nativeGet identity "scope") (str "tenant:" tenant ":user_id")))))
             ((= platform "telegram") (= (nativeGet identity "scope") "user_id"))
+            ((= platform "slack") (and tenant (= (nativeGet identity "scope") (str "workspace:" tenant))))
             (t false)))))))
   (export personIdentitiesForConnection identityKey validIdentity validatePeople validatePersonReferences resolvePerson eventIdentities))

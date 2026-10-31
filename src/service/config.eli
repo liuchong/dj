@@ -104,9 +104,9 @@
         :connection_id
         id
         :platform
-        (enumOf "lark" "telegram")
+        (enumOf "lark" "telegram" "slack")
         :brand
-        (enumOf "lark" "feishu")
+        (enumOf "lark" "feishu" "slack")
         :identity
         (enumOf "user" "bot")
         :source_delivery
@@ -122,6 +122,7 @@
         :event_app_id id
         :event_subject_id id
         :event_scope (enumOf "configured" "all_authorized")
+        :history_poll_seconds (js-object :type "integer" :minimum 60 :maximum 3600)
         :inbox_poll_seconds (js-object :type "integer" :minimum 1 :maximum 300)
         :reaction_poll (obj (js-object
           :requests_per_second (js-object :type "integer" :minimum 1 :maximum 10)
@@ -471,7 +472,18 @@
               (when (= (nativeGet connection "source_delivery") "events")
                 (unless (and (nativeGet connection "credential_ref") (nativeGet connection "event_app_id") (nativeGet connection "event_subject_id"))
                   (throw (new globalThis.TypeError "event source requires explicit application credentials and subject identity"))))
-              (if (= (nativeGet connection "platform") "lark")
+              (when (nativeGet connection "history_poll_seconds")
+                (unless (= (nativeGet connection "platform") "slack")
+                  (throw (new globalThis.TypeError "history_poll_seconds requires Slack"))))
+              (cond
+                ((= (nativeGet connection "platform") "slack")
+                  (unless (and (= (nativeGet connection "brand") "slack")
+                    (= (nativeGet connection "source_delivery") "events")
+                    (nativeGet connection "tenant_ref") (nativeGet connection "event_app_id")
+                    (nativeGet connection "event_subject_id") (nativeGet connection "credential_ref")
+                    (Array/isArray (nativeGet connection "watches")))
+                    (throw (new globalThis.TypeError "Slack requires workspace, app, subject, credentials, watches and Socket Mode"))))
+                ((= (nativeGet connection "platform") "lark")
                 (unless
                   (and
                     (js-call (js-array "lark" "feishu") :includes (nativeGet connection "brand"))
@@ -481,7 +493,8 @@
                   (throw
                     (new
                       globalThis.TypeError
-                      "Lark requires explicit watches and application credentials and explicit user OAuth identity when applicable")))
+                      "Lark requires explicit watches and application credentials and explicit user OAuth identity when applicable"))))
+                (t
                 (unless
                   (and
                     (= (nativeGet connection "identity") "bot")
@@ -490,7 +503,7 @@
                   (throw
                     (new
                       globalThis.TypeError
-                      "Telegram requires a bot credential reference and approved chats"))))))
+                      "Telegram requires a bot credential reference and approved chats")))))))
           (js-call
             (nativeGet config "managed_profiles" (js-array))
             :forEach

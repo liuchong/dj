@@ -6,7 +6,7 @@
   (import "../../service/ownership.eli" ownerGuard)
   (import "./lark.eli" createReadLimiter)
   (import "./lark-reactions.eli" pollLarkReactions)
-  (import "./lark-interactions.eli" resolveLarkInteraction)
+  (import "../../connections/interactions.eli" resolveMessageInteraction)
   (import "./lark-reaction-policy.eli" reactionPollPolicy)
   (import "./lark-reaction-cache.eli" createReactionObservationCache)
 
@@ -72,7 +72,7 @@
       (setq persist (async (checkpoint events chats)
         (let ((index 0) (preceding (js-array)))
           (while (< index (js-length events))
-            (await (resolveLarkInteraction config (aref events index) application base normalize preceding))
+            (await (resolveMessageInteraction config (aref events index) application base normalize preceding))
             (js-call preceding :push (aref events index))
             (setq index (1+ index))))
         (await (enqueueWrite application (lambda ()

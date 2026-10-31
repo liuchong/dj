@@ -15,7 +15,7 @@
       (unless (and connection (not (nativeGet connection "disabled")) (allowedAddress connection address)
         (= revision (nativeGet connection "identity_revision" (nativeGet connection "revision"))))
         (must (failure "stale_reference")))
-      (unless (= (nativeGet connection "platform") "lark") (must (failure "unsupported")))
+      (unless (nativeGet (imPort context (nativeGet address "connection_id")) "messageAction") (must (failure "unsupported")))
       (unless (can context "message.read" address) (must (failure "forbidden"))) connection))
   (defun projectAction (context record)
     (try
@@ -127,8 +127,9 @@
                         (put data :state (if rejected "rejected" "unknown"))
                         (put data :error_code (nativeGet error "code" "unavailable"))
                         (when (Number/isInteger (nativeGet details "native_code")) (put data :native_code (nativeGet details "native_code")))
-                        (put data :required_scopes (cond ((= command "recall") (js-array "im:message:recall"))
-                          ((= command "edit") (js-array "im:message:update")) (t (js-array "im:message.reactions:write_only"))))))
+                        (put data :required_scopes (nativeGet (nativeGet (imPort context (nativeGet address "connection_id")) "message_action_scopes") command
+                          (cond ((= command "recall") (js-array "im:message:recall"))
+                            ((= command "edit") (js-array "im:message:update")) (t (js-array "im:message.reactions:write_only")))))))
                     (let ((saved (await (enqueueWrite context (lambda ()
                       (must (ownerGuard context)) (currentConnection context address revision)
                       (unless (can context "message.send" address) (must (failure "forbidden")))

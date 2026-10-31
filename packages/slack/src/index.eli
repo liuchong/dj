@@ -1,0 +1,4 @@
+(module slack.index
+  (import "./client.eli" createSlackClient apiUrl)
+  (import "./socket.eli" createSlackSocket)
+  (export createSlackClient createSlackSocket apiUrl))
