@@ -168,7 +168,7 @@
             ((not (and (nativeGet checkpoint "window_end") (not (nativeGet checkpoint "page_token"))))
               (unless (nativeGet checkpoint "window_end")
                 (let* ((completed (Date/parse (nativeGet checkpoint "completed_until" (nativeGet checkpoint "activation_at"))))
-                  (end (Math/min (- (Date/parse now) 2000) (+ completed 60000)))
+                  (end (Math/min (- (Date/parse now) 2000) (+ completed 86400000)))
                   (start (Math/max (Date/parse (nativeGet checkpoint "activation_at")) (- completed 120000))))
                   (put checkpoint :window_start (js-call (new globalThis.Date start) :toISOString))
                   (put checkpoint :window_end (js-call (new globalThis.Date (Math/max start end)) :toISOString))))
@@ -227,8 +227,12 @@
           (when (and (= (js-length pending) 0) (not (nativeGet checkpoint "page_token")))
             (unless (= kind "discovery") (put checkpoint :completed_until (nativeGet checkpoint "window_end")))
             (put checkpoint :window_start nil) (put checkpoint :window_end nil) (put checkpoint :seen_page_tokens (js-array))
+            ;; Drain completed historical windows without the idle polling delay.
+            ;; Pagination, admission limits and the shared request budget remain unchanged.
             (put checkpoint :next_due_at (js-call (new globalThis.Date (+ (Date/parse now)
-              (* (if (= kind "discovery") 30 interval) 1000))) :toISOString)))
+              (* (cond ((= kind "discovery") 30)
+                ((< (Date/parse (nativeGet checkpoint "completed_until")) (- (Date/parse now) 2000)) 0)
+                (t interval)) 1000))) :toISOString)))
           (await (funcall persist checkpoint events chats))
           (put status :state "ready") (put status :last_success_at now) (put status :native_error nil)
           (when (> (js-length events) 0) (put status :last_received_at now)))))))

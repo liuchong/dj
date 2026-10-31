@@ -2,6 +2,7 @@
   (import "../../src/core/native.eli" nativeGet nativeSetTimeout)
   (import "../../src/service/config.eli" validateStructure)
   (import "../../src/delivery/envelope.eli" renderEnvelope)
+  (import "../../src/delivery/snapshot.eli" unpackEnvelope)
   (import "../../src/adapters/agent/desktop.eli" createDesktopPort)
   (import "../../src/adapters/agent/opencode-http.eli" createOpenCodePort)
   (import "../../src/storage/repository.eli" createRepository)
@@ -20,6 +21,13 @@
   (import "../support/process.eli" until)
   (import "../support/fixtures.eli" createFixture callOk subscribe createdEvent successful)
 
+  (defun fixtureCodexItems (h)
+    (js-call (js-array (js-object :id "codex-message" :type "userMessage"
+      :content (js-array (js-object :type "text" :text "native user text"))))
+      :concat (js-call (js-call (nativeGet h "inputs") :filter
+        (lambda (input) (= (nativeGet input "tool") "codex"))) :map
+        (lambda (input index) (js-object :id (str "received-" index) :type "userMessage"
+          :text (nativeGet input "text"))))))
   (defasync cleanupDesktop (h)
     (when h
       (when (nativeGet h "control")
@@ -129,8 +137,7 @@
                                   :islands (js-array) :entitiesByKey (js-object))))
                               :turnsPagination (js-object :hasLoadedOldest t)
                               :turns (js-array (js-object :turnId "native-turn" :status "completed"
-                                :items (js-array (js-object :id "codex-message" :type "userMessage"
-                                  :content (js-array (js-object :type "text" :text "native user text"))))))))))))))))))))))
+                                :items (fixtureCodexItems h)))))))))))))))))))
           (put h :ipc server)
           (await (new globalThis.Promise (lambda (done reject)
             (js-call server :once "error" reject)
@@ -279,6 +286,62 @@
             :get (nativeGet row "binding_id")) "payload")) :toBe (nativeGet row "payload"))))
         (js-call (expect (nativeGet h "agent_spawns")) :toBe 0)
         (finally (put h :codex_status "idle") (put h :codex_incomplete false) (js-call db :close)))))
+
+  (defasync checkDeliveryRecovery (h)
+    (let* ((f (nativeGet h "fixture")) (clock (nativeGet f "clock")) (old-mono (nativeGet clock "monoNow"))
+      (db (new Database (nativeGet (nativeGet (nativeGet f "config") "storage") "database")))
+      (repository (createRepository (js-object :db db :inTransaction (lambda () (nativeGet db "inTransaction")))))
+      (rows (js-call (js-call db :query
+        "SELECT d.payload FROM deliveries d JOIN routes r ON r.route_id=d.route_id JOIN sessions s ON s.session_key=r.session_key WHERE s.tool_id='codex' AND d.state='accepted' ORDER BY d.delivery_id LIMIT 2") :all))
+      (unknown (JSON/parse (nativeGet (aref rows 0) "payload")))
+      (retry (JSON/parse (nativeGet (aref rows 1) "payload")))
+      (before (js-length (nativeGet h "inputs"))) (bindings (js-call (js-call db :query "SELECT payload FROM bindings") :all)))
+      (try
+        (funcall (js-call db :transaction (lambda ()
+          (put unknown :state "unknown") (successful (js-call repository :replace "deliveries" unknown))
+          (let ((attempt (js-call repository :get "attempts" (nativeGet unknown "attempt_id"))))
+            (put attempt :state "unknown") (successful (js-call repository :replace "attempts" attempt)))
+          (put retry :state "failed") (put retry :definite_not_sent t) (put retry :retryable t)
+          (put retry :next_retry_at (js-call clock :utcNow))
+          (successful (js-call repository :replace "deliveries" retry))
+          (let ((attempt (js-call repository :get "attempts" (nativeGet retry "attempt_id"))))
+            (put attempt :state "failed") (put attempt :definite_not_sent t)
+            (successful (js-call repository :replace "attempts" attempt)))
+          (js-call (js-array "instances" "instance_gates") :forEach (lambda (table)
+            (let ((instance (js-call repository :get table "codex-native")))
+              (put instance :instance_epoch "previous-process")
+              (successful (js-call repository :replace table instance)))))
+          (let* ((route (js-call repository :get "routes" (nativeGet retry "route_id")))
+            (session (js-call repository :get "sessions" (nativeGet route "session_key"))))
+            (put session :instance_epoch "previous-process")
+            (successful (js-call repository :replace "sessions" session))))))
+        (put clock :monoNow (lambda () (+ (performance/now) 10000)))
+        (await (until "positive native readback and confirmed-unsent retry" (async ()
+          (successful (await (js-call f :tick)))
+          (and (= (nativeGet (js-call repository :get "deliveries" (nativeGet unknown "delivery_id")) "state") "accepted")
+            (= (nativeGet (js-call repository :get "deliveries" (nativeGet retry "delivery_id")) "state") "accepted"))) 5000))
+        (js-call (expect (js-length (nativeGet h "inputs"))) :toBe (1+ before))
+        (js-call (expect (nativeGet (js-call repository :get "deliveries" (nativeGet retry "delivery_id")) "auto_retry_count")) :toBe 1)
+        (js-call (expect (nativeGet (js-call repository :get "deliveries" (nativeGet unknown "delivery_id")) "attempt_id")) :toBe (nativeGet unknown "attempt_id"))
+        (js-call bindings :forEach (lambda (row)
+          (let ((binding (JSON/parse (nativeGet row "payload"))))
+            (js-call (expect (nativeGet (js-call (js-call db :query "SELECT payload FROM bindings WHERE binding_id=?")
+              :get (nativeGet binding "binding_id")) "payload")) :toBe (nativeGet row "payload")))))
+        (let* ((endpoint (aref (nativeGet (nativeGet f "config") "agent_endpoints") 0))
+          (port (createDesktopPort "codex" (js-object :endpoints (js-array endpoint)) (js-object)))
+          (binding (js-call repository :get "bindings" (nativeGet unknown "binding_id"))))
+          ;; An assistant quote, substring or missing input cannot acknowledge a send.
+          (try
+            (let ((fact (await (js-call port :lookup binding "key" nil
+              (js-object :expected_input "native user" :deadline (+ (performance/now) 1000))))))
+              (js-call (expect (nativeGet fact "state")) :toBe "unknown")
+              (js-call (expect (nativeGet fact "definite_not_sent" false)) :toBe false))
+            (finally (await (js-call port :close)))))
+        (js-call (expect (js-length (nativeGet h "inputs"))) :toBe (1+ before))
+        (catch error
+          (throw (new globalThis.Error (str (nativeGet error "message") "; recovery states="
+            (JSON/stringify (js-call (js-call db :query "SELECT state,json_extract(payload,'$.blocked_reason') AS reason,json_extract(payload,'$.auto_retry_count') AS retries FROM deliveries") :all))))))
+        (finally (put clock :monoNow old-mono) (js-call db :close)))))
 
   (defasync checkCursorRestore ()
     (let* ((renderer (runInNewContext (str "(" cursorRenderer ")")
@@ -642,6 +705,7 @@
           (js-call deliveries :forEach (lambda (delivery)
             (js-call (expect (nativeGet delivery "state")) :toBe "accepted"))))
         (await (checkDesktopRecovery h))
+        (await (checkDeliveryRecovery h))
         (await (checkCodexSnapshotFrames h))
         ;; Real UDS control server + native-command fixture + existing Bridge
         ;; readback. This does not claim that a real Cursor extension is installed.

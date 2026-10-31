@@ -77,20 +77,12 @@
                 (can context "connection.inspect" address)
                 (can context "message.read" address)))))
         (rows
-          (js-call
-            addresses
-            :map
-            (lambda
-              (address)
-              (js-call
-                repository
-                :get
-                "poll_checkpoints"
-                (js-object
-                  :connection_id
-                  id
-                  :conversation_key
-                  (conversationKey address))))))
+          (if (= (nativeGet connection "platform") "lark")
+            (js-call (js-call (js-call (nativeGet (nativeGet context "store") "db") :query
+              "SELECT payload FROM poll_checkpoints WHERE connection_id=? AND conversation_key LIKE 'inbox:%' AND json_extract(payload,'$.kind') IN ('p2p_chat','group_chat','p2p','group') AND json_extract(payload,'$.identity_revision')=?")
+              :all id (nativeGet connection "identity_revision")) :map
+              (lambda (row) (JSON/parse (nativeGet row "payload"))))
+            (js-array)))
         (health
           (js-object
             :watch_count
@@ -114,11 +106,15 @@
             (lambda
               (row)
               (if row
+                (progn
+                  (when (nativeGet row "native_error") (js-call reasons :add "poll_unavailable"))
                 (js-call
                   (nativeGet row "reason_codes" (js-array))
                   :forEach
-                  (lambda (code) (js-call reasons :add code)))
+                  (lambda (code) (js-call reasons :add code))))
                 (js-call reasons :add "not_observed"))))
+          (put health :watch_count (js-length rows))
+          (when (= (js-length rows) 0) (js-call reasons :add "not_observed"))
           (js-call
             (js-array "last_success_at" "completed_until" "next_due_at")
             :forEach
@@ -151,7 +147,10 @@
               (and
                 (not (nativeNullish (nativeGet health "last_success_at")))
                 (= (nativeGet reasons "size") 0)))
-            (put health :state (if (nativeGet health "ready") "online" "degraded"))))
+            (put health :state (if (nativeGet health "ready")
+              (if (> (nativeGet health "lag_seconds" 0)
+                (Math/max 5 (* 3 (nativeGet connection "inbox_poll_seconds" 2)))) "catching_up" "online")
+              "degraded"))))
         (when progress
           (put health :last_success_at (nativeGet progress "last_success_at"))
           (put health :ready (= (nativeGet progress "ready") t))

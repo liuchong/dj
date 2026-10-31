@@ -27,7 +27,7 @@ Codex IPC 的状态快照是不可分页的原生帧，长会话可能超过 1 M
 1. 操作员启动 DJ，以 `catalog.refresh` / `session.list` 查询已配置范围。Codex 的共享历史项只标为历史，`session.probe` 通过 IPC 找到原会话 owner 并取得状态快照后，才报告活接收方。Cursor 只返回明确配置窗口里的 local 线程，draft 或其他来源不进入可发送目标。native_api 只返回指定工作区已加载的原会话，不宣称完整历史覆盖。
 2. 用返回的精确 `session_ref` 调用 `session.send`，或通过 `agent.discover` / `agent.register` 绑定独立 recipient 后创建订阅。默认 busy=steer 时，Codex 可通过原生忙时接口接收独立通知；显式 queue 才等待空闲。unknown 不猜测为空闲，所有模式都保留提交前复核。
 3. DJ 按既有流程先持久化 `submitting` 再执行原生发送。Codex 空闲使用 owner 定向的 `thread-follower-start-turn` v2，忙时 steer 使用 `thread-follower-steer-turn` v1；Cursor Bridge 使用 `sendMessage` 且 `force=false`；native_api 核对 idle 后调用原会话原生 submitMessage，DJ 自动管理的 Inspector 在操作结束时关闭。不自动尝试第二种发送模式，不强制打断原任务。
-4. 原生 ACK 或 Cursor submitted/queued 仅证明接口接受，不证明 Agent 已开始、已回复或已完成。超时、断线及不确定响应保持 `unknown`，不自动重发；未能取得可靠去重/观察证据时按既有人工核对流程处理。
+4. 原生 ACK 或 Cursor submitted/queued 仅证明接口接受，不证明 Agent 已开始、已回复或已完成。超时、断线及不确定响应保持 `unknown`，不自动重发；Codex 可从准确原生会话的 userMessage 正向查回完整原输入，支持客户端重启后的只读核实；查不到不证明未发送，仍保留 unknown。详见 [离线恢复](../specs/0018-offline-recovery.md)。
 5. 信封继续携带原 `reply_context_id` 与 `allowed_actions`。Agent 通过自己的 DJ CLI/MCP 凭据显式调用 `message.reply`，由现有 IM outbox 回复原话题；桌面端口不代替 Agent 生成答案。
 
 ## 查询与能力边界

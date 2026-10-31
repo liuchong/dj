@@ -177,3 +177,7 @@ metadata:
 ## 已发消息与表情
 
 - lifecycle: 支持 message.recall、message.edit、message.reaction.add/list/remove 和 message.action.get，目标、幂等与结果核对见[已发消息操作](references/message-actions.md)。已发撤回和未发取消分开；不把外层 ok 当作原生变更已完成。
+
+## 故障恢复
+
+- behavior: Lark 断线后自动按持久水位补收；明确未发送的可重试通知自动退避恢复，Codex 不确定投递只做正向原生读回核实，禁止盲目重发。健康状态与调用方处理见 [delivery](references/delivery.md)。

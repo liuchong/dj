@@ -224,4 +224,29 @@
           "SELECT COUNT(*) AS n FROM work_marks WHERE state='done'") :get) "n")) :toBe 4)
         (js-call (expect (nativeGet (js-call (js-call db :query
           "SELECT COUNT(*) AS n FROM outbound WHERE state='accepted'") :get) "n")) :toBe 1)
+        ;; Four hours offline must not require 240 one-minute polling windows.
+        (let ((before (Date/parse (js-call (nativeGet f "clock") :utcNow))))
+          (js-call (js-array 5400000 10800000 14390000) :forEach (lambda (offset)
+            (let ((id (str "offline-" offset)))
+              (js-call (nativeGet f "messages") :set id (js-object :message_id id :chat_id "c1"
+                :create_time (str (+ before offset)) :msg_type "text"
+                :body (js-object :content (JSON/stringify (js-object :text id)))
+                :sender (js-object :id "ou_other" :id_type "open_id" :sender_type "user")
+                :mentions (js-array (js-object :id "ou_self" :id_type "open_id")
+                  (js-object :id "ou_bot" :id_type "open_id")))))))
+          (js-call (nativeGet f "clock") :advance 14400000)
+          (let* ((connections (nativeGet (await (callOk f "O" "connection.list" (js-object))) "items"))
+            (user (js-call connections :find (lambda (row) (= (nativeGet row "connection_id") "lark")))))
+            (js-call (expect (nativeGet (nativeGet user "source_health") "state")) :toBe "catching_up"))
+          (await (advance f 80))
+          (js-call (expect (nativeGet (js-call (js-call db :query
+            "SELECT COUNT(*) AS n FROM events WHERE native_message_id LIKE 'offline-%'") :get) "n")) :toBe 6)
+          (let* ((connections (nativeGet (await (callOk f "O" "connection.list" (js-object))) "items"))
+            (user (js-call connections :find (lambda (row) (= (nativeGet row "connection_id") "lark")))))
+            (js-call (expect (nativeGet (nativeGet user "source_health") "lag_seconds")) :toBeLessThan 15)
+            (js-call (expect (nativeGet (nativeGet user "source_health") "ready")) :toBe t))
+          (await (js-call f :restart))
+          (await (advance f 20))
+          (js-call (expect (nativeGet (js-call (js-call db :query
+            "SELECT COUNT(*) AS n FROM events WHERE native_message_id LIKE 'offline-%'") :get) "n")) :toBe 6))
         (finally (js-call db :close))))) cleanup))

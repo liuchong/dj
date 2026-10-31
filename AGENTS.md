@@ -47,6 +47,8 @@ DJ 程序内部的 Lark 接入必须直连官方 WebSocket 与 HTTPS API，禁�
 
 ## 正式规格与接续要求
 
+- 离线补收、通知重试和不确定投递核实按 [0018](docs/specs/0018-offline-recovery.md)；追赶水位与连接健康分开，unknown 查不到不是未发送。
+
 - Lark 官方 API 基础能力归独立 [Lark 包](packages/lark/README.md)，DJ 连接选择、订阅、过滤、台账和消息语义归 IM 层；按 [0017](docs/specs/0017-lark-package.md) 接线。不得按 user/bot、部署昵称或 API 领域复制请求栈，不把平台权限不足当成 DJ 缺少接口。
 
 - 已发消息撤回、文本编辑及手动表情增删查按 [0016](docs/specs/0016-message-actions.md)，沿原连接身份操作，先持久登记再请求原生接口，不重放 unknown 结果。 新增或修改对外能力时，必须在同一工作中更新 DJ Skill 的能力导航、用法及相关 references，并更新已安装的 Skill，让调用方能够发现和使用。

@@ -113,6 +113,14 @@
                   :role (if (= type "userMessage") "user" "assistant") :text text))
                 (setq complete false))))))))
       (js-object :items rows :complete complete)))
+  (defun codexInputReceipt (state expected key)
+    (let ((found (and (= (nativeTypeOf expected) "string") (> (js-length expected) 0)
+      (js-call (nativeGet (codexMessages state) "items") :find
+        (lambda (row) (and (= (nativeGet row "role") "user") (= (nativeGet row "text") expected)))))))
+      (if found (js-object :state "accepted" :kind "accepted" :dispatch_key key
+        :native_receipt_key (str "input:" (nativeGet found "native_message_id"))
+        :evidence_level "native_protocol")
+        (js-object :state "unknown" :evidence_level "none"))))
   (defun cursorMessages (db thread cursor budget context)
     (let* ((head (js-call (js-call db :query
               "SELECT json_extract(value,'$.fullConversationHeadersOnly') AS headers FROM cursorDiskKV WHERE key=? AND length(value)<=8388608")
@@ -166,7 +174,7 @@
              :session_probe "supported" :session_send "supported" :start_idle "supported"
              :message_during_run (if (= tool "codex") "supported" "unsupported")
              :session_create (if create-enabled "supported" "unsupported") :instance_start "unsupported" :instance_stop "unsupported"
-             :native_idempotency "unsupported" :lookup_send "unsupported" :lookup_create (if create-enabled "supported" "unsupported")
+             :native_idempotency "unsupported" :lookup_send (if (= tool "codex") "positive_only" "unsupported") :lookup_create (if create-enabled "supported" "unsupported")
              :observe "unsupported" :max_input_frame_bytes 262144))
            (endpointFor nil) (sessionRecord nil) (cursorThreads nil) (codexSnapshot nil)
            (probe nil) (listSessions nil) (readMessages nil) (submit nil) (probeInstance nil)
@@ -435,8 +443,16 @@
                   (setq index (1+ index)))
                 (put result :items items)))
             result)))
-        :lookup (async (binding key ref context) (js-object :state "unknown" :evidence_level "none"))
+        :lookup (async (binding key ref context)
+          ;; Only a native user input with the exact immutable delivered text is proof.
+          ;; Missing/partial history never proves that the send did not happen.
+          (let ((expected (nativeGet context "expected_input")))
+            (if (and (= tool "codex") (= (nativeTypeOf expected) "string"))
+              (await (funcall codexSnapshot (funcall endpointFor binding)
+                (nativeGet binding "native_session_id") context (async (channel result)
+                  (codexInputReceipt (nativeGet result "state") expected key))))
+              (js-object :state "unknown" :evidence_level "none"))))
         :observe (async (binding ref cursor budget context)
           (js-object :items (js-array) :complete t :coverage "partial" :next_cursor nil))
         :close (async () (setq closed t)))))
-  (export codexInputRequest createDesktopPort codexRuntime cursorRuntime))
+  (export codexInputRequest codexInputReceipt createDesktopPort codexRuntime cursorRuntime))

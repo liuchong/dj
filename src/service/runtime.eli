@@ -14,7 +14,7 @@
   (import "../ingestion/service.eli" acceptEvent persistProgress)
   (import "../tasks/commands.eli" processCommands)
   (import "../routing/matcher.eli" matchTurn)
-  (import "../delivery/scheduler.eli" dispatchRoute selectDispatchHead reconcileDelivery observeDelivery)
+  (import "../delivery/scheduler.eli" dispatchRoute selectDispatchHead reconcileDelivery observeDelivery retryUnsentDelivery)
   (import "../delivery/working.eli" processWorking)
   (import "../messaging/service.eli" dispatchOutbound reconcileOutbound)
   (import "../catalog/refresh.eli" runCatalogBatch tombstoneMessage)
@@ -316,6 +316,24 @@
                       (must (js-call repository :replace "lifecycle_actions" record))
                       (success nil))))
                 result))))))
+    ;; Recovery uses the same bounded job pool and never sends unknown inputs again.
+    (let* ((runtime (nativeGet context "runtime")) (now (utcNow context))
+      (mono (js-call (nativeGet (nativeGet context "ports") "clock") :monoNow)))
+      (when (and (= (nativeGet runtime "state") "ready")
+        (>= mono (nativeGet runtime "delivery_recovery_due" 0)))
+        (put runtime :delivery_recovery_due (+ mono 5000))
+        (let ((db (nativeGet (nativeGet context "store") "db")))
+          (js-call (js-call (js-call db :query
+            "SELECT delivery_id FROM deliveries WHERE state='failed' AND json_extract(payload,'$.definite_not_sent')=1 AND json_extract(payload,'$.retryable')=1 AND COALESCE(json_extract(payload,'$.next_retry_at'),'')<=? ORDER BY delivery_id LIMIT 4") :all now)
+            :forEach (lambda (row)
+              (let ((id (nativeGet row "delivery_id")))
+                (launch context (str "retry_delivery:" id)
+                  (lambda () (enqueueWrite context (lambda () (retryUnsentDelivery context id))))))))
+          (js-call (js-call (js-call db :query
+            "SELECT d.delivery_id FROM deliveries d JOIN attempts a ON a.attempt_id=json_extract(d.payload,'$.attempt_id') JOIN bindings b ON b.binding_id=json_extract(a.payload,'$.binding_id') WHERE d.state='unknown' AND json_extract(b.payload,'$.tool')='codex' AND COALESCE(json_extract(d.payload,'$.next_reconcile_at'),'')<=? ORDER BY d.delivery_id LIMIT 4") :all now)
+            :forEach (lambda (row)
+              (let ((id (nativeGet row "delivery_id")))
+                (launch context (str "reconcile_delivery:" id) (lambda () (reconcileDelivery context id)))))))))
     (js-call
       (pendingRows
         context

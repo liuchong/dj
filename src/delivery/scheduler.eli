@@ -35,9 +35,9 @@
   (import "../catalog/records.eli" attachBinding putSession)
   (import "../lifecycle/gates.eli" assertGate)
   (import "../sessions/rules.eli" attachConversationRules)
-  (import "./envelope.eli" encodeAgentInput)
-  (import "./snapshot.eli" packEnvelope)
-  (import "./service.eli" isContributionEffective projectDelivery)
+  (import "./envelope.eli" encodeAgentInput renderEnvelope)
+  (import "./snapshot.eli" packEnvelope unpackEnvelope)
+  (import "./service.eli" isContributionEffective projectDelivery queueCapacity)
   (import "./read-scope.eli" withContributionReads)
   (defconst queuedStates (js-array "ready" "deferred" "blocked"))
   (defun attemptBinding (context attempt)
@@ -912,6 +912,9 @@
                     (put record :state "failed")
                     (put record :definite_not_sent t)
                     (put record :retryable (= (nativeGet fact "retryable") t))
+                    (when (nativeGet record "retryable")
+                      (put record :next_retry_at (addSeconds (utcNow context)
+                        (Math/min 60 (Math/pow 2 (Math/min 6 (1+ (nativeGet record "auto_retry_count" 0))))))))
                     (put
                       record
                       :evidence_level
@@ -1119,6 +1122,29 @@
                     (lambda (tx) (releaseClaim context claim) (success nil))))))))
         (catch djReturn6Error
           (if (eq djReturn6Error djReturn6Token) djReturn6Value (throw djReturn6Error))))))
+  (defun retryUnsentDelivery (context delivery-id)
+    (inTransaction context (lambda (tx)
+      (must (ownerGuard context))
+      (let* ((repository (nativeGet context "repository"))
+        (record (js-call repository :get "deliveries" delivery-id)))
+        (if (and record (= (nativeGet record "state") "failed")
+          (= (nativeGet record "definite_not_sent") t) (= (nativeGet record "retryable") t)
+          (<= (Date/parse (nativeGet record "next_retry_at" (utcNow context))) (Date/parse (utcNow context))))
+          (progn
+            (if (<= (Date/parse (nativeGet record "expires_at")) (Date/parse (utcNow context)))
+              (progn (put record :state "expired") (put record :blocked_reason "ttl_expired")
+                (finishWorking context delivery-id "expired"))
+              (progn
+                (must (queueCapacity context (nativeGet record "route_id")))
+                ;; The normal dispatcher rechecks current identity, authorization and gate.
+                (put record :state "ready") (put record :dispatch_key (nextId context "dispatch"))
+                (put record :auto_retry_count (1+ (nativeGet record "auto_retry_count" 0)))))
+            (put record :next_retry_at nil)
+            (put record :definite_not_sent false) (put record :retryable false)
+            (put record :revision (nextRevision (nativeGet record "revision")))
+            (must (js-call repository :replace "deliveries" record))
+            (success (projectDelivery context record)))
+          (success nil))))))
   (defasync reconcileDelivery
     (context delivery-id)
     (let ((djReturn7Token (js-object)) (djReturn7Value nil))
@@ -1149,7 +1175,10 @@
             (when
               (and
                 port
-                (= (nativeGet instance "instance_epoch") (nativeGet binding "instance_epoch")))
+                (or (= (nativeGet instance "instance_epoch") (nativeGet binding "instance_epoch"))
+                  ;; A read-only native snapshot can positively confirm the original
+                  ;; Codex input after a client restart; it never authorizes a resend.
+                  (= (nativeGet binding "tool") "codex")))
               (try
                 (setq
                   observation
@@ -1160,7 +1189,10 @@
                       binding
                       (nativeGet attempt "dispatch_key")
                       (nativeGet record "native_ref" nil)
-                      (nativeCallContext context))))
+                      (Object/assign (js-object) (nativeCallContext context)
+                        (when (= (nativeGet binding "tool") "codex")
+                          (js-object :expected_input (renderEnvelope
+                            (unpackEnvelope (nativeGet attempt "envelope_snapshot")) 250000)))))))
                 (catch unavailable
                   (when (eq unavailable djReturn7Token) (throw unavailable))
                   nil)))
@@ -1169,6 +1201,7 @@
                 (when (nativeGet result "ok")
                   (let ((current (js-call repository :get "deliveries" delivery-id)))
                     (put current :reconcile_requested false)
+                    (put current :next_reconcile_at (addSeconds (utcNow context) 30))
                     (must (js-call repository :replaceProgress "deliveries" current))))
                 result))))))
         (catch djReturn7Error
@@ -1251,6 +1284,7 @@
     recordReceipt
     dispatchRoute
     reconcileDelivery
+    retryUnsentDelivery
     observeDelivery
     selectHead
     releaseClaim))
