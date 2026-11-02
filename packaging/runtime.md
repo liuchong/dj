@@ -95,3 +95,7 @@ Claude Code and Antigravity use existing local receivers via `dj native configur
 服务配置可增加 `fixed_routes`，按包内 `config/fixed-routes.example.json` 片段声明来源账号/群、准确实例和原生对话、独立 recipient 及条件。启动自动装配；目标首次离线会显示待接通，恢复后继续，不能把历史文件当作活接收端。`service.status.fixed_routes` 读取真实装配状态。
 
 现有 SIGHUP/Core.reloadConfig 支持替换 fixed_routes、主体策略及客户端配置；端点、账号身份和数据库仍须独立管理重启。修改、停用或移除固定接线会先暂停其配置订阅，不改 AI 自建订阅或持久业务规则。相同配置重载和重启不改变已活动订阅的水位。详情见 Skill 的 `references/fixed-routes.md`。
+
+## 可选菜单栏控制器
+
+默认目录包不构建 AppKit 宿主。需要 macOS 菜单栏时，打包命令显式加 --with-controller，再运行目录包内的 dj controller install。它只安装 DJ Control.app 和独立控制器登录项，不改 DJ 核心登录项、运行时、服务配置、账号或消息数据。没有控制器时原 CLI/MCP/GEPO 和 launchd 照常工作；退出控制器保留核心服务。

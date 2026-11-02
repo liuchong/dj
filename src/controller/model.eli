@@ -1,0 +1,17 @@
+(module dj.controller.model
+  (import "../core/native.eli" nativeGet)
+  (defun projectStatus (installed launch protocol &optional intent error)
+    (let* ((data (nativeGet protocol "data")) (ready (and (nativeGet protocol "ok") (= (nativeGet data "state") "ready")))
+      (loaded (nativeGet launch "loaded"))
+      (state (cond (intent (if (= intent "start") "starting" "stopping"))
+        (error "error") ((not installed) "uninstalled") ((not (nativeGet launch "known")) "error")
+        (ready "running") ((not loaded) "stopped")
+        ((and (nativeGet protocol "ok") (= (nativeGet data "state") "draining")) "stopping")
+        ((nativeGet launch "pid") "unresponsive") (t "starting")))
+      (label (nativeGet (js-object :running "运行中" :stopped "已停止" :starting "启动中" :stopping "停止中"
+        :error "异常" :unresponsive "进程在运行，服务未就绪" :uninstalled "未安装服务") state)))
+      (js-object :type "status" :state state :label label :pid (nativeGet launch "pid" nil)
+        :detail (or error (if (and ready (not loaded)) "服务正在运行，但未由此登录项管理" ""))
+        :can_start (and installed (nativeGet launch "known") (not ready) (not intent) (not (= state "stopping")))
+        :can_stop (and installed (nativeGet launch "known") loaded (not intent)))))
+  (export projectStatus))

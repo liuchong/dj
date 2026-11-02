@@ -72,7 +72,9 @@
     "tests/integration/event-receipts.test.eli",
     "tests/unit/event-receipts.test.eli",
     "tests/integration/fixed-routes.test.eli",
-    "tests/unit/fixed-routes.test.eli"
+    "tests/unit/fixed-routes.test.eli",
+    "tests/integration/controller.test.eli",
+    "tests/unit/controller.test.eli"
   ],
   "outDir": "dist-tests"
 }

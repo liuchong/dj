@@ -47,7 +47,7 @@ dj agent whoami --json
 dj skill targets
 ```
 
-1. 按[安装与使用](docs/delivery.md)准备服务和独立客户端身份；需要持续运行时配置 [macOS 常驻服务](docs/guides/macos-service.md)。
+1. 按[安装与使用](docs/delivery.md)准备服务和独立客户端身份；需要持续运行时配置 [macOS 常驻服务](docs/guides/macos-service.md)，可选安装带项目 Logo 的菜单栏控制器（含此组件的目录包执行 `dj controller install`），也可从 App 启动器打开。
 2. 为 AI 工具[安装 Skill、配置接口](skills/dj/references/clients.md)，核对原会话绑定。
 3. 由接收对话建立[消息订阅](docs/guides/lark-realtime.md)，或直接向精确会话发送输入。
 

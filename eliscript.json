@@ -8,7 +8,8 @@
     "src/library.eli",
     "src/connectors/pi.eli",
     "packages/lark/src/index.eli",
-    "packages/slack/src/index.eli"
+    "packages/slack/src/index.eli",
+    "src/controller/platform/darwin/main.eli"
   ],
   "outDir": "dist"
 }

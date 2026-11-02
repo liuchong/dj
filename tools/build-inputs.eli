@@ -12,6 +12,8 @@
         (paths
           (js-array
             "src/host/darwin/process-info.c"
+            "src/host/darwin/status-bar.m"
+            "docs/pages/assets/dj-mark.svg"
             "package.json"
             "packages/lark/package.json"
             "packages/lark/eliscript.json"

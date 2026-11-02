@@ -1,0 +1,8 @@
+(module dj.controller.install
+  (import "../core/native.eli" nativeGet)
+  (import "./platform/darwin/install.eli" installDarwinController)
+  (defasync installController (bundle runtime)
+    (unless (= (nativeGet globalThis.process "platform") "darwin")
+      (throw (new globalThis.Error "The optional service controller currently supports macOS only")))
+    (await (installDarwinController bundle runtime)))
+  (export installController))

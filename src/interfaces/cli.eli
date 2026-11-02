@@ -5,6 +5,7 @@
   (import "./skill.eli" runSkillCommand)
   (import "./hooks.eli" runHookCommand)
   (import "./native.eli" runNativeCommand)
+  (import "../controller/install.eli" installController)
   (import "../core/errors.eli" success failure invalidField)
   (import "../core/types.eli" utf8Bytes)
   (import "../core/limits.eli" limits)
@@ -375,7 +376,7 @@
         "dj mcp serve --transport stdio [--client-profile FILE]\nThin authenticated proxy to the configured DJ service. It does not start another Core.\n")
       ((= operation "")
         (str
-          "DJ: deterministic IM and Agent gateway\n\ndj skill targets|install|check|config --help\n\n"
+          "DJ: deterministic IM and Agent gateway\n\ndj skill targets|install|check|config --help\ndj controller --help\n\n"
           (js-call
             (js-call
               (descriptorData)
@@ -462,6 +463,21 @@
     (argv io)
     (let ((djReturn3Token (js-object)) (djReturn3Value nil))
       (try
+        (when (= (aref argv 0) "controller")
+          (if (or (= (aref argv 1) "--help") (not (aref argv 1)))
+            (funcall (nativeGet io "stdout") "dj controller install\nInstall DJ Control.app and its user login item. Requires an existing DJ launchd service and private client profile. Exiting the controller leaves DJ running.\n")
+            (if (and (= (aref argv 1) "install") (= (js-length argv) 2))
+              (try
+                (let ((installed (await (installController
+                  (resolve (dirname (aref (nativeGet globalThis.process "argv") 1)) "../../..")
+                  (nativeGet globalThis.process "execPath")))))
+                  (funcall (nativeGet io "stdout") (str (JSON/stringify installed) "\n")))
+                (catch problem
+                  (funcall (nativeGet io "stderr") (str "Controller installation failed: " (nativeGet problem "message" "unavailable") "\n"))
+                  (setq djReturn3Value 4) (throw djReturn3Token)))
+              (progn (funcall (nativeGet io "stderr") "Use dj controller install or dj controller --help\n")
+                (setq djReturn3Value 2) (throw djReturn3Token))))
+          (setq djReturn3Value 0) (throw djReturn3Token))
         (when (= (aref argv 0) "native")
           (setq djReturn3Value (await (runNativeCommand argv io)))
           (throw djReturn3Token))

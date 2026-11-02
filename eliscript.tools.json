@@ -10,7 +10,8 @@
     "tools/lark-acceptance-controller.eli",
     "tests/support/lark-controller-fixture.eli",
     "tools/native-observer-controller.eli",
-    "tools/package-cursor.eli"
+    "tools/package-cursor.eli",
+    "tools/controller.eli"
   ],
   "outDir": "dist-tools"
 }

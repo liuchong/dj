@@ -28448,6 +28448,116 @@
       "given": "A declarative route configuration",
       "when": "Exercise backoff boundary",
       "then": "Invalid references/policies are rejected and reconciliation identity is stable"
+    },
+    {
+      "case_id": "T38.controller-launchd.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/controller.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 30000,
+      "resource_group": "isolated-service-controller",
+      "acceptance_ids": [
+        "A01"
+      ],
+      "requirements": [
+        "SPEC-0022"
+      ],
+      "given": "An isolated current-user launchd job and controller ports",
+      "when": "Exercise controller launchd",
+      "then": "Start, stop, status and failure semantics preserve the existing DJ service"
+    },
+    {
+      "case_id": "T38.controller-failures.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/controller.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 30000,
+      "resource_group": "isolated-service-controller",
+      "acceptance_ids": [
+        "A01"
+      ],
+      "requirements": [
+        "SPEC-0022"
+      ],
+      "given": "An isolated current-user launchd job and controller ports",
+      "when": "Exercise controller failures",
+      "then": "Start, stop, status and failure semantics preserve the existing DJ service"
+    },
+    {
+      "case_id": "T38.controller-states.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/controller.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 1000,
+      "resource_group": "pure",
+      "acceptance_ids": [
+        "A04"
+      ],
+      "requirements": [
+        "SPEC-0022"
+      ],
+      "given": "Normalized controller state and bounded system ports",
+      "when": "Exercise states",
+      "then": "UI status and action coordination stay safe without altering the core"
+    },
+    {
+      "case_id": "T38.controller-coalescing.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/controller.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 1000,
+      "resource_group": "pure",
+      "acceptance_ids": [
+        "A04"
+      ],
+      "requirements": [
+        "SPEC-0022"
+      ],
+      "given": "Normalized controller state and bounded system ports",
+      "when": "Exercise coalescing",
+      "then": "UI status and action coordination stay safe without altering the core"
+    },
+    {
+      "case_id": "T38.controller-deadline.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/controller.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 1000,
+      "resource_group": "pure",
+      "acceptance_ids": [
+        "A04"
+      ],
+      "requirements": [
+        "SPEC-0022"
+      ],
+      "given": "Normalized controller state and bounded system ports",
+      "when": "Exercise deadline",
+      "then": "UI status and action coordination stay safe without altering the core"
     }
   ],
   "source_extension_base": "c1eb7b1"

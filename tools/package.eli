@@ -12,6 +12,7 @@
   (import "node:path" resolve dirname relative isAbsolute)
   (import "node:crypto" randomUUID)
   (import "./build.eli" bindCompiler)
+  (import "./controller.eli" buildStatusBar)
   (import "./build-inputs.eli" sha256 assertBuildBinding)
   (defun within
     (root path)
@@ -208,7 +209,7 @@
                   (cond ((js-call entry :isDirectory) (await (visit path)))
                     ((and (js-call entry :isFile) (not (js-call entry :isSymbolicLink)))
                       (await
-                        (chmod path (if (js-call (js-array "bin/dj" "libexec/dj-process-info")
+                        (chmod path (if (js-call (js-array "bin/dj" "libexec/dj-process-info" "libexec/dj-status-bar")
                           :includes (relative root path)) 448 384)))
                       (js-call
                         files
@@ -242,7 +243,8 @@
             :compiler
             (nativeGet build "compiler")
             :bun_version
-            (nativeGet build "bun_version")))
+            (nativeGet build "bun_version")
+            :controller (= (nativeGet options "with_controller") t)))
         (build-id (str "dj-" (sha256 (JSON/stringify identity))))
         (output (resolve (or (nativeGet options "output") (str ".local/packages/" build-id))))
         (parent (dirname output))
@@ -322,6 +324,14 @@
       (await (copyAsset "LICENSE" staging "LICENSE"))
       (await (copyAsset "bin/dj" staging "bin/dj" t))
       (await (copyAsset "dist/native/dj-process-info" staging "libexec/dj-process-info" t))
+      (when (nativeGet options "with_controller")
+        (await (buildStatusBar (resolve staging "libexec/dj-status-bar")))
+        (let ((result (await (Bun/build (js-object
+          :entrypoints (js-array (resolve "dist/src/controller/platform/darwin/main.mjs"))
+          :outdir (resolve staging "libexec/darwin") :target "bun" :format "esm" :packages "bundle"
+          :splitting false :naming (js-object :entry "main.mjs")
+          :plugins (js-array (fixedRuntimePlugin (nativeGet compiler "root"))))))))
+          (unless (nativeGet result "success") (throw (new globalThis.Error "standalone controller bundling failed")))))
       (await (copyTree "skills/dj" staging "skills/dj"))
       (await (copyTree "connectors/pi" staging "connectors/pi"))
       (await
@@ -395,15 +405,15 @@
 (try
       (let*
         ((args (js-call (nativeGet globalThis.process "argv") :slice 2)) (options (js-object)))
-        (unless
-          (or
-            (= (js-length args) 0)
-            (and (= (js-length args) 2) (= (aref args 0) "--output")))
-          (throw
-            (new
-              globalThis.Error
-              "usage: package [--output .local/packages/new-directory]")))
-        (when (= (js-length args) 2) (put options :output (aref args 1)))
+        (let ((index 0))
+          (while (< index (js-length args))
+            (cond
+              ((and (= (aref args index) "--with-controller") (not (nativeGet options "with_controller")))
+                (put options :with_controller t))
+              ((and (= (aref args index) "--output") (not (nativeGet options "output")) (aref args (1+ index)))
+                (setq index (1+ index)) (put options :output (aref args index)))
+              (t (throw (new globalThis.Error "usage: package [--with-controller] [--output .local/packages/new-directory]"))))
+            (setq index (1+ index))))
         (js-call
           (nativeGet globalThis.process "stdout")
           :write

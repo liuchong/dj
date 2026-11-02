@@ -1,0 +1,17 @@
+(module dj.tools.controller
+  (import "../src/core/native.eli" nativeGet)
+  (import "node:fs/promises" readFile)
+  (import "node:path" dirname resolve)
+  (import "./build-inputs.eli" sha256)
+  (defasync buildStatusBar (path)
+    (unless (= (nativeGet globalThis.process "platform") "darwin") (throw (new globalThis.Error "macOS controller build requires macOS")))
+    (let* (
+      (child (Bun/spawn (js-array "cc" "-fobjc-arc" "-O2" "-Wall" "-Wextra" "-Werror" "-arch" "arm64"
+        "-framework" "AppKit" "-framework" "CoreServices" "src/host/darwin/status-bar.m" "-o" path)
+        (js-object :stdin "ignore" :stdout "inherit" :stderr "inherit"))))
+      (unless (= (await (nativeGet child "exited")) 0) (throw (new globalThis.Error "status bar host build failed")))
+      (let ((image (Bun/spawn (js-array "sips" "-s" "format" "icns" "docs/pages/assets/dj-mark.svg" "--out"
+        (resolve (dirname path) "dj-mark.icns")) (js-object :stdin "ignore" :stdout "ignore" :stderr "inherit"))))
+        (unless (= (await (nativeGet image "exited")) 0) (throw (new globalThis.Error "controller app icon conversion failed"))))
+      (js-object :path path :sha256 (sha256 (await (readFile path))))))
+  (export buildStatusBar))
