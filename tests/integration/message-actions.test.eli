@@ -1,4 +1,5 @@
 (module dj.tests.integration.message-actions
+  (import "../../src/messaging/recipients.eli" optOutNotice)
   (import "../../src/core/native.eli" nativeGet)
   (import "../../src/adapters/im/lark.eli" createLarkPort)
   (import "../support/fixtures.eli" createFixture closeFixture callOk createdEvent successful)
@@ -68,7 +69,7 @@
               (edit (await (callOk f "O" "message.edit" edit-args))))
               (js-call (expect (nativeGet edit "state")) :toBe "accepted")
               (js-call (expect (nativeGet edit "confirmed")) :toBe t)
-              (js-call (expect (nativeGet state "text")) :toBe "edited\n中文")
+              (js-call (expect (nativeGet state "text")) :toBe (str "edited\n中文\n\n" optOutNotice))
               (js-call (expect (nativeGet (aref (writes f) 0) "method")) :toBe "PUT")
               (await (callOk f "O" "message.edit" edit-args))
               (js-call (expect (js-length (writes f))) :toBe 1)

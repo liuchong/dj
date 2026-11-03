@@ -41,6 +41,7 @@
 | [0010 消息消费](specs/0010-message-consumption.md) | 默认忙时直达、可配置排队及全局异步消费 |
 | [0020 对话督工](specs/0020-session-supervision.md) | 主动登记、持久空闲检测、原会话续接与明确取消 |
 | [0021 固定接线](specs/0021-fixed-routes.md) | 配置多账号到准确对话，原子更新、管理权和离线恢复 |
+| [0023 收件人禁收](specs/0023-recipient-preferences.md) | TD/退订、持久出站黑白名单和明确拒绝 |
 | [0022 菜单栏控制器](specs/0022-service-controller.md) | 可选 macOS App、状态、启停和独立生命周期 |
 
 ## 技术与维护

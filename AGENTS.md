@@ -47,6 +47,8 @@ DJ 程序内部的 Lark 接入必须直连官方 WebSocket 与 HTTPS API，禁�
 
 ## 正式规格与接续要求
 
+- 出站收件人选择按 [0023](docs/specs/0023-recipient-preferences.md)：TD/退订只禁止出站，不隐藏来信。显式拒绝和收件人退订优先于白名单；AI收到禁收错误不可更换账号、工具或渠道绕过。所有发送/编辑路径复用统一规则，不能通过通用OpenAPI绕过。
+
 - macOS 菜单栏控制器按 [0022](docs/specs/0022-service-controller.md)：Eliscript 管理原用户 launchd 服务，AppKit 只投影 UI；退出控制器不退出服务，停止必须防止 KeepAlive 重拉，不另建核心或改写业务数据。
 
 - 管理员配置固定接线按 [0021](docs/specs/0021-fixed-routes.md)：复用 Agent/订阅/投递；稳定配置 ID、准确实例/会话、原子停用与重载、配置所有权和离线恢复。不创建替代对话，不覆盖 AI 自建订阅或持久业务规则。

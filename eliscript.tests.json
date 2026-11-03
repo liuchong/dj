@@ -74,7 +74,9 @@
     "tests/integration/fixed-routes.test.eli",
     "tests/unit/fixed-routes.test.eli",
     "tests/integration/controller.test.eli",
-    "tests/unit/controller.test.eli"
+    "tests/unit/controller.test.eli",
+    "tests/integration/recipients.test.eli",
+    "tests/unit/recipients.test.eli"
   ],
   "outDir": "dist-tests"
 }

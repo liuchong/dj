@@ -1,4 +1,5 @@
 (module dj.ingestion.service
+  (import "../messaging/recipients.eli" stageRecipientCommand)
   (import "../messaging/topics.eli" topicOf)
   (import "../tasks/commands.eli" stageCommand)
   (import "../connections/manager.eli" imPort)
@@ -344,7 +345,8 @@
                       (js-call repository :insert "events" event)
                       (let*
                         (
-                          (command (stageCommand context event))
+                          (recipient-command (stageRecipientCommand context event))
+                          (command (or recipient-command (stageCommand context event)))
                           (backpressure
                             (>=
                               (nativeGet
@@ -369,7 +371,7 @@
                               :last_revision
                               nil
                               :reason
-                              (if command "task_command" (if backpressure "ingress_capacity" nil)))))
+                              (if recipient-command "recipient_preference" (if command "task_command" (if backpressure "ingress_capacity" nil))))))
                         (js-call repository :insert "routing_work" work)
                         (let
                           (

@@ -28558,6 +28558,116 @@
       "given": "Normalized controller state and bounded system ports",
       "when": "Exercise deadline",
       "then": "UI status and action coordination stay safe without altering the core"
+    },
+    {
+      "case_id": "T38.recipient-optout.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/recipients.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 30000,
+      "resource_group": "isolated-recipient-policy",
+      "acceptance_ids": [
+        "A01"
+      ],
+      "requirements": [
+        "SPEC-0023"
+      ],
+      "given": "An isolated DJ Core, real SQLite and controlled native IM ports",
+      "when": "recipient-optout",
+      "then": "Recipient choices are durable and every outgoing message obeys the unified policy"
+    },
+    {
+      "case_id": "T38.recipient-group.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/recipients.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 30000,
+      "resource_group": "isolated-recipient-policy",
+      "acceptance_ids": [
+        "A01"
+      ],
+      "requirements": [
+        "SPEC-0023"
+      ],
+      "given": "An isolated DJ Core, real SQLite and controlled native IM ports",
+      "when": "recipient-group",
+      "then": "Recipient choices are durable and every outgoing message obeys the unified policy"
+    },
+    {
+      "case_id": "T38.recipient-policy.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/recipients.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 30000,
+      "resource_group": "isolated-recipient-policy",
+      "acceptance_ids": [
+        "A01"
+      ],
+      "requirements": [
+        "SPEC-0023"
+      ],
+      "given": "An isolated DJ Core, real SQLite and controlled native IM ports",
+      "when": "recipient-policy",
+      "then": "Recipient choices are durable and every outgoing message obeys the unified policy"
+    },
+    {
+      "case_id": "T38.recipient-command.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/recipients.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 1000,
+      "resource_group": "pure",
+      "acceptance_ids": [
+        "A04"
+      ],
+      "requirements": [
+        "SPEC-0023"
+      ],
+      "given": "Exact native command text and outgoing content",
+      "when": "recipient-command",
+      "then": "Only explicit human opt-out commands match; outgoing text and native API guards remain safe"
+    },
+    {
+      "case_id": "T38.recipient-api-guard.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/recipients.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 1000,
+      "resource_group": "pure",
+      "acceptance_ids": [
+        "A04"
+      ],
+      "requirements": [
+        "SPEC-0023"
+      ],
+      "given": "Exact native command text and outgoing content",
+      "when": "recipient-api-guard",
+      "then": "Only explicit human opt-out commands match; outgoing text and native API guards remain safe"
     }
   ],
   "source_extension_base": "c1eb7b1"

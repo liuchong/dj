@@ -11,6 +11,10 @@
         "A valid transport credential is required."
         :forbidden
         "The current principal is not authorized for this operation."
+        :recipient_opted_out
+        "收件人已退订，DJ 未发送。请尊重其选择，不要重试或改用其他账号、工具或渠道发送；只有收件人主动恢复接收后才可再次联系。"
+        :recipient_blocked
+        "出站收件规则禁止发送，DJ 未发送。请遵守规则，不要换账号、工具或渠道绕过。"
         :not_found
         "The resource is not present in the currently visible scope."
         :stale_reference

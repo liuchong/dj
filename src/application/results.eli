@@ -264,6 +264,12 @@
     (js-object :source_identity_revision integerSchema :reply_identity_revision integerSchema))))
   (put definitions :acknowledgement (obj (strings "acknowledgement_id emoji_type state reaction_id last_error"
     (js-object :delivery_id nullableString :native_acknowledged boolSchema))))
+  (put definitions :recipient_policy (obj (strings "connection_id default_action"
+    (js-object :revision integerSchema
+      :allow (obj (js-object :recipient_ids (arr stringSchema) :chat_ids (arr stringSchema)))
+      :deny (obj (js-object :recipient_ids (arr stringSchema) :chat_ids (arr stringSchema)))
+      :optouts (arr (obj (strings "connection_id recipient_id state event_id source_time updated_at")))
+      :has_more boolSchema :next_after nullableString)) (js-array "connection_id" "revision" "default_action" "allow" "deny")))
   (put definitions :lark_api (obj
     (strings "action_id connection_id identity state method path updated_at error_code response_mode"
       (js-object :identity_revision integerSchema :http_status integerSchema :native_ok boolSchema
@@ -712,7 +718,7 @@
     :outbound
     (obj
       (strings
-        "outbound_id principal_id state operation_id created_at"
+        "outbound_id principal_id state operation_id created_at blocked_reason"
         (js-object
           :revision
           integerSchema

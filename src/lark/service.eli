@@ -31,6 +31,12 @@
       (when (or (js-call (new globalThis.RegExp "^/open-apis/[^/]*%" "i") :test decoded)
         (js-call (new globalThis.RegExp "^/open-apis/(?:auth|authen|oauth)(?:/|$)") :test decoded))
         (must (failure "invalid_argument")))
+      ;; Message writes must use the guarded messaging path, including batch,
+      ;; forward and urgency endpoints. Generic API access is not a send bypass.
+      (when (and (not reading) (not (= (nativeGet args "method") "DELETE"))
+        (js-call (new globalThis.RegExp "^/open-apis/im/[^/]+/(?:messages|batch_messages|ephemeral)(?:/|$)" "i")
+          :test (globalThis.decodeURIComponent decoded)))
+        (must (failure "recipient_blocked" (js-object :details (js-object :reason "use_guarded_message_operations")))))
       (when (and (object-has? args "body") (object-has? args "form")) (must (failure "invalid_argument")))
       (js-call (js-array "query" "headers" "body") :forEach (lambda (key)
         (when (object-has? args key) (put spec key (nativeGet args key)))))

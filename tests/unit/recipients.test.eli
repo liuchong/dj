@@ -1,0 +1,33 @@
+(module dj.tests.unit.recipients
+  (import "../../src/core/native.eli" nativeGet)
+  (import "../../src/messaging/recipients.eli" recipientCommand recipientContent optOutNotice)
+  (import "../../src/lark/service.eli" requestSpec)
+  (import "../support/case.eli" withCase)
+  (import "bun:test" expect)
+  (defun command (text &optional kind truncated event-kind)
+    (recipientCommand (js-object :event_kind (or event-kind "message.created")
+      :sender (js-object :kind (or kind "human")) :content (js-object :text text :truncated truncated))))
+  (withCase "T38.recipient-command.unit" (lambda () nil) (lambda (ignored)
+    (js-call (js-array "TD" "td" "  tD\n" "退订" " 退订 ") :forEach
+      (lambda (text) (js-call (expect (command text)) :toBe "deny")))
+    (js-call (expect (command "恢复接收")) :toBe "allow")
+    (js-call (js-array "T D" "please TD" "不是退订" "TDx" "取消" "" "🙂") :forEach
+      (lambda (text) (js-call (expect (command text)) :toBe nil)))
+    (js-call (expect (command "TD" "bot")) :toBe nil)
+    (js-call (expect (command "TD" "unknown")) :toBe nil)
+    (js-call (expect (command "TD" "human" t)) :toBe nil)
+    (js-call (expect (command "TD" "human" false "message.reaction.added")) :toBe nil)
+    (let* ((original (js-object :type "text" :text "正文\nemoji🙂")) (output (recipientContent original)))
+      (js-call (expect (nativeGet original "text")) :toBe "正文\nemoji🙂")
+      (js-call (expect (nativeGet output "text")) :toBe (str "正文\nemoji🙂\n\n" optOutNotice))
+      (js-call (expect (nativeGet (recipientContent output) "text")) :toBe (nativeGet output "text")))) (lambda (ignored) nil))
+  (withCase "T38.recipient-api-guard.unit" (lambda () nil) (lambda (ignored)
+    (let ((connection (js-object :brand "lark")))
+      (js-call (js-array "/open-apis/im/v1/messages" "/open-apis/im/v1/messages/om_fixture/reply"
+        "/open-apis/im/v1/messages/om_fixture/merge_forward" "/open-apis/im/v1/batch_messages"
+        "/open-apis/im/v1/messages/om_fixture/urgent_app" "/open-apis/im/v1/%6dessages") :forEach
+        (lambda (path)
+          (js-call (expect (lambda () (requestSpec connection (js-object :path path :method "POST") false))) :toThrow)))
+      (js-call (expect (nativeGet (requestSpec connection (js-object :path "/open-apis/im/v1/files" :method "POST") false) "method")) :toBe "POST")
+      (js-call (expect (nativeGet (requestSpec connection (js-object :path "/open-apis/im/v1/messages/om_fixture" :method "DELETE") false) "method")) :toBe "DELETE")
+      (js-call (expect (nativeGet (requestSpec connection (js-object :path "/open-apis/im/v1/messages") t) "method")) :toBe "GET"))) (lambda (ignored) nil)))

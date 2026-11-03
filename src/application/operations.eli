@@ -603,6 +603,17 @@
     (js-array "reply_context_id" "content")
     (js-object :reply_context_id idSchema :content textSchema)
     (js-object :effect "accept" :result "outbound"))
+  (defconst recipientListSchema (objectSchema (js-object
+    :recipient_ids (Object/assign (arraySchema idSchema 256 0) (js-object :uniqueItems t))
+    :chat_ids (Object/assign (arraySchema idSchema 256 0) (js-object :uniqueItems t)))
+    (js-array "recipient_ids" "chat_ids")))
+  (addOperation "message.recipient_policy.get" "messaging" (js-array "connection_id")
+    (js-object :connection_id idSchema :after idSchema) (js-object :result "recipient_policy" :action "connection.manage"))
+  (addOperation "message.recipient_policy.set" "messaging" (js-array "connection_id" "policy" "expected_revision")
+    (js-object :connection_id idSchema :expected_revision (integerSchema 0 (nativeGet NativeNumber "MAX_SAFE_INTEGER"))
+      :policy (objectSchema (js-object :default_action (enumSchema "allow" "deny") :allow recipientListSchema :deny recipientListSchema)
+        (js-array "default_action" "allow" "deny")))
+    (js-object :effect "accept" :result "recipient_policy" :action "connection.manage"))
   ;; Native message actions share one target shape and the same transport catalog.
   (defconst messageTargetProperties (js-object :outbound_id idSchema :event_id idSchema :message_ref idSchema
     :context_ref idSchema :conversation_ref idSchema :native_message_id idSchema))

@@ -1,4 +1,5 @@
 (module dj.messaging.service
+  (import "./recipients.eli" checkRecipients recipientContent policyOperation)
   (import "../tasks/commands.eli" taskOutboundAllowed)
   (import "./topics.eli" topicOf trackedTopic)
   (import "../delivery/working.eli" finishWorking queueAcknowledgement)
@@ -871,6 +872,7 @@
                     "operation_id"
                     "revision"
                     "created_at"
+                    "blocked_reason"
                     "reply_context_id"
                     "destination"
                     "content"
@@ -982,7 +984,7 @@
                 (textCapability
                   context
                   address
-                  (nativeGet args "content")
+                  (recipientContent (nativeGet args "content"))
                   (nativeGet reply "native_reply_to"))))
             (unless (nativeGet permission "ok")
               (progn (setq djReturn10Value permission) (throw djReturn10Token)))
@@ -1011,6 +1013,7 @@
                       (throw djReturn11Token)))
                   (when reply
                     (must (resolveReply context (nativeGet args "reply_context_id"))))
+                  (must (checkRecipients context address (nativeGet reply "native_reply_to") (nativeGet args "content")))
                   (let*
                     ((id (nextId context "outbound"))
                       (record
@@ -1028,7 +1031,7 @@
                           :destination
                           address
                           :content
-                          (nativeGet args "content")
+                          (recipientContent (nativeGet args "content"))
                           :reply_context_id
                           (nativeGet args "reply_context_id" nil)
                           :reply_record_id
@@ -1140,6 +1143,9 @@
               (progn
                 (setq djReturn12Value (failure "reply_context_expired"))
                 (throw djReturn12Token))))
+          (let ((recipient-check (checkRecipients context (nativeGet record "destination") (nativeGet record "native_reply_to") (nativeGet record "content"))))
+            (unless (nativeGet recipient-check "ok")
+              (setq djReturn12Value recipient-check) (throw djReturn12Token)))
           (textCapability
             context
             (nativeGet record "destination")
@@ -1327,6 +1333,11 @@
                           (unless (nativeGet check "ok")
                             (put record :state "blocked")
                             (put record :blocked_reason (nativeGet (nativeGet check "error") "code"))
+                            (when (js-call (js-array "recipient_opted_out" "recipient_blocked") :includes (nativeGet record "blocked_reason"))
+                              (put record :state "failed") (put record :definite_not_sent t) (put record :retryable false)
+                              (let ((part (js-call repository :get "parts" (nativeGet record "part_id"))))
+                                (put part :state "failed") (put part :definite_not_sent t)
+                                (must (js-call repository :replace "parts" part))))
                             (put record :revision (nextRevision (nativeGet record "revision")))
                             (must (js-call repository :replace "outbound" record))
                             (progn
@@ -1547,7 +1558,9 @@
     (context operation args)
     (let ((djReturn19Token (js-object)) (djReturn19Value nil))
       (try
-        (cond ((= operation "message.reply_context") (currentReplyContext context (nativeGet args "delivery_id")))
+        (cond ((js-call (js-array "message.recipient_policy.get" "message.recipient_policy.set") :includes operation)
+            (policyOperation context operation args))
+          ((= operation "message.reply_context") (currentReplyContext context (nativeGet args "delivery_id")))
           ((= operation "connection.list") (queryConnections context args))
           ((js-call (js-array "connection.get" "connection.probe") :includes operation)
             (let
@@ -1711,6 +1724,7 @@
   (export
     queryMessages
     acceptOutbound
+    textCapability
     dispatchOutbound
     reconcileOutbound
     projectOutbound

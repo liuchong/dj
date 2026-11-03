@@ -66,6 +66,7 @@
             (table
               (nativeGet
                 (js-object
+                  :recipient_policy "recipient_policies"
                   :lark_api "operations"
                   :message_action "operations"
                   :message_recovery "operations"
@@ -101,6 +102,7 @@
           (unless record
             (progn (setq djReturn1Value (failure "forbidden")) (throw djReturn1Token)))
           (cond
+            ((= kind "recipient_policy") (if (can context "connection.manage" record) (success record) (failure "forbidden")))
             ((= kind "lark_api") (projectApi context record))
             ((= kind "message_action") (projectAction context record))
             ((= kind "message_recovery") (projectRecovery context record))
