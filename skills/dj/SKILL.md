@@ -90,7 +90,7 @@ metadata:
 
 ## 收件人禁收与出站规则
 
-- recipient_preferences: 发消息前遵守[收件人规则](references/recipients.md)。DJ自动附TD/退订提示并拦截禁收；recipient_opted_out/recipient_blocked表示未发送，请勿重试或改用其他账号、Lark CLI或渠道绕过。管理员可用message.recipient_policy.get/set管理出站黑白名单，但不能覆盖收件人的退订。
+- recipient_preferences: 发消息前遵守[收件人规则](references/recipients.md)。DJ自动附TD/退订提示并拦截禁收，全部新增表情（含Typing/Get）也禁止，但输入事件仍正常触发。recipient_opted_out/recipient_blocked表示未发送，请勿重试或改用其他账号、Lark CLI或渠道绕过。管理员可用message.recipient_policy.get/set管理出站黑白名单，但不能覆盖收件人的退订。
 
 ## 本机服务控制器
 

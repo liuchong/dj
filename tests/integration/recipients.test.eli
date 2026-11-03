@@ -65,7 +65,7 @@
         (input-count (js-length (nativeGet (nativeGet f "opencode") "inputs")))
         (td (event "td-1" "  tD  " "human-1" nil nil "2026-01-01T00:00:01.000Z")))
         (await (ingest f td)) (await (ingest f td)) (await (turns f))
-        (js-call (expect (js-length (nativeGet (nativeGet f "opencode") "inputs"))) :toBe input-count)
+        (js-call (expect (js-length (nativeGet (nativeGet f "opencode") "inputs"))) :toBe (+ input-count 1))
         (js-call (expect (countSent f)) :toBe 1)
         (let ((out (await (callOk f "O" "outbound.get" (js-object :outbound_id (nativeGet queued "outbound_id"))))))
           (js-call (expect (nativeGet out "state")) :toBe "failed")

@@ -343,10 +343,10 @@
                       (when (nativeGet normalized "ingress_evidence") (put event :ingress_evidence (nativeGet normalized "ingress_evidence")))
                       (put event :topic (topicOf event))
                       (js-call repository :insert "events" event)
+                      (stageRecipientCommand context event)
                       (let*
                         (
-                          (recipient-command (stageRecipientCommand context event))
-                          (command (or recipient-command (stageCommand context event)))
+                          (command (stageCommand context event))
                           (backpressure
                             (>=
                               (nativeGet
@@ -371,7 +371,7 @@
                               :last_revision
                               nil
                               :reason
-                              (if recipient-command "recipient_preference" (if command "task_command" (if backpressure "ingress_capacity" nil))))))
+                              (if command "task_command" (if backpressure "ingress_capacity" nil)))))
                         (js-call repository :insert "routing_work" work)
                         (let
                           (

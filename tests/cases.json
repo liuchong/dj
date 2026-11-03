@@ -28668,6 +28668,28 @@
       "given": "Exact native command text and outgoing content",
       "when": "recipient-api-guard",
       "then": "Only explicit human opt-out commands match; outgoing text and native API guards remain safe"
+    },
+    {
+      "case_id": "T38.recipient-reactions.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/working.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 30000,
+      "resource_group": "isolated-recipient-policy",
+      "acceptance_ids": [
+        "A01"
+      ],
+      "requirements": [
+        "SPEC-0023"
+      ],
+      "given": "An opted-out recipient and queued working/acknowledgement marks",
+      "when": "The recipient sends TD and more normal messages",
+      "then": "Inputs still reach the subscriber, no new reactions or replies leave DJ, and owned Typing is cleaned up"
     }
   ],
   "source_extension_base": "c1eb7b1"

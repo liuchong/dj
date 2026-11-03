@@ -7,7 +7,7 @@
 - 每条通过 DJ 创建的文本消息默认附：**不再接收 AI 消息，请回复 TD 或退订。** 编辑文本也保留提示，不重复附加；正文加提示一起接受长度校验，不截断原文。
 - 人类在私聊发送完整 `TD`（大小写不敏感、允许两端空白）或 `退订`，或在群里原生回复 DJ 发出的一条消息并输入该命令，持久禁收。`恢复接收` 只能由同一个原生用户主动解除自身退订。正文包含这些词不算命令；机器人、本人回声、表情、截断正文不算。
 - 群聊按实际回复者禁收（已提出选项，当前按不影响其他成员的保守范围实现）。群里的普通广播仍可见，DJ 无法单独隐藏群消息；明确回复或原生 @ 退订者的出站内容拦截。不能把一个成员的意愿扩成整个群禁发。
-- 使用原生 connection_id、recipient_id、chat_id 精确匹配。同一Lark品牌/应用的open_id、同一Slack工作区的user_id、Telegram原生user_id分别使用可证相同的ID命名空间，共享该人的最新明确选择；无法确定命名空间时保持连接边界。不能通过同一原生身份的user/bot连接绕过。不同应用或平台不按姓名猜同一人。退订不限制对方继续来信；退订命令本身入库但不再触发 AI 工作或工作中表情。
+- 使用原生 connection_id、recipient_id、chat_id 精确匹配。同一Lark品牌/应用的open_id、同一Slack工作区的user_id、Telegram原生user_id分别使用可证相同的ID命名空间，共享该人的最新明确选择；无法确定命名空间时保持连接边界。不能通过同一原生身份的user/bot连接绕过。不同应用或平台不按姓名猜同一人。退订不限制对方继续来信；退订命令本身及后续消息仍按原订阅条件正常触发AI；禁收只限制出站，不限制入站或事件匹配。任何新增表情（含自动Typing/Get）也属于出站，必须拦截；已有受托工作中表情继续清理。
 - 不对退订者自动发确认消息，避免确认本身变成禁收后的发送。管理员可读回设置。只在收件人明确恢复接收后才恢复；管理员白名单不能覆盖退订。
 - 消息已交到平台或 native I/O 已在途，无法保证撤回；拦截保证覆盖受理前和转入 submitting 前的检查，不谎称能撤销已发内容。
 
@@ -50,8 +50,9 @@ flowchart LR
 | --- | --- |
 | src/storage/{schema,repository}.eli schemaStatements/migrate/defineTable | 新表、持久行映射 |
 | src/messaging/recipients.eli 新建 | 唯一过滤与退订机制 |
-| src/ingestion/service.eli acceptEvent | events落库后识别命令，routing_work置done，普通来信不受影响 |
+| src/ingestion/service.eli acceptEvent | events落库后更新收件人选择，不改变routing_work正常路由或订阅匹配 |
 | src/messaging/service.eli acceptOutbound/outboundReady/dispatchOutbound/projectOutbound/handleOperation | 附提示、受理及派发复查、明确终态、管理接口 |
+| src/delivery/working.eli trackWorking/queueAcknowledgement/processMark | 自动Typing/Get及异步创建前复查，禁收时仅清理已有受托表情 |
 | src/messaging/actions.eli handleOperation | 编辑与新增表情复查，撤回和清理表情仍允许 |
 | src/lark/service.eli requestSpec | 原生IM消息写入必须经受控message接口，不能绕开过滤；其他官方API保留 |
 | src/application/{operations,results,help,execute}.eli、src/service/projections.eli、src/core/errors.eli | 所有CLI/MCP/GEPO共用描述、类型、错误、幂等结果投影和说明 |
@@ -64,7 +65,7 @@ flowchart LR
 - [x] C3 Skill/文档同步。
 
 验收（隔离SQLite/注入原生端口，不向真实IM发送测试）：
-- [x] A1 私聊TD持久阻断、新消息/重启后生效，恢复与重复/旧事件正确；命令不唤醒AI。
+- [x] A1 私聊TD持久阻断、新消息/重启后生效，恢复与重复/旧事件正确；包括TD在内的输入仍按原规则触发AI。
 - [x] A2 群内精确回复者禁收、无关成员不受影响；正文关键词、机器人及回声不误触发。
 - [x] A3 黑白名单优先级、管理员校验、不可覆盖退订；CLI/MCP描述与结果schema通过。
 - [x] A4 受理后退订仍阻断队列、无native请求、明确failed原因；未知发送不重放；raw API写入不可旁路、编辑保留提示。
@@ -79,3 +80,7 @@ flowchart LR
 2项关键保护单测与原消息动作、API及契约定向回归共35项/305条断言通过（191ms）；包括整词命令、机器人/非消息/截断拒绝、Unicode原文及提示不重复、编码路径写入拦截而读取/文件上传/撤回保留。全量构建通过，未运行全量功能与性能。初次构建符号/括号错误及首次集成发现的领域错误传播、初始revision问题均已修复；失败日志未改写。
 
 这些是本地集成与协议证据；没有向真实同事或群发送退订测试消息，也不宣称真实Lark/Slack用户端验收。
+
+补充：输出禁收包含全部新增表情，已排队自动表情也复查；输入不被禁收影响，TD与后续消息均正常参与订阅匹配。退订不等于静音订阅或禁止AI处理来信。
+
+此补充经10项定向集成（100条断言、688ms）及5项既有关键保护单测（47条断言、50ms）通过：已有Typing被清理，TD前排队的Get不添加；TD及后续普通消息均进入原订阅对话，后续自动表情、主动已阅和文字回复被拦截。没有真实IM外发测试。
