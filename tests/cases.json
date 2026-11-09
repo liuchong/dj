@@ -28690,6 +28690,55 @@
       "given": "An opted-out recipient and queued working/acknowledgement marks",
       "when": "The recipient sends TD and more normal messages",
       "then": "Inputs still reach the subscriber, no new reactions or replies leave DJ, and owned Typing is cleaned up"
+    },
+    {
+      "case_id": "T41.hybrid-inbox-forward-resume.integration",
+      "parent_id": "T41",
+      "file": "tests/integration/hybrid-inbox.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {
+        "transport": "websocket-http-core"
+      },
+      "required_profile": null,
+      "timeout_ms": 10000,
+      "resource_group": "isolated",
+      "requirements": [
+        "Q01",
+        "Q03",
+        "Q07"
+      ],
+      "acceptance_ids": [
+        "A03",
+        "A05"
+      ],
+      "given": "A merged-forward native detail contains its wrapper and embedded messages, with a paused Pin subscription",
+      "when": "Receive subsequent messages, resume the subscription, then add Pin and restart",
+      "then": "Only the exact requested messages enter the inbox, the watermark progresses, and the new Pin reaches the original recipient once"
+    },
+    {
+      "case_id": "T38.lark-keyed-forward.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/reactions.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 5000,
+      "resource_group": "pure",
+      "acceptance_ids": [
+        "A01"
+      ],
+      "requirements": [
+        "SPEC-0013"
+      ],
+      "given": "A keyed detail response includes a forward wrapper and embedded records",
+      "when": "Read the exact ID, then attempt duplicate or absent IDs and an oversized list",
+      "then": "Return only the unique requested message and reject ambiguity or invalid list size"
     }
   ],
   "source_extension_base": "c1eb7b1"

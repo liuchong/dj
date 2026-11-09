@@ -106,14 +106,21 @@
                 (throw result-token))
               (let ((data (nativeGet wire "data")))
                 (if reading
-                  (if (and (Array/isArray (nativeGet data "items"))
-                           (<= (js-length (nativeGet data "items")) 50)
+                  (let* ((items (nativeGet data "items"))
+                    ;; A merged forward returns its wrapper plus embedded messages.
+                    ;; A keyed read represents only the requested native message;
+                    ;; embedded messages are context, not independent inbox arrivals.
+                    (selected (if (and (= command "get") (Array/isArray items))
+                      (js-call items :filter (lambda (item)
+                        (= (nativeGet item "message_id") (nativeGet parameters "message_id")))) items)))
+                  (if (and (Array/isArray selected)
+                           (if (= command "get") (= (js-length selected) 1) (<= (js-length selected) 50))
                            (or (= command "get") (= (nativeTypeOf (nativeGet data "has_more")) "boolean")))
                     (success (js-object :ok t :identity (nativeGet config "identity") :data (js-object
-                      :messages (js-call (nativeGet data "items") :map
+                      :messages (js-call selected :map
                         (lambda (message) (formatLarkMessage message thread (nativeGet config "brand" "lark") application-id)))
                       :has_more (nativeGet data "has_more" false) :page_token (nativeGet data "page_token"))))
-                    (failure "incompatible"))
+                    (failure "incompatible")))
                   (success (js-object :ok t :identity (nativeGet config "identity") :data data))))))
           (catch unavailable
             (if (eq unavailable result-token) result

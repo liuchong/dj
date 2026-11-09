@@ -14,7 +14,7 @@
   (defun createServiceController (options ports)
     (let* ((target (str "gui/" (nativeGet options "uid") "/" serviceLabel))
       (domain (str "gui/" (nativeGet options "uid"))) (in-flight nil) (busy false) (intent nil)
-      (deadline 0) (error nil) (last nil) (refresh nil))
+      (deadline 0) (error nil) (error-intent nil) (last nil) (refresh nil))
       (setq refresh (lambda ()
         (or in-flight
           (progn
@@ -23,12 +23,13 @@
                 (let* ((installed (await (js-call ports :inspectPlist)))
                   (launch (parseLaunchStatus (await (js-call ports :run "launchctl" (js-array "print" target)))))
                   (protocol (await (js-call ports :probe))))
-                  (when intent
+                  (when (or intent error-intent)
                     (cond
-                      ((or (and (= intent "start") (nativeGet protocol "ok") (= (nativeGet (nativeGet protocol "data") "state") "ready"))
-                           (and (= intent "stop") (nativeGet launch "known") (not (nativeGet launch "loaded")) (not (nativeGet protocol "ok"))))
-                        (setq intent nil))
-                      ((>= (js-call ports :now) deadline) (setq intent nil error "操作尚未收敛，请检查服务日志后刷新"))))
+                      ((or (and (= (or intent error-intent) "start") (nativeGet protocol "ok") (= (nativeGet (nativeGet protocol "data") "state") "ready"))
+                           (and (= (or intent error-intent) "stop") (nativeGet launch "known") (not (nativeGet launch "loaded")) (not (nativeGet protocol "ok"))))
+                        (setq intent nil error nil error-intent nil))
+                      ((and intent (>= (js-call ports :now) deadline))
+                        (setq error-intent intent intent nil error "操作尚未收敛，请检查服务日志后刷新"))))
                   (setq last (projectStatus installed launch protocol intent error)))
                 (catch problem
                   (setq last (projectStatus t (js-object :known false) nil nil "无法读取服务状态，请检查登录项和客户端配置"))))
@@ -36,7 +37,7 @@
             (js-call in-flight :finally (lambda () (setq in-flight nil))) in-flight))))
       (js-object :refresh refresh :action (async (action)
         (when (and (not busy) (not intent) (js-call (js-array "start" "stop") :includes action))
-          (setq busy t error nil)
+          (setq busy t error nil error-intent nil)
           (try
             (let ((status (await (funcall refresh))))
               (when (nativeGet status (if (= action "start") "can_start" "can_stop"))
@@ -49,7 +50,7 @@
                       (js-array "bootstrap" domain (nativeGet options "launch_agent")))))
                   (result (await (js-call ports :run "launchctl" command))))
                   (unless (= (nativeGet result "code") 0) (throw (new globalThis.Error "launchctl failed"))))))
-            (catch problem (setq intent nil error "服务控制未完成，请检查登录项或服务日志后重试"))
+            (catch problem (setq error-intent action intent nil error "服务控制未完成，请检查登录项或服务日志后重试"))
             (finally (setq busy false))))
         (await (funcall refresh))))))
   (export serviceLabel parseLaunchStatus createServiceController))

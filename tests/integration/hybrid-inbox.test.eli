@@ -100,7 +100,8 @@
                     (Response/json (js-object :code 0 :data (js-object :message_id "reply-native"
                       :chat_id (nativeGet (js-call messages :get (aref reply 1)) "chat_id")))))
                   (detail (Response/json (js-object :code 0 :data (js-object
-                    :items (js-array (js-call messages :get (aref detail 1))) :has_more false))))
+                    :items (js-call (js-array (js-call messages :get (aref detail 1))) :concat
+                      (nativeGet (nativeGet state "embedded" (js-object)) (aref detail 1) (js-array))) :has_more false))))
                   ((= path "/open-apis/im/v1/chats")
                     (Response/json (js-object :code 0 :data (js-object :items (js-array (js-object :chat_id "c1")) :has_more false))))
                   ((or (= path "/open-apis/search/v2/message") (= path "/open-apis/im/v1/messages"))
@@ -250,4 +251,52 @@
           (await (advance f 20))
           (js-call (expect (nativeGet (js-call (js-call db :query
             "SELECT COUNT(*) AS n FROM events WHERE native_message_id LIKE 'offline-%'") :get) "n")) :toBe 6))
+        (finally (js-call db :close))))) cleanup)
+  (withCase "T41.hybrid-inbox-forward-resume.integration" setup (async (f)
+    (let* ((agent (await (bindRecipient f))) (state (nativeGet f "hybrid_state"))
+      (db (new Database (resolve (nativeGet f "root") "state/dj.sqlite") (js-object :readonly t)))
+      (inputs (nativeGet (nativeGet f "opencode") "inputs")) (subscription nil))
+      (try
+        (let ((preview (await (callOk f "A" "subscription.preview" (js-object :spec (js-object
+          :agent_id (nativeGet agent "agent_id") :selector (js-object :event_kinds (js-array "message.reaction.added"))
+          :predicate (js-object :all (js-array
+            (js-object :field "connection_id" :op "eq" :value "lark")
+            (js-object :field "reaction.emoji_type" :op "eq" :value "Pin")))))))))
+          (setq subscription (await (callOk f "A" "subscription.create"
+            (js-object :preview_id (nativeGet preview "preview_id") :idempotency_key "forward-pin-create")))))
+        (setq subscription (await (callOk f "A" "subscription.pause" (js-object
+          :subscription_id (nativeGet subscription "subscription_id") :expected_revision (nativeGet subscription "revision")
+          :idempotency_key "forward-pin-pause"))))
+        (let* ((stamp (str (Date/parse (js-call (nativeGet f "clock") :utcNow))))
+          (message (lambda (id chat) (js-object :message_id id :chat_id chat :create_time stamp :msg_type "text"
+            :body (js-object :content (JSON/stringify (js-object :text id)))
+            :sender (js-object :id "ou_other" :id_type "open_id" :sender_type "user") :mentions (js-array)))))
+          (let ((wrapper (funcall message "merged-wrapper" "c1")))
+            (put wrapper :msg_type "merge_forward")
+            (js-call (nativeGet f "messages") :set "merged-wrapper" wrapper))
+          (js-call (nativeGet f "messages") :set "after-forward" (funcall message "after-forward" "c1"))
+          (put state :embedded (js-object :merged-wrapper
+            (js-array (Object/assign (funcall message "embedded-only" "different-chat")
+              (js-object :upper_message_id "merged-wrapper"))))))
+        (put state :enabled t)
+        (await (advance f 35))
+        (js-call (expect (nativeGet (js-call (js-call db :query
+          "SELECT COUNT(*) AS n FROM events WHERE connection_id='lark' AND native_message_id IN ('merged-wrapper','after-forward')") :get) "n")) :toBe 2)
+        (js-call (expect (nativeGet (js-call (js-call db :query
+          "SELECT COUNT(*) AS n FROM events WHERE native_message_id='embedded-only'") :get) "n")) :toBe 0)
+        (js-call (expect (js-length inputs)) :toBe 0)
+        (setq subscription (await (callOk f "A" "subscription.resume" (js-object
+          :subscription_id (nativeGet subscription "subscription_id") :expected_revision (nativeGet subscription "revision")
+          :idempotency_key "forward-pin-resume"))))
+        (js-call (nativeGet f "marks") :set "user:after-forward" (js-object :reaction_id "new-pin"
+          :reaction_type (js-object :emoji_type "Pin")
+          :operator (js-object :operator_type "user" :operator_id "ou_self")
+          :action_time (str (Date/parse (js-call (nativeGet f "clock") :utcNow)))))
+        (await (advance f 35))
+        (js-call (expect (js-length inputs)) :toBe 1)
+        (js-call (expect (nativeGet (nativeGet (nativeGet (aref inputs 0) "envelope") "source") "native_message_id")) :toBe "after-forward")
+        (let ((probe (await (callOk f "O" "connection.probe" (js-object :connection_id "lark")))))
+          (js-call (expect (nativeGet (nativeGet probe "source_health") "ready")) :toBe t))
+        (await (js-call f :restart)) (await (advance f 10))
+        (js-call (expect (js-length inputs)) :toBe 1)
         (finally (js-call db :close))))) cleanup))
