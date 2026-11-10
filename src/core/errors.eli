@@ -57,6 +57,8 @@
         "The fixed preview was already committed."
         :reply_context_expired
         "The fixed reply context expired."
+        :reply_identity_unresolved
+        "DJ 无法确认唯一且一致的回复身份，未发送。请核对原生身份和路由证据，不要自行选择账号、刷新凭证改道或换工具绕过。"
         :result_expired
         "The original safe result expired; the action will not be repeated."
         :content_unavailable

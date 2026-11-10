@@ -112,10 +112,10 @@ metadata:
 ## 回复职责与提及身份
 
 - refresh_reply: 权限更新导致原 reply_context_id 失效时，原接收者可用 message.reply_context(delivery_id) 重新取得引用；仍核对当前权限、原消息、原身份及原有效期，不延长 TTL，不换收件人或重放任务。新引用后使用同一逻辑回复的原幂等键，先查原操作，不能重发已 accepted 的回复。
-- route: 原生mentions和reply_route说明谁被提及及DJ已固定的回复身份；message.reply只提交reply_context_id、content、稳定idempotency_key，不选择账号或收件人，不改为message.send绕开缺失引用。
+- route: 谁被询问就由谁回复：@本人用本人，@机器人用该机器人，私聊及引用/话题按确定原生对象。收件连接不等于回复身份，原生mentions和reply_route说明被提及者及DJ已固定的回复身份；message.reply只提交reply_context_id、content、稳定idempotency_key，不选择账号或收件人，不改为message.send绕开缺失引用。
 - decision: 按本对话规则判断是否处理、是否属于已有任务、是否及何时回复；不是每条通知都要建任务或回复，也不是每次输出都外发。最终回答不自动转发IM；真正外发是显式工具调用，可在最终回答前进行。
 - setup: 接收对话自己经session.rules.update维护reply_routes；来源应用范围内原生mention_id映射到获准出口connection_id，DJ自动固定每条通知路径。手工自发@同样匹配，不设本人sender排除。详见[对话规则](references/session-rules.md)。
-- blocked: reply_route为ambiguous_target、stale_reference或forbidden且没有reply_context_id时报告明确限制，不自行挑账号、另开对话或双发；消息默认开放，不要求用户补逐群grants，按真实身份、引用或平台错误排查。
+- blocked: reply_route为unmapped_target、ambiguous_target、stale_reference或forbidden且没有reply_context_id时报告明确限制，不自行挑账号、挑选另一份重复通知、另开对话或双发；reply_identity_unresolved同样表示未发送，需核对身份，不得换工具绕过。basis说明采用的原生证据；消息默认开放，不要求用户补逐群grants，按真实身份、引用或平台错误排查。
 
 ## 历史与引用上下文
 

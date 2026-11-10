@@ -28739,6 +28739,52 @@
       "given": "A keyed detail response includes a forward wrapper and embedded records",
       "when": "Read the exact ID, then attempt duplicate or absent IDs and an oversized list",
       "then": "Return only the unique requested message and reject ambiguity or invalid list size"
+    },
+    {
+      "case_id": "T38.reply-identity-safety.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/mention-replies.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "acceptance_ids": [
+        "A01",
+        "A03"
+      ],
+      "requirements": [
+        "SPEC-0005"
+      ],
+      "given": "Two authenticated native representations with missing or conflicting reply identities",
+      "when": "Freeze notifications, then receive late native evidence before a queued reply submits",
+      "then": "Resolve the exact native identity across app IDs or refuse; never change the frozen account or let AI choose"
+    },
+    {
+      "case_id": "T38.reply-identity-evidence.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/mention-replies.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "pure",
+      "acceptance_ids": [
+        "A01",
+        "A03"
+      ],
+      "requirements": [
+        "SPEC-0005"
+      ],
+      "given": "Native self IDs, exact mention keys and explicit reply mappings",
+      "when": "Resolve unmapped, contradictory, private, thread and stale identities",
+      "then": "Never guess by nickname or receiving account; preserve native mention keys"
     }
   ],
   "source_extension_base": "c1eb7b1"

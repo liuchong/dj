@@ -309,6 +309,7 @@
                     (nativeGet record "delivery_id")
                     :event_id
                     (nativeGet event "event_id")
+                    :session_key (nativeGet selected "session_key")
                     :recipient_principal_id
                     (nativeGet recipient "principal_id")
                     :source_destination (Object/assign (js-object) source-address)
@@ -395,7 +396,7 @@
                 (nativeGet (nativeGet context "config") "principals")
                 (nativeGet agent "recipient_principal_id")))
             (resource-event (= (nativeGet (nativeGet event "conversation") "kind") "resource"))
-            (selected (if resource-event (js-object :status "not_applicable" :mention_ids (js-array)) (selectReplyRoute context event (nativeGet (js-call (nativeGet context "repository") :get "routes" (nativeGet record "route_id")) "session_key"))))
+            (selected (if resource-event (js-object :status "not_applicable" :mention_ids (js-array)) (selectReplyRoute context event (nativeGet (js-call (nativeGet context "repository") :get "routes" (nativeGet record "route_id" (nativeGet agent "route_id"))) "session_key"))))
             (reply (and (not resource-event) (replyContext context record event recipient read selected)))
             (content
               (js-object
@@ -468,7 +469,7 @@
             (when (nativeGet event "interaction") (put envelope :interaction (nativeGet event "interaction")))
             (when (nativeGet event "reaction") (put envelope :reaction (nativeGet event "reaction")))
             (put envelope :reply_route (js-object :status (if (and (= (nativeGet selected "status") "ready") (not reply)) "forbidden" (nativeGet selected "status"))
-              :connection_id (nativeGet selected "connection_id" "") :identity (nativeGet selected "identity" "") :mention_ids (nativeGet selected "mention_ids")))
+              :connection_id (nativeGet selected "connection_id" "") :identity (nativeGet selected "identity" "") :basis (nativeGet selected "basis" "") :mention_ids (nativeGet selected "mention_ids")))
             (when (> (js-length instructions) 0) (put envelope :instructions instructions))
             (when (nativeGet record "inbox_id") (put envelope :inbox_id (nativeGet record "inbox_id")))
             (when (nativeGet instructions "overflow") (put envelope :instruction_overflow t))

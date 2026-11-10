@@ -377,18 +377,18 @@
         ;; Real current mentions take precedence over the relation target.
         (let* ((source (Object/assign (js-object) identity (js-object :platform "lark" :brand "lark" :identity_revision 1)))
           (destination (Object/assign (js-object) source (js-object :connection_id "other" :identity "bot")))
-          (routes (js-array (js-object :source_connection_id "lark" :mention_id "ou_self" :reply_connection_id "other"
+          (routes (js-array (js-object :source_connection_id "lark" :mention_id "mapped-recipient" :reply_connection_id "other"
             :source_identity_revision 1 :reply_identity_revision 1)))
           (routing (js-object :repository (js-object :get (lambda (table id)
             (if (= table "session_rules") (js-object :reply_routes routes)
               (if (= id "lark") source destination))))))
           (event (createdEvent "lark" "new" "body")))
           (put event :identity_revision 1)
-          (put event :interaction (js-object :state "resolved" :kind "reply" :target_id "ou_self"))
+          (put event :interaction (js-object :state "resolved" :kind "reply" :target_id "mapped-recipient"))
           (put event :mentions (js-array))
           (js-call (expect (nativeGet (selectReplyRoute routing event "session") "connection_id")) :toBe "other")
           (put event :mentions (js-array (js-object :id "someone-else")))
-          (js-call (expect (nativeGet (selectReplyRoute routing event "session") "connection_id")) :toBe "lark")
+          (js-call (expect (nativeGet (selectReplyRoute routing event "session") "status")) :toBe "unmapped_target")
           (put event :event_kind "message.reaction.added")
           (js-call (expect (nativeGet (selectReplyRoute routing event "session") "connection_id")) :toBe "other")
           (put (nativeGet event "interaction") :state "unavailable")

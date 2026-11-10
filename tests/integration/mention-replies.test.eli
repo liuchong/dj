@@ -17,6 +17,7 @@
         (put source :identity "bot") (put source :event_app_id "source_app") (put source :event_subject_id "ou_bot")
         (put source :tenant_ref "same-tenant")
         (put user :connection_id "lark-user") (put user :identity "user") (put user :tenant_ref "same-tenant")
+        (put user :event_app_id "user_app") (put user :event_subject_id "ou_user")
         (js-call (nativeGet config "connections") :push user)
         (js-call (nativeGet ports "im_ports") :set "lark-user" (createImPeer "lark-user"))
         (js-call grants :push (js-object :action "session.rules.read" :resources (js-array target)))
@@ -142,4 +143,75 @@
       (await (js-call f :tick))
       (js-call (expect (nativeGet (nativeGet (aref (sent f "lark-user") 0) "outbound") "native_reply_to")) :toBe "respond-0")
       (js-call (expect (nativeGet (nativeGet (aref (sent f "lark") 0) "outbound") "native_reply_to")) :toBe "respond-1"))) closeFixture)
+  (defun crossEvent (f connection id ids &optional keys)
+    (let* ((config (js-call (nativeGet (nativeGet f "config") "connections") :find
+      (lambda (item) (= (nativeGet item "connection_id") connection))))
+      (event (nativeEvent f id ids "colleague")))
+      (put event :connection_id connection) (put (nativeGet event "conversation") :connection_id connection)
+      (put event :addressed_self false)
+      (when keys (let ((i 0)) (while (< i (js-length ids))
+        (put (aref (nativeGet event "mentions") i) :key (aref keys i)) (setq i (1+ i))))) event))
+  (withCase "T38.reply-identity-safety.integration" setup (async (f)
+    (let* ((agent (await (bindRecipient f))) (db (new Database (resolve (nativeGet f "root") "state/dj.sqlite") (js-object :readonly t)))
+      (preview (await (callOk f "A" "subscription.preview" (js-object :spec (js-object
+        :agent_id (nativeGet agent "agent_id") :selector (js-object :event_kinds (js-array "message.created"))
+        :predicate (js-object :all (js-array))))))) (latest nil))
+      (try
+        (await (configure f agent))
+        (await (callOk f "A" "subscription.create" (js-object :preview_id (nativeGet preview "preview_id") :idempotency_key "safety-subscribe")))
+        ;; The source knows its own bot, while the other application's OpenID is
+        ;; not in reply_routes. Both exact native-message views must choose bot.
+        (await (js-call f :ingest (crossEvent f "lark" "same-bot" (js-array "ou_bot"))))
+        (await (js-call f :ingest (crossEvent f "lark-user" "same-bot" (js-array "foreign-bot"))))
+        (await (js-call f :tick))
+        (js-call (expect (js-length (inputs f))) :toBe 2)
+        (js-call (inputs f) :forEach (lambda (input)
+          (js-call (expect (nativeGet (nativeGet (nativeGet input "envelope") "reply_route") "connection_id")) :toBe "lark")))
+        ;; A missing mapping alone never turns an unrecognized @ into a user reply.
+        (await (js-call f :ingest (crossEvent f "lark-user" "missing-bot" (js-array "foreign-bot"))))
+        (await (js-call f :tick))
+        (setq latest (nativeGet (aref (inputs f) 2) "envelope"))
+        (js-call (expect (nativeGet (nativeGet latest "reply_route") "status")) :toBe "unmapped_target")
+        (js-call (expect (nativeGet latest "reply_context_id")) :toBeNull)
+        ;; Real contradictory mappings across two views cannot be delegated to AI.
+        (await (js-call f :ingest (crossEvent f "lark" "conflicting" (js-array "ou_bot"))))
+        (await (js-call f :ingest (crossEvent f "lark-user" "conflicting" (js-array "ou_user"))))
+        (await (js-call f :tick))
+        (let ((i 3)) (while (< i 5)
+          (setq latest (nativeGet (aref (inputs f) i) "envelope"))
+          (js-call (expect (nativeGet (nativeGet latest "reply_route") "status")) :toBe "ambiguous_target")
+          (js-call (expect (nativeGet latest "reply_context_id")) :toBeNull)
+          (setq i (1+ i))))
+        ;; Native mention keys relate multi-mention OpenIDs even in different order.
+        (await (js-call f :ingest (crossEvent f "lark" "multi-bot" (js-array "ou_bot" "ou_bot") (js-array "@_user_1" "@_user_2"))))
+        (await (js-call f :ingest (crossEvent f "lark-user" "multi-bot" (js-array "foreign-bot-b" "foreign-bot-a") (js-array "@_user_2" "@_user_1"))))
+        (await (js-call f :tick))
+        (let ((i 5)) (while (< i 7)
+          (setq latest (nativeGet (aref (inputs f) i) "envelope"))
+          (js-call (expect (nativeGet (nativeGet latest "reply_route") "connection_id")) :toBe "lark")
+          (setq i (1+ i))))
+        ;; A new native view after freezing must block both the old handle and a
+        ;; queued outbound, not change that handle's account or submit twice.
+        (await (js-call f :ingest (crossEvent f "lark" "late-conflict" (js-array "ou_bot"))))
+        (await (js-call f :tick))
+        (setq latest (nativeGet (aref (inputs f) 7) "envelope"))
+        (let* ((ref (nativeGet latest "reply_context_id"))
+          (accepted (await (callOk f "A" "message.reply" (js-object :reply_context_id ref
+            :content (js-object :type "text" :text "must not leave after conflict") :idempotency_key "late-queued")))))
+          (await (js-call f :ingest (crossEvent f "lark-user" "late-conflict" (js-array "ou_user"))))
+          (let ((denied (await (js-call f :call (nativeGet f "A") "message.reply_context"
+            (js-object :delivery_id (nativeGet latest "delivery_id"))))))
+            (js-call (expect (nativeGet (nativeGet denied "error") "code")) :toBe "reply_identity_unresolved"))
+          (let ((denied (await (js-call f :call (nativeGet f "A") "message.reply"
+            (js-object :reply_context_id ref :content (js-object :type "text" :text "no alternate account") :idempotency_key "late-refuse")))))
+            (js-call (expect (nativeGet (nativeGet denied "error") "code")) :toBe "reply_identity_unresolved"))
+          (await (js-call f :tick))
+          (js-call (expect (nativeGet (js-call (js-call db :query "SELECT state FROM outbound WHERE outbound_id=?") :get
+            (nativeGet accepted "outbound_id")) "state")) :toBe "blocked")
+          (js-call (expect (js-length (sent f "lark"))) :toBe 0)
+          (js-call (expect (js-length (sent f "lark-user"))) :toBe 0))
+        (let ((saved (await (callOk f "A" "session.rules.get" (js-object :agent_id (nativeGet agent "agent_id"))))))
+          (js-call (expect (nativeGet saved "text")) :toBe "Only explicit tool calls send a reply.")
+          (js-call (expect (js-length (nativeGet saved "reply_routes"))) :toBe 2))
+        (finally (js-call db :close))))) closeFixture)
 )

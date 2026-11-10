@@ -26,5 +26,7 @@
 ```
 
 - filter: 订阅predicate可以用{field:"mentions.id",op:"in",value:["native_user_mention_id","native_bot_mention_id"]}匹配任何人的原生@，包括自己手工发送的@。正文@文本不算；不要加入排除本人发送的条件。此设置不替代来源订阅与授权。
-- reply: 收到通知后只按业务规则决定是否、何时调用message.reply提交content和信封reply_context_id；身份及原chat/thread/message已由DJ锁定。消息默认自由收发，不要求逐群授权；仍核对原来源、出口身份和引用，不借operator凭据。多身份同时命中返回ambiguous_target，不要求AI选人。
+- reply: 收到通知后只按业务规则决定是否、何时调用message.reply提交content和信封reply_context_id；身份及原chat/thread/message已由DJ锁定。消息默认自由收发，不要求逐群授权；仍核对原来源、出口身份和引用，不借operator凭据。DJ也使用连接已登记的自身ID及同一原生消息的跨连接证据，缺少一项映射不会默认切成收件账号。存在未解析提及返回unmapped_target；确定证据冲突返回ambiguous_target，均不要求AI选身份。原生mention.key或唯一提及用于关联同一消息的不同应用OpenID，不按昵称关联。
 - output: 普通输出或最终回答不会发到IM；不是所有通知都是新任务、不是所有任务都需要回复，允许先工作后在最终回答前主动调用工具。
+
+- send_guard: 回复、刷新引用、出站提交和自动Working/Get均复核身份；reply_identity_unresolved表示未发送，不使用另一份重复通知、其他账号或CLI绕过。已冻结引用不会改道，无法再证明原身份则拒绝；已accepted或unknown不重发。原位置不变，正文具体@哪位业务参与者由调用方按原事项明确决定，DJ不猜最初上报者。
