@@ -32,6 +32,16 @@ dj status --client-profile PRIVATE_PROFILE --json
 
 通知成功不要求 AI 必须回复。接收对话按自己的规则决定是否处理、是否属于已有任务和何时调用 `message.reply`；DJ 不转发普通输出。使用信封的 `reply_context_id`，身份和原位置由 DJ 固定；不要改用 `message.send` 绕过缺失引用。平台接受回复和人已阅读是不同状态。
 
+## 回复或表情被禁收拦截
+
+`recipient_opted_out`表示收件人的TD/退订已由DJ自动保存，`recipient_blocked`表示命中出站黑白名单；这与是否订阅、能否读取来信或平台发送权限不同。输入仍正常触发，文字与新增Working/Get都会被拦截。服务启动会处理本地漏登命令，重启不解除禁收。不要让AI在任务备注里管理退订，也不要换连接或工具绕过。仅用户明确要求本条强制发送时使用`force_send:true`；详见[收件人选择](recipient-preferences.md)。
+
+`reply_identity_unresolved`是回复身份缺证据或存在冲突，不是退订错误。核对原生提及、原消息及来源账号；不要从两份连接通知中自行挑一个账号发送，`force_send`也不绕过身份检查。
+
+## 同时看到Working和Get
+
+正在处理本条时只保留Working。已理解但无需文字回复、或补充已收录时，显式`message.acknowledge`添加Get并结束本条Working；完成文字回复后清理Working，不必补Get。原生Get添加与Working删除异步执行，短暂共存或其他接收方仍有处理租约时不等于重复开工。查看确认结果和清理状态，按[规格0006](../specs/0006-working-reactions.md)区分。
+
 ## 处理中表情没有消失
 
 处理结束、无需回复或失败时，接收方应以原 delivery 调用 `delivery.complete`。查询清理状态，只有官方读回确认后才算清理完成；不要依赖 AI 最后一条自然语言回复来撤销表情。详见[处理中表情](../specs/0006-working-reactions.md)。

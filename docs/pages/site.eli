@@ -10,16 +10,16 @@
     (js-array
       (js-object :id "mention" :source "项目讨论群" :kind "Lark · 原生 @ 提及"
         :message "@助手 帮我看一下登录回调。" :rule "规则命中"
-        :target "Codex · 原订阅对话" :target-state "精确投递到已有会话"
+        :target "Codex · 原订阅对话" :target-state "原会话忙时输入；显式配置才排队"
         :action "携带原消息与规则，交给这个对话处理。"
         :outcome "是否处理、何时回复，由 AI 判断" :icon "↗" :avatar "AI"
-        :log "收到消息 → 匹配订阅 → 持久入队 → 原会话投递")
+        :log "收到消息 → 匹配订阅 → 持久受理 → 原会话输入")
       (js-object :id "keyword" :source "研发讨论群" :kind "IM 消息 · 关键词订阅"
         :message "登录回调出现异常，需要排查。" :rule "关键词：登录回调"
         :target "Cursor · 原订阅对话" :target-state "使用该订阅绑定的精确目标"
         :action "命中已设置的关键词，携带订阅提示词进入原对话。"
         :outcome "关键词和目标都由订阅者明确设置" :icon "↗" :avatar "AI"
-        :log "收到消息 → 关键词命中 → 持久入队 → 原会话投递")
+        :log "收到消息 → 关键词命中 → 持久受理 → 原会话输入")
       (js-object :id "blocked" :source "项目讨论群" :kind "IM 消息 · 触发字符黑名单"
         :message "@助手 [广告] 这条不需要触发处理。" :rule "已拦截自动触发"
         :target "消息保留在本地缓存" :target-state "不向 Agent 发出本次通知"

@@ -10,7 +10,7 @@
 
 DJ 把 IM 消息按规则送进已有的 AI 编程对话，并为 AI 提供读取上下文、管理订阅和回复原消息的接口。一个对话可以订阅多个来源，一个来源也可以通知多个对话。
 
-DJ 负责身份核对、订阅匹配、持久排队和投递；AI 负责判断是否处理、怎样处理、是否回复。DJ 自己不调用模型，也不会把 AI 的普通输出自动转发给 IM。
+DJ 负责身份核对、订阅匹配、持久受理和投递；AI 负责判断是否处理、怎样处理、是否回复。DJ 自己不调用模型，也不会把 AI 的普通输出自动转发给 IM。
 
 ## 能做什么
 
@@ -20,6 +20,7 @@ DJ 负责身份核对、订阅匹配、持久排队和投递；AI 负责判断�
 - **固定回复位置与身份**：谁被 @、从哪里来，由 DJ 固定回复路线；AI 显式调用回复工具提交内容。
 - **消息操作**：沿原连接身份撤回、编辑已发文本，手动增删查表情；CLI、MCP、GEPO 共用接口。见[消息操作](docs/specs/0016-message-actions.md)。
 - **Lark 官方 API**：独立 Eliscript [Lark 包](packages/lark/README.md)提供鉴权、JSON、上传下载及 WebSocket 帧编解码；DJ 的通用入口沿指定连接调用办公 API，与 IM 分发分层。
+- **收件人选择**：`TD/退订` 由 DJ 自动记入 SQLite，禁止向该人回复、@或新增表情，输入仍正常触发。仅用户明确要求时可用 `force_send` 豁免本条文字，退订状态不变。见[退订与强制发送](docs/guides/recipient-preferences.md)。
 - **持久规则与待办**：对话保存自己的规则，也可以使用 `subscription.pull/ack` 主动领取和确认消息。
 - **任务巡查**：从 IM 原消息查看 AI 会话和登记子对话，按管理员白名单／本人连接隔离权限，未知归属明确标注。见[使用说明](docs/guides/task-inspection.md)。
 - **持久督工**：对话主动登记，在意外空闲后续接原会话，直到明确取消；[行为边界](docs/specs/0020-session-supervision.md)和 [Skill 用法](skills/dj/references/supervision.md)。
@@ -27,7 +28,7 @@ DJ 负责身份核对、订阅匹配、持久排队和投递；AI 负责判断�
 
 ```mermaid
 flowchart LR
-  IM[IM 消息] --> DJ[DJ：订阅、过滤、上下文、持久队列]
+  IM[IM 消息] --> DJ[DJ：订阅、过滤、上下文、持久台账]
   DJ --> Agent[已有 AI 对话]
   Agent --> API[CLI / MCP / API / GEPO]
   API --> DJ

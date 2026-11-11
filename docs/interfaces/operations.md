@@ -47,8 +47,9 @@ request_id 可选，用于追踪；所有受理变更要求 idempotency_key。�
 | message.get | event_id 或 message_ref（二选一）、offset_bytes?、max_bytes? | 元数据、正文分页、附件引用 | read |
 | message.context | event_id/message_ref/context_ref之一、before?、after?、reference_depth?、max_bytes?、corpus? | 锚点、前后文、引用链及context_ref | read；默认DJ缓存 |
 | message.history | context_ref/conversation_ref之一、limit?、cursor?、order?、time_range?、max_bytes?、corpus? | 同会话历史分页 | read；默认DJ缓存 |
-| message.send | destination_ref、content | Outbound、state、revision | send；创建出站意图 |
-| message.reply | reply_context_id、content | Outbound、state、revision | reply；固定目的地 |
+| message.send | destination_ref、content、force_send? | Outbound、state、revision、force_send | send；创建出站意图，强制仅限用户明确要求的本条 |
+| message.reply | reply_context_id、content、force_send? | Outbound、state、revision、force_send | reply；固定目的地和身份 |
+| message.recipient_policy.get/set | connection_id；set另需expected_revision、policy | 出站黑白名单；get含分页退订记录 | connection.manage；白名单不解除退订 |
 | outbound.get | outbound_id | Outbound、parts、安全回执 | 自有/授权记录 |
 | outbound.reconcile/retry/cancel | outbound_id | 当前 Outbound 与处理结果 | manage；核对/安全重试/取消分开 |
 | outbound.resolve | outbound_id、resolution、reason | resolved、manual 决定 | 仅操作员；永不重发 |
@@ -123,6 +124,8 @@ resolve 是操作员显式解除 unknown 的唯一人工入口，resolution 为 
 | ambiguous_target / target_unbound | 返回允许的候选/绑定操作，不自动选取 |
 | stale_reference / revision_conflict | 重读原对象，保留原意图 |
 | preview_invalid / preview_stale / preview_expired / already_committed | 修正后再预览，或核对已提交的原操作 |
+| recipient_opted_out / recipient_blocked | 停止默认外发，不换工具或身份绕过；仅用户明确要求时用force_send发送本条 |
+| reply_identity_unresolved | 缺少唯一原生身份或证据冲突，未发送；不能让AI选另一账号 |
 | target_offline / target_busy / permission_pending | 按明确状态等待，不猜意图或审批 |
 | unsupported / incompatible | 不隐式降级、切工具或换模型 |
 | idempotency_conflict / idempotency_expired | 不同请求同键拒绝；过期响应查原操作 |
@@ -156,3 +159,7 @@ time_range 为 from 包含、to 不包含，from<to；无范围表示当前保�
 ## 消息上下文
 
 message.context/history与自动信封context统一按[0007](../specs/0007-message-context.md)执行。MCP为dj_message_context/dj_message_history，GEPO为POST /message/context和/message/history，CLI为dj message context/history。正常查询只读缓存；原生补取必须显式选择，不设置自动历史轮询或关键词search。
+
+## 收件人退订与单条豁免
+
+服务根据原生输入自动维护SQLite退订记录，受理及发送提交前均检查。`message.send/reply`的可选布尔参数`force_send`默认false，仅在用户明确要求本条强制发送时传true，临时豁免收件人退订和出站黑白名单；不修改持久选择，不向编辑或自动表情传播，其他授权、身份、位置及防重检查不变。该参数属于原请求幂等指纹并保存在出站台账，不能换键盲重发。使用场景与示例见[收件人选择](../guides/recipient-preferences.md)。

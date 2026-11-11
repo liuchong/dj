@@ -9,6 +9,8 @@
 | 直接配置账号到固定 AI 对话 | [固定接线](../skills/dj/references/fixed-routes.md) |
 | 设置 Lark / 飞书消息订阅 | [实时订阅指南](guides/lark-realtime.md) |
 | 安装 Skill、配置 MCP 或 GEPO | [客户端接线](../skills/dj/references/clients.md) |
+| 配置 Slack Socket Mode 与补收 | [Slack 接线](guides/slack.md) |
+| 收件人退订、出站黑白名单或单条强制发送 | [收件人选择](guides/recipient-preferences.md) |
 | 收到通知后读取、处理与回复 | [DJ Skill](../skills/dj/SKILL.md)、[消息闭环](startup-to-reply.md) |
 | 查看来源任务树及排队原因 | [任务巡查](guides/task-inspection.md) |
 | 消息没触发、投递未知或回复失败 | [故障排查](guides/troubleshooting.md) |
@@ -25,8 +27,6 @@
 
 ## 产品规格
 
-- [0013 表情触发](specs/0013-reaction-triggers.md)：指定一个或多个原生 emoji_type，与提及、私聊并列配置。
-
 | 规格 | 内容 |
 | --- | --- |
 | [0001 实时订阅](specs/0001-lark-realtime-subscriptions.md) | Lark 收件、本人身份、默认 @ 和准确原会话投递 |
@@ -39,13 +39,23 @@
 | [0008 资源来源](specs/0008-resource-sources.md) | 文档、表格、Wiki 和原生事件 |
 | [0009 任务巡查](specs/0009-task-inspection.md) | 来源树、管理员／本人连接权限及确定性 IM 查询 |
 | [0010 消息消费](specs/0010-message-consumption.md) | 默认忙时直达、可配置排队及全局异步消费 |
+| [0011 通知展示](specs/0011-readable-notifications.md) | MDP元数据与Markdown原文，按原文恢复规则 |
+| [0012 Kimi与DSH](specs/0012-kimi-dsh-existing-sessions.md) | 已有实例的精确接线与验证边界 |
+| [0013 表情触发](specs/0013-reaction-triggers.md) | 本人指定表情主动标记、实时事件与HTTP补收 |
+| [0014 模块装配](specs/0014-module-composition.md) | 独立Rack与DJ服务的插件、依赖和生命周期 |
+| [0015 消息回应](specs/0015-message-interactions.md) | 对本人或机器人消息的引用、话题和表情回应 |
+| [0016 消息操作](specs/0016-message-actions.md) | 撤回、编辑、表情与持久动作结果 |
+| [0017 Lark包](specs/0017-lark-package.md) | 独立官方协议包与DJ消息层接线 |
+| [0018 离线恢复](specs/0018-offline-recovery.md) | 持久断点补收、原会话重试和unknown核实 |
+| [0019 Slack接线](specs/0019-slack.md) | Socket Mode与HTTP补收、身份和公共消息接口 |
 | [0020 对话督工](specs/0020-session-supervision.md) | 主动登记、持久空闲检测、原会话续接与明确取消 |
 | [0021 固定接线](specs/0021-fixed-routes.md) | 配置多账号到准确对话，原子更新、管理权和离线恢复 |
-| [0023 收件人禁收](specs/0023-recipient-preferences.md) | TD/退订、持久出站黑白名单和明确拒绝 |
 | [0022 菜单栏控制器](specs/0022-service-controller.md) | 可选 macOS App、状态、启停和独立生命周期 |
+| [0023 收件人禁收](specs/0023-recipient-preferences.md) | 自动持久退订、出站黑白名单、单条强制发送 |
 
 ## 技术与维护
 
+- [Rack装配包](../packages/rack/README.md)、[Lark包](../packages/lark/README.md)、[Slack包](../packages/slack/README.md)。
 - [架构](architecture.md)、[组件职责](component-contract.md)、[领域模型](domain-model.md)、[需求](requirements.md)。
 - [业务流程](workflows.md)、[可靠投递与存储](delivery-storage.md)、[身份与安全](security.md)。
 - [Agent 适配](adapters/agent-tools.md)、[Codex / Cursor](adapters/desktop.md)、[Cursor 原生接口](adapters/cursor-native.md)、[Claude / Antigravity](adapters/native-inboxes.md)、[IM 适配](adapters/im.md)。
@@ -59,10 +69,3 @@
 - [Pages 源码与预览](pages/README.md)：入口 `docs/index.html`，交互使用浏览器实时编译的 Eliscript。
 - [项目许可证](../LICENSE)：[1PL 官方说明](https://license.pub/1pl/)。
 - [历史资料](archive/README.md)：旧研究、施工计划、检查清单及验收批次。历史中的状态和建议不作为当前使用或开发指令。
-
-- [0011 可读的 AI 消息通知](specs/0011-readable-notifications.md) · [使用说明](guides/notifications.md)
-- [0012 Kimi 与 DSH 已有实例](specs/0012-kimi-dsh-existing-sessions.md) · [接入说明](guides/kimi-dsh.md)
-
-- [0017：独立 Lark 包与官方 API 入口](specs/0017-lark-package.md)
-
-- [Slack：Socket Mode、身份、订阅与消息操作](guides/slack.md)
