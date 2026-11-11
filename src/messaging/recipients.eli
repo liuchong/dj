@@ -2,7 +2,7 @@
   (import "../core/native.eli" nativeGet nativeTypeOf)
   (import "../core/types.eli" stableJson nextRevision)
   (import "../core/errors.eli" success failure)
-  (import "../application/context.eli" must utcNow requirePermission typedRef)
+  (import "../application/context.eli" must utcNow requirePermission typedRef inTransaction)
 
   (defconst optOutNotice "不再接收 AI 消息，请回复 TD 或退订。")
   (defun recipientContent (content)
@@ -49,12 +49,6 @@
                   (and (= time previous) (= (nativeGet choice "state") "deny")))
                   (setq latest choice))))))
           (= (nativeGet latest "state") "deny")))))
-  (defun ownRecipientMessage (context connection parent chat)
-    (let* ((rows (js-call (js-call (dbOf context) :query
-      "SELECT e.connection_id FROM echo_index e JOIN outbound o ON o.outbound_id=e.outbound_id WHERE e.native_message_id=? AND json_extract(o.payload,'$.destination.native_chat_id')=? LIMIT 1024") :all parent chat))
-      (scope (recipientScope connection)))
-      (js-call rows :some (lambda (row)
-        (= scope (recipientScope (js-call (nativeGet context "repository") :get "connections" (nativeGet row "connection_id"))))))))
   (defun stageRecipientCommand (context event)
     ;; Native identity only. Never infer a recipient from a display name or AI text.
     (let* ((id (nativeGet event "connection_id")) (chat (nativeGet (nativeGet event "conversation") "native_chat_id"))
@@ -68,9 +62,9 @@
       (when (and human p2p)
         (js-call (js-call (dbOf context) :query
           "INSERT INTO recipient_peers(connection_id,native_chat_id,recipient_id) VALUES (?,?,?) ON CONFLICT(connection_id,native_chat_id) DO UPDATE SET recipient_id=excluded.recipient_id") :run id chat person))
-      (let* ((command (and human (recipientCommand event))) (parent (nativeGet (nativeGet event "reply_to") "id"))
-        (addressed (and command (not p2p) parent (ownRecipientMessage context connection parent chat))))
-        (when (and command (or p2p addressed))
+      (let ((command (and human (recipientCommand event))))
+        ;; The sender controls their own consent, independently of group reply targets.
+        (when command
           (let* ((repository (nativeGet context "repository")) (key (js-object :connection_id id :recipient_id person))
             (old (js-call repository :get "recipient_optouts" key))
             (record (js-object :connection_id id :recipient_id person :state command :event_id (nativeGet event "event_id")
@@ -80,6 +74,25 @@
               (if old (must (js-call repository :replace "recipient_optouts" record))
                 (js-call repository :insert "recipient_optouts" record)))
             t)))))
+  (defun recoverRecipientCommands (context)
+    ;; Re-derive missed choices from persisted native input before any outbound resumes.
+    ;; Bounded pages, immutable source times, no message delivery or AI-controlled state.
+    (let* ((db (dbOf context))
+      (ceiling (nativeGet (js-call (js-call db :query "SELECT COALESCE(MAX(ingress_seq),0) AS n FROM events") :get) "n"))
+      (after 0) (done false) (count 0))
+      (while (not done)
+        (let ((result (inTransaction context (lambda (tx)
+          (let ((rows (js-call (js-call db :query
+            "SELECT ingress_seq,payload FROM events WHERE ingress_seq>? AND ingress_seq<=? AND event_kind='message.created' AND (json_extract(payload,'$.content.text') LIKE '%TD%' OR json_extract(payload,'$.content.text') LIKE '%退订%' OR json_extract(payload,'$.content.text') LIKE '%恢复接收%') ORDER BY ingress_seq LIMIT 256") :all after ceiling)))
+            (js-call rows :forEach (lambda (row)
+              (let ((event (JSON/parse (nativeGet row "payload"))))
+                (when (recipientCommand event)
+                  (when (stageRecipientCommand context event) (setq count (1+ count)))))
+              (setq after (nativeGet row "ingress_seq"))))
+            (setq done (< (js-length rows) 256))
+            (success nil))))))
+          (unless (nativeGet result "ok") (must result))))
+      (success (js-object :processed count))))
   (defun recipientTargets (context address reply-to content)
     (let* ((id (nativeGet address "connection_id")) (chat (nativeGet address "native_chat_id"))
       (targets (new globalThis.Set))
@@ -95,7 +108,9 @@
         (new globalThis.RegExp "<at\\s+user_id=[\"']([^\"']+)[\"'][^>]*>|<@([A-Z0-9]+)(?:\\|[^>]+)?>" "g"))) :forEach
         (lambda (match) (js-call targets :add (or (aref match 1) (aref match 2)))))
       (Array/from targets)))
-  (defun checkRecipients (context address reply-to content)
+  (defun checkRecipients (context address reply-to content &optional force-send)
+    ;; Explicit, durable exception for this outbound only; never mutates consent.
+    (if (= force-send t) (success nil)
     (let* ((id (nativeGet address "connection_id")) (chat (nativeGet address "native_chat_id"))
       (targets (recipientTargets context address reply-to content)) (policy (policyFor context id))
       (connection (js-call (nativeGet context "repository") :get "connections" id))
@@ -106,7 +121,7 @@
       (if opted-out (failure "recipient_opted_out")
         (if (or (funcall matches (nativeGet policy "deny"))
           (and (= (nativeGet policy "default_action") "deny") (not (funcall matches (nativeGet policy "allow")))))
-          (failure "recipient_blocked") (success nil)))))
+          (failure "recipient_blocked") (success nil))))))
   (defun policyOperation (context operation args)
     (try
     (let* ((id (nativeGet args "connection_id")) (repository (nativeGet context "repository"))
@@ -131,4 +146,4 @@
             (success record)))
           (lambda (data) (js-array (typedRef "recipient_policy" id))))))
       (catch error (or (nativeGet error "domain_result") (failure "internal_error")))))
-  (export optOutNotice recipientContent recipientCommand stageRecipientCommand checkRecipients policyOperation recipientTargets))
+  (export optOutNotice recipientContent recipientCommand stageRecipientCommand recoverRecipientCommands checkRecipients policyOperation recipientTargets))

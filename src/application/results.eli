@@ -720,6 +720,7 @@
       (strings
         "outbound_id principal_id state operation_id created_at blocked_reason"
         (js-object
+          :force_send boolSchema
           :revision
           integerSchema
           :reply_context_id

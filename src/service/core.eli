@@ -1,4 +1,5 @@
 (module dj.service.core
+  (import "../messaging/recipients.eli" recoverRecipientCommands)
   (import "../core/native.eli" nativeGet)
   (import "../core/errors.eli" success failure)
   (import "node:path" resolve)
@@ -368,6 +369,7 @@
                         (port)
                         (when (nativeGet port "initialize") (js-call port :initialize base)))))
                   (put runtime :startup_stage "recover_state")
+(must (recoverRecipientCommands base))
 (must (await (recoverState base)))
                   (must (seedFixedRoutes base config))
                   (js-call (nativeGet ports "connections") :initialize base)

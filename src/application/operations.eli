@@ -595,13 +595,13 @@
     "message.send"
     "messaging"
     (js-array "destination_ref" "content")
-    (js-object :destination_ref idSchema :content textSchema)
+    (js-object :destination_ref idSchema :content textSchema :force_send booleanSchema)
     (js-object :effect "accept" :result "outbound"))
   (addOperation
     "message.reply"
     "messaging"
     (js-array "reply_context_id" "content")
-    (js-object :reply_context_id idSchema :content textSchema)
+    (js-object :reply_context_id idSchema :content textSchema :force_send booleanSchema)
     (js-object :effect "accept" :result "outbound"))
   (defconst recipientListSchema (objectSchema (js-object
     :recipient_ids (Object/assign (arraySchema idSchema 256 0) (js-object :uniqueItems t))

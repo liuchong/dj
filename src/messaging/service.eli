@@ -878,6 +878,7 @@
                     "revision"
                     "created_at"
                     "blocked_reason"
+                    "force_send"
                     "reply_context_id"
                     "destination"
                     "content"
@@ -1018,7 +1019,7 @@
                       (throw djReturn11Token)))
                   (when reply
                     (must (resolveReply context (nativeGet args "reply_context_id"))))
-                  (must (checkRecipients context address (nativeGet reply "native_reply_to") (nativeGet args "content")))
+                  (must (checkRecipients context address (nativeGet reply "native_reply_to") (nativeGet args "content") (nativeGet args "force_send" false)))
                   (let*
                     ((id (nextId context "outbound"))
                       (record
@@ -1043,6 +1044,8 @@
                           (nativeGet reply "reply_context_id" nil)
                           :native_reply_to
                           (nativeGet reply "native_reply_to" nil)
+                          :force_send
+                          (= (nativeGet args "force_send") t)
                           :permission_action
                           action
                           :identity_revision
@@ -1151,7 +1154,7 @@
               (progn
                 (setq djReturn12Value (failure "reply_context_expired"))
                 (throw djReturn12Token))))
-          (let ((recipient-check (checkRecipients context (nativeGet record "destination") (nativeGet record "native_reply_to") (nativeGet record "content"))))
+          (let ((recipient-check (checkRecipients context (nativeGet record "destination") (nativeGet record "native_reply_to") (nativeGet record "content") (nativeGet record "force_send" false))))
             (unless (nativeGet recipient-check "ok")
               (setq djReturn12Value recipient-check) (throw djReturn12Token)))
           (textCapability

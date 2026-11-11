@@ -5,15 +5,15 @@
 ## 行为与身份
 
 - 每条通过 DJ 创建的文本消息默认附：**不再接收 AI 消息，请回复 TD 或退订。** 编辑文本也保留提示，不重复附加；正文加提示一起接受长度校验，不截断原文。
-- 人类在私聊发送完整 `TD`（大小写不敏感、允许两端空白）或 `退订`，或在群里原生回复 DJ 发出的一条消息并输入该命令，持久禁收。`恢复接收` 只能由同一个原生用户主动解除自身退订。正文包含这些词不算命令；机器人、本人回声、表情、截断正文不算。
-- 群聊按实际回复者禁收（已提出选项，当前按不影响其他成员的保守范围实现）。群里的普通广播仍可见，DJ 无法单独隐藏群消息；明确回复或原生 @ 退订者的出站内容拦截。不能把一个成员的意愿扩成整个群禁发。
+- 人类在任意已接入私聊或群聊发送独立完整 `TD`（大小写不敏感、允许两端空白）或 `退订`，DJ按原生发送者自动持久禁收；不要求群内引用DJ消息或原消息由DJ发送。`恢复接收` 只能由同一个原生用户主动解除自身退订。正文包含这些词不算命令；机器人、本人回声、表情、截断正文不算。
+- 群聊按实际回复者禁收（已提出选项，当前按不影响其他成员的保守范围实现）。退订识别、保存和拦截不依赖AI核实或控制。群里的普通广播仍可见，DJ 无法单独隐藏群消息；明确回复或原生 @ 退订者的出站内容拦截。不能把一个成员的意愿扩成整个群禁发。
 - 使用原生 connection_id、recipient_id、chat_id 精确匹配。同一Lark品牌/应用的open_id、同一Slack工作区的user_id、Telegram原生user_id分别使用可证相同的ID命名空间，共享该人的最新明确选择；无法确定命名空间时保持连接边界。不能通过同一原生身份的user/bot连接绕过。不同应用或平台不按姓名猜同一人。退订不限制对方继续来信；退订命令本身及后续消息仍按原订阅条件正常触发AI；禁收只限制出站，不限制入站或事件匹配。任何新增表情（含自动Typing/Get）也属于出站，必须拦截；已有受托工作中表情继续清理。
 - 不对退订者自动发确认消息，避免确认本身变成禁收后的发送。管理员可读回设置。只在收件人明确恢复接收后才恢复；管理员白名单不能覆盖退订。
 - 消息已交到平台或 native I/O 已在途，无法保证撤回；拦截保证覆盖受理前和转入 submitting 前的检查，不谎称能撤销已发内容。
 
 ## 数据与接口
 
-统一模块 `src/messaging/recipients.eli`：`recipientCommand(event)` 纯解析；`stageRecipientCommand(context,event)` 同入库事务登记并防重复/旧时间覆盖；`recipientContent(content)` 附提示；`recipientTargets(context,address,replyTo,content)` 读取持久私聊对端、原消息作者及原生提及；`recipientScope/recipientDenied` 只在已知相同命名空间内复用选择；`ownRecipientMessage` 核对群内回复的原消息来源；`checkRecipients(...) -> Result` 执行优先级；`policyOperation(...)` 管理黑白名单。
+统一模块 `src/messaging/recipients.eli`：`recipientCommand(event)` 纯解析；`stageRecipientCommand(context,event)` 同入库事务登记并防重复/旧时间覆盖；`recipientContent(content)` 附提示；`recipientTargets(context,address,replyTo,content)` 读取持久私聊对端、原消息作者及原生提及；`recipientScope/recipientDenied` 只在已知相同命名空间内复用选择；`recoverRecipientCommands` 在启动、恢复派发之前，以256条候选命令的有界分页处理本地已入库的漏登命令，按源时间保留最新选择，不重放消息或触发AI；`checkRecipients(...) -> Result` 执行优先级；`policyOperation(...)` 管理黑白名单。
 
 表：`recipient_policies(connection_id,revision,payload)`；`recipient_optouts(connection_id,recipient_id,state,payload)` 保存原事件、源时间和更新时间，唯一键为连接+用户；`recipient_peers(connection_id,native_chat_id,recipient_id)` 保存私聊的精确对端，历史正文过期后仍能拦截。SQLite 当前 schema 内幂等建表，不引入接口多版本。
 
@@ -84,3 +84,11 @@ flowchart LR
 补充：输出禁收包含全部新增表情，已排队自动表情也复查；输入不被禁收影响，TD与后续消息均正常参与订阅匹配。退订不等于静音订阅或禁止AI处理来信。
 
 此补充经10项定向集成（100条断言、688ms）及5项既有关键保护单测（47条断言、50ms）通过：已有Typing被清理，TD前排队的Get不添加；TD及后续普通消息均进入原订阅对话，后续自动表情、主动已阅和文字回复被拦截。没有真实IM外发测试。
+
+## 单条强制发送与自动退订登记修复
+
+`message.send` / `message.reply` 新增可选布尔参数 `force_send`（默认false），只有用户明确要求强制发送本条时调用方才允许传true。该标记参与原操作幂等指纹，保存在outbound并投影至发送结果/outbound.get，在受理及submitting前只豁免该记录的recipient_opted_out/recipient_blocked检查。不会修改recipient_optouts/policies，不向后续消息、编辑或自动表情传播；身份、授权、原消息/话题、平台限制、审计和unknown防重照常生效。参数不能作为AI自主判断或全局默认；普通业务回复指令不构成强制豁免。服务能校验布尔值与记录作用域，用户明确授权由调用方遵守，不能宣称服务能从文本参数证明用户授权。
+
+群聊独立TD过去因引用另一发送方而漏登，现由DJ自动按发送者登记。服务启动分页恢复既有原生命令，不能由AI复制、编辑或用任务备注代替退订状态；不会重新投递历史输入。已保存的较新“恢复接收”不被旧TD覆盖。只改变输出，输入及历史可见性不变。
+
+本次集中验证：47项定向集成与保护性检查、487条断言通过（1.112秒），覆盖群内独立TD、257条非命令候选跨页恢复、重启与迟到命令、单条强制send/reply、原键防重与后续继续禁收、显式出站deny豁免、错误类型拒绝，以及既有身份/Working/消息动作与接口契约。使用隔离SQLite与注入IM端口，未向真实IM发送测试消息。

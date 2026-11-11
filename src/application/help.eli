@@ -91,13 +91,13 @@
       :message.reaction.list "有界读取消息原生表情记录，返回reaction_id与添加者，has_more时按page_token续页。"
       :message.action.get "按action_id读取撤回、编辑、手动表情操作的持久结果；unknown不等于失败，不换键盲目重试。"
       :message.send
-      "向 destination_ref 固定的 IM 地址发送一条纯文本；已认证主体默认可使用已配置连接，无需逐群发送授权。"
+      "向 destination_ref 固定的 IM 地址发送一条纯文本。force_send=true仅在用户明确要求强制发送时使用，单条豁免收件人退订及出站黑白名单，不改持久状态、不绕过身份和平台权限。"
       :message.acknowledge
       "显式确认当前消息已理解或收录、暂时无需文字回复：按固定身份添加Get，同一事务结束当前delivery的Working；不结束其他消息或任务。原生Get存在须官方读回确认。"
       :message.acknowledge.get
       "读取收到确认的持久状态；native_acknowledged为true才已核实原生Get存在。"
       :message.reply
-      "用 recipient 的 reply_context_id 回复固定原消息/话题；不可另传目的地。"
+      "用 recipient 的 reply_context_id 回复固定原消息/话题；不可另传目的地。force_send=true仅供用户明确要求的单次强制发送，豁免本条收件人退订及出站黑白名单，不恢复接收、不放开自动表情。"
       :outbound.get
       "读取 IM 出站台账、parts 和原生消息 ID；accepted 仅表示平台接受。"
       :outbound.reconcile
