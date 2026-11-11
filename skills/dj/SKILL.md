@@ -13,8 +13,9 @@ metadata:
 
 ## 适用范围
 
-- connected_conversations: 已对接DJ的AI对话优先通过DJ CLI、MCP或GEPO使用现有收发、上下文、订阅、回复和处理状态能力；Lark能力入口见下表。DJ确实缺少所需功能时，允许使用Lark CLI补充，按[能力与同身份补充](references/lark.md)核对原账号身份；不是一律禁止使用CLI。
+- connected_conversations: 已对接DJ的AI对话优先通过DJ CLI、MCP或GEPO使用现有收发、上下文、订阅、回复和处理状态能力；Lark能力入口见下表。DJ缺少所需功能或确有必要时，允许在原授权内使用Lark CLI补充，按[能力与同身份补充](references/lark.md)核对原账号身份；不是一律禁止使用CLI。
 - cli_identity: 使用Lark CLI时，必须与本来准备在DJ中使用的连接保持相同Lark账号及user/bot身份。回复按该通知已固定的reply_route核对；本人不换成机器人，机器人不换成另一个机器人，不以昵称或CLI默认账号判断身份相同。
+- task_handoff: DJ来源任务转交其他AI时，必须随任务明确传递固定回复账号、user/bot、原消息位置及协调者返回入口，详见[任务交接](references/handoff.md)。通常交回协调者再回复DJ；执行者也可在自己合法身份/引用下直接用DJ，必要的Lark CLI补充仍只能用同一确定账号与身份，不能因开工授权、正文@别人或CLI默认配置改用本人。
 - other_conversations: 上述要求只约束对接DJ的对话，不是所有AI对话的全局禁令。未对接DJ的其他对话仍按用户授权及各自规则使用Lark CLI等工具；仅安装或读取本Skill不等于已经对接DJ。
 - implementation_boundary: DJ程序内部直连官方API、不依赖第三方SDK或外部CLI，是DJ自身的实现要求；不得将它扩大成所有对话的工具禁令。
 
@@ -167,6 +168,7 @@ metadata:
 | --- | --- |
 | [客户端接线](references/clients.md) | 安装到工具目录、独立身份与 MCP/GEPO 配置 |
 | [工作流](references/workflows.md) | 需要参数、预览及回复示例 |
+| [任务交接与固定身份](references/handoff.md) | 转交任务、补问或交回结果时保留身份、来源、认证使用入口和返回路线 |
 | [投递诊断](references/delivery.md) | 处理引用、超时、权限或部分发送 |
 | [会话控制](references/control.md) | 跨工具查询、免订阅输入及显式启动或创建 |
 

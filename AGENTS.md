@@ -81,6 +81,7 @@ DJ 程序内部的 Lark 接入必须直连官方 WebSocket 与 HTTPS API，禁�
 
 - 用户确认的产品职责、行为和硬边界必须保存为 `docs/specs/` 下四位数字前缀的正式 spec；同一问题继续更新原 spec，不靠聊天记忆或另起重复说明。
 - Lark处理中Typing表情按[0006](docs/specs/0006-working-reactions.md)持久登记，回复/无需回复/失败/到期均须清理；只有官方读回确认消失才算撤销，不能依赖AI结束前记得删除。
+- DJ任务跨AI交接时，确定出口账号及user/bot身份随任务传递，默认协调者原路回复；允许合法直接调用DJ和必要的同身份Lark CLI补充，但不得改用未指定账号。每跳传足来源、身份、原消息位置、协调者返回入口及防重元信息，按[任务交接](skills/dj/references/handoff.md)执行。
 - 原生提及到回复身份及原消息位置由DJ按[0005](docs/specs/0005-mention-replies.md)固定；AI只决定是否、何时调用回复工具提交内容。禁止把普通输出或最终回答自动接到IM。
 - 对话规则须经 [0004](docs/specs/0004-session-rules.md) 的持久接口按准确原生会话保存和恢复，不依赖聊天历史或定时器文案；规则保存不冒充实时触发覆盖。
 - 多IM、多账号及user/bot身份共用扁平连接注册表和路由分发，人员身份与原生会话地址分离；以 [0003](docs/specs/0003-connections-and-routing.md) 为准，不按部署昵称分叉业务。

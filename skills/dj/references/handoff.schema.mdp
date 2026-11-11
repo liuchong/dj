@@ -1,0 +1,41 @@
+- mds: "0.1"
+- mdp: "1.0"
+- title: IM任务交接身份与回复入口
+
+此模式用于交接示例和元信息查漏，不是服务发送门禁；运行时遗漏从DJ持久原记录自动补齐，不因字段遗漏停工。语法完整不证明身份、授权或原生发送成功。
+
+# Sections
+
+| name | kind | required | additional |
+| --- | --- | --- | --- |
+| IM Reply Context | object | true | true |
+
+# IM Reply Context
+
+| name | type | required | min_len |
+| --- | --- | --- | --- |
+| platform | string | true | 1 |
+| brand | string | true | 1 |
+| tenant_id | string | true | 1 |
+| source_connection_id | string | true | 1 |
+| reply_connection_id | string | true | 1 |
+| identity | string | true | 1 |
+| app_id | string | true | 1 |
+| native_account_id | string | true | 1 |
+| event_id | string | true | 1 |
+| delivery_id | string | true | 1 |
+| native_chat_id | string | true | 1 |
+| native_message_id | string | true | 1 |
+| coordinator_tool | string | true | 1 |
+| coordinator_session_id | string | true | 1 |
+| executor_tool | string | true | 1 |
+| executor_session_id | string | true | 1 |
+| return_mode | string | true | 1 |
+| dj_access | string | true | 1 |
+| account_lookup | string | true | 1 |
+| source_lookup | string | true | 1 |
+| reply_recovery | string | true | 1 |
+| credentials_usage | string | true | 1 |
+| cli_account_usage | string | true | 1 |
+| recovery_priority | string | true | 1 |
+| recovery_notice | string | true | 1 |

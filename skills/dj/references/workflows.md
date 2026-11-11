@@ -76,3 +76,7 @@ subscription.preview 接收：
 ```
 
 这两种参数互斥。查到记录后沿 resource_refs 查对应对象；未查到也不能证明原请求不会提交。重放原请求时保持相同输入和 key。暂停/恢复/删除使用 subscription_id、expected_revision 和新的逻辑动作 key；resume 不补发暂停期间消息。
+
+## 跨AI任务的返回路线
+
+任务被转交并不改变IM发送身份。派工、续接和结果交回都带上[固定身份元信息](handoff.md)，默认由原协调者回复DJ。执行者可在自身权限和有效引用下直接用DJ；确有必要使用Lark CLI时也必须是同租户、同账号、同user/bot。缺少这些事实就交回协调者，不借凭据、不自行选本人或另一个机器人。

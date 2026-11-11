@@ -44,3 +44,11 @@ message.reply_context(delivery_id) 允许原接收者在原持久回复记录仍
 验收：集中验证真实SQLite/Core下双连接到达顺序、跨应用单一/多提及、缺映射、冲突、迟到证据、引用刷新与出站提交切点、私聊及引用/话题优先级；再补关键纯函数保护。原生HTTP和AI端口使用明确替身，不向真实群发测试消息，不重放已撤回业务。
 
 - 当前实现：`reply_route.basis`说明native_mentions/shared_native_message/private_recipient/native_interaction/source_default；unmapped_target与ambiguous_target无可发送引用。reply_identity_unresolved是不发送错误，不允许AI选择另一份重复通知的账号绕过。输入记录及订阅继续正常处理，跨连接证据核对不合并或删除消息。
+
+## 跨AI任务交接与外部工具补充
+
+同一事项转交其他AI执行时，确定的IM发送身份必须随任务保留。默认执行者把内容原路交回协调者，由协调者通过DJ回复；不禁止执行者以自己的合法主体和有效回复引用直接调用DJ，也允许确有必要的Lark CLI补充。所有路径都必须保持同一确定账号及user/bot身份，不能按接收连接、CLI默认账号、群中旧消息作者或新的正文@对象自行更换。
+
+每次派工、续接、补问与结果交回明确携带平台/租户、来源与出口connection_id、原生账号/app锚点及identity_revision、原event/delivery/chat/message/thread、协调者和执行者原生会话ID、返回方式、回复引用所属主体/有效期及已有操作防重状态。这些事实由DJ持久保存；交接应同时说明已安装CLI/MCP/GEPO、非敏感profile使用入口、connection/delivery/message查询和reply_context恢复方法，敏感认证由服务使用而不传入正文。不能因交接少字段停工：自动从原记录恢复，优先经DJ或协调者用原身份完成沟通；极端异常单独私聊用户说明实际情况。凭据不随任务转交；metadata不赋予权限、不覆盖服务路由、不改变退订或自动授权强制发送。具体模板见[Skill任务交接](../../skills/dj/references/handoff.md)。
+
+这是调用方的同身份约束；DJ机械校验经过自身的回复，不能拦截另一个程序直接调用Lark。原生CLI发送必须如实记录其message_id和身份，不伪造DJ台账。

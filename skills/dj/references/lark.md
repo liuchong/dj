@@ -18,15 +18,16 @@
 - excluded: OAuth登录、令牌签发/刷新由连接内部管理，通用入口不暴露认证接口。缺少原生权限时报告response中的具体权限，不声称整个Lark功能未实现。
 - docs: [Lark官方服务端API](https://open.larksuite.com/document)、[飞书官方API](https://open.feishu.cn/document)。先读准确端点文档，参数和user/bot支持由该端点决定。
 
-## 功能不足时使用 Lark CLI
+## 功能不足或确有必要时使用 Lark CLI
 
-- condition: 当前DJ接口不能完成所需操作时，AI可以在原任务授权内使用Lark CLI补充，无需仅为换工具重复申请许可。工具补充不扩大收件人、内容或操作范围。
-- identify: 先从connection.get/probe或通知的reply_route确定原计划使用的准确连接、租户、账号与user/bot身份，再核对Lark CLI当前配置和实际认证身份；不靠显示名、环境默认值或“都是我的账号”推断。
+- condition: 当前DJ接口不能完成所需操作或确有必要补充时，AI可以在原任务授权内使用Lark CLI，无需仅为换工具重复申请许可。工具补充不扩大收件人、内容或操作范围。
+- identify: 先从原任务[交接元信息](handoff.md)、connection.get/probe和通知的reply_route核对原计划使用的准确连接、租户、账号与user/bot身份，再核对Lark CLI当前配置和实际认证身份；不靠显示名、环境默认值或“都是我的账号”推断。
 
 - user: 原计划使用本人连接时，保持同一Lark租户、同一真实用户账号，使用本人身份；不得改用机器人。
 - bot: 原计划使用机器人连接时，保持同一Lark租户、同一应用机器人账号，使用机器人身份；不得改用本人或另一机器人。
 
-- account_ids: 应用作用域不同的open_id不能直接比较；使用同一应用下的ID或已核实的账号关联确认同一真人。账号未能核实时不凭昵称发送；缺少同身份凭据就说明具体缺口，不自动换账号。
+- task_identity: 由协调者转交的任务必须继承已确定的出口；机器人接受的事项，后续补问与结果仍由该机器人发出。user连接收到一份重复通知、原话题中曾有本人消息、需要@别人或CLI默认以本人登录，都不是切换身份的依据。没有明确账号证据时交回协调者，不按“--as user方便”发送。
+- account_ids: 应用作用域不同的open_id不能直接比较；使用同一应用下的ID或已核实的账号关联确认同一真人。账号信息未随任务带上时，从DJ原事件、连接和协调者自动查回；CLI同身份认证暂不可复用时优先通过DJ服务保存的认证或协调者代理完成，不因元信息遗漏停工，也不自动换账号。
 - destination: 原消息回复仍沿原连接、chat、message/thread关系；CLI不会替你恢复DJ的reply_context路由。先还原并核对原目的地，不能把话题回复变成群主流消息或发给另一个人。
 - uncertain: DJ已提交或返回unknown的写操作不能换CLI盲目重发。先operation.get、outbound.get或message.action.get核对；只有确认原操作未执行，或这是独立的补充动作时才执行，避免重复发送/撤回/编辑。
 - tracking: CLI操作不会自动写入DJ出站台账，也不会自动结束delivery的Working。对已有DJ通知，处理结束仍调用delivery.complete；仅在真实DJ操作记录存在时引用其operation_id/outbound_id，不能伪造DJ accepted或已确认状态。
