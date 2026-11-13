@@ -192,8 +192,8 @@
                    (= (nativeGet endpoint "native_namespace") (nativeGet target "native_namespace"))))))))
           (unless (= (js-length selected) 1) (throw (desktopError "desktop_ambiguous_endpoint")))
           (aref selected 0))))
-      (setq sessionRecord (lambda (endpoint id title state epoch)
-        (js-object :tool tool :native_namespace (nativeGet endpoint "native_namespace")
+      (setq sessionRecord (lambda (endpoint id title state epoch &optional model)
+        (js-object :surface "desktop" :model_selection model :tool tool :native_namespace (nativeGet endpoint "native_namespace")
           :native_session_id id :instance_id (nativeGet endpoint "instance_id") :instance_epoch epoch
           :workspace_ref (nativeGet endpoint "workspace_ref")
           :title (nativeGet (sliceUtf8 (or title "") 0 (nativeGet limits "title_bytes")) "text" "") :runtime_state state
@@ -240,11 +240,14 @@
                 (unless (= (js-length matches) 1) (throw (desktopError "desktop_no_owner")))
                 (let ((row (aref matches 0)))
                   (funcall sessionRecord endpoint id (nativeGet row "title" "")
-                    (cursorRuntime row) (nativeGet page "instance_epoch"))))
+                    (cursorRuntime row) (nativeGet page "instance_epoch")
+                    (js-object :model_id (nativeGet row "model") :provider_id (nativeGet row "modelProvider")))))
               (await (funcall codexSnapshot endpoint id context (async (channel result)
                 (let ((state (nativeGet result "state")))
                   (funcall sessionRecord endpoint id (nativeGet state "title" "")
-                    (codexRuntime state) (nativeGet channel "instance_epoch"))))))))
+                    (codexRuntime state) (nativeGet channel "instance_epoch")
+                    (js-object :provider_id (nativeGet state "modelProvider") :model_id (nativeGet state "model")
+                      :reasoning_effort (nativeGet state "reasoningEffort")))))))))
           (catch unavailable (js-object :runtime_state
             (if (js-call (js-array "ENOENT" "desktop_no_owner") :includes (nativeGet unavailable "code"))
               "offline" "unknown") :live_receiver false :evidence_level "none"

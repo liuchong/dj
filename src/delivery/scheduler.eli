@@ -684,7 +684,9 @@
                     (throw djReturn4Token)))
                 (let*
                   ((binding (attachBinding context route session instance observation))
-                    (envelope (attachConversationRules context session (freezeEnvelope context record event contributions agent read)))
+                    (envelope (attachConversationRules context
+                      (Object/assign (js-object) session (js-object :model_selection (nativeGet observation "model_selection")))
+                      (freezeEnvelope context record event contributions agent read)))
                     (frame
                       (encodeAgentInput
                         (nativeGet session "tool")
@@ -1052,7 +1054,8 @@
             (when (and (= (nativeGet instance "instance_epoch") (nativeGet observation "instance_epoch"))
               (nativeGet (assertGate (nativeGet context "store") (nativeGet instance "instance_id")
                 (nativeGet observation "instance_epoch") "open") "ok"))
-              (must (putSession context (Object/assign (js-object) current observation) instance))))))))
+              (must (putSession context (Object/assign (js-object) current observation
+                (js-object :model_selection (nativeGet observation "model_selection"))) instance))))))))
   (defasync dispatchRoute
     (context route-id)
     (let ((djReturn6Token (js-object)) (djReturn6Value nil))

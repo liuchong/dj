@@ -156,6 +156,9 @@
       (js-object
         :tool
         (enumOf "opencode" "pi" "codex" "cursor" "claude" "antigravity" "kimi" "dsh")
+        :service_file id
+        :desktop_registry_path id
+        :server_key id
         :native_provider (enumOf "kimi-desktop" "kimi-web" "dsh-desktop" "dsh-web")
         :data_root id
         :cookie_database id
@@ -446,6 +449,12 @@
             :forEach
             (lambda (endpoint)
               (let ((tool (nativeGet endpoint "tool")))
+                (when (and (= tool "opencode") (or (nativeGet endpoint "service_file") (nativeGet endpoint "desktop_registry_path")))
+                  (unless (and (nativeGet endpoint "directory") (nativeGet endpoint "workspace_ref")
+                    (or (nativeGet endpoint "service_file") (nativeGet endpoint "base_url"))
+                    (or (not (nativeGet endpoint "desktop_registry_path"))
+                      (and (nativeGet endpoint "window_id") (nativeGet endpoint "server_key"))))
+                    (throw (new globalThis.TypeError "OpenCode requires exact service, project and optional desktop window"))))
                 (when (js-call (js-array "kimi" "dsh") :includes tool)
                   (let ((provider (nativeGet endpoint "native_provider")) (binding (nativeGet endpoint "process_binding")))
                     (unless (and (js-call (if (= tool "kimi") (js-array "kimi-desktop" "kimi-web") (js-array "dsh-desktop" "dsh-web")) :includes provider)

@@ -119,7 +119,9 @@
                                         (not (nativeGet record "running"))
                                         (js-call context :isIdle) (not (js-call context :hasPendingMessages))))
                                  (data (js-object :session_id id :receiver_epoch epoch :directory directory
-                                         :runtime_state (if idle "idle" "busy"))))
+                                         :runtime_state (if idle "idle" "busy")
+                                         :model_selection (js-object :provider_id (nativeGet (nativeGet context "model") "provider")
+                                           :model_id (nativeGet (nativeGet context "model") "id")))))
                             (cond
                               ((= operation "probe")
                                 (let* ((manager (nativeGet context "sessionManager"))

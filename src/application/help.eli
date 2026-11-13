@@ -39,7 +39,7 @@
       :agent.discover
       "在指定工具和配置实例范围机械发现会话，返回 candidate_ref；不创建或发送。"
       :agent.register
-      "把候选精确目标登记为 AgentTarget；recipient 必须与可信 target_constraint 相符。"
+      "把候选精确目标登记为 AgentTarget；recipient 必须与可信 target_constraint 相符。查询返回准确会话的 subscriber 模型参考，未知字段不推测。"
       :agent.list
       "列举有权管理的已登记单会话目标；agent_id 不是工具父节点。"
       :agent.get
@@ -159,7 +159,7 @@
       :instance.start
       "显式启动获准预配 profile；先占持久 slot，unknown 不重新拉起。"
       :session.create
-      "在支持的运行实例中显式创建空会话；不 prompt 或接线 recipient；Pi 同 RPC 不支持。"
+      "在支持的运行实例中显式创建空会话；不 prompt 或接线 recipient。OpenCode 可明确传 model_selection={provider_id,model_id,variant?}，核原生目录且不改已有会话。Pi 同 RPC 不支持。"
       :instance.stop
       "仅停止 DJ-owned managed 实例；先关 gate 再排空，期限到不强杀、不要求队列清空。"
       :lifecycle.get

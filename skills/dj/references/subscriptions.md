@@ -93,3 +93,9 @@
 - robots: 若规则目的是屏蔽机器人动作，使用trigger.kind；sender.kind仍为原消息作者，单独按它排除会连人类对机器人消息的表情一起过滤。人员与字符黑名单仍优先，消息可见性不变。
 
 - chat_pins: 消息菜单 Pin 是独立的 message.pinned，pin.operator 表示实际标记者；与 📌 表情分开选择，见[置顶与原因](reactions.md#对话-pin置顶)。通知 trigger_reasons 展示动作原因，matched 展示命中的订阅；多个原因不要求重复创建任务。
+
+## 保存订阅者自己的模型
+
+所有工具适用。订阅 preview 的 `spec.subscriber_model` 可提供 `provider_id`、完整 `model_id`（允许含斜杠），及可得的 `variant`、`reasoning_effort`。先核对本对话真实原生模型；不知道就省略，DJ 返回 unknown，禁止用工具品牌或全局默认值猜。原生会话观察优先，自报明确标记 subscriber_report，作为参考而非实时证明。
+
+create/update 正式保存后，subscription.get 的 subscriber 是提交时快照；后续通知的 recipient 是该通知的准确接收对话与模型参考。分派或创建对话时可以参考这些字段，不能因此自动更换固定搭档模型。stale、unknown 和 source 必须保留，不把旧报告说成当前已核实的模型。工具 tool 与模型供应商 provider_id 是不同概念。凭据不会包含在此元数据中。

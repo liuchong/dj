@@ -12,6 +12,7 @@
       "event_id"
       "source"
       "sender"
+      "recipient"
       "matched"
       "instructions"
       "conversation_rules"
@@ -109,10 +110,8 @@
           (cond
             ((= tool "opencode")
               (js-object
-                :messageID
-                (openCodeMessageId dispatch-key)
-                :parts
-                (js-array (js-object :type "text" :text message))))
+                :id (openCodeMessageId dispatch-key)
+                :text message))
             ((= tool "pi") (js-object :id dispatch-key :type "prompt" :message message))
             ((js-call (js-array "codex" "cursor" "claude" "antigravity" "kimi" "dsh") :includes tool)
               (js-object :text message))

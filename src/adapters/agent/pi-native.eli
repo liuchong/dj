@@ -50,7 +50,7 @@
               (js-object :data data :instance_epoch (nativeGet response "instance_epoch"))))))
         (setq project (lambda (endpoint response)
           (let ((data (nativeGet response "data")))
-            (js-object :tool "pi" :native_namespace (nativeGet endpoint "native_namespace")
+            (js-object :surface "cli" :model_selection (nativeGet data "model_selection") :tool "pi" :native_namespace (nativeGet endpoint "native_namespace")
               :native_session_id (nativeGet data "session_id")
               :instance_id (nativeGet endpoint "instance_id") :instance_epoch (nativeGet response "instance_epoch")
               :workspace_ref (nativeGet endpoint "workspace_ref") :title (nativeGet data "title" "Pi")

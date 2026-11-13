@@ -75,3 +75,5 @@ delivery_policy 仅 busy/offline/ttl_seconds，默认 steer/hold；busy=queue �
 这一步由可信宿主使用 `Core.reloadConfig` 或 standalone 私有配置/SIGHUP 完成；它不是普通 Agent 的 CLI/MCP 权限修改工具。只支持 principals/client_profiles 的原子重载，不能通过发送配置 JSON 改连接或启动参数；已有主体权限变化需提高 authorization_revision，注销 ID 不复用。
 
 创建超时先 operation.get 找回 lifecycle，再 lifecycle.get/reconcile；原生结果 unknown 不按标题猜成功或换键再建。普通 Agent 不执行 lifecycle.resolve。已有客户端属于原宿主，不能停止借用的工具或强停原任务。历史生命周期 ready 仅是当时动作结果，不能替代当前 receiver/instance/session probe。
+
+OpenCode 使用当前 `/api/*` 本机服务协议；现有运行中服务由原生 service_file 重新发现。桌面与后台历史分别核实，创建桌面会话需配置原生桌面控制入口；发送不启动新的 CLI/ACP。session.create 可显式提供 model_selection={provider_id,model_id,variant?}，完整模型 ID 可以含斜杠，variant 按该模型原生目录验证。持续发送保持既有模型，忙时输入使用原生 steer；持久接收与实际回复分别验证。

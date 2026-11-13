@@ -145,9 +145,13 @@
                   (js-object :type (js-array "string" "boolean"))
                   (nativeGet limits "rule_in_values")))))
           (js-array "field" "op" "value")))))
+  (defconst subscriberModelSchema
+    (objectSchema (js-object :provider_id idSchema :model_id idSchema :variant idSchema :reasoning_effort idSchema)
+      (js-array "provider_id" "model_id")))
   (defconst specSchema
     (objectSchema
       (js-object
+        :subscriber_model subscriberModelSchema
         :agent_id
         idSchema
         :selector
@@ -925,6 +929,7 @@
     "lifecycle"
     (js-array "instance_id" "expected_instance_epoch" "workspace_ref")
     (js-object
+      :model_selection subscriberModelSchema
       :instance_id
       idSchema
       :expected_instance_epoch

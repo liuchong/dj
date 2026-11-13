@@ -404,7 +404,9 @@
         (> (js-length (nativeGet native "sessionId")) 0))
       (throw (new globalThis.TypeError "Pi did not report a native session identity")))
     (let ((profile (nativeGet record "profile")))
-      (js-object
+      (js-object :surface "cli"
+        :model_selection (js-object :provider_id (nativeGet (nativeGet native "model") "provider")
+          :model_id (nativeGet (nativeGet native "model") "id") :reasoning_effort (nativeGet native "thinkingLevel"))
         :tool
         "pi"
         :native_namespace

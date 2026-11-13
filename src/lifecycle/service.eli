@@ -317,6 +317,7 @@
                                   (if (= operation "session.create") "create" "stop")
                                   current)))
                             (when (= operation "session.create")
+                              (when (nativeGet args "model_selection") (put action :model_selection (nativeGet args "model_selection")))
                               (put action :workspace_ref (nativeGet args "workspace_ref"))
                               (when (nativeGet args "title")
                                 (put action :title (nativeGet args "title")))
@@ -864,6 +865,7 @@
                             (nativeGet action "creation_key")
                             (Object/assign
                               (nativeCallContext context)
+                              (js-object :model_selection (nativeGet action "model_selection"))
                               (if (nativeGet action "title")
                                 (js-object :title (nativeGet action "title"))
                                 (js-object))))))

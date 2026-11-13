@@ -1,0 +1,35 @@
+(module dj.sessions.models
+  (import "../core/native.eli" nativeGet nativeTypeOf)
+  (defun modelValue (value)
+    (if (and (= (nativeTypeOf value) "string") (> (js-length value) 0)
+             (<= (js-length value) 512)) value nil))
+  ;; Only exact session metadata enters this projection. Never inspect a tool's
+  ;; global default, environment, endpoint, API key or arbitrary model object.
+  (defun modelSelection (value source now)
+    (let* ((provider (modelValue (nativeGet value "provider_id")))
+           (model (modelValue (nativeGet value "model_id"))))
+      (js-object :status (if (and provider model) "known" "unknown")
+        :provider_id provider :model_id model
+        :variant (modelValue (nativeGet value "variant"))
+        :reasoning_effort (modelValue (nativeGet value "reasoning_effort"))
+        :source (if (or provider model) source "unavailable") :observed_at now)))
+  (defun nativeModelSelection (value now)
+    (modelSelection value "native_session" now))
+  (defun subscriberMetadata (session now &optional report)
+    (let* ((native (modelSelection (nativeGet session "model_selection") "native_session"
+             (nativeGet (nativeGet session "model_selection") "observed_at" (nativeGet session "observed_at" now))))
+           (selection (if (= (nativeGet native "status") "known") native
+             (if (or report (nativeGet session "reported_model"))
+               (modelSelection (or report (nativeGet session "reported_model")) "subscriber_report"
+                 (if report now (nativeGet session "reported_model_at" now)))
+               native))))
+      (js-object :session_key (nativeGet session "session_key")
+        :tool (nativeGet session "tool") :surface (nativeGet session "surface" "unknown")
+        :native_namespace (nativeGet session "native_namespace")
+        :native_session_id (nativeGet session "native_session_id")
+        :instance_id (nativeGet session "instance_id") :instance_epoch (nativeGet session "instance_epoch")
+        :workspace_ref (nativeGet session "workspace_ref" nil)
+        :model_selection selection
+        :stale (or (= (nativeGet selection "source") "subscriber_report") (not (nativeGet session "observation_expires_at"))
+          (<= (Date/parse (nativeGet session "observation_expires_at")) (Date/parse now))))))
+  (export modelSelection nativeModelSelection subscriberMetadata))

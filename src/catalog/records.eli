@@ -17,8 +17,11 @@
     must
     inTransaction
     issueResourceHandle)
+  (import "../sessions/models.eli" nativeModelSelection)
   (defconst sessionFields
     (js-array
+      "surface"
+      "model_selection"
       "session_key"
       "tool"
       "native_namespace"
@@ -141,6 +144,12 @@
               field
               (js-call (new globalThis.Date (nativeGet result field)) :toISOString))
             (Reflect/deleteProperty result field))))
+      (let ((existing (js-call (nativeGet context "repository") :get "sessions" key)))
+        (when (= (nativeGet existing "instance_epoch") (nativeGet instance "instance_epoch"))
+          (when (nativeGet existing "reported_model")
+            (put result :reported_model (nativeGet existing "reported_model"))
+            (put result :reported_model_at (nativeGet existing "reported_model_at")))))
+      (put result :model_selection (nativeModelSelection (nativeGet native "model_selection") (utcNow context)))
       (let
         (
           (agent

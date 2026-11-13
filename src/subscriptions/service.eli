@@ -32,6 +32,9 @@
   (import "../ingestion/visibility.eli" eventReadable)
   (import "./replay.eli" replayEvents)
   (import "./inbox.eli" pullInbox ackInbox)
+  (import "../sessions/models.eli" subscriberMetadata modelSelection)
+  (import "../catalog/records.eli" writeSessionVersion putSession)
+  (import "../application/context.eli" agentPort nativeCallContext)
   (defun projectSubscription
     (record)
     (safeFields
@@ -40,6 +43,8 @@
         "subscription_id"
         "configuration_id"
         "owner_principal_id"
+        "subscriber_model"
+        "subscriber"
         "agent_id"
         "selector"
         "resolved_sources"
@@ -161,9 +166,28 @@
                   "open")))
             (unless (nativeGet gate "ok")
               (progn (setq djReturn3Value gate) (throw djReturn3Token)))
-            (success (js-object :instance instance :gate (nativeGet gate "data")))))
+            (success (js-object :session session :instance instance :gate (nativeGet gate "data")))))
         (catch djReturn3Error
           (if (eq djReturn3Error djReturn3Token) djReturn3Value (throw djReturn3Error))))))
+  (defasync refreshSubscriberModel (context agent)
+    (let* ((repository (nativeGet context "repository"))
+      (route (js-call repository :get "routes" (nativeGet agent "route_id")))
+      (session (and route (js-call repository :get "sessions" (nativeGet route "session_key"))))
+      (instance (and session (js-call repository :get "instances" (nativeGet session "instance_id"))))
+      (port (and instance (agentPort context instance))) (observation nil))
+      (when (and session port)
+        (try (setq observation (await (js-call port :probe session session (nativeCallContext context))))
+          (catch unavailable (setq observation nil)))
+        (inTransaction context (lambda (tx)
+          (let ((current (js-call repository :get "sessions" (nativeGet session "session_key"))))
+            (when (= (nativeGet current "instance_epoch") (nativeGet session "instance_epoch"))
+              (if (and (= (nativeGet observation "native_session_id") (nativeGet session "native_session_id"))
+                (= (nativeGet observation "native_namespace") (nativeGet session "native_namespace"))
+                (= (nativeGet observation "instance_epoch") (nativeGet session "instance_epoch")))
+                (must (putSession context observation instance))
+                (must (writeSessionVersion context (Object/assign (js-object) current
+                  (js-object :model_selection (modelSelection nil "unavailable" (utcNow context))))))))
+          (success nil)))))))
   (defasync previewSubscription
     (context args)
     (let ((djReturn4Token (js-object)) (djReturn4Value nil))
@@ -225,6 +249,7 @@
           (when (predicateUsesPerson (nativeGet spec "predicate"))
             (must (validatePersonReferences (js-array (js-object :predicate (nativeGet spec "predicate")))
               (nativeGet (readFilterPolicy context) "people" (js-array)))))
+          (await (refreshSubscriberModel context agent))
           (let*
             ((target (targetState context agent))
               (resolved (resolveSources context (nativeGet spec "selector") recipient)))
@@ -579,6 +604,11 @@
                           (progn
                             (setq djReturn7Value (failure "preview_stale"))
                             (throw djReturn7Token))))
+                      (when (nativeGet spec "subscriber_model")
+                        (let ((session (Object/assign (js-object) (nativeGet (nativeGet target "data") "session"))))
+                          (put session :reported_model (modelSelection (nativeGet spec "subscriber_model") "subscriber_report" (utcNow context)))
+                          (put session :reported_model_at (utcNow context))
+                          (must (writeSessionVersion context session))))
                       (let*
                         ((cutover (js-call repository :currentSequence "ingress"))
                           (subscription
@@ -596,6 +626,8 @@
                                   (nativeGet (currentPrincipal context) "principal_id"))
                                 :recipient_principal_id
                                 (nativeGet target-agent "recipient_principal_id")
+                                :subscriber
+                                (subscriberMetadata (nativeGet (nativeGet target "data") "session") (utcNow context) (nativeGet spec "subscriber_model"))
                                 :resolved_sources
                                 (nativeGet ticket "resolved_sources")
                                 :start_seq

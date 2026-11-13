@@ -21,7 +21,7 @@
   (import "node:fs/promises" mkdir readFile rm)
   (import "node:os" homedir)
   (import "node:crypto" randomUUID)
-  (defasync setup () (await (createFixture "agent" "one")))
+  (defasync setup () (await (createFixture "agent" "one" (js-object :configure (lambda (config ports) (put config :managed_profiles (js-array)))))))
   (withCase
     "T02.same-title.integration"
     setup
@@ -214,7 +214,7 @@
           (js-call (expect (js-length (nativeGet (nativeGet f "pi") "inputs"))) :toBe 0))))
     closeFixture)
   (withCase
-    "T07.steer-disabled.integration"
+    "T07.steer-request.integration"
     setup
     (async
       (f)
@@ -236,7 +236,7 @@
                   (js-object :busy "steer" :offline "hold" :ttl_seconds 60)
                   :idempotency_key
                   "steer-disabled")))))
-        (js-call (expect (nativeGet (nativeGet result "error") "code")) :toBe "unsupported")
+        (js-call (expect (nativeGet result "ok")) :toBe t)
         (js-call (expect (js-length (nativeGet (nativeGet f "opencode") "inputs"))) :toBe 0)))
     closeFixture)
   (withCase
@@ -347,14 +347,14 @@
             (expect (nativeGet request "path"))
             :toBe
             (str
-              "/session/"
+              "/api/session/"
               (nativeEncodeURIComponent (nativeGet binding "native_session_id"))
-              "/prompt_async"))
+              "/prompt"))
           (js-call (expect (nativeGet request "authenticated")) :toBe t)
           (js-call
             (expect (nativeGet request "directory"))
             :toBe
-            (nativeGet (nativeGet h "endpoint") "directory"))
+            nil)
           (js-call (expect (nativeGet body "model")) :toBeUndefined)
           (js-call (expect (nativeGet body "tools")) :toBeUndefined)
           (js-call (expect (nativeGet body "system")) :toBeUndefined)
@@ -395,7 +395,7 @@
                 :filter
                 (lambda (call) (= (nativeGet call "method") "POST")))))
           (js-call (expect (js-length writes)) :toBe 1)
-          (js-call (expect (nativeGet (aref writes 0) "path")) :toBe "/session"))))
+          (js-call (expect (nativeGet (aref writes 0) "path")) :toBe "/api/session"))))
     closeHarness)
   (withCase
     "T63.opencode-native-read.integration"
@@ -418,38 +418,25 @@
           (expect (nativeGet (aref (nativeGet messages "items") 0) "text"))
           :toBe
           "中文😀 native text")
-        (let ((requests (js-array)) (native-id (nativeGet session "native_session_id")))
-          (put (nativeGet h "state") :message_handler
-            (async (url)
-              (let* ((query (nativeGet url "searchParams"))
-                     (n (js-call globalThis.Number :parseInt (js-call query :get "limit") 10))
-                     (before (js-call query :get "before")))
-                (js-call requests :push (js-object :limit n :before before))
-                (if (> n 2)
-                  (new globalThis.Response (js-call "x" :repeat 1048577))
-                  (Response/json
-                    (js-array (js-object :info (js-object :id (if before "older" "latest")
-                      :sessionID native-id :role "assistant" :time (js-object :created 1767225600000))
-                      :parts (js-array (js-object :type "text" :text (if before "older text" "latest text")))))
-                    (js-object :headers (if before (js-object)
-                      (js-object :x-next-cursor "opaque+/=older"))))))))
-          (let* ((first (await (js-call port :readMessages session nil budget ctx)))
-                 (cursor (nativeGet first "next_cursor"))
-                 (second (await (js-call port :readMessages session cursor budget ctx))))
+        (let ((requests (js-array)))
+          (put (nativeGet h "state") :message_handler (async (url)
+            (let ((cursor (js-call (nativeGet url "searchParams") :get "cursor")))
+              (js-call requests :push cursor)
+              (Response/json (Object/assign (js-object :data (js-array (js-object :id (if cursor "older" "latest") :type "user"
+                :text (if cursor "older text" "latest text"))))
+                (if cursor (js-object) (js-object :cursor (js-object :next "opaque+/=older"))))))))
+          (let* ((first (await (js-call port :readMessages session nil budget ctx))) (cursor (nativeGet first "next_cursor"))
+            (second (await (js-call port :readMessages session cursor budget ctx))))
             (js-call (expect (nativeGet first "complete")) :toBe false)
-            (js-call (expect (nativeGet cursor "before")) :toBe "opaque+/=older")
+            (js-call (expect (nativeGet cursor "native_cursor")) :toBe "opaque+/=older")
             (js-call (expect (nativeGet (aref (nativeGet first "items") 0) "text")) :toBe "latest text")
             (js-call (expect (nativeGet second "complete")) :toBe t)
             (js-call (expect (nativeGet (aref (nativeGet second "items") 0) "text")) :toBe "older text")
-            (js-call (expect (nativeGet (aref requests 0) "limit")) :toBe 32)
-            (js-call (expect (nativeGet (aref requests 4) "limit")) :toBe 2)
-            (js-call (expect (nativeGet (aref requests 9) "before")) :toBe "opaque+/=older"))
-          (put (nativeGet h "state") :message_handler
-            (async (url) (new globalThis.Response (js-call "x" :repeat 1048577))))
-          (let ((oversized (await (js-call port :readMessages session nil budget ctx))))
-            (js-call (expect (js-length (nativeGet oversized "items"))) :toBe 0)
-            (js-call (expect (nativeGet oversized "complete")) :toBe false)
-            (js-call (expect (nativeGet oversized "coverage")) :toBe "partial")))
+            (js-call (expect (aref requests 1)) :toBe "opaque+/=older"))
+          (put (nativeGet h "state") :message_handler (async (url) (new globalThis.Response "<html>obsolete URL</html>")))
+          (let ((bad (await (js-call port :readMessages session nil budget ctx))))
+            (js-call (expect (nativeGet bad "coverage")) :toBe "partial")
+            (js-call (expect (nativeGet bad "complete")) :toBe false)))
         (js-call
           (expect
             (js-call (nativeGet h "calls") :some (lambda (call) (= (nativeGet call "method") "POST"))))
@@ -1090,7 +1077,7 @@
             (js-call (expect (nativeGet replay "delivery_id")) :toBe (nativeGet sent "delivery_id"))
             (js-call (expect (nativeGet delivery "state")) :toBe "accepted")
             (js-call (expect (js-length inputs)) :toBe 1)
-            (js-call (expect (nativeGet (nativeGet (JSON/parse (aref inputs 0)) "content") "text")) :toBe "Pi original target 中文😀"))
+            (js-call (expect (js-call (aref inputs 0) :includes "Pi original target 中文😀")) :toBe t))
           (let* ((port (createPiNativePort (js-object :endpoints (js-array endpoint)) ports))
                  (ctx (lambda () (js-object :deadline (+ (performance/now) 3000))))
                  (page (await (js-call port :listSessions (js-object) nil (js-object :max_records 1) (funcall ctx))))

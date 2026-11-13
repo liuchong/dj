@@ -41,6 +41,11 @@
       (lambda (name) (when (> (js-length name) 0) (put properties name schema))))
     properties)
   (defconst definitions (js-object))
+  (put definitions :model_selection (obj (strings "status source observed_at"
+    (js-object :provider_id nullableString :model_id nullableString :variant nullableString :reasoning_effort nullableString))))
+  (put definitions :subscriber (obj (strings "session_key tool surface native_namespace native_session_id instance_id instance_epoch"
+    (js-object :workspace_ref nullableString :model_selection (ref "model_selection") :stale boolSchema))))
+  (put definitions :subscriber_model (obj (strings "provider_id model_id variant reasoning_effort")))
   (put definitions :resource (obj (strings "kind id") (js-array "kind" "id")))
   (put
     definitions
@@ -307,6 +312,7 @@
     :spec
     (obj
       (js-object
+        :subscriber_model (ref "subscriber_model")
         :agent_id
         stringSchema
         :selector
@@ -406,6 +412,8 @@
           (strings
             "session_key session_ref tool native_namespace native_session_id instance_id instance_epoch title workspace_ref workspace_label runtime_state created_at updated_at observed_at expires_at created_by coverage"
             (js-object
+              :surface stringSchema
+              :model_selection (ref "model_selection")
               :agent_id
               nullableString
               :visibility
@@ -535,7 +543,7 @@
     (obj
       (strings
         "agent_id route_id owner_principal_id recipient_principal_id tool surface display_name native_namespace native_session_id canonical_target_key binding_mode state runtime_state"
-        (js-object
+        (js-object :subscriber (ref "subscriber")
           :revision
           integerSchema
           :binding
@@ -556,7 +564,7 @@
     (obj
       (strings
         "subscription_id configuration_id owner_principal_id agent_id start_seq state"
-        (js-object
+        (js-object :subscriber (ref "subscriber") :subscriber_model (ref "subscriber_model")
           :cutover_seq nullableString
           :revision
           integerSchema
@@ -602,7 +610,7 @@
     :source (ref "delivery_source") :sender (ref "sender") :content (ref "content")
     :attachments (arr (ref "attachment")) :reply_context_id nullableString :allowed_actions (arr stringSchema)
     :matched (arr (obj (js-object :subscription_id stringSchema :subscription_revision integerSchema :result stringSchema)))
-    :conversation_rules (ref "conversation_rules") :people (arr (ref "mention")) :mentions (arr (ref "mention")) :reaction (ref "reaction") :pin (ref "pin") :trigger_reasons (arr (ref "trigger_reason")) :interaction (ref "interaction") :reply_route (ref "reply_route")
+    :recipient (ref "subscriber") :conversation_rules (ref "conversation_rules") :people (arr (ref "mention")) :mentions (arr (ref "mention")) :reaction (ref "reaction") :pin (ref "pin") :trigger_reasons (arr (ref "trigger_reason")) :interaction (ref "interaction") :reply_route (ref "reply_route")
     :resource (ref "lark_resource") :context (ref "message_context") :topic (ref "topic") :ingress_evidence (ref "ingress_evidence")
     :instructions (arr (obj (js-object :subscription_id stringSchema :subscription_revision integerSchema
       :prompt stringSchema :task_template stringSchema :task stringSchema))))))

@@ -2034,7 +2034,7 @@
       "then": "Telegram→Pi busy排队→idle→原chat/topic回复"
     },
     {
-      "case_id": "T07.steer-disabled.integration",
+      "case_id": "T07.steer-request.integration",
       "parent_id": "T07",
       "file": "tests/integration/agent.test.eli",
       "suite": "integration",
@@ -2054,7 +2054,7 @@
       ],
       "given": "F02；integration/agent",
       "when": "明确steer请求，首期unsupported，不换queue后假接受",
-      "then": "明确steer请求，首期unsupported，不换queue后假接受"
+      "then": "Accept the request; the native submission boundary determines whether the current receiver can steer"
     },
     {
       "case_id": "T07.steer-native.future",
@@ -28859,6 +28859,98 @@
       "given": "Native action metadata and message relations",
       "when": "Classify causes and normalize a conversation Pin",
       "then": "Stable reasons distinguish Pin from emoji and preserve actor, identity and source invariants"
+    },
+    {
+      "case_id": "T38.subscriber-models.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/session-rules.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "acceptance_ids": [
+        "A01",
+        "A03"
+      ],
+      "requirements": [
+        "SPEC-0004"
+      ],
+      "given": "An exact registered subscriber session",
+      "when": "Subscribe, persist, reopen and receive a notification",
+      "then": "Return scoped native or explicitly reported model metadata without credentials"
+    },
+    {
+      "case_id": "T40.reported-subscriber-model.integration",
+      "parent_id": "T40",
+      "file": "tests/integration/session-rules.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "acceptance_ids": [
+        "A01",
+        "A03"
+      ],
+      "requirements": [
+        "SPEC-0004"
+      ],
+      "given": "An exact registered subscriber session",
+      "when": "Subscribe, persist, reopen and receive a notification",
+      "then": "Return scoped native or explicitly reported model metadata without credentials"
+    },
+    {
+      "case_id": "T38.opencode-live-subscriber.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/opencode-live.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": "native-opencode",
+      "timeout_ms": 90000,
+      "resource_group": "isolated-sqlite",
+      "acceptance_ids": [
+        "A01",
+        "A03"
+      ],
+      "requirements": [
+        "SPEC-0004"
+      ],
+      "given": "An explicitly selected existing desktop native receiver",
+      "when": "Create a dedicated test session and subscribe through DJ",
+      "then": "Native prompt admission and model reference are consumed in the same desktop session"
+    },
+    {
+      "case_id": "T38.subscriber-models.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/session-rules.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "pure",
+      "acceptance_ids": [
+        "A01",
+        "A03"
+      ],
+      "requirements": [
+        "SPEC-0004"
+      ],
+      "given": "Exact native metadata or an explicit subscriber report",
+      "when": "Project bounded metadata",
+      "then": "No credentials, no guesses, fresh native precedence and honest stale reports"
     }
   ],
   "source_extension_base": "c1eb7b1"

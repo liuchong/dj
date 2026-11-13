@@ -30,6 +30,7 @@
     ensureRoute
     attachBinding)
   (import "../catalog/snapshots.eli" openSnapshot resumeSnapshot advanceSnapshot)
+  (import "../sessions/models.eli" subscriberMetadata)
   (defconst agentFields
     (js-array
       "agent_id"
@@ -56,6 +57,9 @@
             route
             (nativeGet route "binding_id")
             (js-call repository :get "bindings" (nativeGet route "binding_id")))))
+      (when route
+        (let ((session (js-call repository :get "sessions" (nativeGet route "session_key"))))
+          (when session (put result :subscriber (subscriberMetadata session (utcNow context))))))
       (put
         result
         :binding
