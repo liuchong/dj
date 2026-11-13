@@ -718,7 +718,7 @@
         (catch djReturn6Error
           (if (eq djReturn6Error djReturn6Token) djReturn6Value (throw djReturn6Error))))))
   (defun textCapability
-    (context address content &optional native-reply-to)
+    (context address content &optional native-reply-to reply-in-thread)
     (let ((djReturn7Token (js-object)) (djReturn7Value nil))
       (try
         (let*
@@ -727,6 +727,16 @@
             (text (nativeGet content "text")))
           (unless (and port (not (= (nativeGet caps "send") "unsupported")))
             (progn (setq djReturn7Value (failure "unsupported")) (throw djReturn7Token)))
+          (when (and (= (nativeGet content "type") "markdown")
+            (not (= (nativeGet (js-call (nativeGet context "repository") :get "connections" (nativeGet address "connection_id")) "platform") "lark")))
+            (setq djReturn7Value (failure "unsupported" (js-object :details (js-object :reason "markdown_requires_lark"))))
+            (throw djReturn7Token))
+          (when reply-in-thread
+            (let ((connection (js-call (nativeGet context "repository") :get "connections" (nativeGet address "connection_id"))))
+              (unless (and native-reply-to (= (nativeGet connection "platform") "lark")
+                (= (nativeGet caps "reply_thread") "supported"))
+                (setq djReturn7Value (failure "unsupported" (js-object :details (js-object :reason "thread_creation_requires_lark_reply"))))
+                (throw djReturn7Token))))
           (when
             (and
               (nativeGet address "native_thread_id")
@@ -880,6 +890,10 @@
                     "blocked_reason"
                     "force_send"
                     "reply_context_id"
+                    "reply_to_outbound_id"
+                    "reply_in_thread"
+                    "native_reply_to"
+                    "native_thread_id"
                     "destination"
                     "content"
                     "retryable"
@@ -951,6 +965,27 @@
             projection))
         (catch djReturn9Error
           (if (eq djReturn9Error djReturn9Token) djReturn9Value (throw djReturn9Error))))))
+  ;; An accepted outbound is an exact native anchor, not permission to select
+  ;; another account. Retain any original subscription reply guard all the way
+  ;; through follow-up replies; force_send applies only to this new message.
+  (defun resolveOutboundReply (context id force-send)
+    (let* ((repository (nativeGet context "repository")) (record (js-call repository :get "outbound" id)))
+      (unless (and record (can context "outbound.inspect" record)
+        (can context (nativeGet record "permission_action") (nativeGet record "destination")))
+        (must (failure "forbidden")))
+      (let* ((projection (projectOutbound context record)) (ids (nativeGet projection "native_message_ids" (js-array)))
+        (connection (js-call repository :get "connections" (nativeGet record "connection_id"))))
+        (unless (and (= (nativeGet record "state") "accepted") (= (js-length ids) 1))
+          (must (failure "ambiguous_target" (js-object :details (js-object :reason "reply_anchor_requires_one_accepted_native_message")))))
+        (unless (= (nativeGet connection "platform") "lark") (must (failure "unsupported")))
+        (must (outboundReady context (Object/assign (js-object) record (js-object :force_send force-send))))
+        (let* ((inbox (nativeGet record "reply_inbox_id"))
+          (original (and (nativeGet record "reply_record_id")
+            (js-call repository :get (if inbox "inbox_reply_contexts" "reply_contexts") (nativeGet record "reply_record_id"))))
+          (address (Object/assign (js-object) (nativeGet record "destination"))))
+          (success (Object/assign (js-object) original (js-object :destination address :native_reply_to (aref ids 0)
+            :native_thread_id (nativeGet record "native_thread_id")
+            :reply_context_id (nativeGet record "reply_record_id" nil) :inbox_id inbox)))))))
   (defun acceptOutbound
     (context operation args)
     (let ((djReturn10Token (js-object)) (djReturn10Value nil))
@@ -962,7 +997,9 @@
             (connection nil)
             (action (if (= operation "message.reply") "message.reply" "message.send")))
           (if (= operation "message.reply")
-            (let ((resolved (resolveReply context (nativeGet args "reply_context_id"))))
+            (let ((resolved (if (nativeGet args "reply_context_id")
+              (resolveReply context (nativeGet args "reply_context_id"))
+              (resolveOutboundReply context (nativeGet args "outbound_id") (nativeGet args "force_send" false)))))
               (unless (nativeGet resolved "ok")
                 (progn (setq djReturn10Value resolved) (throw djReturn10Token)))
               (setq
@@ -991,7 +1028,7 @@
                   context
                   address
                   (recipientContent (nativeGet args "content"))
-                  (nativeGet reply "native_reply_to"))))
+                  (nativeGet reply "native_reply_to") (nativeGet args "reply_in_thread" false))))
             (unless (nativeGet permission "ok")
               (progn (setq djReturn10Value permission) (throw djReturn10Token)))
             (unless (nativeGet capability "ok")
@@ -1018,7 +1055,9 @@
                       (setq djReturn11Value (failure "stale_reference"))
                       (throw djReturn11Token)))
                   (when reply
-                    (must (resolveReply context (nativeGet args "reply_context_id"))))
+                    (if (nativeGet args "reply_context_id")
+                      (must (resolveReply context (nativeGet args "reply_context_id")))
+                      (must (resolveOutboundReply context (nativeGet args "outbound_id") (nativeGet args "force_send" false)))))
                   (must (checkRecipients context address (nativeGet reply "native_reply_to") (nativeGet args "content") (nativeGet args "force_send" false)))
                   (let*
                     ((id (nextId context "outbound"))
@@ -1044,6 +1083,14 @@
                           (nativeGet reply "reply_context_id" nil)
                           :native_reply_to
                           (nativeGet reply "native_reply_to" nil)
+                          :reply_to_outbound_id
+                          (nativeGet args "outbound_id" nil)
+                          :reply_thread_id
+                          (or (nativeGet reply "native_thread_id") (nativeGet address "native_thread_id" nil))
+                          :reply_in_thread
+                          (and (= (nativeGet connection "platform") "lark")
+                            (or (= (nativeGet args "reply_in_thread") t) (not (not (nativeGet address "native_thread_id")))
+                              (not (not (nativeGet reply "native_thread_id")))))
                           :force_send
                           (= (nativeGet args "force_send") t)
                           :permission_action
@@ -1091,7 +1138,7 @@
         (catch djReturn10Error
           (if (eq djReturn10Error djReturn10Token)
             djReturn10Value
-            (throw djReturn10Error))))))
+            (or (nativeGet djReturn10Error "domain_result") (throw djReturn10Error)))))))
   (defun outboundPrincipalAllows
     (context record)
     (let
@@ -1161,7 +1208,7 @@
             context
             (nativeGet record "destination")
             (nativeGet record "content")
-            (nativeGet record "native_reply_to")))
+            (nativeGet record "native_reply_to") (nativeGet record "reply_in_thread" false)))
         (catch djReturn12Error
           (if (eq djReturn12Error djReturn12Token)
             djReturn12Value
@@ -1190,6 +1237,7 @@
                       "state"
                       "kind"
                       "native_message_id"
+                      "native_thread_id"
                       "evidence_level"
                       "definite_not_sent"
                       "retryable"
@@ -1246,6 +1294,18 @@
                     (put part :state "accepted")
                     (put attempt :state "accepted")
                     (put part :native_message_id (nativeGet fact "native_message_id"))
+                    (when (nativeGet fact "native_thread_id")
+                      (put record :native_thread_id (nativeGet fact "native_thread_id"))
+                      ;; Creating a topic also gives its original main message a
+                      ;; thread position. Remember the official fact so actions
+                      ;; on that main message keep checking the exact location.
+                      (when (nativeGet record "reply_to_outbound_id")
+                        (let ((parent (js-call repository :get "outbound" (nativeGet record "reply_to_outbound_id"))))
+                          (when (and parent (= (nativeGet parent "connection_id") (nativeGet record "connection_id"))
+                            (not (nativeGet parent "native_thread_id")))
+                            (put parent :native_thread_id (nativeGet fact "native_thread_id"))
+                            (put parent :revision (nextRevision (nativeGet parent "revision")))
+                            (must (js-call repository :replace "outbound" parent))))))
                     (js-call
                       (js-call
                         (nativeGet tx "db")

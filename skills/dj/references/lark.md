@@ -5,6 +5,21 @@
 - native_api: 除已有消息与资源操作外，可用lark.api.read/call调用官方各业务域的原生API，包括文档编辑、表格、Wiki、通讯录、群成员、日历、任务及文件上传下载等。通用入口提供方法、路径和内容，不要求每个端点都有专用DJ命令；先按官方文档确定原生参数及当前账号权限，不能因没有专用命令就报告DJ不支持。
 - limits: 原生API入口不自动创建DJ订阅、不自动绑定回复位置、不自动结束Working，也不把平台受理等同最终业务完成。原生权限、账号可见范围、接口限制和真实逐端点验收分别报告。
 
+## 消息能力与边界
+
+- topics: message.send发群主消息，再message.reply(outbound_id, reply_in_thread=true)创建话题；也可用原reply_context_id创建话题。完整调用见[群简讯与话题详情](workflows.md#群简讯与话题详情)。话题并非CLI专属能力。结果native_thread_id来自官方回执，不能把om_消息ID当作omt_话题ID。
+- replies: 已在话题内的回复保持原话题。只有conversation_ref/thread_id而没有原消息锚点时，不支持直接message.send进入Lark话题；使用有效reply_context_id或已accepted的outbound_id。新话题不是新建群、不是AI对话、也不修改订阅。
+- content: message.send/reply支持content={type:"text"或"markdown",text:"正文"}；markdown由DJ包装为Lark原生post/md，不是把Markdown写进纯文本后期待自动渲染。标题、列表、表格、代码块及链接由平台渲染。message.edit同样支持Markdown，但须匹配原消息的text/post类型，不在编辑时转换格式。图片/文件/卡片尚无受控发送接口；通用API上传成功不等于已发送文件，不能绕过输出规则。
+- errors: invalid_argument表示参数形状不符；unsupported表示该操作组合未实现；forbidden或原生permission_violations表示当前主体/账号权限问题；reply_identity_unresolved表示原身份复核失败；recipient_opted_out/recipient_blocked表示服务端输出屏蔽。不要把所有失败概括为DJ不能发消息，不把CLI当成必需品。
+
+### 中文路径与章节链接
+
+- markdown_links: 文档消息优先用type=markdown和`[简短可读标题](<完整URL>)`，避免依赖客户端从裸中文URL中猜测可点击边界。详细接口、长路径和说明放在话题详情，群主消息保持简洁。
+- encoding: 对路径、查询、fragment中的中文等非ASCII字符作UTF-8百分号编码，保留`/ ? & = #`等原有分隔关系和已合法编码的`%XX`。程序可先用`new URL(rawUrl).href`规范化完整绝对地址；不要对整条URL使用encodeURIComponent，不对已编码URL再整体编码，也不猜测或删掉中文锚点。用尖括号包住Markdown目标可避免括号干扰链接解析。
+- example: `https://example.com/docs/中文说明.md#reason-如何填写`应形成`[填写说明](<https://example.com/docs/%E4%B8%AD%E6%96%87%E8%AF%B4%E6%98%8E.md#reason-%E5%A6%82%E4%BD%95%E5%A1%AB%E5%86%99>)`。文本中的标题和中文说明照常保留，无需编码整篇正文。
+- plaintext: 确需type=text时，标题一行、下一行放完整编码URL，链接间空行；方括号语法在纯文本里不是标题超链接。DJ保留调用者的Markdown和URL，不自动猜测文档标题、锚点或改写目的地址。
+- readback: accepted后用outbound.get及同连接lark.api.read读取原生消息，核对msg_type=post、md原文或原生链接目标包含完整路径、查询和fragment。字符串读回不等于实际点击跳转已经验证；不为验证向未获准的群发送测试内容。
+
 ## 官方 API 通用入口
 
 - connection: 先connection.get取得准确connection_id、identity与identity_revision。每次请求明确这两个字段；凭据和Bearer由DJ注入，禁止把token、secret放入参数。本人和机器人各自连接，绝不在失败时换身份。

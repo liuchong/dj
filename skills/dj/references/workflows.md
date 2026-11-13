@@ -59,7 +59,19 @@ subscription.preview 接收：
 {"reply_context_id":"reply_example","content":{"type":"text","text":"已收到，我会按约定检查。"},"idempotency_key":"reply-example-1"}
 ```
 
-文字只示例参数形状，实际结果由你负责。保存返回的 operation_id/outbound_id，outbound.get 查看当前平台投递状态。reply_context 过期或未授予时不自动主动发群消息，也不假设有“刷新回复引用”接口。
+文字只示例参数形状，实际结果由你负责。保存返回的 operation_id/outbound_id，outbound.get 查看当前平台投递状态。public reply_context 丢失时，可在原有效期内用 message.reply_context(delivery_id) 重新取得固定引用；它不延长有效期、不换账号或目的地。过期或未授予时不自动另发群消息。
+
+### 群简讯与话题详情
+
+普通群也能创建话题，不需要CLI。先用 message.send 向已确定的 destination_ref 发主消息；查询 outbound.get，确认 state=accepted 且 native_message_ids 只有一个，再用 message.reply 回复这个 outbound_id：
+
+```json
+{"outbound_id":"outbound_example","reply_in_thread":true,"content":{"type":"text","text":"详细说明与接入步骤\n第二行原文。"},"idempotency_key":"topic-details-example-1"}
+```
+
+- anchor: reply_context_id/outbound_id 严格二选一，不另传连接、目的地或裸消息ID。outbound_id沿该消息原账号发送；若原消息来自订阅回复，继续继承其身份、有效期及领取约束。不能用它绕过原回复身份冲突或过期。
+- thread: reply_in_thread=true只用于Lark，将普通群消息的回复放进话题；已有话题始终沿原话题，false不强制移回群主流。可对reply_context_id同样设置true。话题形式群直接message.send即由平台生成话题根。
+- result: 等本条outbound accepted后读native_thread_id、native_reply_to及native_message_ids；后续详情继续回复已accepted的同话题outbound。unknown先核对原操作，不换键重发；未accepted或多原生消息的outbound不能充当唯一锚点。新建话题消息仍可按outbound_id编辑、撤回及操作表情。
 
 ## 超时找回与暂停
 

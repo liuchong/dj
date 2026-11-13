@@ -52,6 +52,7 @@
 | [0021 固定接线](specs/0021-fixed-routes.md) | 配置多账号到准确对话，原子更新、管理权和离线恢复 |
 | [0022 菜单栏控制器](specs/0022-service-controller.md) | 可选 macOS App、状态、启停和独立生命周期 |
 | [0023 收件人禁收](specs/0023-recipient-preferences.md) | 自动持久退订、出站黑白名单、单条强制发送 |
+| [0024 已发消息与话题回复](specs/0024-outbound-topic-replies.md) | 已发消息续接、Lark话题创建、原生位置与账号约束 |
 
 ## 技术与维护
 

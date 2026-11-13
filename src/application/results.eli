@@ -721,6 +721,10 @@
         "outbound_id principal_id state operation_id created_at blocked_reason"
         (js-object
           :force_send boolSchema
+          :reply_in_thread boolSchema
+          :reply_to_outbound_id nullableString
+          :native_reply_to nullableString
+          :native_thread_id nullableString
           :revision
           integerSchema
           :reply_context_id

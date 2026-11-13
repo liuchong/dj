@@ -18,6 +18,7 @@ DJ 对模型友好，指的是接口自描述、引用可直接复用、参数�
 | agent_id | agent.register/get、agent.whoami | 订阅目标、状态检查 |
 | preview_id | subscription.preview | subscription.create/update |
 | reply_context_id | delivery.get 和输入信封 | message.reply |
+| outbound_id | message.send/reply、outbound.get | accepted单消息可作为message.reply锚点；reply_in_thread创建Lark话题，content.type=markdown发送原生Markdown |
 | inbox_id / claim_ref | subscription.pull 返回的当前领取 | 按 inbox_id 识别重复业务，claim_ref 仅用于 subscription.ack；不当 delivery_id 或回复引用 |
 | operation_id / outbound_id / delivery_id | 受理结果和查询 | 超时核对、状态读取；三种 ID 不互换 |
 

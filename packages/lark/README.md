@@ -9,6 +9,7 @@
 | `src/http.eli` | 官方域名与路径、查询编码、请求体、取消/截止、限量响应、原生状态与安全响应头 |
 | `src/client.eli` | 应用 token、本人 OAuth 刷新与身份核验、缓存、单飞鉴权和生命周期 |
 | `src/wire.eli` | WebSocket 帧编码、解码与有界协议校验 |
+| `src/messages.eli` | messagePayload将text/markdown包装成官方text或post/md消息内容，保留正文和URL原文 |
 | `src/index.eli` | 独立公共入口 |
 
 消费者提供 `host.fetch(url, options)`、`host.monoNow()`、`host.credentials.resolve(ref)`；本人 OAuth 续期另需 `credentials.persist(ref, value)`。config 使用 `brand: lark|feishu`、`identity: user|bot`、`credential_ref`；本人身份另有 `user_identity: {app_id, open_id}`。同一应用的本人和机器人可各建独立实例，不共享 token、取消状态或账号选择。

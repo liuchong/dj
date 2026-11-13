@@ -28785,6 +28785,31 @@
       "given": "Native self IDs, exact mention keys and explicit reply mappings",
       "when": "Resolve unmapped, contradictory, private, thread and stale identities",
       "then": "Never guess by nickname or receiving account; preserve native mention keys"
+    },
+    {
+      "case_id": "T40.topic-replies.integration",
+      "parent_id": "T40",
+      "file": "tests/integration/message-actions.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {
+        "identity": "user-and-bot"
+      },
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "requirements": [
+        "Q11",
+        "Q12"
+      ],
+      "acceptance_ids": [
+        "A05"
+      ],
+      "given": "Real Core and SQLite with isolated official HTTP protocol peers",
+      "when": "Send a main message, create and continue its topic through accepted outbound anchors",
+      "then": "Native thread IDs, original identity, durable send cuts, idempotency, uncertainty, actions and recipient blocking remain enforced"
     }
   ],
   "source_extension_base": "c1eb7b1"

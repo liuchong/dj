@@ -47,6 +47,8 @@ DJ 程序内部的 Lark 接入必须直连官方 WebSocket 与 HTTPS API，禁�
 
 ## 正式规格与接续要求
 
+- Lark普通群话题创建、已发消息续接及Markdown按[0024](docs/specs/0024-outbound-topic-replies.md)：message.reply的reply_context_id/outbound_id二选一，reply_in_thread显式创建，content.type=markdown走原生post/md；保留原账号、原订阅身份约束、禁收与幂等台账，返回原生话题ID。中文URL路径/锚点完整编码；不得把无原消息锚点或纯文本不渲染误报为平台不支持。
+
 - 出站收件人选择按 [0023](docs/specs/0023-recipient-preferences.md)：TD/退订只禁止出站（含自动工作中、已阅及其他全部新增表情），不限制来信记录、事件或原订阅匹配，TD本身也按原规则触发。显式拒绝和收件人退订优先于白名单；退订由DJ按收到的原生命令自动登记、恢复漏登及拦截，不依赖AI核实或控制。AI收到禁收错误不可更换账号、工具或渠道绕过；仅用户明确要求本次强制发送时，可用message.send/reply的force_send=true临时豁免本条收件人屏蔽，不改持久选择或其他发送安全边界。所有发送/编辑/新增表情路径复用统一规则，不能通过通用OpenAPI绕过；撤回与清理已有受托表情仍允许。
 
 - macOS 菜单栏控制器按 [0022](docs/specs/0022-service-controller.md)：Eliscript 管理原用户 launchd 服务，AppKit 只投影 UI；退出控制器不退出服务，停止必须防止 KeepAlive 重拉，不另建核心或改写业务数据。

@@ -2,7 +2,7 @@
   (import "../../core/native.eli" nativeGet nativeTypeOf NativeNumber nativeEncodeURIComponent nativeSetTimeout nativeClearTimeout)
   (import "../../core/errors.eli" success failure)
   (import "../../core/types.eli" hashValue)
-  (import "../../../packages/lark/src/index.eli" createLarkClient)
+  (import "../../../packages/lark/src/index.eli" createLarkClient messagePayload)
 
   (import "./lark-identities.eli" larkIdentities)
   (import "./lark-reaction-policy.eli" reactionReadBudget)
@@ -11,6 +11,14 @@
       (when (= (nativeGet message "msg_type") "text")
         (try
           (setq text (nativeGet (JSON/parse (nativeGet (nativeGet message "body") "content" "{}")) "text"))
+          (catch invalid nil)))
+      (when (= (nativeGet message "msg_type") "post")
+        (try
+          (let* ((post (JSON/parse (nativeGet (nativeGet message "body") "content" "{}")))
+            (locale (or (nativeGet post "zh_cn") (nativeGet post "en_us") post))
+            (rows (nativeGet locale "content")) (row (and (Array/isArray rows) (= (js-length rows) 1) (aref rows 0)))
+            (node (and (Array/isArray row) (= (js-length row) 1) (aref row 0))))
+            (when (= (nativeGet node "tag") "md") (setq text (nativeGet node "text"))))
           (catch invalid nil)))
       (unless (= (nativeTypeOf text) "string")
         (setq text (str "[" (nativeGet message "msg_type" "unknown") "] " (nativeGet (nativeGet message "body") "content" ""))))
@@ -71,8 +79,8 @@
               ((js-call (js-array "recall" "edit") :includes command)
                 (setq path (str "/open-apis/im/v1/messages/" (nativeEncodeURIComponent (nativeGet parameters "message_id")))
                   method (if (= command "recall") "DELETE" "PUT"))
-                (when (= command "edit") (setq body (js-object :msg_type "text"
-                  :content (JSON/stringify (js-object :text (nativeGet parameters "text")))))))
+                (when (= command "edit") (setq body (messagePayload
+                  (js-object :type (nativeGet parameters "content_type" "text") :text (nativeGet parameters "text"))))))
               ((js-call (js-array "reaction_list" "reaction_create" "reaction_delete") :includes command)
                 (let ((emoji (nativeGet parameters "emoji_type")))
                   (when (and (= command "reaction_create") (not emoji)) (throw (new globalThis.TypeError "missing native reaction type")))
@@ -86,9 +94,9 @@
                     ((= command "reaction_create") (setq method "POST" body (js-object :reaction_type (js-object :emoji_type emoji))))
                     (t (setq method "DELETE" path (str path "/" (nativeEncodeURIComponent (nativeGet parameters "reaction_id"))))))))
               ((js-call (js-array "send" "reply") :includes command)
-                (setq method "POST" body (js-object :msg_type "text"
-                  :content (JSON/stringify (js-object :text (nativeGet parameters "text")))
-                  :uuid (js-call (hashValue (nativeGet parameters "idempotency_key")) :slice 0 40)))
+                (setq method "POST" body (Object/assign
+                  (messagePayload (js-object :type (nativeGet parameters "content_type" "text") :text (nativeGet parameters "text")))
+                  (js-object :uuid (js-call (hashValue (nativeGet parameters "idempotency_key")) :slice 0 40))))
                 (if (= command "reply")
                   (progn (setq path (str "/open-apis/im/v1/messages/" (nativeEncodeURIComponent (nativeGet parameters "message_id")) "/reply"))
                     (put body :reply_in_thread (= (nativeGet parameters "reply_in_thread") t)))

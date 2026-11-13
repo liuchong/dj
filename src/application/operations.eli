@@ -45,6 +45,8 @@
     (objectSchema
       (js-object :type (js-object :const "text") :text idSchema)
       (js-array "type" "text")))
+  (defconst messageContentSchema
+    (objectSchema (js-object :type (enumSchema "text" "markdown") :text idSchema) (js-array "type" "text")))
   (defconst scopeSchema
     (objectSchema
       (js-object
@@ -595,14 +597,15 @@
     "message.send"
     "messaging"
     (js-array "destination_ref" "content")
-    (js-object :destination_ref idSchema :content textSchema :force_send booleanSchema)
+    (js-object :destination_ref idSchema :content messageContentSchema :force_send booleanSchema)
     (js-object :effect "accept" :result "outbound"))
   (addOperation
     "message.reply"
     "messaging"
-    (js-array "reply_context_id" "content")
-    (js-object :reply_context_id idSchema :content textSchema :force_send booleanSchema)
-    (js-object :effect "accept" :result "outbound"))
+    (js-array "content")
+    (js-object :reply_context_id idSchema :outbound_id idSchema :reply_in_thread booleanSchema
+      :content messageContentSchema :force_send booleanSchema)
+    (js-object :effect "accept" :exclusive (js-array "reply_context_id" "outbound_id") :result "outbound"))
   (defconst recipientListSchema (objectSchema (js-object
     :recipient_ids (Object/assign (arraySchema idSchema 256 0) (js-object :uniqueItems t))
     :chat_ids (Object/assign (arraySchema idSchema 256 0) (js-object :uniqueItems t)))
@@ -621,7 +624,7 @@
   (addOperation "message.recall" "message_actions" (js-array) messageTargetProperties
     (js-object :effect "accept" :exclusive messageTargetFields :result "message_action" :action "message.send"))
   (addOperation "message.edit" "message_actions" (js-array "content")
-    (Object/assign (js-object :content textSchema) messageTargetProperties)
+    (Object/assign (js-object :content messageContentSchema) messageTargetProperties)
     (js-object :effect "accept" :exclusive messageTargetFields :result "message_action" :action "message.send"))
   (addOperation "message.reaction.add" "message_actions" (js-array "emoji_type")
     (Object/assign (js-object :emoji_type (js-object :type "string" :minLength 1 :maxLength 128)) messageTargetProperties)

@@ -15,7 +15,7 @@ DJ 统一提供已发消息撤回、文本编辑和表情增删查。DJ内部接
 
 目标在 outbound_id、event_id、message_ref、context_ref、conversation_ref 中严格五选一。outbound_id 必须是已确认 accepted 且仅对应一条原生消息的出站记录；拆分消息须用 conversation_ref/context_ref 和单个 native_message_id 明确选择，不能一次隐式撤回多条。event_id/message_ref 使用其固有消息 ID，不能覆盖。context_ref/conversation_ref 必须另带 native_message_id，并从原生消息读回验证 chat/thread 完全一致。
 
-编辑只支持文本消息，content 为 `{ "type": "text", "text": "完整新正文" }`。不把文本编辑泛化成卡片、文件或任意富文本写入。表情使用原生标识，不把显示名称或 Unicode 图案猜成原生 emoji_type。
+编辑支持文本消息，以及0024规定的Lark Markdown post；content为`{ "type": "text"或"markdown", "text": "完整新正文" }`，须匹配原消息类型，不在编辑时转换格式。不把它泛化成卡片、文件或任意post结构写入。表情使用原生标识，不把显示名称或Unicode图案猜成原生emoji_type。
 
 ## 持久性与不确定结果
 

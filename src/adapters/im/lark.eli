@@ -305,6 +305,10 @@
             "supported"
             :reply_thread
             "supported"
+            :markdown
+            "supported"
+            :create_thread
+            "supported"
             :ack_control
             false
             :replay
@@ -780,7 +784,8 @@
                             (let ((djReturn12Token (js-object)) (djReturn12Value nil))
                               (try
                                 (let* ((destination (nativeGet outbound "destination")) (original (nativeGet outbound "native_reply_to")) (thread (nativeGet destination "native_thread_id")) (text (nativeGet (nativeGet outbound "content") "text")) (parameters (js-object :text text :idempotency_key key :chat_id (nativeGet destination "native_chat_id")
-                                      :message_id original :reply_in_thread (not (not thread)))))
+                                      :content_type (nativeGet (nativeGet outbound "content") "type" "text")
+                                      :message_id original :reply_in_thread (or (= (nativeGet outbound "reply_in_thread") t) (not (not thread))))))
                                   (unless
                                     (and
                                       (=
@@ -814,12 +819,19 @@
                                             (> (js-length (nativeGet message "message_id")) 0)
                                             (=
                                               (nativeGet message "chat_id")
-                                              (nativeGet destination "native_chat_id")))
+                                              (nativeGet destination "native_chat_id"))
+                                            (or (not (nativeGet outbound "reply_thread_id"))
+                                              (= (nativeGet outbound "reply_thread_id") (nativeGet message "thread_id")))
+                                            (or (not (nativeGet parameters "reply_in_thread"))
+                                              (and (= (nativeTypeOf (nativeGet message "thread_id")) "string")
+                                                (> (js-length (nativeGet message "thread_id")) 0))))
                                           (js-object
                                             :state
                                             "accepted"
                                             :native_message_id
                                             (nativeGet message "message_id")
+                                            :native_thread_id
+                                            (nativeGet message "thread_id" nil)
                                             :evidence_level
                                             "native_protocol")
                                           (js-object

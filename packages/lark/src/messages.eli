@@ -1,0 +1,13 @@
+(module lark.messages
+  (import "./native.eli" nativeGet nativeTypeOf)
+  ;; Formatting is native post(md), not HTML, a card, or an external renderer.
+  ;; Keep source Markdown and URL bytes unchanged; callers own destination URLs.
+  (defun messagePayload (content)
+    (let* ((markdown (= (nativeGet content "type") "markdown")) (text (nativeGet content "text")))
+      (unless (and (or markdown (= (nativeGet content "type") "text")) (= (nativeTypeOf text) "string"))
+        (throw (new globalThis.TypeError "message content requires text or markdown and a string body")))
+      (js-object :msg_type (if markdown "post" "text") :content (JSON/stringify
+        (if markdown
+          (js-object :zh_cn (js-object :content (js-array (js-array (js-object :tag "md" :text text)))))
+          (js-object :text text))))))
+  (export messagePayload))
