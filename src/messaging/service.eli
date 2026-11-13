@@ -6,6 +6,7 @@
   (import "../delivery/working.eli" finishWorking queueAcknowledgement)
   (import "../core/native.eli" nativeNullish nativeTypeOf nativeGet)
   (import "../core/errors.eli" success failure)
+  (import "../core/triggers.eli" triggerReasons)
   (import "../core/types.eli"
     conversationKey sourceReadAction
     stableJson
@@ -477,6 +478,7 @@
                   "sender"
                   "mentions"
                   "reaction"
+                  "pin"
                   "interaction"
                   "people" "resource"
                   "reply_to"
@@ -485,6 +487,7 @@
                   "source_time"
                   "ingress_seq"
                   "attachments"))))
+          (put projection :trigger_reasons (triggerReasons event))
           (unless (nativeGet page "ok")
             (progn (setq djReturn4Value page) (throw djReturn4Token)))
           (setq

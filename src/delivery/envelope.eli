@@ -22,6 +22,8 @@
       "people"
       "mentions"
       "reaction"
+      "pin"
+      "trigger_reasons"
       "interaction"
       "reply_route"
       "content"
@@ -36,7 +38,9 @@
       (throw (new globalThis.TypeError "invalid external-message envelope")))
     (let ((safe (js-object)))
       (js-call envelopeFields :forEach (lambda (field)
-        (when (object-has? envelope field) (put safe field (nativeGet envelope field))))) safe))
+        (when (object-has? envelope field) (put safe field (nativeGet envelope field)))))
+      (when (= (nativeGet envelope "origin") "direct")
+        (put safe :trigger_reasons (js-array (js-object :code "direct_input" :label "通过 DJ 接口定向输入")))) safe))
   (defun frameBudget (text max-frame-bytes)
     (when (and max-frame-bytes (> (utf8Bytes text) max-frame-bytes))
       (throw (new globalThis.RangeError "encoded external-message frame exceeds native budget"))) text)

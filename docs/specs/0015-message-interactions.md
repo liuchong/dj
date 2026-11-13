@@ -13,7 +13,7 @@
 
 ## 触发选项与分发分离
 
-私聊、原生@、引用链回复、原生话题回应、已发消息的表情回应是独立可组合选项。新订阅未提供predicate时默认全部选中，规范化为可读写的any分支；selector.event_kinds默认包含message.created和message.reaction.added。显式predicate或event_kinds完全以调用方选择为准，不强行追加默认分支，已有持久订阅不自动改写。
+私聊、原生@、引用链回复、原生话题回应、已发消息的表情回应是独立可组合选项。新订阅未提供predicate时默认全部选中，规范化为可读写的any分支；selector.event_kinds默认包含message.created、message.reaction.added及0025新增的message.pinned。显式predicate或event_kinds完全以调用方选择为准，不强行追加默认分支，已有持久订阅不自动改写。
 
 选择私聊用chat_type=p2p，选择@用addressed_self=true，选择引用链/话题/表情用interaction.addressed_self=true分别与interaction.kind=reply/thread/reaction组合。去掉相应分支即关闭该触发；all/any/not继续承载条件交并与排除。平台关系识别独立于是否订阅：关闭触发也保留消息及上下文。
 

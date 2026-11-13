@@ -53,7 +53,8 @@
     ;; No result is reused across events, policy revisions, or visibility checks.
     (let* ((policy (readFilterPolicy context)) (matches (js-array)) (uncertain (js-array))
       (people (nativeGet policy "people" (js-array)))
-      (subjects (js-array event)) (operator (nativeGet (nativeGet event "reaction") "operator")))
+      (subjects (js-array event)) (operator (or (nativeGet (nativeGet event "pin") "operator")
+        (nativeGet (nativeGet event "reaction") "operator"))))
       ;; Both the message author and the person causing the trigger use the same blacklist.
       (when operator (js-call subjects :push (Object/assign (js-object) event (js-object :sender operator))))
       (js-call subjects :forEach (lambda (original)

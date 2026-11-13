@@ -1,0 +1,30 @@
+(module dj.core.triggers
+  (import "./native.eli" nativeGet)
+  ;; Native causes, not an interpretation of the message or the AI's task.
+  ;; Several causes may apply to one message; delivery still occurs once.
+  (defun triggerReasons (event)
+    (let ((reasons (js-array)) (kind (nativeGet event "event_kind"))
+      (relation (nativeGet event "interaction")) (add nil))
+      (setq add (lambda (code label)
+        (js-call reasons :push (js-object :code code :label label))))
+      (cond
+        ((= kind "message.pinned") (funcall add "chat_pin" "消息被 Pin 到对话"))
+        ((= kind "message.reaction.added")
+          (let ((emoji (nativeGet (nativeGet event "reaction") "emoji_type" "")))
+            (funcall add (if (js-call (js-array "Pin" "pushpin") :includes emoji) "reaction_pin" "reaction")
+              (str "消息被添加表情：" emoji))))
+        ((= kind "resource.changed")
+          (funcall add (if (nativeGet event "addressed_self") "resource_mention" "resource_change")
+            (if (nativeGet event "addressed_self") "资源中提及当前身份" "资源发生变更")))
+        (t
+          (when (or (nativeGet event "addressed_self") (nativeGet event "addressed_bot")
+            (> (js-length (nativeGet event "mentions" (js-array))) 0))
+            (funcall add "mention" (if (or (nativeGet event "addressed_self") (nativeGet event "addressed_bot"))
+              "消息原生 @ 当前身份" "消息包含原生 @，目标见 mentions 与固定回复身份")))
+          (when (= (nativeGet event "chat_type") "p2p") (funcall add "direct_message" "收到私聊消息"))
+          (when (and (= (nativeGet relation "state") "resolved") (nativeGet relation "addressed_self"))
+            (cond ((= (nativeGet relation "kind") "thread") (funcall add "thread_reply" "相关话题内的新回复"))
+              ((= (nativeGet relation "kind") "reply") (funcall add "quoted_reply" "引用或回复当前身份的消息"))))))
+      (when (= (js-length reasons) 0) (funcall add "subscription_rule" "消息由订阅规则筛选"))
+      reasons))
+  (export triggerReasons))

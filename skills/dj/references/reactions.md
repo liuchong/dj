@@ -36,3 +36,12 @@
 多表情如 ["Pin", "Fire"]；不自动替换已有订阅对私聊、@all、自发消息或自定义任务规则的决定。删除表情不撤回已投递输入，移除后重新添加是新动作，原生事件重送才去重。
 
 - distinction: 普通回应针对本人/机器人自己发出的消息；本人给别人消息点普通表情不触发回应分支。本人添加Pin等指定表情是主动标记，点在任何作者/位置的消息上均生成message.reaction.added并按独立emoji_type/动作人分支投递；不是“不发事件”。本人在任意位置原生@自己或@自己的机器人同样生成带正文的主动触发。它们与别人点表情/引用/话题回复、别人@、别人私聊三类被动规则独立，不用普通回声过滤一概排除。
+
+
+## 对话 Pin/置顶
+
+- distinction: 消息菜单“Pin/置顶到对话”是 message.pinned；📌 小表情仍是 message.reaction.added + reaction.emoji_type=Pin。置顶整个聊天窗口和群顶部公告不属于本操作。
+- subscribe: 读取原订阅，保留目标、sources、predicate、instructions 与投递策略，selector.event_kinds 加入 message.pinned，再在原 predicate 的 any 中追加 {"field":"event_kind","op":"eq","value":"message.pinned"}。可进一步用 pin.operator.is_self/id/kind 收窄。preview/update 后读回，不重复创建订阅。
+- receive: 官方 Pin 列表按已知、授权群和私聊独立增量补收，默认15秒/群等待，共享读取预算且不承诺逐条时限；pin_poll_seconds 是操作员配置，不让 AI 另建巡检。连接 poll_fallback.pin_poll 表示覆盖及时间。首次启用前已有 Pin 不自动补发；正常重启接续原断点。
+- metadata: pin.operator 是标记者，sender 是原作者；原文的 mentions 仅作上下文。trigger_reasons 的 chat_pin 表示对话 Pin，reaction_pin 表示 📌 表情，reaction 表示其他表情；mention、direct_message、thread_reply、quoted_reply 等使用各自原因。一条消息可有多个原因，matched 才表示实际命中哪些订阅。原因不能替代权限或要求 AI 必须新建任务。
+- reply: Pin 通知沿固定 reply_context_id 原路回复，不因旧原文 @ 或标记者身份更换出口；普通输出不自动发回 IM。

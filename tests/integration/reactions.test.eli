@@ -162,8 +162,8 @@
         (normalized (nativeGet defaults "normalized_spec"))
         (predicate (nativeGet normalized "predicate")))
         (js-call (expect (nativeGet (nativeGet normalized "selector") "event_kinds"))
-          :toEqual (js-array "message.created" "message.reaction.added"))
-        (js-call (expect (js-length (nativeGet predicate "any"))) :toBe 5)
+          :toEqual (js-array "message.created" "message.pinned" "message.reaction.added"))
+        (js-call (expect (js-length (nativeGet predicate "any"))) :toBe 6)
         (js-call (js-array
           (js-object :event_kind "message.created" :addressed_self t)
           (js-object :event_kind "message.created" :chat_type "p2p")

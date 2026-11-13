@@ -284,7 +284,7 @@
               :ttl_seconds
               (nativeGet limits "ttl_default_seconds"))
             :selector
-            (js-object :event_kinds (js-array "message.created" "message.reaction.added")))))
+            (js-object :event_kinds (js-array "message.created" "message.reaction.added" "message.pinned")))))
       defaults))
   (defun limitReferences
     (properties)

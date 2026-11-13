@@ -28810,6 +28810,55 @@
       "given": "Real Core and SQLite with isolated official HTTP protocol peers",
       "when": "Send a main message, create and continue its topic through accepted outbound anchors",
       "then": "Native thread IDs, original identity, durable send cuts, idempotency, uncertainty, actions and recipient blocking remain enforced"
+    },
+    {
+      "case_id": "T41.chat-pins.integration",
+      "parent_id": "T41",
+      "file": "tests/integration/hybrid-inbox.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {
+        "transport": "websocket-http-core"
+      },
+      "required_profile": null,
+      "timeout_ms": 10000,
+      "resource_group": "isolated",
+      "requirements": [
+        "Q01",
+        "Q03",
+        "Q07"
+      ],
+      "acceptance_ids": [
+        "A03",
+        "A05"
+      ],
+      "given": "Both Lark identities share official Pin HTTP and independent durable cursors",
+      "when": "New conversation Pins arrive during paging, restart and an API outage",
+      "then": "Core deduplicates each action, preserves identities and emits explicit trigger reasons without replaying old mentions"
+    },
+    {
+      "case_id": "T38.trigger-reasons.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/reactions.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 5000,
+      "resource_group": "pure",
+      "acceptance_ids": [
+        "A01"
+      ],
+      "requirements": [
+        "SPEC-0015"
+      ],
+      "given": "Native action metadata and message relations",
+      "when": "Classify causes and normalize a conversation Pin",
+      "then": "Stable reasons distinguish Pin from emoji and preserve actor, identity and source invariants"
     }
   ],
   "source_extension_base": "c1eb7b1"

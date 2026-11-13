@@ -70,3 +70,5 @@
 - [Pages 源码与预览](pages/README.md)：入口 `docs/index.html`，交互使用浏览器实时编译的 Eliscript。
 - [项目许可证](../LICENSE)：[1PL 官方说明](https://license.pub/1pl/)。
 - [历史资料](archive/README.md)：旧研究、施工计划、检查清单及验收批次。历史中的状态和建议不作为当前使用或开发指令。
+
+- [对话 Pin 与统一触发原因](specs/0025-chat-pins-and-trigger-reasons.md)

@@ -188,6 +188,11 @@ metadata:
 - evidence: interaction.kind/state/target_message_id/target_id说明动作和目标；unavailable不猜作者，普通群聊参与不算回应；同一原生话题内本人/机器人已有确定发送记录时，后续回复按thread回应，basis=thread_participation说明该依据；同话题根消息或更早消息已原生@当前身份时，basis=thread_mention说明提及依据，后续无@回复同样持续触发，不要求先文字回复或原任务仍在运行。表情正文仍是原消息，reaction.operator才是添加者；按对话规则判断是否新任务、补充或只需Get，不把每次回应都当新任务。
 - actors: 排除机器人主动触发用trigger.kind；表情时取添加者，普通消息取发送者。不要用原消息sender.kind屏蔽人类对机器人消息的正常回应。全局人员/字符黑名单和自动Working/Get防回声继续生效。
 
+## 对话 Pin 与触发原因
+
+- pins: 消息菜单中的 Pin/置顶到对话生成 message.pinned，与 📌 表情 message.reaction.added 相互独立；默认订阅包含，已有显式订阅按 [置顶与原因](references/reactions.md#对话-pin置顶) 追加，不改原有规则。
+- reasons: 通知和消息查询的 trigger_reasons 提供稳定 code 与中文 label；一条消息可有多项，实际匹配订阅看 matched。先按原因区分 @、私聊、表情、Pin、话题和引用，不把标记原文的旧 @ 当成新请求。
+
 ## 表情触发
 
 - reactions: 可将添加指定表情与原生提及、私聊并列订阅；按原生 emoji_type 精确配置，见[表情触发](references/reactions.md)。不把原消息已有提及当作新的提及，不以旧表情记录代替实时事件。

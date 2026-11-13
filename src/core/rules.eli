@@ -15,6 +15,7 @@
         :interaction.target_kind "string" :interaction.target_message_id "string" :interaction.addressed_self "boolean"
         :trigger.kind "string"
         :reaction.emoji_type "string" :reaction.operator.id "string" :reaction.operator.kind "string" :reaction.operator.is_self "boolean"
+        :pin.operator.id "string" :pin.operator.kind "string" :pin.operator.is_self "boolean"
         :people.id "string" :topic.key "string" :topic.kind "string" :thread.id "string" :resource.kind "string" :resource.token "string" :resource.table_id "string" :resource.record_id "string"
         :sender.id
         "string"
@@ -34,6 +35,7 @@
   (defun defaultSubscriptionPredicate ()
     (js-object :any (js-array
       (js-object :field "addressed_self" :op "eq" :value t)
+      (js-object :field "event_kind" :op "eq" :value "message.pinned")
       (js-object :all (js-array
         (js-object :field "event_kind" :op "eq" :value "message.created")
         (js-object :field "chat_type" :op "eq" :value "p2p")))
@@ -136,7 +138,10 @@
         (nativeGet (nativeGet event "interaction") (js-call field :slice 12)
           (if (= field "interaction.addressed_self") false "")))
       ((= field "trigger.kind") (nativeGet
-        (or (nativeGet (nativeGet event "reaction") "operator") (nativeGet event "sender")) "kind" "unknown"))
+        (or (nativeGet (nativeGet event "pin") "operator") (nativeGet (nativeGet event "reaction") "operator") (nativeGet event "sender")) "kind" "unknown"))
+      ((js-call field :startsWith "pin.operator.")
+        (nativeGet (nativeGet (nativeGet event "pin") "operator") (js-call field :slice 13)
+          (if (= field "pin.operator.is_self") false "")))
       ((= field "reaction.emoji_type") (nativeGet (nativeGet event "reaction") "emoji_type" ""))
       ((js-call field :startsWith "reaction.operator.")
         (nativeGet (nativeGet (nativeGet event "reaction") "operator") (js-call field :slice 18)

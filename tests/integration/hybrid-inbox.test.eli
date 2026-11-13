@@ -23,6 +23,7 @@
       (sockets (new globalThis.Map)) (messages (new globalThis.Map))
       (marks (new globalThis.Map)) (calls (js-array)) (replies (js-array))
       (state (js-object :acks 0 :reaction_seq 0 :enabled false :root nil)))
+      (put state :pins (js-object :user (js-array) :bot (js-array)))
       (put socketFactory :make (lambda (address)
         (let* ((url (new globalThis.URL address)) (app (js-call (nativeGet url "searchParams") :get "app"))
           (socket (new globalThis.EventTarget)))
@@ -49,10 +50,12 @@
           (put (aref (nativeGet config "agent_endpoints") 0) :instance_epoch "epoch-1")
           (let ((user (aref (nativeGet config "connections") 0)))
             (Object/assign user (js-object :source_delivery "events" :event_scope "all_authorized"
+              :pin_poll_seconds 2
               :event_app_id "cli_user" :event_subject_id "ou_self"
               :user_identity (js-object :app_id "cli_user" :open_id "ou_self")))
             (js-call (nativeGet config "connections") :push (js-object :connection_id "lark-bot"
               :platform "lark" :brand "lark" :identity "bot" :source_delivery "events"
+              :pin_poll_seconds 2
               :event_scope "all_authorized" :event_app_id "cli_bot" :event_subject_id "ou_bot"
               :credential_ref "test:lark-bot" :watches (js-array)))
             (put ports :credentials (js-object :resolve (lambda (ref)
@@ -104,6 +107,18 @@
                       (nativeGet (nativeGet state "embedded" (js-object)) (aref detail 1) (js-array))) :has_more false))))
                   ((= path "/open-apis/im/v1/chats")
                     (Response/json (js-object :code 0 :data (js-object :items (js-array (js-object :chat_id "c1")) :has_more false))))
+                  ((= path "/open-apis/im/v1/pins")
+                    (if (nativeGet state "pin_fail") (Response/json (js-object :code 99991663))
+                      (let* ((pins (nativeGet (nativeGet state "pins") key (js-array)))
+                        (visible (js-call pins :filter (lambda (pin)
+                          (and (= (nativeGet pin "chat_id") (js-call query :get "chat_id"))
+                            (>= (NativeNumber (nativeGet pin "create_time")) (NativeNumber (js-call query :get "start_time")))
+                            (<= (NativeNumber (nativeGet pin "create_time")) (NativeNumber (js-call query :get "end_time")))))))
+                        (offset (if (js-call query :get "page_token") 1 0))
+                        (more (and (nativeGet state "pin_paginate") (= offset 0) (> (js-length visible) 1))))
+                        (Response/json (js-object :code 0 :data (js-object :items
+                          (if (nativeGet state "pin_paginate") (js-call visible :slice offset (1+ offset)) visible)
+                          :has_more (if more t false) :page_token (if more "pin-page-two" nil)))))))
                   ((or (= path "/open-apis/search/v2/message") (= path "/open-apis/im/v1/messages"))
                     (when (nativeGet state "enabled")
                       (js-call messages :forEach (lambda (message)
@@ -128,6 +143,21 @@
         (catch error
           (when f (await (closeFixture f)))
           (put NativeGlobal :WebSocket original) (throw error)))))
+  (defasync restartNative (f)
+    (let ((stopped false) (i 0))
+      (while (and (not stopped) (< i 16))
+        (let ((result (await (js-call (nativeGet f "core") :stop "fixture_native_restart"
+          (+ (js-call (nativeGet f "clock") :monoNow) 1000)))))
+          (setq stopped (= (nativeGet (nativeGet result "data") "state") "stopped")))
+        (unless stopped (await (new globalThis.Promise (lambda (done) (nativeSetTimeout done 0))))
+          (js-call (nativeGet f "clock") :advance 1000))
+        (setq i (1+ i)))
+      (js-call (expect stopped) :toBe t))
+    (js-call (nativeGet (nativeGet f "config") "connections") :forEach (lambda (connection)
+      (when (= (nativeGet connection "platform") "lark")
+        (js-call (nativeGet (nativeGet f "ports") "im_ports") :set (nativeGet connection "connection_id")
+          (createLarkEventPort connection (nativeGet f "ports"))))))
+    (await (js-call f :restart)))
   (defasync cleanup (f)
     (when f (try (await (closeFixture f))
       (finally (put NativeGlobal :WebSocket (nativeGet f "original_socket"))))))
@@ -193,7 +223,14 @@
               (when (= id "shared")
                 (js-call (expect (nativeGet (nativeGet event "conversation") "native_thread_id")) :toBe "thread-one")
                 (js-call (expect (nativeGet (nativeGet event "reply_to") "id")) :toBe "parent-one"))))))
-        (js-call (expect (nativeGet (nativeGet f "marks") "size")) :toBe 4)
+        ;; The shared fixture explicitly @s two distinct configured identities.
+        ;; Notifications arrive, but no arbitrary reply/Working identity is chosen.
+        (js-call inputs :forEach (lambda (input)
+          (let ((envelope (nativeGet input "envelope")))
+            (when (= (nativeGet (nativeGet envelope "source") "native_message_id") "shared")
+              (js-call (expect (js-call (js-array "ambiguous_target" "unmapped_target") :includes (nativeGet (nativeGet envelope "reply_route") "status"))) :toBe t)
+              (js-call (expect (nativeGet envelope "reply_context_id")) :toBe nil)))))
+        (js-call (expect (nativeGet (nativeGet f "marks") "size")) :toBe 2)
         ;; Late WebSocket duplicates and repeated HTTP windows never create more work.
         (emit f "cli_user" "shared") (emit f "cli_user" "user-private")
         (emit f "cli_bot" "shared") (await (advance f 12))
@@ -220,9 +257,9 @@
           (js-call (expect (js-call (js-array "blocked" "unmentioned") :includes
             (nativeGet (nativeGet (nativeGet item "envelope") "source") "native_message_id"))) :toBe false)))
         (js-call (expect (nativeGet (js-call (js-call db :query
-          "SELECT COUNT(*) AS n FROM work_items WHERE state='completed'") :get) "n")) :toBe 4)
+          "SELECT COUNT(*) AS n FROM work_items WHERE state='completed'") :get) "n")) :toBe 2)
         (js-call (expect (nativeGet (js-call (js-call db :query
-          "SELECT COUNT(*) AS n FROM work_marks WHERE state='done'") :get) "n")) :toBe 4)
+          "SELECT COUNT(*) AS n FROM work_marks WHERE state='done'") :get) "n")) :toBe 2)
         (js-call (expect (nativeGet (js-call (js-call db :query
           "SELECT COUNT(*) AS n FROM outbound WHERE state='accepted'") :get) "n")) :toBe 1)
         ;; Four hours offline must not require 240 one-minute polling windows.
@@ -247,7 +284,7 @@
             (js-call (expect (nativeGet (nativeGet user "source_health") "lag_seconds")) :toBeLessThan 15)
             (js-call (expect (nativeGet (nativeGet user "source_health") "state")) :toBe "online")
             (js-call (expect (nativeGet (nativeGet user "source_health") "ready")) :toBe t))
-          (await (js-call f :restart))
+          (await (restartNative f))
           (await (advance f 20))
           (js-call (expect (nativeGet (js-call (js-call db :query
             "SELECT COUNT(*) AS n FROM events WHERE native_message_id LIKE 'offline-%'") :get) "n")) :toBe 6))
@@ -297,6 +334,80 @@
         (js-call (expect (nativeGet (nativeGet (nativeGet (aref inputs 0) "envelope") "source") "native_message_id")) :toBe "after-forward")
         (let ((probe (await (callOk f "O" "connection.probe" (js-object :connection_id "lark")))))
           (js-call (expect (nativeGet (nativeGet probe "source_health") "ready")) :toBe t))
-        (await (js-call f :restart)) (await (advance f 10))
+        (await (restartNative f)) (await (advance f 10))
         (js-call (expect (js-length inputs)) :toBe 1)
+        (finally (js-call db :close))))) cleanup)
+
+  (withCase "T41.chat-pins.integration" setup (async (f)
+    (let* ((agent (await (bindRecipient f))) (state (nativeGet f "hybrid_state"))
+      (clock (nativeGet f "clock")) (messages (nativeGet f "messages"))
+      (inputs (nativeGet (nativeGet f "opencode") "inputs"))
+      (db (new Database (resolve (nativeGet f "root") "state/dj.sqlite") (js-object :readonly t)))
+      (pin (lambda (message actor type stamp) (js-object :chat_id "c1" :message_id message
+        :operator_id actor :operator_id_type type :create_time (str stamp))))
+      (stamp (lambda () (Date/parse (js-call clock :utcNow)))))
+      (try
+        (let ((ticket (await (callOk f "A" "subscription.preview" (js-object :spec
+          (js-object :agent_id (nativeGet agent "agent_id")
+            :selector (js-object :event_kinds (js-array "message.pinned"))
+            :predicate (js-object :all (js-array))))))))
+          (await (callOk f "A" "subscription.create" (js-object :preview_id (nativeGet ticket "preview_id") :idempotency_key "chat-pins-sub"))))
+        (let ((policy (await (callOk f "O" "message.filter.get" (js-object)))))
+          (await (callOk f "O" "message.filter.update" (js-object :expected_revision (nativeGet policy "revision")
+            :idempotency_key "chat-pins-robots" :rules (js-array (js-object :id "robots" :enabled t :effect "suppress_trigger"
+              :predicate (js-object :field "trigger.kind" :op "eq" :value "bot")))))))
+        (js-call (js-array "pin-seed" "pinned-old" "pinned-another") :forEach (lambda (id)
+          (js-call messages :set id (js-object :message_id id :chat_id "c1" :msg_type "text"
+            :create_time (str (- (funcall stamp) 86400000))
+            :sender (js-object :id "cli_author_bot" :id_type "app_id" :sender_type "app")
+            :mentions (js-array (js-object :id "ou_self" :id_type "open_id") (js-object :id "ou_bot" :id_type "open_id"))
+            :body (js-object :content (JSON/stringify (js-object :text (str "old marked body " id))))))))
+        ;; A current native message discovers the group, but is not a Pin.
+        (put (js-call messages :get "pin-seed") :create_time (str (funcall stamp)))
+        (emit f "cli_user" "pin-seed") (emit f "cli_bot" "pin-seed")
+        (put (nativeGet state "pins") :user (js-array (funcall pin "pinned-old" "ou_self" "open_id" 1)))
+        (put (nativeGet state "pins") :bot (js-array (funcall pin "pinned-old" "ou_other" "open_id" 1)))
+        (await (advance f 10)) (js-call (expect (js-length inputs)) :toBe 0)
+        (put state :pin_paginate t)
+        (put (nativeGet state "pins") :user (js-array (funcall pin "pinned-old" "ou_self" "open_id" (funcall stamp))
+          (funcall pin "pinned-another" "ou_self" "open_id" (funcall stamp))))
+        (put (nativeGet state "pins") :bot (js-array (funcall pin "pinned-old" "ou_other" "open_id" (funcall stamp))
+          (funcall pin "pinned-another" "ou_other" "open_id" (funcall stamp))))
+        (await (advance f 22)) (js-call (expect (js-length inputs)) :toBe 4)
+        (js-call inputs :forEach (lambda (input)
+          (let* ((envelope (nativeGet input "envelope")) (source (nativeGet envelope "source"))
+            (readback (JSON/parse (nativeGet (js-call (js-call db :query "SELECT payload FROM events WHERE event_id=?")
+              :get (nativeGet envelope "event_id")) "payload"))))
+            (js-call (expect (nativeGet readback "event_kind")) :toBe "message.pinned")
+            (js-call (expect (nativeGet readback "receive_transport")) :toBe "poll")
+            (js-call (expect (nativeGet (nativeGet envelope "sender") "kind")) :toBe "bot")
+            (js-call (expect (nativeGet (nativeGet (nativeGet envelope "pin") "operator") "kind")) :toBe "human")
+            (js-call (expect (nativeGet envelope "trigger_reasons")) :toEqual
+              (js-array (js-object :code "chat_pin" :label "消息被 Pin 到对话")))
+            (js-call (expect (nativeGet (nativeGet envelope "reply_route") "connection_id")) :toBe (nativeGet source "connection_id"))
+            (js-call (expect (> (js-length (nativeGet envelope "mentions")) 0)) :toBe t))))
+        (let* ((envelope (nativeGet (aref inputs 0) "envelope"))
+          (readback (await (callOk f "A" "message.get" (js-object :event_id (nativeGet envelope "event_id"))))))
+          (js-call (expect (nativeGet readback "trigger_reasons")) :toEqual (nativeGet envelope "trigger_reasons")))
+        ;; Overlap, replayed pages and restart keep the same action exactly once.
+        (await (advance f 12)) (js-call (expect (js-length inputs)) :toBe 4)
+        (await (restartNative f)) (await (advance f 12)) (js-call (expect (js-length inputs)) :toBe 4)
+        ;; Bot action suppressed, while the bot-authored content stays visible.
+        (put state :pin_paginate false)
+        (put (nativeGet state "pins") :user (js-array (funcall pin "pinned-old" "cli_actor" "app_id" (funcall stamp))))
+        (put (nativeGet state "pins") :bot (js-array (funcall pin "pinned-old" "cli_actor" "app_id" (funcall stamp))))
+        (await (advance f 12)) (js-call (expect (js-length inputs)) :toBe 4)
+        (js-call (expect (nativeGet (js-call (js-call db :query
+          "SELECT COUNT(*) AS n FROM events WHERE event_kind='message.pinned'") :get) "n")) :toBe 6)
+        ;; API outage must not move the watermark past an unseen Pin.
+        (put state :pin_fail t)
+        (put (nativeGet state "pins") :user (js-array (funcall pin "pinned-old" "ou_self" "open_id" (funcall stamp))))
+        (put (nativeGet state "pins") :bot (js-array (funcall pin "pinned-old" "ou_other" "open_id" (funcall stamp))))
+        (await (advance f 8)) (js-call (expect (js-length inputs)) :toBe 4)
+        (put state :pin_fail false)
+        (await (advance f 22)) (js-call (expect (js-length inputs)) :toBe 6)
+        ;; Re-Pin has a new official timestamp, even for the same old message.
+        (put (nativeGet state "pins") :user (js-array (funcall pin "pinned-old" "ou_self" "open_id" (funcall stamp))))
+        (put (nativeGet state "pins") :bot (js-array (funcall pin "pinned-old" "ou_other" "open_id" (funcall stamp))))
+        (await (advance f 15)) (js-call (expect (js-length inputs)) :toBe 8)
         (finally (js-call db :close))))) cleanup))

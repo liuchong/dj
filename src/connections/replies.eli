@@ -58,7 +58,7 @@
       (source (js-call repository :get "connections" (nativeGet event "connection_id")))
       (policy (js-call repository :get "session_rules" session-key)) (views (replyViews context event))
       (slots (new globalThis.Map)) (defaults (new globalThis.Map)) (stale false)
-      (explicit (and (not (= (nativeGet event "event_kind") "message.reaction.added"))
+      (explicit (and (not (js-call (js-array "message.reaction.added" "message.pinned") :includes (nativeGet event "event_kind")))
         (js-call views :some (lambda (view) (> (js-length (nativeGet view "mentions" (js-array))) 0)))))
       (matched (js-array)) (add nil) (inspect nil))
       (when (and (nativeGet event "identity_revision")

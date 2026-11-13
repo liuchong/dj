@@ -223,7 +223,7 @@
               (nativeGet spec "context_policy")))
           (put spec :delivery_policy (normalizedPolicy (nativeGet spec "delivery_policy")))
           (unless (object-has? selector :event_kinds)
-            (put selector :event_kinds (js-array "message.created" "message.reaction.added")))
+            (put selector :event_kinds (js-array "message.created" "message.reaction.added" "message.pinned")))
           (put
             selector
             :event_kinds

@@ -16,6 +16,7 @@
     utf8Bytes
     sliceUtf8)
   (import "../core/limits.eli" limits)
+  (import "../core/triggers.eli" triggerReasons)
   (import "../core/instructions.eli" composeInstructions)
   (import "../core/states.eli" mapNativeReceipt)
   (import "../application/context.eli"
@@ -347,6 +348,7 @@
           "external_message"
           :origin
           "direct"
+          :trigger_reasons (js-array (js-object :code "direct_input" :label "通过 DJ 接口定向输入"))
           :delivery_id
           (nativeGet record "delivery_id")
           :event_id
@@ -457,6 +459,8 @@
             (if reply (js-array "reply") (js-array))))
                  (instructions (composeInstructions contributions event body)))
             (put envelope :topic (trackedTopic context event))
+            (put envelope :trigger_reasons (triggerReasons event))
+            (when (nativeGet event "pin") (put envelope :pin (nativeGet event "pin")))
             (when (nativeGet event "ingress_evidence") (put envelope :ingress_evidence (nativeGet event "ingress_evidence")))
             (if resource-event
               (let ((resource (resourceEnvelope context recipient event)))

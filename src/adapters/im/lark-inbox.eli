@@ -6,6 +6,7 @@
   (import "../../service/ownership.eli" ownerGuard)
   (import "./lark.eli" createReadLimiter)
   (import "./lark-reactions.eli" pollLarkReactions)
+  (import "./lark-pins.eli" pollLarkPins)
   (import "../../connections/interactions.eli" resolveMessageInteraction)
   (import "./lark-reaction-policy.eli" reactionPollPolicy)
   (import "./lark-reaction-cache.eli" createReactionObservationCache)
@@ -44,6 +45,8 @@
         :reaction_poll (js-object :coverage "retained_local_messages" :limits_owner "dj"
           :budget_scope "application_across_connections" :policy policy :lanes (js-object))))
       (load nil) (ensure nil) (persist nil) (turn nil) (pump nil) (known nil))
+      (put status :pin_poll (js-object :transport "poll" :interval_seconds (nativeGet config "pin_poll_seconds" 15)
+        :coverage "known_authorized_chats" :last_success_at nil))
       (setq load (lambda (key)
         (js-call (nativeGet application "repository") :get "poll_checkpoints"
           (js-object :connection_id id :conversation_key key))))
@@ -58,6 +61,17 @@
               (if old (must (js-call repository :replace "poll_checkpoints" fresh))
                 (js-call repository :insert "poll_checkpoints" fresh)))))))
       (setq known (lambda (activation)
+        (let* ((db (nativeGet (nativeGet application "store") "db"))
+          (pin-start (nativeGet (funcall load "inbox:pins") "activation_at"))
+          (rows (js-call (js-call db :query
+            "SELECT DISTINCT json_extract(payload,'$.conversation.native_chat_id') AS chat_id,json_extract(payload,'$.chat_type') AS chat_type FROM events WHERE connection_id=? AND event_kind='message.created' AND json_extract(payload,'$.chat_type') IN ('group','p2p')") :all id)))
+          (js-call rows :forEach (lambda (row)
+            (when (nativeGet row "chat_id") (funcall ensure (str "inbox:pins:" (nativeGet row "chat_id")) "pins" pin-start (nativeGet row "chat_id")
+              (js-object :pin_chat_type (nativeGet row "chat_type")))))))
+        (js-call (nativeGet config "watches" (js-array)) :forEach (lambda (watch)
+          (let ((chat (nativeGet watch "chat_id")))
+            (when chat (funcall ensure (str "inbox:pins:" chat) "pins"
+              (nativeGet (funcall load "inbox:pins") "activation_at") chat)))))
         (unless user
           (let* ((db (nativeGet (nativeGet application "store") "db"))
             (rows (js-call (js-call db :query
@@ -91,10 +105,14 @@
                 (throw (new globalThis.RangeError "event inbox full")))
               (js-call events :forEach (lambda (event)
                 (put event :source_identity_revision (nativeGet checkpoint "identity_revision"))
+                (when (js-call (js-array "group" "p2p") :includes (nativeGet event "chat_type"))
+                  (let ((chat (nativeGet (nativeGet event "conversation") "native_chat_id")))
+                    (funcall ensure (str "inbox:pins:" chat) "pins" (nativeGet (funcall load "inbox:pins") "activation_at") chat (js-object :pin_chat_type (nativeGet event "chat_type")))))
                 (js-call (js-call db :query
                   "INSERT OR IGNORE INTO im_event_inbox(connection_id,source_key,payload) VALUES(?,?,?)")
                   :run id (nativeGet event "source_key") (JSON/stringify event))))
               (js-call chats :forEach (lambda (chat)
+                (funcall ensure (str "inbox:pins:" chat) "pins" (nativeGet (funcall load "inbox:pins") "activation_at") chat)
                 (funcall ensure (str "inbox:chat:" chat) "group" (nativeGet checkpoint "activation_at") chat)))
               (put checkpoint :generation (1+ (nativeGet checkpoint "generation")))
               (must (js-call repository :replace "poll_checkpoints" checkpoint))
@@ -107,6 +125,10 @@
           (db (nativeGet (nativeGet application "store") "db"))
           (events (js-array)) (chats (js-array)) (native nil) (messages (js-array))
           (response nil) (data nil) (page-more false) (page-token nil) (queried false))
+          (if (= kind "pins")
+            (progn
+              (await (funcall persist checkpoint (await (pollLarkPins config application base checkpoint context normalize)) (js-array)))
+              (put (nativeGet status "pin_poll") :last_success_at now))
           (if (= kind "reactions")
             (let* ((had-error (nativeGet checkpoint "native_error"))
               (result (await (pollLarkReactions config application base checkpoint context observations))))
@@ -235,18 +257,19 @@
                 (t interval)) 1000))) :toISOString)))
           (await (funcall persist checkpoint events chats))
           (put status :state "ready") (put status :last_success_at now) (put status :native_error nil)
-          (when (> (js-length events) 0) (put status :last_received_at now)))))))
+          (when (> (js-length events) 0) (put status :last_received_at now))))))))
       (setq pump (lambda ()
         (when (and application (not closed))
           ;; Independent message, fast-reaction and archive jobs use
           ;; independent checkpoints, while the HTTP transport owns app-wide quotas.
-          (js-call (js-array "messages" "reaction-fast" "reaction-archive") :forEach (lambda (role)
+          (js-call (js-array "messages" "reaction-fast" "reaction-archive" "pins") :forEach (lambda (role)
             (unless (js-call running :has role)
-              (let* ((reaction (not (= role "messages")))
+              (let* ((reaction (js-call role :startsWith "reaction-")) (pins (= role "pins"))
                 (rows (js-call (js-call (nativeGet (nativeGet application "store") "db") :query
                   (str "SELECT payload FROM poll_checkpoints WHERE connection_id=? AND conversation_key LIKE 'inbox:%' AND next_due_at<=? AND json_extract(payload,'$.kind')"
                     (cond ((= role "reaction-archive") "='reactions' AND conversation_key='inbox:reactions'")
-                      (reaction "='reactions' AND conversation_key<>'inbox:reactions'") (t "<>'reactions'"))
+                      (reaction "='reactions' AND conversation_key<>'inbox:reactions'")
+                      (pins "='pins'") (t " NOT IN ('reactions','pins','pins_root')"))
                     " ORDER BY next_due_at,conversation_key LIMIT " (if reaction "3" "1"))) :all id (utcNow application)))
                 (candidates (js-call rows :map (lambda (row)
                   (let ((item (JSON/parse (nativeGet row "payload"))))
@@ -288,6 +311,9 @@
             (if (= (nativeGet status "state") "blocked") "blocked" "degraded")
             :native_error (JSON/parse (nativeGet failed "error")))) status)))
         :remember (lambda (event)
+          (when (and (= (nativeGet event "event_kind") "message.created") (js-call (js-array "group" "p2p") :includes (nativeGet event "chat_type")))
+            (let ((chat (nativeGet (nativeGet event "conversation") "native_chat_id")))
+              (when chat (funcall ensure (str "inbox:pins:" chat) "pins" (nativeGet (funcall load "inbox:pins") "activation_at") chat (js-object :pin_chat_type (nativeGet event "chat_type"))))))
           (when (and (not user) (= (nativeGet event "event_kind") "message.created"))
             (let ((chat (nativeGet (nativeGet event "conversation") "native_chat_id")))
               (when chat (funcall ensure (str "inbox:chat:" chat)
@@ -299,6 +325,7 @@
           (must (inTransaction context (lambda (tx)
             (must (ownerGuard context))
             (funcall ensure "inbox:reactions" "reactions" (utcNow context))
+            (funcall ensure "inbox:pins" "pins_root" (utcNow context))
             (let* ((activation (nativeGet (funcall load "inbox:reactions") "activation_at"))
               (row (js-call (js-call (nativeGet (nativeGet context "store") "db") :query
                 "SELECT CAST(COALESCE(MAX(ingress_seq),0) AS TEXT) AS seq FROM events WHERE connection_id=?") :get id)))
@@ -315,8 +342,8 @@
             (if user
               (js-call (js-array "p2p_chat" "group_chat") :forEach (lambda (kind)
                 (funcall ensure (str "inbox:" kind) kind (utcNow context))))
-              (progn (funcall ensure "inbox:discovery" "discovery" (utcNow context))
-                (funcall known (nativeGet (funcall load "inbox:discovery") "activation_at"))))
+              (funcall ensure "inbox:discovery" "discovery" (utcNow context)))
+            (funcall known (if user (utcNow context) (nativeGet (funcall load "inbox:discovery") "activation_at")))
             (success nil)))))
         :close (lambda () (setq closed t))
         :pendingWork (lambda () (nativeGet running "size")))))

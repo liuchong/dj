@@ -7,6 +7,7 @@
   (import "../core/errors.eli" success failure)
   (import "../core/types.eli" conversationKey sourceReadAction utf8Bytes sliceUtf8 addSeconds isUtcTime)
   (import "../core/limits.eli" limits)
+  (import "../core/triggers.eli" triggerReasons)
   (import "../application/context.eli" utcNow nextId inTransaction must safeFields)
   (defun allowedAddress
     (connection address)
@@ -163,7 +164,7 @@
                             source-cursor
                             "source_not_allowed"))
                         (throw djReturn3Token)))
-                    (unless (js-call (js-array "message.created" "resource.changed" "message.reaction.added") :includes (nativeGet normalized "event_kind"))
+                    (unless (js-call (js-array "message.created" "resource.changed" "message.reaction.added" "message.pinned") :includes (nativeGet normalized "event_kind"))
                       (progn
                         (setq
                           djReturn3Value
@@ -331,6 +332,8 @@
                       (when (Array/isArray (nativeGet normalized "people")) (put event :people (nativeGet normalized "people")))
                       (when (= (nativeGet normalized "event_kind") "message.reaction.added")
                         (put event :reaction (nativeGet normalized "reaction")))
+                      (when (= (nativeGet normalized "event_kind") "message.pinned")
+                        (put event :pin (nativeGet normalized "pin")))
                       (when (nativeGet normalized "interaction") (put event :interaction (nativeGet normalized "interaction")))
                       (when (nativeGet normalized "root_message_id") (put event :root_message_id (nativeGet normalized "root_message_id")))
                       (when (nativeGet normalized "reply_to")
@@ -342,6 +345,7 @@
                             (js-array "id" "sender_id"))))
                       (when (nativeGet normalized "ingress_evidence") (put event :ingress_evidence (nativeGet normalized "ingress_evidence")))
                       (put event :topic (topicOf event))
+                      (put event :trigger_reasons (triggerReasons event))
                       (js-call repository :insert "events" event)
                       (stageRecipientCommand context event)
                       (let*

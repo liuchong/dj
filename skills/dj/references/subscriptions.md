@@ -81,7 +81,7 @@
 
 ## 默认全选与独立选择
 
-- defaults: 新订阅省略predicate时默认选择@、私聊、引用链、原生话题及表情回应；event_kinds省略时为message.created/message.reaction.added。原有已保存规则不自动改变。
+- defaults: 新订阅省略predicate时默认选择@、私聊、引用链、原生话题、表情回应及对话Pin；event_kinds省略时为message.created/message.pinned/message.reaction.added。原有已保存规则不自动改变。
 - choose: 私聊用chat_type=p2p；@用addressed_self=true；引用链、话题、表情分别用interaction.addressed_self=true与interaction.kind=reply/thread/reaction取all，再用any合并所选项。关闭某项就从any删除该分支；其他选项不受影响。需要额外关键词、人员或排除条件时继续用all/any/not组合。
 - dispatch: 选项只决定是否通知既有订阅目标，关系元数据仍供查询；不自动建立thread与AI对话绑定。
 
@@ -91,3 +91,5 @@
 - evidence: interaction.state=resolved才有已确认作者；unavailable表示准确目标不可读/不在本地且补取失败，不猜。thread可由本人/机器人根消息，或同一原生chat/thread内当前身份的既有已发消息确认；后者标记basis=thread_participation，后续回复不必再@。第三方话题的根消息或同一原生chat/thread内更早消息原生@当前身份时，后续回复也持续触发，basis=thread_mention、target_id为被提及身份；不要求先文字回复或任务仍运行。创建话题后的官方native_thread_id可作为已确认出站位置。普通群聊参与、其他话题、正文里的文字@、待发送或未知出站不算依据。
 - routing: 无新@时由DJ按回应目标身份沿既有reply_routes固定身份，有新@则原生提及优先。AI不选择出口或收件人。
 - robots: 若规则目的是屏蔽机器人动作，使用trigger.kind；sender.kind仍为原消息作者，单独按它排除会连人类对机器人消息的表情一起过滤。人员与字符黑名单仍优先，消息可见性不变。
+
+- chat_pins: 消息菜单 Pin 是独立的 message.pinned，pin.operator 表示实际标记者；与 📌 表情分开选择，见[置顶与原因](reactions.md#对话-pin置顶)。通知 trigger_reasons 展示动作原因，matched 展示命中的订阅；多个原因不要求重复创建任务。
