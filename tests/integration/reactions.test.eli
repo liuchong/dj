@@ -66,7 +66,7 @@
                             (Response/json (js-object :code 0 :data (js-object :reaction_id (str "auto-" (nativeGet state "seq")) :action_time stamp)))))
                         (t (Response/json (js-object :code 0 :data (js-object)))))))
                   ((and (= method "POST") (js-call path :endsWith "/reply"))
-                    (Response/json (js-object :code 0 :data (js-object :message_id "confirmed-self-reply" :chat_id "c1"))))
+                    (Response/json (js-object :code 0 :data (js-object :message_id "confirmed-self-reply" :chat_id "c1" :thread_id "outbound-topic"))))
                   (match
                     (put state :gets (1+ (nativeGet state "gets")))
                     (Response/json (js-object :code 0 :data (js-object :items (js-array
@@ -141,12 +141,12 @@
       (funcall react "blocked-text" "cached" "Pin") (await (turns f))
       (js-call (expect (js-length (inputs f))) :toBe 3)
       (js-call (expect (> (nativeGet state "acks") 9)) :toBe t))) cleanup)
-  (defun emitMessage (f id sender &optional parent root thread bot)
+  (defun emitMessage (f id sender &optional parent root thread bot mentions)
     (js-call f :emit (js-object :header (js-object :event_id (str "event-" id) :event_type "im.message.receive_v1" :app_id "cli_test")
       :event (js-object :sender (js-object :sender_id (js-object :open_id sender) :sender_type (if bot "app" "user"))
         :message (js-object :message_id id :chat_id "c1" :chat_type "group" :message_type "text"
           :create_time "1767225600000" :content (JSON/stringify (js-object :text (str "message " id)))
-          :parent_id parent :root_id root :thread_id thread :mentions (js-array))))))
+          :parent_id parent :root_id root :thread_id thread :mentions (or mentions (js-array)))))))
   (withCase "T40.message-interactions.integration" setup (async (f)
     (let* ((agent (await (bindRecipient f)))
       (preview (await (callOk f "A" "subscription.preview" (js-object :spec (js-object :agent_id (nativeGet agent "agent_id")
@@ -244,6 +244,39 @@
       (let ((envelope (nativeGet (aref (inputs f) 7) "envelope")))
         (js-call (expect (nativeGet (nativeGet envelope "interaction") "basis")) :toBe "thread_participation")
         (js-call (expect (nativeGet (nativeGet envelope "interaction") "target_message_id")) :toBe "confirmed-self-reply"))
+      ;; Being addressed is already a conversation: no self reply is needed.
+      (emitMessage f "mentioned-root" "colleague" nil nil nil nil
+        (js-array (js-object :id (js-object :open_id "ou_user") :name "self")))
+      (await (turns f))
+      (emitMessage f "mentioned-followup-1" "colleague" "mentioned-root" "mentioned-root" "mentioned-topic")
+      (await (turns f))
+      (emitMessage f "mentioned-followup-2" "colleague" "mentioned-root" "mentioned-root" "mentioned-topic")
+      (await (turns f)) (js-call (expect (js-length (inputs f))) :toBe 10)
+      (let ((envelope (nativeGet (aref (inputs f) 9) "envelope")))
+        (js-call (expect (nativeGet (nativeGet envelope "interaction") "basis")) :toBe "thread_mention")
+        (js-call (expect (nativeGet (nativeGet envelope "interaction") "target_id")) :toBe "ou_user")
+        (js-call (expect (nativeGet (nativeGet envelope "interaction") "target_message_id")) :toBe "mentioned-root")
+        (js-call (expect (nativeGet envelope "mentions")) :toEqual (js-array)))
+      ;; A mention in an earlier reply also addresses later sibling replies.
+      (emitMessage f "middle-mention" "colleague" "unrelated" "unrelated" "middle-topic" nil
+        (js-array (js-object :id (js-object :open_id "ou_user"))))
+      (await (turns f))
+      (emitMessage f "middle-followup" "colleague" "unrelated" "unrelated" "middle-topic")
+      (await (turns f)) (js-call (expect (js-length (inputs f))) :toBe 11)
+      (js-call (expect (nativeGet (nativeGet (nativeGet (aref (inputs f) 10) "envelope") "interaction") "target_message_id")) :toBe "middle-mention")
+      ;; Missing local root: exact official read must preserve native mentions.
+      (js-call (nativeGet state "native") :set "remote-mentioned-root"
+        (js-object :message_id "remote-mentioned-root" :chat_id "c1" :msg_type "text" :create_time "1767225600000"
+          :sender (js-object :id "colleague" :sender_type "user" :id_type "open_id")
+          :mentions (js-array (js-object :id "ou_user" :id_type "open_id" :name "self"))
+          :body (js-object :content "{\"text\":\"native addressed root\"}")))
+      (emitMessage f "remote-mentioned-followup" "colleague" "remote-mentioned-root" "remote-mentioned-root" "remote-mentioned-topic")
+      (await (turns f)) (js-call (expect (js-length (inputs f))) :toBe 12)
+      (js-call (expect (nativeGet (nativeGet (nativeGet (aref (inputs f) 11) "envelope") "interaction") "basis")) :toBe "thread_mention")
+      (emitMessage f "blocked-mentioned-followup" "blocked-colleague" "mentioned-root" "mentioned-root" "mentioned-topic")
+      (emitMessage f "bot-mentioned-followup" "other-bot" "mentioned-root" "mentioned-root" "mentioned-topic" t)
+      (emitMessage f "different-mention-topic" "colleague" "unrelated" "unrelated" "another-topic")
+      (await (turns f)) (js-call (expect (js-length (inputs f))) :toBe 12)
       ;; Disable thread triggers without disabling direct reply triggers.
       (let* ((sub (aref (nativeGet (await (callOk f "A" "subscription.list" (js-object))) "items") 0))
         (spec (js-object :agent_id (nativeGet agent "agent_id") :selector (nativeGet sub "selector")
@@ -254,7 +287,8 @@
         (await (callOk f "A" "subscription.update" (js-object :subscription_id (nativeGet sub "subscription_id")
           :expected_revision (nativeGet sub "revision") :preview_id (nativeGet ticket "preview_id") :idempotency_key "disable-thread"))))
       (emitMessage f "disabled-thread" "colleague" "unrelated" "unrelated" "foreign-topic")
-      (await (turns f)) (js-call (expect (js-length (inputs f))) :toBe 8)
+      (emitMessage f "disabled-mentioned-thread" "colleague" "mentioned-root" "mentioned-root" "mentioned-topic")
+      (await (turns f)) (js-call (expect (js-length (inputs f))) :toBe 12)
       (emitMessage f "enabled-quote" "colleague" "owned")
-      (await (turns f)) (js-call (expect (js-length (inputs f))) :toBe 9))) cleanup)
+      (await (turns f)) (js-call (expect (js-length (inputs f))) :toBe 13))) cleanup)
 )

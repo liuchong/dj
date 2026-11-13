@@ -87,7 +87,7 @@
 
 ## 对本人或机器人消息的表情、引用与话题回应
 
-- append: 保留已有predicate并用any追加interaction.addressed_self=true；selector.event_kinds包含message.created和message.reaction.added。跨出口用当前来源作用域核实的interaction.target_id；这是原作者ID，不是回应者。需只收人类回应时与trigger.kind=human取all。
-- evidence: interaction.state=resolved才有已确认作者；unavailable表示准确目标不可读/不在本地且补取失败，不猜。thread可由本人/机器人根消息，或同一原生chat/thread内当前身份的既有已发消息确认；后者标记basis=thread_participation，后续回复不必再@。普通群聊参与、其他话题、待发送或未知出站不算依据。
-- routing: 无新@时由DJ按回应目标作者沿既有reply_routes固定身份，有新@则原生提及优先。AI不选择出口或收件人。
+- append: 保留已有predicate并用any追加interaction.addressed_self=true；selector.event_kinds包含message.created和message.reaction.added。跨出口用当前来源作用域核实的interaction.target_id；普通回应是原作者ID，thread_mention则是被提及身份，都不是新回应者。需只收人类回应时与trigger.kind=human取all。
+- evidence: interaction.state=resolved才有已确认作者；unavailable表示准确目标不可读/不在本地且补取失败，不猜。thread可由本人/机器人根消息，或同一原生chat/thread内当前身份的既有已发消息确认；后者标记basis=thread_participation，后续回复不必再@。第三方话题的根消息或同一原生chat/thread内更早消息原生@当前身份时，后续回复也持续触发，basis=thread_mention、target_id为被提及身份；不要求先文字回复或任务仍运行。创建话题后的官方native_thread_id可作为已确认出站位置。普通群聊参与、其他话题、正文里的文字@、待发送或未知出站不算依据。
+- routing: 无新@时由DJ按回应目标身份沿既有reply_routes固定身份，有新@则原生提及优先。AI不选择出口或收件人。
 - robots: 若规则目的是屏蔽机器人动作，使用trigger.kind；sender.kind仍为原消息作者，单独按它排除会连人类对机器人消息的表情一起过滤。人员与字符黑名单仍优先，消息可见性不变。

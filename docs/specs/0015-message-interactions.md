@@ -5,8 +5,8 @@
 ## 一套接收和订阅路径
 
 - 普通回复仍为 message.created，表情添加仍为 message.reaction.added，不增加虚拟连接、临时任务订阅或第二套分发。
-- interaction 提供 kind（reaction/reply/thread）、state（resolved/unavailable）、target_message_id，以及已确认时的 target_id、target_kind、addressed_self。target_id 是被回应消息的原作者，不是新消息发送者。addressed_self 表示准确目标作者是当前来源连接的本人或机器人身份；话题连续回应另以 basis=thread_participation 标明依据。
-- 引用按原生 parent_id；直接回应当前身份优先，否则可由原生 thread 的 root_id 确认当前身份的话题，最多按ID读取两个准确目标，缺少自有根/父时再查本地原生话题参与证据，不根据文本相似或在群里说过话推断归属。普通群消息没有这种关系就不命中。若话题根属于第三方，但当前连接身份已在同一原生chat/thread中发过消息，后续话题回复也按公开的定向交流触发，不要求再次@，不取决于任务是否结束。依据只能是当前身份未过期的本地已发消息、同页更早的原生消息，或官方已确认发送的出站记录；未知/失败/待发送不算。只读当前连接和身份栅栏内的记录，排除当前消息、未来记录及其他chat/thread，不以群内参与、相似文本或第三方@推断。保留平台真实root/parent，interaction.target_message_id指向作为依据的本人/机器人消息。
+- interaction 提供 kind（reaction/reply/thread）、state（resolved/unavailable）、target_message_id，以及已确认时的 target_id、target_kind、addressed_self。普通回应的target_id 是被回应消息的原作者，不是新消息发送者。addressed_self 表示已确认回应指向当前来源连接的本人或机器人身份；话题连续回应以 basis=thread_participation 标明已发言依据，以 basis=thread_mention 标明准确原生提及依据；后者的 target_id 是被提及的当前身份，不冒充原作者。
+- 引用按原生 parent_id；直接回应当前身份优先，否则可由原生 thread 的 root_id 确认当前身份的话题，最多按ID读取两个准确目标，缺少自有根/父时再查本地原生话题参与证据，不根据文本相似或在群里说过话推断归属。第三方话题的根消息或同一原生chat/thread内更早消息已经原生@当前身份时，后续无@回复同样连续触发，不必等本人/机器人先文字回复或新建任务；根消息按准确root_id读取，话题内提及按同一身份、未过期、非未来消息证据确认。普通群消息没有这种关系就不命中。若话题根属于第三方，但当前连接身份已在同一原生chat/thread中发过消息，后续话题回复也按公开的定向交流触发，不要求再次@，不取决于任务是否结束。依据只能是当前身份未过期的本地已发消息、同页更早的原生消息，或官方已确认发送的出站记录；新建话题时采用官方返回的native_thread_id，而非仍指向主流的原始请求地址。未知/失败/待发送不算。只读当前连接和身份栅栏内的记录，排除当前消息、未来记录及其他chat/thread，不以群内参与、相似文本或第三方@推断。保留平台真实root/parent，interaction.target_message_id指向作为依据的已发消息或原生提及消息；thread_mention保留第三方作者，单独以target_id表示被提及身份。
 - 表情的 sender 保留原作者，reaction.operator 是动作添加者，interaction 指向原消息作者。原文 mentions 继续仅作上下文，不伪造新提及。
 - 先读当前连接身份、同一chat且未过期的本地事件/上下文缓存；缺失时在写事务外按准确消息ID读取官方消息API。不可读、已删、身份不符或chat不符时标记 unavailable，不猜作者、不扩大来源，也不丢弃当前消息。
 - user/bot、WebSocket/HTTP 共用同一关系解析。长连接证据与轮询来源仍分别记录，持久化、动作键、去重、黑名单和原会话投递继续复用。

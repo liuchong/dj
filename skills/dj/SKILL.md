@@ -185,7 +185,7 @@ metadata:
 ## 对已发消息的回应
 
 - interactions: 可订阅对本人或机器人已发消息的表情、引用与原生话题回复，不要求再次@。沿用message.created/message.reaction.added，追加interaction.addressed_self=true分支；跨出口准确作者用interaction.target_id。保留原规则、提示词和目标，先preview/update再读回，详见[订阅分发](references/subscriptions.md)。
-- evidence: interaction.kind/state/target_message_id/target_id说明动作和目标；unavailable不猜作者，普通群聊参与不算回应；同一原生话题内本人/机器人已有确定发送记录时，后续回复按thread回应，basis=thread_participation说明该依据。表情正文仍是原消息，reaction.operator才是添加者；按对话规则判断是否新任务、补充或只需Get，不把每次回应都当新任务。
+- evidence: interaction.kind/state/target_message_id/target_id说明动作和目标；unavailable不猜作者，普通群聊参与不算回应；同一原生话题内本人/机器人已有确定发送记录时，后续回复按thread回应，basis=thread_participation说明该依据；同话题根消息或更早消息已原生@当前身份时，basis=thread_mention说明提及依据，后续无@回复同样持续触发，不要求先文字回复或原任务仍在运行。表情正文仍是原消息，reaction.operator才是添加者；按对话规则判断是否新任务、补充或只需Get，不把每次回应都当新任务。
 - actors: 排除机器人主动触发用trigger.kind；表情时取添加者，普通消息取发送者。不要用原消息sender.kind屏蔽人类对机器人消息的正常回应。全局人员/字符黑名单和自动Working/Get防回声继续生效。
 
 ## 表情触发
