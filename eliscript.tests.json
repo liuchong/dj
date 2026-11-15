@@ -80,7 +80,8 @@
     "tests/integration/opencode-live.test.eli",
     "tests/integration/many-subscribers.test.eli",
     "tests/integration/swift-hosts.test.eli",
-    "tests/unit/swift-hosts.test.eli"
+    "tests/unit/swift-hosts.test.eli",
+    "tests/integration/antigravity-input.test.eli"
   ],
   "outDir": "dist-tests"
 }

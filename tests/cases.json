@@ -29047,6 +29047,54 @@
       "given": "纯入口生成器与只读进程助手",
       "when": "生成入口或传入非法PID",
       "then": "入口确定且拒绝未知类型，非法PID以退出码2拒绝且无输出"
+    },
+    {
+      "case_id": "T38.antigravity-busy.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/antigravity-input.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 30000,
+      "resource_group": "isolated-integration",
+      "requirements": [
+        "Q11"
+      ],
+      "acceptance_ids": [
+        "A04",
+        "A06",
+        "A17"
+      ],
+      "given": "原生RPC替身保留配置和准确会话",
+      "when": "有界连续受理既有会话的待投输入",
+      "then": "忙时NEXT_INVOCATION、排队WHEN_IDLE；未知不自动重发"
+    },
+    {
+      "case_id": "T38.native-ready-burst.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/antigravity-input.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 30000,
+      "resource_group": "isolated-integration",
+      "requirements": [
+        "Q11"
+      ],
+      "acceptance_ids": [
+        "A04",
+        "A06",
+        "A17"
+      ],
+      "given": "真实Core与SQLite、持续忙碌的原生接收端",
+      "when": "有界连续受理既有会话的待投输入",
+      "then": "同一岗位投出8条积压；同键、accepted与unknown不重复发送"
     }
   ],
   "source_extension_base": "c1eb7b1"

@@ -66,6 +66,7 @@ metadata:
 
 - reference: 查询、免订阅直发及已有实例内创建见[会话控制](references/control.md)，不要求订阅或已登记agent_id。
 - selectors: tools和instance_ids筛选工具或实例；agent_id仅表示已登记的单个会话。检查覆盖和新鲜度，不把空缓存当不存在。
+- busy_input: Antigravity 的 steer 在原生下一次模型调用前输入，显式 queue 才等空闲；待投积压有界连续投出，不等模型逐条完成。accepted不等于已处理，不重发已接受或结果未知项；具体边界见[消息消费](references/delivery.md)。
 - effects: 查询不启动，发送不创建；create必须通过已有实例接口且显式获准；正式配置不接受argv启动profile，不启动Agent子进程代替原目标。session.send发给Agent，保留独立目标权限；message.send/reply发给IM，身份认证后默认开放。不要让DJ判断任务应该在哪；DJ不提供IM操作界面。
 - pagination: 空items但有next_cursor表示查询尚未结束；精确session_keys可用于定点刷新或搜索。已知稳定key用session.get重新取得短期引用，session.probe只读核验receiver。
 - new_session: 新会话若用于订阅，可使用已部署的普通AI身份自行发现、登记和订阅；显式选择准确agent_id，不改绑或抢占其他已登记目标。历史lifecycle ready不代表实例当前ready。

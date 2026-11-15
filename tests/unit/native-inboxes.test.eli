@@ -5,10 +5,17 @@
   (import "../../src/delivery/envelope.eli" encodeAgentInput renderEnvelope)
   (import "../../src/adapters/agent/antigravity.eli" cascadeMessage cascadeWorkspace cascadeState)
   (import "../../src/service/config.eli" validateStructure)
+  (import "../../src/service/runtime.eli" dispatchBurstLimit)
   (import "../../src/adapters/agent/desktop.eli" codexRuntime)
   (import "node:path" resolve)
   (import "node:url" pathToFileURL)
   (withUnitCase "T38.native-inbox-boundaries.unit" (lambda (unused)
+    (js-call (expect (dispatchBurstLimit nil)) :toBe 4)
+    (js-call (expect (dispatchBurstLimit (js-object :message_during_run "unsupported" :max_dispatch_burst 32))) :toBe 4)
+    (js-call (js-array 0 -1 1.5 "32" globalThis.NaN) :forEach (lambda (value)
+      (js-call (expect (dispatchBurstLimit (js-object :message_during_run "supported" :max_dispatch_burst value))) :toBe 4)))
+    (js-call (expect (dispatchBurstLimit (js-object :message_during_run "supported" :max_dispatch_burst 1000))) :toBe 32)
+    (js-call (expect (dispatchBurstLimit (js-object :message_during_run "supported" :max_dispatch_burst 8))) :toBe 8)
     ;; Terminal native errors remain receivable even with partial history.
     ;; Pending input, approval and active turns must still take precedence.
     (let ((state (js-object :resumeState "resumed" :requests (js-array)

@@ -26,6 +26,12 @@
         :action "默认带上同事件其他订阅者供参考，是否协作由 AI 决定。"
         :outcome "DJ 负责分发，不分配任务或决定谁处理" :icon "⇉" :avatar "×"
         :log "一条消息 → 多条订阅命中 → 各自原会话收到 → 自主决定协作")
+      (js-object :id "busy" :source "项目讨论群" :kind "Antigravity · 忙时输入"
+        :message "刚才的问题，再补两条上下文。" :rule "steer · 原会话继续接收"
+        :target "Antigravity · 原订阅对话" :target-state "下一次模型调用前输入，不等整轮结束"
+        :action "待投积压有界连续入队，每条保留独立身份、回执和防重台账。"
+        :outcome "原生已受理不等于AI已处理；显式queue仍可选择" :icon "⇉" :avatar "AI"
+        :log "新补充 → 原会话忙时接收 → 批次续接 → AI自行判断回复")
       (js-object :id "blocked" :source "项目讨论群" :kind "IM 消息 · 触发字符黑名单"
         :message "@助手 [广告] 这条不需要触发处理。" :rule "已拦截自动触发"
         :target "消息保留在本地缓存" :target-state "不向 Agent 发出本次通知"

@@ -32,6 +32,12 @@
 
 ## 近期维护
 
+- Antigravity忙时输入改用原生NEXT_INVOCATION；待投积压按有界批次连续受理，accepted/unknown不重发。显式queue继续保留，详情见[消息消费](specs/0010-message-consumption.md)。
+- Codex/Antigravity可显式按已验证本机实例发现多个工作区；OpenCode默认分页的可选模型字段已归一化，不再因undefined写快照失败。未知模型仍明确未知。
+- 同一消息的双连接回复按直接引用/话题根优先于参与历史解析；真正同层冲突仍拒绝。可见订阅者提示按权限过滤后的真实数量截断，空列表不展示。
+- Skill支持显式 `install --update`，含共享根 `--target dj` 与Markdown/MDP资产。MCP结果目录已纳入Lark Markdown和创建话题能力，配置说明与安装流程同步。
+- macOS菜单栏与进程助手使用Swift；业务及构建编排保持Eliscript，Pi/Cursor所需JS加载入口只在打包时生成。
+
 - [多对多主动订阅](specs/0027-many-to-many-subscribers.md)：同一调用身份可登记多个准确对话；多个AI可同时订阅相同事件。默认同事件订阅者提示仅供自主协作，不引入互斥或任务归属判断。
 
 - 服务通过独立Rack包装配公共能力，配置、消息状态和操作台账仍由DJ管理。

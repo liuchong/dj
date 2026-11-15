@@ -460,14 +460,26 @@
           (finally
             (js-call group :forEach (lambda (work)
               (js-call busy :delete (nativeGet work "event_id")))))))))
+  (defun dispatchBurstLimit (capabilities)
+    (let ((requested (nativeGet capabilities "max_dispatch_burst" 4)))
+      (if (and (= (nativeGet capabilities "message_during_run") "supported")
+        (Number/isSafeInteger requested) (> requested 0)) (Math/min 32 requested) 4)))
   (defasync runRouteJob
     (context route-id &optional progress)
-    (let ((runtime (nativeGet context "runtime"))
+    (let* ((runtime (nativeGet context "runtime"))
       (db (nativeGet (nativeGet context "store") "db"))
+      (repository (nativeGet context "repository"))
+      (route (js-call repository :get "routes" route-id))
+      (session (and route (js-call repository :get "sessions" (nativeGet route "session_key"))))
+      (instance (and session (js-call repository :get "instances" (nativeGet session "instance_id"))))
+      (capabilities (nativeGet (and instance (agentPort context instance)) "capabilities"))
+      (maximum (dispatchBurstLimit capabilities))
       (steps 0) (running t) (result (success nil)))
+      ;; A native busy-input receiver may drain a bounded backlog in this job.
+      ;; ACKs free transport slots; model turn completion is never awaited.
       ;; One route keeps its existing job key while handling a bounded sequence.
       ;; Each dispatch still owns a fresh claim, authorization check and commit.
-      (while (and running (< steps 4) (= (nativeGet runtime "state") "ready"))
+      (while (and running (< steps maximum) (= (nativeGet runtime "state") "ready"))
         (when (> steps 0)
           (let ((head nil))
             (try
@@ -946,4 +958,4 @@
           (if (eq djReturn10Error djReturn10Token)
             djReturn10Value
             (throw djReturn10Error))))))
-  (export tick drain beginDrain launch settleReadyJobs commitIngress maintainState))
+  (export dispatchBurstLimit tick drain beginDrain launch settleReadyJobs commitIngress maintainState))

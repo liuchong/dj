@@ -127,7 +127,7 @@
           (js-object :anyOf (js-array stringSchema (ref "capability"))))))
     (put properties :ack_control boolSchema)
     (js-call
-      (js-array "max_text_bytes" "max_text_characters" "max_input_frame_bytes")
+      (js-array "max_text_bytes" "max_text_characters" "max_input_frame_bytes" "max_dispatch_burst")
       :forEach
       (lambda (name) (put properties name integerSchema)))
     (put definitions :capabilities (obj properties)))

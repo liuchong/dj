@@ -7,7 +7,7 @@
   (import "node:path" isAbsolute)
   (defconst antigravityCapabilities (Object/freeze
     (js-object :session_list "supported" :session_messages "supported" :session_probe "supported"
-      :session_send "supported" :start_idle "supported" :message_during_run "unsupported" :session_create "unsupported"
+      :session_send "supported" :start_idle "supported" :message_during_run "supported" :max_dispatch_burst 32 :session_create "unsupported"
       :instance_start "unsupported" :instance_stop "unsupported" :native_idempotency "unsupported"
       :lookup_send "unsupported" :lookup_create "unsupported" :observe "unsupported" :max_input_frame_bytes 262144)))
   (defun cascadeState (status)
@@ -48,6 +48,7 @@
           :created_at (nativeGet (nativeGet step "metadata") "createdAt")))))
   (defun createAntigravityPort (config host)
     (let ((endpoints (nativeGet config "endpoints" (js-array))) (closed false)
+          (rpc (nativeGet host "antigravity_rpc" antigravityRpc))
           (endpointFor nil) (summaries nil) (inspect nil) (project nil) (steps nil) (listSessions nil))
       (setq endpointFor (lambda (target)
         (let ((rows (js-call endpoints :filter (lambda (endpoint)
@@ -58,7 +59,7 @@
           (aref rows 0))))
       (setq summaries (async (endpoint context)
         (when closed (throw (new globalThis.Error "Antigravity port closed")))
-        (await (antigravityRpc endpoint "GetAllCascadeTrajectories" (js-object :excludeSubtrajectories t) context))))
+        (await (funcall rpc endpoint "GetAllCascadeTrajectories" (js-object :excludeSubtrajectories t) context))))
       (setq inspect (async (target context)
         (let* ((endpoint (funcall endpointFor target)) (response (await (funcall summaries endpoint context)))
                (row (nativeGet (nativeGet (nativeGet response "data") "trajectorySummaries")
@@ -85,7 +86,7 @@
         (unless (and (Number/isSafeInteger total) (Number/isSafeInteger offset) (>= offset 0)
                      (<= offset total) (<= (- total offset) 128))
           (throw (new globalThis.RangeError "Antigravity continuation exceeded bounded tail; refresh session")))
-        (let* ((response (await (antigravityRpc endpoint "GetCascadeTrajectorySteps"
+        (let* ((response (await (funcall rpc endpoint "GetCascadeTrajectorySteps"
                  (js-object :cascadeId id :stepOffset offset :trajectoryVerbosity (if include-config
                      "CLIENT_TRAJECTORY_VERBOSITY_FULL" "CLIENT_TRAJECTORY_VERBOSITY_PROD_UI")
                    :disableRehydration t) context)))
@@ -172,13 +173,15 @@
                      (user (nativeGet (aref rows 0) "userInput")) (config (nativeGet user "userConfig"))
                      (model (nativeGet (nativeGet config "plannerConfig") "planModel"))
                      (text (renderEnvelope envelope)))
-                (unless (and (= (cascadeState (nativeGet row "status")) "idle")
+                (unless (and (or (= (cascadeState (nativeGet row "status")) "idle")
+                                 (and (= mode "steer") (= (cascadeState (nativeGet row "status")) "busy")))
                              (= (nativeTypeOf model) "string") (> (js-length model) 0) (<= (utf8Bytes text) 262144))
                   (throw (new globalThis.Error "original Antigravity model/session is not sendable")))
                 (setq started t)
-                (await (antigravityRpc endpoint "SendUserCascadeMessage"
+                (await (funcall rpc endpoint "SendUserCascadeMessage"
                   (js-object :cascadeId id :items (js-array (js-object :text text))
-                    :cascadeConfig config :deliveryStrategy "MESSAGE_DELIVERY_STRATEGY_WHEN_IDLE")
+                    :cascadeConfig config :deliveryStrategy (if (= mode "steer")
+                      "MESSAGE_DELIVERY_STRATEGY_NEXT_INVOCATION" "MESSAGE_DELIVERY_STRATEGY_WHEN_IDLE"))
                   (Object/assign (js-object) context (js-object :instance_epoch (nativeGet checked "instance_epoch")))))
                 (js-object :state "accepted" :kind "accepted" :evidence_level "native_protocol"
                   :native_receipt_key (str "antigravity:" key)))
