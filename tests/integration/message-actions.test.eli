@@ -1,6 +1,8 @@
 (module dj.tests.integration.message-actions
   (import "../../src/messaging/recipients.eli" optOutNotice)
   (import "../../src/core/native.eli" nativeGet)
+  (import "../../src/application/operations.eli" operationCatalog)
+  (import "../../src/interfaces/mcp.eli" validateResult)
   (import "../../src/adapters/im/lark.eli" createLarkPort)
   (import "../support/fixtures.eli" createFixture closeFixture callOk createdEvent successful bindRecipient subscribe)
   (import "../support/case.eli" withCase)
@@ -52,6 +54,10 @@
                       :body (js-object :content (JSON/stringify (js-object :text (nativeGet state "text")))))) :has_more false)))))
                 (t (Response/json (js-object :code 0 :data (js-object :items (js-array) :has_more false)))))))))
           (js-call (nativeGet ports "im_ports") :set "lark" (createLarkPort connection ports)))))))))
+      (let ((status (await (callOk f "A" "service.status" (js-object)))))
+        (js-call (expect (nativeGet (validateResult (js-call operationCatalog :get "service.status")
+          (js-object :ok t :data status :warnings (js-array) :request_id "lark-capabilities"
+            :evidence_level "service_record" :effect_state "none")) "ok")) :toBe t))
       (put state :root (nativeGet f "root"))
       (put f :action_state state) f))
   (defun writes (f)

@@ -19,6 +19,11 @@
             (js-call (expect (funcall validate (js-object :idempotency_key "key"))) :toBe false))
           ;; All tools expose a resolvable output schema, including durable states.
           (js-call ajv :compile (nativeGet descriptor "output_schema")))))
+      (let* ((output (nativeGet (js-call operationCatalog :get "service.status") "output_schema"))
+        (capabilities (js-call ajv :compile (js-object :$defs (nativeGet output "$defs") :$ref "#/$defs/capabilities"))))
+        (js-call (expect (funcall capabilities (js-object :markdown "supported" :create_thread "supported"))) :toBe t)
+        (js-call (expect (funcall capabilities (js-object :markdown "unsupported" :create_thread "unsupported"))) :toBe t)
+        (js-call (expect (funcall capabilities (js-object :unknown_capability "supported"))) :toBe false))
       (let* ((validate (js-call ajv :compile (nativeGet (js-call operationCatalog :get "message.recall") "input_schema")))
         (good (js-object :event_id "event" :idempotency_key "once")))
         (js-call (expect (funcall validate good)) :toBe t)
