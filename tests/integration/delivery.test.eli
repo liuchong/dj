@@ -16,7 +16,11 @@
     bindRecipient
     subscribe
     createdEvent)
-  (defasync setup () (await (createFixture "delivery" "one")))
+  ;; These legacy cut-point scenarios explicitly exercise ordered queue barriers.
+  ;; Production defaults to steer; the fixture must select the policy it asserts.
+  (defasync setup () (await (createFixture "delivery" "one"
+    (js-object :configure (lambda (config ports)
+      (put config :message_delivery (js-object :busy "queue")))))))
   (withCase "T31.existing-session-epoch.sqlite"
     (async () nil)
     (async (unused)
@@ -888,7 +892,7 @@
           (cutover-route-queries 0))
           (try
             (put (nativeGet Database "prototype") :query (funcall wrap-db-query original-db-query (lambda (sql)
-              (when (js-call sql :includes "FROM routes r WHERE r.route_id>? AND r.unknown_delivery_id IS NULL")
+              (when (js-call sql :includes "SELECT r.route_id AS key FROM routes r WHERE r.route_id>?")
                 (setq cutover-route-queries (1+ cutover-route-queries))))))
             (let ((inflight (js-call f :tick)))
               (await (nativeGet barrier "ready"))
@@ -1414,7 +1418,7 @@
                 (lambda (sql)
                   (when (js-call sql :includes "SELECT payload FROM routing_work WHERE state IN ('ready','held','blocked')")
                     (setq routing-selects (1+ routing-selects)))
-                  (when (js-call sql :includes "FROM routes r WHERE r.route_id>? AND r.unknown_delivery_id IS NULL")
+                  (when (js-call sql :includes "SELECT r.route_id AS key FROM routes r WHERE r.route_id>?")
                     (setq route-scans (1+ route-scans)))
                   (when (js-call sql :includes "FROM outbound WHERE outbound_id>? AND state IN ('ready','deferred','blocked')")
                     (setq outbound-scans (1+ outbound-scans))))))
@@ -1475,7 +1479,7 @@
                 (lambda (sql)
                   (when (js-call sql :includes "SELECT payload FROM routing_work WHERE state IN ('ready','held','blocked')")
                     (setq routing-selects (1+ routing-selects)))
-                  (when (js-call sql :includes "FROM routes r WHERE r.route_id>? AND r.unknown_delivery_id IS NULL")
+                  (when (js-call sql :includes "SELECT r.route_id AS key FROM routes r WHERE r.route_id>?")
                     (setq route-scans (1+ route-scans))))))
             (await (js-call fx :tick))
             (js-call (expect visits) :toBe 1)
@@ -1525,7 +1529,7 @@
                 (lambda (sql)
                   (when (js-call sql :includes "SELECT payload FROM routing_work WHERE state IN ('ready','held','blocked')")
                     (setq routing-selects (1+ routing-selects)))
-                  (when (js-call sql :includes "FROM routes r WHERE r.route_id>? AND r.unknown_delivery_id IS NULL")
+                  (when (js-call sql :includes "SELECT r.route_id AS key FROM routes r WHERE r.route_id>?")
                     (setq route-scans (1+ route-scans))))))
             (await (js-call fx :tick))
             (js-call (expect routing-selects) :toBe 2)
@@ -1724,7 +1728,7 @@
                 (lambda (sql)
                   (when (js-call sql :includes "SELECT payload FROM routing_work WHERE state IN ('ready','held','blocked')")
                     (setq routing-selects (1+ routing-selects)))
-                  (when (js-call sql :includes "FROM routes r WHERE r.route_id>? AND r.unknown_delivery_id IS NULL")
+                  (when (js-call sql :includes "SELECT r.route_id AS key FROM routes r WHERE r.route_id>?")
                     (setq route-scans (1+ route-scans))))))
             (put peer :submit
               (async (binding envelope mode key context)
@@ -1823,7 +1827,7 @@
                 (lambda (sql)
                   (when (js-call sql :includes "SELECT payload FROM routing_work WHERE state IN ('ready','held','blocked')")
                     (setq routing-selects (1+ routing-selects)))
-                  (when (js-call sql :includes "FROM routes r WHERE r.route_id>? AND r.unknown_delivery_id IS NULL")
+                  (when (js-call sql :includes "SELECT r.route_id AS key FROM routes r WHERE r.route_id>?")
                     (setq route-scans (1+ route-scans))))))
             (await (js-call fx :tick))
             (finally
@@ -1873,7 +1877,7 @@
                 (lambda (sql)
                   (when (js-call sql :includes "SELECT payload FROM routing_work WHERE state IN ('ready','held','blocked')")
                     (setq routing-selects (1+ routing-selects)))
-                  (when (js-call sql :includes "FROM routes r WHERE r.route_id>? AND r.unknown_delivery_id IS NULL")
+                  (when (js-call sql :includes "SELECT r.route_id AS key FROM routes r WHERE r.route_id>?")
                     (setq route-scans (1+ route-scans))))))
             (let ((tick-res (await (js-call fx :tick))))
               (js-call (expect (nativeGet tick-res "ok")) :toBe t))
@@ -1970,7 +1974,7 @@
                 (lambda (sql)
                   (when (js-call sql :includes "SELECT payload FROM routing_work WHERE state IN ('ready','held','blocked')")
                     (setq routing-selects (1+ routing-selects)))
-                  (when (js-call sql :includes "FROM routes r WHERE r.route_id>? AND r.unknown_delivery_id IS NULL")
+                  (when (js-call sql :includes "SELECT r.route_id AS key FROM routes r WHERE r.route_id>?")
                     (setq route-scans (1+ route-scans))))))
             (await (js-call fx :tick))
             (js-call (expect routing-selects) :toBe 2)
@@ -2098,7 +2102,7 @@
                 (lambda (sql)
                   (when (js-call sql :includes "SELECT payload FROM routing_work WHERE state IN ('ready','held','blocked')")
                     (setq routing-selects (1+ routing-selects)))
-                  (when (js-call sql :includes "FROM routes r WHERE r.route_id>? AND r.unknown_delivery_id IS NULL")
+                  (when (js-call sql :includes "SELECT r.route_id AS key FROM routes r WHERE r.route_id>?")
                     (setq route-scans (1+ route-scans))))))
             (await (js-call fx :tick))
             (js-call (expect routing-selects) :toBe 2)
@@ -2528,7 +2532,7 @@
                 (burst-outbound-queries 0))
                 (try
                   (put (nativeGet Database "prototype") :query (funcall wrap-db-query original-db-query (lambda (sql)
-                    (when (js-call sql :includes "FROM routes r WHERE r.route_id>? AND r.unknown_delivery_id IS NULL")
+                    (when (js-call sql :includes "SELECT r.route_id AS key FROM routes r WHERE r.route_id>?")
                       (setq burst-route-queries (1+ burst-route-queries)))
                     (when (js-call sql :includes "FROM outbound WHERE outbound_id>? AND state IN ('ready','deferred','blocked')")
                       (setq burst-outbound-queries (1+ burst-outbound-queries))))))
@@ -2787,7 +2791,7 @@
                           (setq o-idx (1+ o-idx)))
                         (try
                           (put (nativeGet Database "prototype") :query (funcall wrap-db-query original-db-query (lambda (sql)
-                            (when (js-call sql :includes "FROM routes r WHERE r.route_id>? AND r.unknown_delivery_id IS NULL")
+                            (when (js-call sql :includes "SELECT r.route_id AS key FROM routes r WHERE r.route_id>?")
                               (unless (and (> (js-length tick1-wave-log) 0)
                                   (= (aref tick1-wave-log (1- (js-length tick1-wave-log))) "routes"))
                                 (js-call tick1-wave-log :push "routes")))
@@ -2907,7 +2911,7 @@
                         (let ((second-submit-seen false))
                           (try
                             (put (nativeGet Database "prototype") :query (funcall wrap-db-query original-db-query (lambda (sql)
-                              (when (js-call sql :includes "FROM routes r WHERE r.route_id>? AND r.unknown_delivery_id IS NULL")
+                              (when (js-call sql :includes "SELECT r.route_id AS key FROM routes r WHERE r.route_id>?")
                                 (unless (and (> (js-length tick2-wave-log) 0)
                                     (= (aref tick2-wave-log (1- (js-length tick2-wave-log))) "routes"))
                                   (js-call tick2-wave-log :push "routes")))
@@ -2986,7 +2990,7 @@
                               (finally (js-call reader :close))))
                           (try
                             (put (nativeGet Database "prototype") :query (funcall wrap-db-query original-db-query (lambda (sql)
-                              (when (js-call sql :includes "FROM routes r WHERE r.route_id>? AND r.unknown_delivery_id IS NULL")
+                              (when (js-call sql :includes "SELECT r.route_id AS key FROM routes r WHERE r.route_id>?")
                                 (setq wrap-route-queries (1+ wrap-route-queries))))))
                             (put peer :probe (async (target binding context)
                               (setq total-wrap-probes (1+ total-wrap-probes))
@@ -3047,7 +3051,7 @@
                             (setq r-idx (1+ r-idx)))
                           (try
                             (put (nativeGet Database "prototype") :query (funcall wrap-db-query original-db-query (lambda (sql)
-                              (when (js-call sql :includes "FROM routes r WHERE r.route_id>? AND r.unknown_delivery_id IS NULL")
+                              (when (js-call sql :includes "SELECT r.route_id AS key FROM routes r WHERE r.route_id>?")
                                 (setq zero-route-queries (1+ zero-route-queries))))))
                             (put peer :probe (async (target binding context)
                               (setq zero-probes (1+ zero-probes))
@@ -3114,7 +3118,7 @@
                               (js-call writer :run
                                 "CREATE TRIGGER test_block_source_progress BEFORE UPDATE ON source_progress BEGIN SELECT RAISE(ABORT, 'simulated source_progress storage fault'); END")
                               (put (nativeGet Database "prototype") :query (funcall wrap-db-query original-db-query (lambda (sql)
-                                (when (js-call sql :includes "FROM routes r WHERE r.route_id>? AND r.unknown_delivery_id IS NULL")
+                                (when (js-call sql :includes "SELECT r.route_id AS key FROM routes r WHERE r.route_id>?")
                                   (setq sb1-route-queries (1+ sb1-route-queries))))))
                               (put peer :probe (async (target binding context)
                                 (setq sb1-probes (1+ sb1-probes))
@@ -3169,7 +3173,7 @@
                                 (await (new globalThis.Promise (lambda (resolve reject) (setq lark-release resolve))))
                                 (await (funcall original-lark-receive connection cursor budget context))))
                               (put (nativeGet Database "prototype") :query (funcall wrap-db-query original-db-query (lambda (sql)
-                                (when (js-call sql :includes "FROM routes r WHERE r.route_id>? AND r.unknown_delivery_id IS NULL")
+                                (when (js-call sql :includes "SELECT r.route_id AS key FROM routes r WHERE r.route_id>?")
                                   (setq sb2-route-queries (1+ sb2-route-queries))))))
                               (put peer :probe (async (target binding context)
                                 (setq sb2-probes (1+ sb2-probes))
@@ -3224,7 +3228,7 @@
                             (setq r-idx (1+ r-idx)))
                           (try
                             (put (nativeGet Database "prototype") :query (funcall wrap-db-query original-db-query (lambda (sql)
-                              (when (js-call sql :includes "FROM routes r WHERE r.route_id>? AND r.unknown_delivery_id IS NULL")
+                              (when (js-call sql :includes "SELECT r.route_id AS key FROM routes r WHERE r.route_id>?")
                                 (setq drain-route-queries (1+ drain-route-queries))))))
                             (put peer :probe (async (target binding context)
                               (setq drain-probes (1+ drain-probes))
@@ -3301,7 +3305,7 @@
                                 :get expected-service-id)))
                             (try
                               (put (nativeGet Database "prototype") :query (funcall wrap-db-query original-db-query (lambda (sql)
-                                (when (js-call sql :includes "FROM routes r WHERE r.route_id>? AND r.unknown_delivery_id IS NULL")
+                                (when (js-call sql :includes "SELECT r.route_id AS key FROM routes r WHERE r.route_id>?")
                                   (setq owner-route-queries (1+ owner-route-queries))))))
                               (put peer :probe (async (target binding context)
                                 (setq owner-probes (1+ owner-probes))

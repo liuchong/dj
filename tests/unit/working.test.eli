@@ -54,7 +54,7 @@
       (reply (js-object :delivery_id "early" :destination (js-object :connection_id "lark")))
       (port (js-object :reaction (lambda (&rest ignored) (throw (new globalThis.Error "no native effect expected")))))
       (context (js-object :ports (js-object :im_ports (new globalThis.Map (js-array (js-array "lark" port))))
-        :store (js-object :db (js-object :query (lambda (sql) (js-object :get (lambda (id) (js-object :payload (JSON/stringify reply)))))))
+        :store (js-object :db (js-object :query (lambda (sql) (throw (new globalThis.Error "completed lease must not reread reply context")))))
         :repository (js-object :get (lambda (table id)
           (cond ((= table "connections") (js-object :platform "lark"))
             ((= table "work_items") item)

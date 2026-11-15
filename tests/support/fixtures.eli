@@ -447,34 +447,7 @@
                 "test:opencode"
                 :workspace_refs
                 (js-array "ws-test")))
-            :managed_profiles
-            (js-array
-              (js-object
-                :profile_id
-                "pi-profile"
-                :tool
-                "pi"
-                :revision
-                1
-                :auto_start
-                false
-                :workspace_refs
-                (js-array "ws-test")
-                :argv
-                (js-array "owned-test-peer"))
-              (js-object
-                :profile_id
-                "oc-profile"
-                :tool
-                "opencode"
-                :revision
-                1
-                :auto_start
-                false
-                :workspace_refs
-                (js-array "ws-test")
-                :argv
-                (js-array "owned-test-peer")))
+            :managed_profiles (js-array)
             :client_profiles
             (js-array)))
         (host (createHostPorts (js-object :root directory)))

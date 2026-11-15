@@ -11,7 +11,7 @@
       (js-object :id "mention" :source "项目讨论群" :kind "Lark · 原生 @ 提及"
         :message "@助手 帮我看一下登录回调。" :rule "规则命中"
         :target "Codex · 原订阅对话" :target-state "原会话忙时输入；显式配置才排队"
-        :action "携带原消息与规则，交给这个对话处理。"
+        :action "携带原消息与规则；问谁由谁回复，双连接发送回显不改变回复身份。"
         :outcome "是否处理、何时回复，由 AI 判断" :icon "↗" :avatar "AI"
         :log "收到消息 → 匹配订阅 → 持久受理 → 原会话输入")
       (js-object :id "keyword" :source "研发讨论群" :kind "IM 消息 · 关键词订阅"

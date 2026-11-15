@@ -26195,6 +26195,9 @@
       "resource_group": "isolated-sqlite",
       "requirements": [
         "SPEC-0002"
+      ],
+      "acceptance_ids": [
+        "SPEC-0002"
       ]
     },
     {
@@ -26210,6 +26213,9 @@
       "timeout_ms": 15000,
       "resource_group": "isolated-sqlite",
       "requirements": [
+        "SPEC-0002"
+      ],
+      "acceptance_ids": [
         "SPEC-0002"
       ]
     },
@@ -26227,6 +26233,9 @@
       "resource_group": "isolated-sqlite",
       "requirements": [
         "SPEC-0002"
+      ],
+      "acceptance_ids": [
+        "SPEC-0002"
       ]
     },
     {
@@ -26242,6 +26251,9 @@
       "timeout_ms": 15000,
       "resource_group": "pure",
       "requirements": [
+        "SPEC-0002"
+      ],
+      "acceptance_ids": [
         "SPEC-0002"
       ]
     },
