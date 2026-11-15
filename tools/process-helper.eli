@@ -9,8 +9,8 @@
     (await (mkdir "dist/native" (js-object :recursive t)))
     (let* ((path "dist/native/dj-process-info")
            (child (Bun/spawn
-             (js-array "cc" "-std=c11" "-O2" "-Wall" "-Wextra" "-Werror" "-arch" "arm64"
-               "src/host/darwin/process-info.c" "-o" path)
+             (js-array "xcrun" "swiftc" "-O" "-warnings-as-errors" "-target" "arm64-apple-macosx13.0"
+               "src/host/darwin/process-info.swift" "-o" path)
              (js-object :stdin "ignore" :stdout "inherit" :stderr "inherit"))))
       (unless (= (await (nativeGet child "exited")) 0)
         (throw (new globalThis.Error "Native process metadata helper build failed")))

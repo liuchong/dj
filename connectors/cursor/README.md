@@ -11,3 +11,5 @@
 DJ仍执行session.create的主体授权、工作区白名单、实例epoch和幂等检查。命令返回只代表调用结束；只有原生Bridge在同一实例epoch和window_id下列出相同ID，DJ才记ready。只有连接器台账而无原生会话时保持unknown，reconcile只读核对，不重建。创建不自动发送首条输入。
 
 构建主程序后运行 `bun dist-tools/tools/package-cursor.mjs` 生成独立VSIX连接包及摘要。打包不会安装扩展、修改客户端、开启连接器或创建会话；安装和专用工作区配置须另获明确授权。该连接器仅处理原生创建缺口，不替代已有Bridge的消息投递与状态读取。
+
+扩展加载入口由 `tools/connector-entries.eli` 在打包时生成；源目录仅维护说明及必要宿主清单。请使用完整目录包/VSIX，不直接把源码目录当成可加载扩展。业务实现仍来自Eliscript。

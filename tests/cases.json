@@ -28999,6 +28999,54 @@
       "given": "F01/F02/F03/F04/F08/F10；隔离真实SQLite/UDS/自有测试进程及受控协议对端，无真实账号或模型",
       "when": "同一recipient配置两个准确原生目标的固定接线",
       "then": "按recipient与target精确登记，两个目标同时收同一事件"
+    },
+    {
+      "case_id": "T38.swift-hosts.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/swift-hosts.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 60000,
+      "resource_group": "isolated-integration",
+      "requirements": [
+        "Q11"
+      ],
+      "acceptance_ids": [
+        "A04",
+        "A06",
+        "A17"
+      ],
+      "given": "本机Swift编译器、只读进程元数据与隔离加载宿主",
+      "when": "构建Swift原生宿主并加载构建生成的Pi/Cursor模块入口",
+      "then": "进程UID/出生身份一致，原生宿主命令有效，生成入口遵守宿主模块契约且不启动AI"
+    },
+    {
+      "case_id": "T38.swift-hosts.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/swift-hosts.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 10000,
+      "resource_group": "isolated-unit",
+      "requirements": [
+        "Q11"
+      ],
+      "acceptance_ids": [
+        "A04",
+        "A06",
+        "A17"
+      ],
+      "given": "纯入口生成器与只读进程助手",
+      "when": "生成入口或传入非法PID",
+      "then": "入口确定且拒绝未知类型，非法PID以退出码2拒绝且无输出"
     }
   ],
   "source_extension_base": "c1eb7b1"

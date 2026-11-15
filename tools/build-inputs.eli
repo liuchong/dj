@@ -11,8 +11,8 @@
       (
         (paths
           (js-array
-            "src/host/darwin/process-info.c"
-            "src/host/darwin/status-bar.m"
+            "src/host/darwin/process-info.swift"
+            "src/host/darwin/status-bar.swift"
             "docs/pages/assets/dj-mark.svg"
             "package.json"
             "packages/lark/package.json"
@@ -40,10 +40,8 @@
             "config/client.example.json"
             "packaging/runtime.md"
             "packaging/launchd.example.plist"
-            "connectors/pi/extension.mjs"
             "connectors/pi/README.md"
             "connectors/cursor/package.json"
-            "connectors/cursor/extension.cjs"
             "connectors/cursor/README.md"
             "connectors/cursor/extension.vsixmanifest"
             "connectors/cursor/[Content_Types].xml")))

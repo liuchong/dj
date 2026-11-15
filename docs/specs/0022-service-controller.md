@@ -6,7 +6,7 @@
 
 ## 设计
 
-- 可选与跨平台：核心的构建、安装、运行入口和现有 launchd plist 保持不变。默认打包不编译或包含 AppKit 宿主；显式 package --with-controller 才构建可选 UI。控制器可完全不安装，安装/退出只改变其自身文件与登录项。公共 model.eli 只处理规范状态，不依赖 launchctl/AppKit。当前 macOS 实现隔离在 platform/darwin 和 host/darwin；未来 Windows 可接原生 SCM/托盘，Linux 可接用户 systemd/StatusNotifier，原生宿主语言可按平台选择 Swift、Objective-C、C++、C# 等，不强行统一，也不创建未实现的空目录或假支持。
+- 可选与跨平台：核心的构建、安装、运行入口和现有 launchd plist 保持不变。默认打包不编译或包含 AppKit 宿主；显式 package --with-controller 才构建可选 UI。控制器可完全不安装，安装/退出只改变其自身文件与登录项。公共 model.eli 只处理规范状态，不依赖 launchctl/AppKit。当前 macOS 实现隔离在 platform/darwin 和 host/darwin；未来 Windows 可接原生 SCM/托盘，Linux 可接用户 systemd/StatusNotifier，macOS原生宿主统一Swift，其他平台按各自原生环境选型，不强行统一，也不创建未实现的空目录或假支持。
 
 - AppKit 薄宿主只创建状态项、非模态控制面板和原生事件循环，经匿名 stdin/stdout 管道连接 Eliscript 控制器；没有服务业务逻辑。菜单栏使用原生20pt矢量DJ模板图标和方形NSStatusItem，由系统着色；App仍由 docs/pages/assets/dj-mark.svg 生成彩色ICNS。App 通过官方 Launch Services 注册，可从 Dock 的 App 启动器、Finder 或 Spotlight 打开。菜单显示运行中、启动中、停止中、已停止、异常和未安装，含安全的错误说明。弹出面板使用applicationDefined行为，由图标、收起按钮或Esc明确关闭，不自动失焦关闭。显示进程不等于 service.status 已确认 ready。
 - Eliscript createServiceController({uid,launch_agent}, ports) 负责 refresh/action；端口为 run、inspectPlist、probe、now。固定目标为当前用户 gui 域的 dev.dispatch-junction.local，不接受任意服务名或 shell 文本。默认 root 为用户目录下 .dj；配置及凭据不进入 App 或仓库。
@@ -18,10 +18,10 @@
 ## 当前与目标结构及差异
 
 ```text
-现有：tools/build.eli → tools/process-helper.eli → process-info.c
+现有：tools/build.eli → tools/process-helper.eli → process-info.swift
       tools/package.eli → 目录包 → launchd → DJ Core → UDS service.status
 新增：src/controller/model.eli 与 platform/darwin/{service,main,install}.eli → service.status / launchctl
-      src/host/darwin/status-bar.m → AppKit，管道连接 main
+      src/host/darwin/status-bar.swift → AppKit，管道连接 main
       tools/controller.eli → 构建原生宿主
       src/controller/platform/darwin/install.eli → 安装独立 .app 与登录项
 修改：编译入口、打包及输入清单纳入新入口和原生二进制；Skill 和服务指南说明。
@@ -41,7 +41,7 @@ flowchart LR
 | --- | --- | --- |
 | C1 | src/controller/platform/darwin/service.eli 与 model.eli（新建） | 固定 launchd 目标、parseLaunchStatus/projectStatus、createServiceController；可注入系统端口；错误不泄露 stdout/凭据 |
 | C2 | src/controller/platform/darwin/main.eli（新建） | runCommand 有界子进程、真实 plist 校验、callService；3 秒刷新、行协议与退出回收 |
-| C3 | src/host/darwin/status-bar.m（新建） | NSStatusItem、NSPopover、子进程管道、单实例锁和退出；只接受结构化状态 |
+| C3 | src/host/darwin/status-bar.swift（新建） | NSStatusItem、NSPopover、子进程管道、单实例锁和退出；只接受结构化状态 |
 | C4 | tools/controller.eli、src/controller/install.eli 及 platform/darwin/install.eli（新建）；interfaces/cli.eli runCli；package.eli buildPackage / build-inputs.eli requiredBuildInputs | 构建宿主纳入摘要；复制 libexec/dj-status-bar、独立后端和 Logo 图标；安装 .app、Info.plist 和自身登录项；Eliscript entry 两个配置新增 |
 | C5 | docs/guides/macos-service.md、README、Skill、TODO、AGENTS | 行为、安装和停止语义，唯一规格导航 |
 | C6 | tests/integration/controller.test.eli、tests/unit/controller.test.eli（新建） | 业务完成后集中验收，再补状态映射/并发保护；编译及 case 清单接线 |
@@ -95,3 +95,9 @@ flowchart LR
 启动／停止超时或命令失败后，控制器保留该次操作的目标。后续普通刷新确认目标
 已真正达到时清除旧错误：启动必须读到 ready，停止必须确认登录项已卸载且接口不再
 可达。服务仍在运行不能掩盖一次失败的停止；清除错误不启动或重启核心服务。
+
+## 原生实现语言
+
+macOS宿主使用Swift＋AppKit，进程元数据助手也使用Swift；二者只处理原生界面或Darwin只读接口。控制器后端、安装与服务状态业务仍由Eliscript实现。原生构建通过Xcode Command Line Tools的swiftc，成品运行不需要编译器。保留模板图标、重复点击收起、Esc关闭、单实例锁、退出不停止核心服务及有界管道协议。
+
+Pi与Cursor宿主要求JavaScript模块入口；极少量加载语法由tools/connector-entries.eli生成到运行包/VSIX，不再在源码树维护JS入口，不包含业务逻辑。

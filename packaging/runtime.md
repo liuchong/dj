@@ -99,3 +99,9 @@ Claude Code and Antigravity use existing local receivers via `dj native configur
 ## 可选菜单栏控制器
 
 默认目录包不构建 AppKit 宿主。需要 macOS 菜单栏时，打包命令显式加 --with-controller，再运行目录包内的 dj controller install。它只安装 DJ Control.app 和独立控制器登录项，不改 DJ 核心登录项、运行时、服务配置、账号或消息数据。没有控制器时原 CLI/MCP/GEPO 和 launchd 照常工作；退出控制器保留核心服务。
+
+## 原生宿主与扩展入口的构建
+
+macOS两个原生辅助程序使用Swift源码：process-info.swift读取进程身份，status-bar.swift提供可选AppKit菜单栏界面。构建机需要Xcode Command Line Tools的swiftc；业务保持Eliscript，目录包运行时不需要编译器。
+
+Pi的extension.mjs和Cursor的extension.cjs由Eliscript构建器按宿主模块契约生成，只存在于目录包或VSIX；维护源为tools/connector-entries.eli。源码仓不提交手写或预编译JS入口。Pi运行包保持connectors/pi与dist的相对布局，Cursor的control.cjs仍由Eliscript编译产物打包生成。

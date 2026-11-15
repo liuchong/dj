@@ -102,3 +102,5 @@ DJ 程序内部的 Lark 接入必须直连官方 WebSocket 与 HTTPS API，禁�
 - 所有工具的订阅者模型元数据与当前 OpenCode 接入按 [0026](docs/specs/0026-subscriber-models-and-opencode.md)；工具 provider 与模型供应商不混用，原生优先、自报留证、未知不猜，通知回传准确原对话与模型参考。
 
 - 多对多主动订阅按 [0027](docs/specs/0027-many-to-many-subscribers.md)：认证调用身份和原生接收对话分离；多个 AI 可同时订阅同一事件。默认同事件订阅者提示只供自主协作，不做独占、迁移、排队或任务分配。
+
+- 原生语言边界：业务与构建编排使用Eliscript；macOS原生界面及进程元数据助手统一使用Swift。宿主必须的JS加载入口只在打包时生成，不提交手写JS、Objective-C或C实现。不要把订阅、路由、权限或服务控制业务搬入Swift。
