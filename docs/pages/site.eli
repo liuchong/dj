@@ -20,6 +20,12 @@
         :action "命中已设置的关键词，携带订阅提示词进入原对话。"
         :outcome "关键词和目标都由订阅者明确设置" :icon "↗" :avatar "AI"
         :log "收到消息 → 关键词命中 → 持久受理 → 原会话输入")
+      (js-object :id "parallel" :source "同一条 IM 消息" :kind "多对多 · AI 自主订阅"
+        :message "同一消息，两位助手都订了。" :rule "分别匹配各自规则"
+        :target "Codex ＋ OpenCode · 各自原对话" :target-state "独立投递；不抢占、不要求先退订"
+        :action "默认带上同事件其他订阅者供参考，是否协作由 AI 决定。"
+        :outcome "DJ 负责分发，不分配任务或决定谁处理" :icon "⇉" :avatar "×"
+        :log "一条消息 → 多条订阅命中 → 各自原会话收到 → 自主决定协作")
       (js-object :id "blocked" :source "项目讨论群" :kind "IM 消息 · 触发字符黑名单"
         :message "@助手 [广告] 这条不需要触发处理。" :rule "已拦截自动触发"
         :target "消息保留在本地缓存" :target-state "不向 Agent 发出本次通知"

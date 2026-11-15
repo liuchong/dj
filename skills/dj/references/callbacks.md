@@ -10,7 +10,7 @@
 - codex: 将片段合并进本机 `~/.codex/hooks.json`，保留现有 handlers；按客户端原生 hooks 审阅流程信任准确命令。仅当当前版本确实支持对应事件时启用，不绕过信任或为此重启工作。回调为 UserPromptSubmit，输出 hookSpecificOutput.additionalContext。
 - cursor: 将片段合并进本机 `~/.cursor/hooks.json`，保留已有 hooks；使用 stop 与 loop_limit=1，仅 completed 且 loop_count=0 返回一次 followup_message。aborted/error、后续循环、子 Agent 或后台标记跳过。beforeSubmitPrompt 不承担上下文注入，afterAgentResponse 不当作可续轮接口。
 - command: 客户端启动的是 DJ 薄代理，由 stdin 传原生事件；代理通过已有私有 UDS 调用 DJ。没有启动或恢复 Agent，没有 argv 消息传递给 AI，也不使用 Inspector；DJ 主动通知 Cursor 的方向保持独立。
-- bind: 运行前先验证 agent.whoami 的 bound_agent_id，再用 agent.get 核对 tool 与回调原生 session ID；recipient 需要自身 agent.whoami、agent.bind 和 subscription.consume/read/reply 的实际最小授权。错误绑定返回空对象，不借助管理凭据补权。
+- bind: 运行前先验证 agent_id 在 agent.whoami 的 bound_agent_ids 中，再用 agent.get 核对 tool 与回调原生 session ID；recipient 需要自身 agent.whoami、agent.bind 和 subscription.consume/read/reply 的实际最小授权。错误绑定返回空对象，不借助管理凭据补权。
 
 ## 一项领取与确认
 

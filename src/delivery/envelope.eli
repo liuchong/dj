@@ -13,6 +13,7 @@
       "source"
       "sender"
       "recipient"
+      "subscriber_hints"
       "matched"
       "instructions"
       "conversation_rules"

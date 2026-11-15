@@ -30,7 +30,7 @@ request_id 可选，用于追踪；所有受理变更要求 idempotency_key。�
 | connection.probe | connection_id | 健康/能力/凭据状态摘要 | inspect；不修改配置 |
 | conversation.list | connection_id、parent_ref?、limit?、cursor? | 带 conversation_ref、address/摘要的列表 | discover |
 | conversation.resolve | connection_id、chat_id、thread_id（允许 null） | 校验后的 conversation_ref 与摘要 | discover；精确地址，不按标题搜索 |
-| agent.whoami | 无 | principal_id、bound_agent_id?、binding_state | 当前认证事实 |
+| agent.whoami | 无 | principal_id、bound_agent_ids、binding_state | 当前认证事实 |
 | agent.discover | tool、surface?、instance_ref?、scope?、limit?、cursor? | Candidate 列表 | discover；不创建进程 |
 | agent.register | candidate_ref、display_name、binding_mode、recipient_principal_id? | AgentTarget 与 Binding 安全投影 | bind；普通主体只能登记自己 |
 | agent.list/get | filters? / agent_id | 目标、安全状态与 revision | 自有/授权目标 |
@@ -163,3 +163,5 @@ message.context/history与自动信封context统一按[0007](../specs/0007-messa
 ## 收件人退订与单条豁免
 
 服务根据原生输入自动维护SQLite退订记录，受理及发送提交前均检查。`message.send/reply`的可选布尔参数`force_send`默认false，仅在用户明确要求本条强制发送时传true，临时豁免收件人退订和出站黑白名单；不修改持久选择，不向编辑或自动表情传播，其他授权、身份、位置及防重检查不变。该参数属于原请求幂等指纹并保存在出站台账，不能换键盲重发。使用场景与示例见[收件人选择](../guides/recipient-preferences.md)。
+
+多对多接线现行边界见[0027](../specs/0027-many-to-many-subscribers.md)：调用身份与接收目标分离，whoami返回登记数组，普通AI自行登记订阅；同事件协作提示不决定任务归属。

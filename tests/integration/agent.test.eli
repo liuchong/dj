@@ -873,9 +873,9 @@
         ((agent (await (bindRecipient f)))
           (recipient (await (callOk f "A" "agent.whoami" (js-object))))
           (operator (await (callOk f "O" "agent.whoami" (js-object)))))
-        (js-call (expect (nativeGet recipient "bound_agent_id")) :toBe (nativeGet agent "agent_id"))
+        (js-call (expect (nativeGet recipient "bound_agent_ids")) :toEqual (js-array (nativeGet agent "agent_id")))
         (js-call (expect (nativeGet recipient "principal_id")) :toBe "A")
-        (js-call (expect (nativeGet operator "bound_agent_id" nil)) :toBe nil)
+        (js-call (expect (nativeGet operator "bound_agent_ids")) :toEqual (js-array))
         (let*
           (
             (candidates
@@ -955,13 +955,13 @@
                   "existing"
                   :idempotency_key
                   "missing-constraint")))))
-        (js-call (expect (nativeGet result "ok")) :toBe false)
-        (js-call (expect (nativeGet result "effect_state")) :toBe "none")
+        (js-call (expect (nativeGet result "ok")) :toBe t)
+        (js-call (expect (= (nativeGet result "effect_state") "none")) :toBe false)
         (js-call
           (expect
-            (nativeGet (await (callOk f "A" "agent.whoami" (js-object))) "bound_agent_id" nil))
-          :toBe
-          nil)))
+            (nativeGet (await (callOk f "A" "agent.whoami" (js-object))) "bound_agent_ids"))
+          :toEqual
+          (js-array (nativeGet (nativeGet result "data") "agent_id")))))
   closeFixture)
   (withCase
     "T02.repeat-register-same-target.integration"

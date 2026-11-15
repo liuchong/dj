@@ -5,7 +5,7 @@
     {
       "endpoint_id": "local",
       "socket_ref": "run/dj.sock",
-      "credential_ref": "secrets/recipient-codex.token"
+      "credential_ref": "secrets/local-ai.token"
     }
   ]
 }

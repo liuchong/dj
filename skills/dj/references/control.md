@@ -70,9 +70,9 @@ delivery_policy 仅 busy/offline/ttl_seconds，默认 steer/hold；busy=queue �
 
 创建只建空会话，不自动 prompt、复制权限、安装 Skill 或注册订阅。核验得到稳定 session_key 后取当前 session_ref，再单独 send。Cursor 必须使用实际 Desktop 接口；CLI-only 证据不代替 Desktop。OpenCode 的创建也不证明新会话已成为桌面当前 Tab。
 
-要让新会话订阅 IM，需要可信宿主/操作员将独立 recipient/client profile/Skill 接入真实会话并固定 target_constraint，再 discover/register → 接收方 whoami/回复工具核对 → preview/create。创建者自己的绑定不变，不能替新会话复制凭据或登记为自己；未完成接线就只报告已建会话。若只要定向输入，直接 send，无须这段部署流程。
+要让新会话订阅IM，可使用已部署普通AI profile和Skill，自行discover/register准确原生目标 → whoami的bound_agent_ids核对 → preview/create。凭据与目标分离，一个主体可登记多个目标；不借用operator或其他受限profile，不自动替接收方建立业务订阅。若只要定向输入，直接 send，无须这段部署流程。
 
-这一步由可信宿主使用 `Core.reloadConfig` 或 standalone 私有配置/SIGHUP 完成；它不是普通 Agent 的 CLI/MCP 权限修改工具。只支持 principals/client_profiles 的原子重载，不能通过发送配置 JSON 改连接或启动参数；已有主体权限变化需提高 authorization_revision，注销 ID 不复用。
+普通调用身份的首次部署由可信宿主使用 `Core.reloadConfig` 或 standalone 私有配置/SIGHUP 完成；它不是普通 Agent 的 CLI/MCP 权限修改工具。只支持 principals/client_profiles 的原子重载，不能通过发送配置 JSON 改连接或启动参数；已有主体权限变化需提高 authorization_revision，注销 ID 不复用。
 
 创建超时先 operation.get 找回 lifecycle，再 lifecycle.get/reconcile；原生结果 unknown 不按标题猜成功或换键再建。普通 Agent 不执行 lifecycle.resolve。已有客户端属于原宿主，不能停止借用的工具或强停原任务。历史生命周期 ready 仅是当时动作结果，不能替代当前 receiver/instance/session probe。
 

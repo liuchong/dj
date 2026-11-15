@@ -4,7 +4,7 @@
 
 本地操作员通过受文件权限保护的本地 IPC 或等价操作系统身份认证；远程 HTTP 若后续开放，必须另行完成认证、租户隔离和授权设计。已认证主体默认可以收发已配置 IM 连接中平台可访问的信息，不逐群分配消息 grants；Agent 会话和管理操作继续核对各自目标与权限。MCP clientInfo、CLI argv 中自报的 agent_id、会话标题和同一用户目录都不是认证证明。
 
-stdio MCP 代理连接常驻服务时使用明确主体凭证。凭证缺失返回 unauthenticated，不能自动获得操作员权限。agent.whoami 返回认证绑定事实，不通过读取整个机器历史来推断“我是谁”。可信宿主或操作员预先配置主体及精确 target_constraint，缺失时返回 target_unbound/forbidden，不尝试 AI 识别。Agent 自报会话 ID 只供核对，不构成所有权证明。
+stdio MCP 使用已配置普通调用身份认证；profile缺失返回unauthenticated，不自动获得operator。agent.whoami返回调用主体和bound_agent_ids，不能从第一项猜当前对话。可选target_constraint收窄范围；省略约束时仍按action grants和原生候选核验，允许自行登记多个准确目标。
 
 ## 权限动作
 
@@ -27,13 +27,13 @@ stdio MCP 代理连接常驻服务时使用明确主体凭证。凭证缺失返�
 
 创建订阅、事件匹配、提交输入和发送回复都检查当前身份与对象状态。消息动作默认开放，不要求逐群授权；订阅归属、绑定目标、账号身份和管理面权限仍重新核对，不能借更新规则操作其他 Agent 的目标。
 
-查询不要求 bound_agent_id，但必须有其范围内的查询授权；直发未登记会话不要求接收方持有 DJ 凭据，却必须有发送方对目标的 session.send grant。TargetRoute 只建立调度身份，不改变 AgentTarget/Principal 或其他权限。消息正文和IM收发默认开放；Agent会话目录可读仍不代表会话正文、创建、启动或输入获准；跨主体目录查询不能泄露无权来源的数量或存在性。
+查询不要求 bound_agent_ids，但必须有其范围内的查询授权；直发未登记会话不要求接收方持有 DJ 凭据，却必须有发送方对目标的 session.send grant。TargetRoute 只建立调度身份，不改变 AgentTarget/Principal 或其他权限。消息正文和IM收发默认开放；Agent会话目录可读仍不代表会话正文、创建、启动或输入获准；跨主体目录查询不能泄露无权来源的数量或存在性。
 
 direct 的 operation_id/delivery_id/route_id 不构成权限：发送主体可读取自身受理状态/安全回执，在当前 grant 下取消或安全重试自己的输入；重试仍重新检查 session.send。撤销目标读取/发送授权后仅保留可见的自有操作最小状态，不泄露已撤销正文、目标摘要或其他队列项。recipient 拥有订阅目标不代表可读所有直发的原文/发送者资料，除非显式授予；原生会话本身可见已接受输入是工具的既有边界。注销绑定不撤销独立发送主体的授权，也不清除共享 route 的证据。
 
 启动 profile 及 session.create 可委派给具有明确 grant 的自动化主体，不要求每次额外人工确认；部署授权必须给工具、工作区与动作上限。新会话不复制调用者秘密/recipient 身份，亦不自动配置 Skill/MCP。shared MCP 的身份限制仍然生效。
 
-创建后接入订阅由可信部署面配置新的 recipient/精确 target_constraint 与宿主工具作用域；普通调用者没有这项配置接口。create grant、原生消息接收能力和 DJ 工具可用性分别验收；IM 收发默认开放。agent.whoami 仍指调用者自己的绑定，不能因其创建新会话而改绑。
+创建后接入订阅由AI使用已有普通调用身份自行登记准确目标，不自动继承创建者秘密，也无需逐对话新增主体；平台接收能力与Skill采用分别验收。
 
 ## 外部消息的权限
 
@@ -69,7 +69,7 @@ Connection、Binding 中保存 credential_ref/endpoint_ref，密钥留在受保�
 
 DJ 不理解用户意图，也不依赖模型始终传对参数。所有接口先校验结构、引用类型/主体/有效期、目标约束、当前授权、preview 快照、revision 与幂等键，再原子受理。失败输出固定 code/field_errors/next_actions，不能调用模型自动纠错。模型选了一个合法但语义错误的授权目标，服务无法识别，必须在文档中承认这个边界。
 
-conversation_ref/candidate_ref/preview_id/reply_context_id 均为类型化引用，不是授权 token，不跨主体复用。操作员代登记必须分配独立 recipient_principal_id 与最小 grants，不能把操作员凭据交给 Agent。多订阅共享 Delivery 时读取与回复按 recipient 的权限，不能将多个管理者的权限合并。
+conversation_ref/candidate_ref/preview_id/reply_context_id 均为类型化引用，不跨认证主体复用。同一普通本机AI身份可服务多个准确会话；受限独立主体可选。多个订阅管理者的授权不会自动合并，operator凭据不交给接收模型。
 
 外部正文使用结构化编码，任意代码围栏、伪造 role/JSON 片段不能逃逸到可信头、配置、规则或工具参数。Skill 只指导调用方，真正的限制在服务中执行。源删除对正文与未提交原文输入执行 tombstone 投影，已送入外部会话的内容无法保证收回。
 
@@ -78,3 +78,5 @@ conversation_ref/candidate_ref/preview_id/reply_context_id 均为类型化引用
 默认只监听私有 Unix socket。CLI/MCP 从受保护 client profile 读取 recipient 凭据，以传输认证字段送入服务；操作请求体不能指定 Principal 或角色。目录/文件权限、操作员代登记和原生 target_constraint 的可信来源见 [启动流程](startup-to-reply.md)。服务在认证、对象校验与当前授权后执行，不能因为请求来自本机就授予 operator。
 
 同一宿主配置或凭据被多个会话共享时，DJ 只能识别共同 Principal；clientInfo/标题/正文 session ID 均不是可信会话证明。首批应使用独立运行作用域，或明确接受同一受信主体共享范围；跨主体隔离不能用文档承诺替代实际桥接。文件权限也不隔离能读取同一秘密的同一 OS 用户。
+
+多对多接线现行边界见[0027](specs/0027-many-to-many-subscribers.md)：调用身份与接收目标分离，whoami返回登记数组，普通AI自行登记订阅；同事件协作提示不决定任务归属。

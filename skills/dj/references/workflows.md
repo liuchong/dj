@@ -4,7 +4,7 @@
 
 ## 确定自己与来源
 
-agent.whoami 返回当前认证绑定；若 unbound，只在已有 grants 和目标约束内 discover：
+agent.whoami返回调用主体和bound_agent_ids；不从列表第一项猜当前对话。使用已部署普通profile，按原生ID发现并登记自己的准确目标；已有其他登记不阻止新增：
 
 ```json
 {"tool":"opencode","surface":"desktop","scope":"live"}
@@ -18,7 +18,7 @@ agent.whoami 返回当前认证绑定；若 unbound，只在已有 grants 和目
 
 普通 Agent 不能伪造 recipient 主体。conversation.list 返回 conversation_ref；服务无法列举时可用 conversation.resolve 校验用户明确给出的原生地址，但不能凭标题推断。确认精确账号与话题后复用引用。
 
-surface 以该工具实际能力为准；Pi 是 managed RPC/CLI，不能沿用上述 OpenCode desktop 示例宣称它是桌面会话。目标工具没有对应 surface 时选择它提供的可用值，不新开进程替代原目标。
+surface 以该工具实际能力为准；Pi是已有TUI进程内接收扩展，不能沿用上述 OpenCode desktop 示例宣称它是桌面会话。目标工具没有对应 surface 时选择它提供的可用值，不新开进程替代原目标。
 
 ## 预览与提交
 

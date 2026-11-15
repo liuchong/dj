@@ -159,6 +159,146 @@
           ]
         }
       ]
+    },
+    {
+      "principal_id": "local-ai",
+      "kind": "agent",
+      "authorization_revision": 1,
+      "credential_ref": "secrets/local-ai.token",
+      "grants": [
+        {
+          "action": "agent.discover",
+          "resources": [
+            "*"
+          ]
+        },
+        {
+          "action": "agent.bind",
+          "resources": [
+            "*"
+          ]
+        },
+        {
+          "action": "session.read",
+          "resources": [
+            "*"
+          ]
+        },
+        {
+          "action": "session.send",
+          "resources": [
+            "*"
+          ]
+        },
+        {
+          "action": "session.create",
+          "resources": [
+            "*"
+          ]
+        },
+        {
+          "action": "session.rules.read",
+          "resources": [
+            "*"
+          ]
+        },
+        {
+          "action": "session.rules.manage",
+          "resources": [
+            "*"
+          ]
+        },
+        {
+          "action": "session.supervise",
+          "resources": [
+            "*"
+          ]
+        },
+        {
+          "action": "subscription.manage",
+          "resources": [
+            "*"
+          ]
+        },
+        {
+          "action": "subscription.consume",
+          "resources": [
+            "*"
+          ]
+        },
+        {
+          "action": "delivery.inspect",
+          "resources": [
+            "*"
+          ]
+        },
+        {
+          "action": "delivery.manage",
+          "resources": [
+            "*"
+          ]
+        },
+        {
+          "action": "operation.inspect",
+          "resources": [
+            "*"
+          ]
+        },
+        {
+          "action": "outbound.inspect",
+          "resources": [
+            "*"
+          ]
+        },
+        {
+          "action": "outbound.manage",
+          "resources": [
+            "*"
+          ]
+        },
+        {
+          "action": "lark.api.read",
+          "resources": [
+            "*"
+          ]
+        },
+        {
+          "action": "lark.api.call",
+          "resources": [
+            "*"
+          ]
+        },
+        {
+          "action": "lark.api.get",
+          "resources": [
+            "*"
+          ]
+        },
+        {
+          "action": "catalog.refresh",
+          "resources": [
+            "*"
+          ]
+        },
+        {
+          "action": "session.list",
+          "resources": [
+            "*"
+          ]
+        },
+        {
+          "action": "session.inspect",
+          "resources": [
+            "*"
+          ]
+        },
+        {
+          "action": "session.search",
+          "resources": [
+            "*"
+          ]
+        }
+      ]
     }
   ],
   "connections": [
@@ -209,5 +349,6 @@
   "message_delivery": {
     "busy": "steer",
     "max_in_flight": 64
-  }
+  },
+  "subscriber_hints": true
 }

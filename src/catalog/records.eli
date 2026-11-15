@@ -21,6 +21,8 @@
   (defconst sessionFields
     (js-array
       "surface"
+      "project_id"
+      "directory"
       "model_selection"
       "session_key"
       "tool"

@@ -85,7 +85,7 @@
       "required_contract": "无",
       "optional_contract": "无",
       "key_contract": "—",
-      "output_contract": "principal_id、bound_agent_id?、binding_state；来自认证绑定，不猜宿主",
+      "output_contract": "principal_id、bound_agent_ids、binding_state；来自认证绑定，不猜宿主",
       "valid_arguments": {},
       "exclusive_fields": []
     },

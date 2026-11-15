@@ -50,7 +50,7 @@
         (let* ((who (await (funcall call "agent.whoami" (js-object))))
                (agent-id (nativeGet options "agent")))
           (unless (and (nativeGet who "ok") (= (nativeGet (nativeGet who "data") "kind") "agent")
-            (= (nativeGet (nativeGet who "data") "bound_agent_id") agent-id))
+            (js-call (nativeGet (nativeGet who "data") "bound_agent_ids" (js-array)) :includes agent-id))
             (throw (new globalThis.Error "recipient binding mismatch")))
           (let* ((found (await (funcall call "agent.get" (js-object :agent_id agent-id))))
                  (agent (nativeGet found "data")))

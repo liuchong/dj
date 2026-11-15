@@ -44,7 +44,7 @@
   (put definitions :model_selection (obj (strings "status source observed_at"
     (js-object :provider_id nullableString :model_id nullableString :variant nullableString :reasoning_effort nullableString))))
   (put definitions :subscriber (obj (strings "session_key tool surface native_namespace native_session_id instance_id instance_epoch"
-    (js-object :workspace_ref nullableString :model_selection (ref "model_selection") :stale boolSchema))))
+    (js-object :workspace_ref nullableString :project_id nullableString :directory nullableString :model_selection (ref "model_selection") :stale boolSchema))))
   (put definitions :subscriber_model (obj (strings "provider_id model_id variant reasoning_effort")))
   (put definitions :resource (obj (strings "kind id") (js-array "kind" "id")))
   (put
@@ -412,7 +412,7 @@
           (strings
             "session_key session_ref tool native_namespace native_session_id instance_id instance_epoch title workspace_ref workspace_label runtime_state created_at updated_at observed_at expires_at created_by coverage"
             (js-object
-              :surface stringSchema
+              :surface stringSchema :project_id stringSchema :directory stringSchema
               :model_selection (ref "model_selection")
               :agent_id
               nullableString
@@ -610,6 +610,9 @@
     :source (ref "delivery_source") :sender (ref "sender") :content (ref "content")
     :attachments (arr (ref "attachment")) :reply_context_id nullableString :allowed_actions (arr stringSchema)
     :matched (arr (obj (js-object :subscription_id stringSchema :subscription_revision integerSchema :result stringSchema)))
+    :subscriber_hints (obj (js-object :basis stringSchema :has_more boolSchema :instruction stringSchema
+      :subscribers (arr (obj (Object/assign (js-object) (nativeGet (nativeGet definitions "subscriber") "properties")
+        (js-object :agent_id stringSchema :display_name stringSchema))))))
     :recipient (ref "subscriber") :conversation_rules (ref "conversation_rules") :people (arr (ref "mention")) :mentions (arr (ref "mention")) :reaction (ref "reaction") :pin (ref "pin") :trigger_reasons (arr (ref "trigger_reason")) :interaction (ref "interaction") :reply_route (ref "reply_route")
     :resource (ref "lark_resource") :context (ref "message_context") :topic (ref "topic") :ingress_evidence (ref "ingress_evidence")
     :instructions (arr (obj (js-object :subscription_id stringSchema :subscription_revision integerSchema
@@ -826,7 +829,7 @@
     (obj
       (strings
         "principal_id kind binding_state"
-        (js-object :bound_agent_id nullableString :authorization_revision integerSchema))))
+        (js-object :bound_agent_ids (arr stringSchema) :authorization_revision integerSchema))))
   (put
     definitions
     :operation

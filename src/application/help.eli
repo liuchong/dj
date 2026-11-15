@@ -35,11 +35,11 @@
       :conversation.resolve
       "按明确的连接、原生 chat_id 和显式 thread_id/null 核验精确 IM 地址。"
       :agent.whoami
-      "读取认证主体与当前登记绑定；宿主名称、cwd、标题不构成会话身份。"
+      "读取认证主体与bound_agent_ids登记列表；一个身份可登记多个对话，须显式选择准确目标；宿主名称、cwd、标题不构成会话身份。"
       :agent.discover
       "在指定工具和配置实例范围机械发现会话，返回 candidate_ref；不创建或发送。"
       :agent.register
-      "把候选精确目标登记为 AgentTarget；recipient 必须与可信 target_constraint 相符。查询返回准确会话的 subscriber 模型参考，未知字段不推测。"
+      "把候选精确目标登记为 AgentTarget；同一调用身份可登记多个准确对话；可选 target_constraint 收窄范围。查询返回准确会话的 subscriber 模型参考，未知字段不推测。"
       :agent.list
       "列举有权管理的已登记单会话目标；agent_id 不是工具父节点。"
       :agent.get

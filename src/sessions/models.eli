@@ -29,6 +29,7 @@
         :native_session_id (nativeGet session "native_session_id")
         :instance_id (nativeGet session "instance_id") :instance_epoch (nativeGet session "instance_epoch")
         :workspace_ref (nativeGet session "workspace_ref" nil)
+        :project_id (nativeGet session "project_id" nil) :directory (nativeGet session "directory" nil)
         :model_selection selection
         :stale (or (= (nativeGet selection "source") "subscriber_report") (not (nativeGet session "observation_expires_at"))
           (<= (Date/parse (nativeGet session "observation_expires_at")) (Date/parse now))))))

@@ -236,9 +236,9 @@
               "new-recipient"))
           (js-call
             (expect
-              (nativeGet (await (callOk f "O" "agent.whoami" (js-object))) "bound_agent_id"))
-            :toBe
-            nil)
+              (nativeGet (await (callOk f "O" "agent.whoami" (js-object))) "bound_agent_ids"))
+            :toEqual
+            (js-array))
           (js-call (expect (js-length (nativeGet (nativeGet f "pi") "starts"))) :toBe 1)
           (js-call (expect (js-length (nativeGet (nativeGet f "pi") "inputs"))) :toBe 0)
           (let ((bad (JSON/parse (JSON/stringify config))))

@@ -53,9 +53,9 @@ metadata:
 ## 运行时与身份
 
 - status: 先用当前主体的`dj service status --json`或MCP `dj_service_status`核对运行时、能力和目录摘要。源码或Skill存在不证明服务已启动或验收通过；服务不可达或目录不兼容时报告限制，不自建服务或假装成功。
-- profile: 默认客户端配置为`~/.dj/client.json`。使用宿主分配的独立profile，不读取或借用operator或其他Agent凭据。
+- profile: 默认客户端配置为`~/.dj/client.json`。使用部署配置的普通本机AI profile；可共享给获准本机对话，不读取或借用operator或其他受限身份凭据。
 - communication: 身份认证后默认可发现、读取、订阅及收发已配置连接中平台可访问的信息，无需message或resource的逐连接／逐群grants；自己的消息操作和出站台账也可核验。订阅过滤不是读取或回复许可。仍使用真实账号、当前引用和原幂等键，平台权限、停用状态、回复身份及其他Agent控制／管理边界继续生效。
-- identity: 用`agent.whoami`核对真实主体及绑定；目标可由操作员代登记，共享宿主配置不证明当前会话身份。不能凭标题、cwd或宿主猜原生会话；未绑定时只读discover并登记允许的candidate_ref。只有历史而无收件口时报告限制，不用新进程替代。
+- identity: 用`agent.whoami`核对真实主体及bound_agent_ids列表；一个主体允许登记多个准确对话，共享配置不证明当前会话身份。核对原生ID和实例，不凭标题猜会话；自行discover并register准确candidate_ref，再用返回的agent_id订阅，不要求操作员逐对话配置。只有历史而无收件口时报告限制，不用新进程替代。
 - transport: DJ的Lark user/bot传输共用官方WebSocket＋HTTPS增量补收实现，每条连接独立实例、凭据和断点；普通消息使用每连接DJ预算，表情GET按应用共享预算。普通消息HTTP默认2秒，可由操作员用inbox_poll_seconds配置；表情采用新消息、近期、活动及历史调度，DJ参数不是平台额度或送达保证；统一持久化、去重和订阅，DJ实现不使用第三方SDK或Lark外部CLI。user/bot授权与实际覆盖分别核对，轮询不称作实时。
 - scope: Lark正式职责是长连接接收获准消息，经Core订阅规则过滤后通知指定工具的原始对话，默认按原生@且支持复杂过滤。user代表本人、bot代表应用，不能混用或把未完成的本人接线说成仅bot可用。实际能力以当前服务状态和schema为准；查询式收件不能冒充实时长连接。AI工具通过已有实例跨进程接口接收，不新建Agent进程代替原目标。
 - rules: 规则必须是结构化条件，不提交“重要消息”或“找合适Agent”等描述让DJ判断；不要求DJ总结正文或猜参数。
@@ -68,7 +68,7 @@ metadata:
 - selectors: tools和instance_ids筛选工具或实例；agent_id仅表示已登记的单个会话。检查覆盖和新鲜度，不把空缓存当不存在。
 - effects: 查询不启动，发送不创建；create必须通过已有实例接口且显式获准；正式配置不接受argv启动profile，不启动Agent子进程代替原目标。session.send发给Agent，保留独立目标权限；message.send/reply发给IM，身份认证后默认开放。不要让DJ判断任务应该在哪；DJ不提供IM操作界面。
 - pagination: 空items但有next_cursor表示查询尚未结束；精确session_keys可用于定点刷新或搜索。已知稳定key用session.get重新取得短期引用，session.probe只读核验receiver。
-- new_session: 新会话若用于订阅，须先由可信宿主接入独立recipient和工具，不能改绑创建者。历史lifecycle ready不代表实例当前ready。
+- new_session: 新会话若用于订阅，可使用已部署的普通AI身份自行发现、登记和订阅；显式选择准确agent_id，不改绑或抢占其他已登记目标。历史lifecycle ready不代表实例当前ready。
 
 ## 登记与订阅回复流程
 
@@ -157,7 +157,7 @@ metadata:
 - cli: 操作名以空格分词，例如`dj session message search --input query.json --json`。复杂业务参数仅使用一个`--input FILE`或`--input -`的JSON对象，不与业务flags混合。
 - mcp: 工具名为dj_加操作名中的点改为下划线，例如dj_session_message_search；以tools/list的inputSchema为准。
 - gepo: 通过支持私有 Unix socket 和受保护凭据的宿主访问；GET /.gepo 发现当前主体可见目录，GET 操作路径读说明，POST 同路径提交原 arguments JSON。GEPO 不是 MCP HTTP endpoint，普通业务查询也使用 POST；详见[客户端接线](references/clients.md)。
-- pull: message.list/search/get 查询获准来源，delivery.list/get 查询原生投递；订阅待办使用 delivery_mode=pull 与 subscription.pull/ack。领取需要本会话独立 recipient 身份和 subscription.consume 授权，不能借 operator 凭据。按[工作流](references/workflows.md)处理租约与原键，不把消费确认当作任务完成。
+- pull: message.list/search/get 查询获准来源，delivery.list/get 查询原生投递；订阅待办使用 delivery_mode=pull 与 subscription.pull/ack。领取需要订阅目标对应的调用身份和 subscription.consume 授权；同主体可登记多个目标，须明确subscription_id，不借operator凭据。按[工作流](references/workflows.md)处理租约与原键，不把消费确认当作任务完成。
 - callbacks: Codex / Cursor 的可选消费回调使用各自原生事件，配置仅生成、不自动安装；按[本机回调](references/callbacks.md)核对原会话与独立主体，显式确认领取，不以回调代替 DJ 主动通知或任务完成。
 - schema: 先读具体操作的--help或schema，不从ID示例猜参数。
 - result: 即使协议壳合法，业务失败也须读取structuredContent中的统一Result；HTTP 200或MCP有响应不证明发送成功。
@@ -216,3 +216,10 @@ metadata:
 ## 订阅者模型与分派参考
 
 订阅时可按[订阅说明](references/subscriptions.md#保存订阅者自己的模型)将自己的精确供应商、模型和可得档位写入 spec.subscriber_model；原生观察优先，未知不猜。通知 recipient 回传准确原对话、工具形态、项目与 model_selection，供跨工具分派参考；source/stale/status 表示证据边界，不授权自动改变固定搭档模型。
+
+## 多对多主动订阅
+
+- self_service: 认证身份不等于一个对话。使用普通本机AI profile，自行发现并核对准确原生目标，agent.register后以显式agent_id订阅。whoami的bound_agent_ids可能包含多个目标，不能取第一项当自己，也无需逐对话申请新身份。
+- parallel: 多个对话、多个工具可同时订阅重合来源和事件。另一对话已订阅不是拒绝理由；退订不保留独占权。不得要求先停掉其他订阅或让DJ决定谁处理。
+- hints: 信封subscriber_hints列实际匹配同一事件的其他接收对话，默认开启；服务subscriber_hints=false可关闭。basis=same_event并非同任务证明；必要时自行协作，不要求等待、接管或回传。has_more表示列表有截断，未知模型不猜。
+- details: 具体接线与共享普通身份见[客户端接线](references/clients.md)，流程见[工作流](references/workflows.md)。

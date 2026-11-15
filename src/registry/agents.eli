@@ -472,13 +472,7 @@
                           (when existing-row
                             (let ((existing (JSON/parse (nativeGet existing-row "payload"))))
                               (if
-                                (and
-                                  (=
-                                    (nativeGet existing "recipient_principal_id")
-                                    recipient-id)
-                                  (=
-                                    (nativeGet existing "owner_principal_id")
-                                    (nativeGet principal "principal_id")))
+                                (= (nativeGet existing "recipient_principal_id") recipient-id)
                                 (progn
                                   (setq
                                     djReturn5Value
@@ -487,17 +481,6 @@
                                 (progn
                                   (setq djReturn5Value (failure "forbidden"))
                                   (throw djReturn5Token)))))
-                          (when
-                            (js-call
-                              (js-call
-                                db
-                                :query
-                                "SELECT agent_id FROM agents WHERE recipient_principal_id=? AND state='registered'")
-                              :get
-                              recipient-id)
-                            (progn
-                              (setq djReturn5Value (failure "target_unbound"))
-                              (throw djReturn5Token)))
                           (let*
                             (
                               (session
@@ -850,20 +833,13 @@
       (try
         (cond
           ((= operation "agent.whoami")
-            (let*
-              ((principal (currentPrincipal context))
-                (projection (principalProjection principal))
-                (db (nativeGet (nativeGet context "store") "db"))
-                (bound
-                  (js-call
-                    (js-call
-                      db
-                      :query
-                      "SELECT agent_id FROM agents WHERE recipient_principal_id=? AND state='registered'")
-                    :get
-                    (nativeGet principal "principal_id"))))
-              (put projection :bound_agent_id (if bound (nativeGet bound "agent_id") nil))
-              (put projection :binding_state (if bound "bound" "unbound"))
+            (let* ((principal (currentPrincipal context))
+              (projection (principalProjection principal))
+              (rows (js-call (js-call (nativeGet (nativeGet context "store") "db") :query
+                "SELECT agent_id FROM agents WHERE recipient_principal_id=? AND state='registered' ORDER BY agent_id")
+                :all (nativeGet principal "principal_id"))))
+              (put projection :bound_agent_ids (js-call rows :map (lambda (row) (nativeGet row "agent_id"))))
+              (put projection :binding_state (if (> (js-length rows) 0) "bound" "unbound"))
               (success projection)))
           ((= operation "agent.discover") (await (discoverAgent context args)))
           ((= operation "agent.register") (await (registerAgent context args)))

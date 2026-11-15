@@ -51,8 +51,8 @@
       (nativeGet principal "kind")
       :authorization_revision
       (nativeGet principal "authorization_revision")
-      :bound_agent_id
-      (nativeGet principal "bound_agent_id" nil)
+      :bound_agent_ids
+      (nativeGet principal "bound_agent_ids" (js-array))
       :binding_state
-      (if (nativeGet principal "bound_agent_id") "bound" "unbound")))
+      (if (> (js-length (nativeGet principal "bound_agent_ids" (js-array))) 0) "bound" "unbound")))
   (export authenticate configuredPrincipal credentialDigest principalProjection))

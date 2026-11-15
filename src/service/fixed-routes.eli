@@ -1,6 +1,6 @@
 (module dj.service.fixed-routes
   (import "../core/native.eli" nativeGet)
-  (import "../core/types.eli" hashValue stableSessionKey conversationKey addSeconds nextRevision nextSeq)
+  (import "../core/types.eli" canonicalTargetKey hashValue stableSessionKey conversationKey addSeconds nextRevision nextSeq)
   (import "../core/errors.eli" success failure)
   (import "../application/context.eli" inTransaction must utcNow nextId issueResourceHandle safeFields)
   (import "../application/schema.eli" validateRequest normalizeArgs)
@@ -93,7 +93,8 @@
   (defasync ensureAgent (context record)
     (let* ((repository (nativeGet context "repository")) (target (nativeGet record "target"))
       (row (js-call (js-call (nativeGet (nativeGet context "store") "db") :query
-        "SELECT payload FROM agents WHERE recipient_principal_id=? AND state='registered'") :get (nativeGet record "recipient_principal_id")))
+        "SELECT payload FROM agents WHERE recipient_principal_id=? AND canonical_target_key=? AND state='registered'")
+        :get (nativeGet record "recipient_principal_id") (canonicalTargetKey target)))
       (existing (and row (JSON/parse (nativeGet row "payload")))) (scoped (makeRouteContext context record "agent")))
       (if existing
         (progn

@@ -1,8 +1,8 @@
 # 配置固定接线
 
 - purpose: 管理员可以在服务配置的 fixed_routes 中把一个或多个 IM 账号/群固定接到准确已有 AI 对话，不要求目标 AI 主动调用订阅。它使用现有 Agent、订阅、黑名单、消息上下文和原生投递，不是另一套 relay。
-- setup: 先配置 connections 中各账号及独立 credential_ref、agent_endpoints 中现有实例，以及 principals 中独立 recipient 的准确 target_constraint；配置片段见 config/fixed-routes.example.json。它是合入现有 service.json 的片段，不是完整服务配置。不同机器人账号使用不同 connection_id，不能凭昵称选目标。
-- target: 每项有稳定 id、owner_principal_id（operator）、recipient_principal_id（agent）、target.instance_id/native_session_id、sources。工具及命名空间从 endpoint 得到，不按同名对话猜测。多个接线可共用同一准确目标及 recipient；同一 recipient 不允许多个目标。已有 Agent 归属或目标冲突会 blocked，不抢占；要改目标请明确配置新的 recipient。
+- setup: 先配置 connections 中各账号及独立 credential_ref、agent_endpoints 中现有实例，以及 principals 中recipient的实际授权；同recipient可接多个准确目标；配置片段见 config/fixed-routes.example.json。它是合入现有 service.json 的片段，不是完整服务配置。不同机器人账号使用不同 connection_id，不能凭昵称选目标。
+- target: 每项有稳定 id、owner_principal_id（operator）、recipient_principal_id（agent）、target.instance_id/native_session_id、sources。工具及命名空间从 endpoint 得到，不按同名对话猜测。多个接线可共用同一准确目标，也可让同一recipient接多个准确目标。按recipient和canonical target定位，不取第一条登记。已有Agent属于另一主体时blocked，不抢占；同主体添加其他目标无需新recipient。
 - source: sources 至少一项，connection_id 表示整条账号连接；指定 native_chat_id 可限定会话，native_thread_id 可限定原生话题，仅指定 chat 时 include_threads 默认 true；精确 thread 默认 false 且不允许 true。复杂条件用现行 predicate 的 all/any/not。event_kinds/context_policy/delivery_policy/instruction_policy 复用订阅定义；省略 predicate 使用默认 @、私聊、引用、话题和已发消息表情条件。默认不等 AI 上个任务结束，是否真正可忙时输入仍取决于原生端口。
 - lifecycle: 启动自动登记期望接线，再由有界后台岗位核实和装配；首次目标离线会退避恢复，不拉起替代 Agent。首次 active 以后才开始接收新事件，不隐式重放此前历史。已有活动接线重启保持原订阅与水位，后续离线投递使用原有持久队列。
 - update: 修改 fixed_routes 后用现有 SIGHUP/Core.reloadConfig 原子重载；不支持借重载改 IM 账号、endpoint 或数据库。修改先暂停旧接线，成功后恢复新规则；enabled=false 或删除只暂停该配置拥有的订阅，不停账号、不删共享 Agent、不影响 AI 自建订阅。

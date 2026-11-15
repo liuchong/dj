@@ -1,6 +1,6 @@
 # 本机客户端安装与接线
 
-Kimi Work / Code Web 与 DSH Desktop / Web 的形态、既有实例接收及独立身份说明见 [Kimi 与 DSH](kimi-dsh.md)。Kimi Code 可使用 mcpServers.dj 片段；Work/DSH 的宿主 MCP 接线按原生能力配置，CLI/GEPO 与同一独立主体共用服务，不借用其他会话凭据。
+Kimi Work / Code Web 与 DSH Desktop / Web 的形态、既有实例接收及调用身份说明见 [Kimi 与 DSH](kimi-dsh.md)。Kimi Code 可使用 mcpServers.dj 片段；Work/DSH 的宿主 MCP 接线按原生能力配置，CLI/GEPO 与同一独立主体共用服务，不借用其他会话凭据。
 
 ## 安装完整 Skill
 
@@ -21,12 +21,12 @@ Kimi Work / Code Web 与 DSH Desktop / Web 的形态、既有实例接收及独�
 | antigravity | ~/.gemini/config/skills | .agents/skills | App/IDE 显式 /dj；不混同 CLI 的用户目录 |
 | agy | ~/.gemini/antigravity-cli/skills | .agents/skills | CLI 使用 /dj；不因此新建 CLI 进程作消息接收端 |
 
-## 独立身份与 MCP
+## 调用身份与 MCP
 
-- profile: 操作员为原对话准备独立 recipient client profile，默认配置根 ~/.dj；凭据文件保持私有。不要在 Skill、项目文件、模型正文或 MCP 参数中写 token；参数里只有 profile 路径。
+- profile: 部署时为获准本机AI准备普通local-ai client profile，默认~/.dj/client.json；一个profile可用于多个对话，管理profile单独保存。凭据文件保持私有。不要在 Skill、项目文件、模型正文或 MCP 参数中写 token；参数里只有 profile 路径。
 - generate: `dj skill config --target cursor --client-profile PRIVATE_PROFILE` 输出 MCP 配置片段。命令只打印，不安装配置、不读取凭据。使用目录包内的 bin/dj 路径，按本机实际路径合并 dj 项，不覆盖原文件。移动目录包后需要重新生成。
 - process: MCP 启动的只是 DJ 薄代理，连接原服务 Core；它不启动 AI 或新建对话。stdout 只用于 MCP 协议。所有接口仍重新执行 DJ 主体权限校验。
-- binding: 一个全局 MCP 配置不会自动识别当前对话；同一工具的不同对话不能借用绑定到别处的 recipient。目标登记后先 whoami 核对绑定；未绑定仅查询与发现，不猜当前 session ID。
+- binding: 全局MCP配置只确定调用身份，不自动识别当前对话。agent.whoami返回bound_agent_ids；AI核对自身准确原生ID和实例，agent.discover/register后以显式agent_id订阅。一个调用身份可登记多个目标，不需操作员逐对话接线；受限profile仍遵守target_constraint，不借用其他身份。
 
 | 工具 | MCP 配置位置/结构 | 最小使用方式 |
 |---|---|---|
@@ -64,3 +64,9 @@ Pi 主动调用 DJ 仍使用自己的 recipient CLI/API；需要 DJ 向已有 Pi
 ## Claude Code / Antigravity outgoing local notifications
 
 The service supports an existing Claude Code native inbox and an existing Antigravity App language server. Prepare a private endpoint with `dj native configure --input PRIVATE_JSON`, then explicitly merge its `endpoint.json` into `agent_endpoints`. `dj native configure --help` lists required process/workspace fields. No AI process, conversation, model, permissions or client trust is changed. Claude uses its own native accept/hold/refuse policy and requires a delivered callback; Antigravity preserves the original user model/configuration. Unknown delivery is not retried. A Desktop/history inventory alone is not a live Claude Code receiver. See the packaged runtime instructions and repository `docs/adapters/native-inboxes.md` for protocol limits; MCP/API calls from the AI and explicit Skill installation continue to work independently.
+
+## 同事件的多个订阅者
+
+- autonomy: 不同工具和对话允许同时订阅同一消息；只删除调用方自己选中的订阅，不要求转移其他对话。
+- advisory: subscriber_hints默认提供本事件其他实际匹配接收者，至多32项；仅供AI自行判断是否协作，不是任务分配或互斥令牌。操作员用服务subscriber_hints=false可关闭。
+- opencode: 已有对话按同一本机服务实例发现，project_id和directory是对话元数据；无需为每个项目再加endpoint。原生创建仍使用endpoint配置工作区。

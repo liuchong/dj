@@ -15,6 +15,7 @@
 | 查看来源任务树及排队原因 | [任务巡查](guides/task-inspection.md) |
 | 消息没触发、投递未知或回复失败 | [故障排查](guides/troubleshooting.md) |
 | 了解实际交付和验证范围 | [能力范围](release-scope.md)、[当前状态](status.md)、[待办](../TODO.md) |
+| 多个 AI 主动订阅同一消息 | [多对多接线](specs/0027-many-to-many-subscribers.md) |
 
 ## 接口
 
@@ -53,6 +54,9 @@
 | [0022 菜单栏控制器](specs/0022-service-controller.md) | 可选 macOS App、状态、启停和独立生命周期 |
 | [0023 收件人禁收](specs/0023-recipient-preferences.md) | 自动持久退订、出站黑白名单、单条强制发送 |
 | [0024 已发消息与话题回复](specs/0024-outbound-topic-replies.md) | 已发消息续接、Lark话题创建、原生位置与账号约束 |
+| [0025 置顶与触发原因](specs/0025-chat-pins-and-trigger-reasons.md) | 消息Pin、指定表情与明确触发依据 |
+| [0026 订阅者模型](specs/0026-subscriber-models-and-opencode.md) | 原生模型参考及OpenCode接入 |
+| [0027 多对多主动订阅](specs/0027-many-to-many-subscribers.md) | 调用身份与接收对话分离、同事件协作提示 |
 
 ## 技术与维护
 
@@ -70,7 +74,3 @@
 - [Pages 源码与预览](pages/README.md)：入口 `docs/index.html`，交互使用浏览器实时编译的 Eliscript。
 - [项目许可证](../LICENSE)：[1PL 官方说明](https://license.pub/1pl/)。
 - [历史资料](archive/README.md)：旧研究、施工计划、检查清单及验收批次。历史中的状态和建议不作为当前使用或开发指令。
-
-- [对话 Pin 与统一触发原因](specs/0025-chat-pins-and-trigger-reasons.md)
-
-- [0026 订阅者模型信息与 OpenCode 原生接入](specs/0026-subscriber-models-and-opencode.md)

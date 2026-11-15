@@ -162,7 +162,9 @@
           (if (eq djReturn3Error djReturn3Token) djReturn3Value (throw djReturn3Error))))))
   (defun targetAllowed
     (principal target)
-    (and
-      (nativeGet principal "target_constraint")
-      (matchesConstraint (nativeGet principal "target_constraint") target)))
+    ;; Authentication scopes the caller, not the number of receiver conversations.
+    ;; An optional host constraint narrows an otherwise explicitly granted target.
+    (and (not (not principal))
+      (or (not (nativeGet principal "target_constraint"))
+        (matchesConstraint (nativeGet principal "target_constraint") target))))
   (export authorize matchesConstraint isOwnResource resourceIds targetAllowed operatorOnly communicationActions))

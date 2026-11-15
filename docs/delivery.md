@@ -36,7 +36,7 @@ dj status --client-profile PRIVATE_PROFILE --json
 
 ## 3. 接通 AI 原会话
 
-操作员通过 `catalog.refresh`、`session.resolve/probe` 找到准确实例与原对话，为接收对话准备独立 recipient profile 和 `target_constraint`。AI 使用自己的身份调用 `agent.whoami` 核对绑定；不能把 operator token 或其他会话的 profile 交给它。
+操作员通过 `catalog.refresh`、`session.resolve/probe` 找到准确实例与原对话，部署普通AI调用profile；接收对话自行核对准确原生ID、discover/register并创建订阅。AI 使用自己的身份调用 `agent.whoami` 核对绑定；不能把 operator token 或其他会话的 profile 交给它。
 
 | 工具 | 接线入口 |
 | --- | --- |
@@ -77,3 +77,5 @@ AI 通过信封中的 `reply_context_id` 显式调用 `message.reply`，由 DJ �
 ## 排查与维护
 
 消息未触发、结果未知、回复或表情异常时，按[故障排查](guides/troubleshooting.md)检查原台账，不换键重发。停止服务使用 SIGTERM/SIGINT 或 launchd bootout，等待 drain；不要强杀已有 AI 客户端。源码构建与打包见[开发指南](guides/development.md)。
+
+多对多接线现行边界见[0027](specs/0027-many-to-many-subscribers.md)：调用身份与接收目标分离，whoami返回登记数组，普通AI自行登记订阅；同事件协作提示不决定任务归属。

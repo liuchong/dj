@@ -31,7 +31,7 @@
       "CREATE TABLE routes(route_id TEXT PRIMARY KEY, canonical_target_key TEXT NOT NULL UNIQUE, session_key TEXT NOT NULL REFERENCES sessions(session_key), binding_id TEXT, next_delivery_seq INTEGER NOT NULL DEFAULT 0, claim_epoch INTEGER NOT NULL DEFAULT 0, claim_owner TEXT, unknown_delivery_id TEXT, payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
       "CREATE TABLE agents(agent_id TEXT PRIMARY KEY, route_id TEXT NOT NULL REFERENCES routes(route_id), owner_principal_id TEXT NOT NULL, recipient_principal_id TEXT NOT NULL, canonical_target_key TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('registered','closed')), revision INTEGER NOT NULL CHECK(revision>0), payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
       "CREATE UNIQUE INDEX agents_active_target ON agents(canonical_target_key) WHERE state='registered'"
-      "CREATE UNIQUE INDEX agents_recipient ON agents(recipient_principal_id) WHERE state='registered'"
+      "CREATE INDEX agents_recipient ON agents(recipient_principal_id,agent_id) WHERE state='registered'"
       "CREATE INDEX agents_owner ON agents(owner_principal_id,agent_id)"
       "CREATE TABLE bindings(binding_id TEXT PRIMARY KEY, route_id TEXT NOT NULL REFERENCES routes(route_id), instance_id TEXT NOT NULL REFERENCES instances(instance_id), instance_epoch TEXT NOT NULL, expires_at TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
       "CREATE TABLE handles(ref TEXT PRIMARY KEY, kind TEXT NOT NULL, principal_id TEXT NOT NULL, resource_key TEXT NOT NULL, authorization_revision INTEGER NOT NULL, expires_at TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
@@ -121,6 +121,9 @@
           (catch error
             (try (js-call db :run "ROLLBACK") (catch ignored nil))
             (throw error))))
+      ;; A client may receive through several exact native conversations.
+      (js-call db :run "DROP INDEX IF EXISTS agents_recipient")
+      (js-call db :run "CREATE INDEX agents_recipient ON agents(recipient_principal_id,agent_id) WHERE state='registered'")
       ;; These fixed predicates match the scheduler's bounded keyset queries.
       ;; Keep index maintenance idempotent for stores already using schema 1.
       (js-call

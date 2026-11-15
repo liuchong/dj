@@ -8,7 +8,7 @@
 
 # <img src="docs/pages/assets/dj-wordmark.svg" width="324" height="44" alt="Dispatch Junction">
 
-DJ 把 IM 消息按规则送进已有的 AI 编程对话，并为 AI 提供读取上下文、管理订阅和回复原消息的接口。一个对话可以订阅多个来源，一个来源也可以通知多个对话。
+DJ 把 IM 消息按规则送进已有的 AI 编程对话，并为 AI 提供读取上下文、管理订阅和回复原消息的接口。AI 可以主动订阅：一个对话接多个来源，同一来源也能同时通知多个工具的多个对话。默认附上同事件其他订阅者供协作参考，DJ 不决定谁处理。
 
 DJ 负责身份核对、订阅匹配、持久受理和投递；AI 负责判断是否处理、怎样处理、是否回复。DJ 自己不调用模型，也不会把 AI 的普通输出自动转发给 IM。
 
@@ -48,8 +48,8 @@ dj agent whoami --json
 dj skill targets
 ```
 
-1. 按[安装与使用](docs/delivery.md)准备服务和独立客户端身份；需要持续运行时配置 [macOS 常驻服务](docs/guides/macos-service.md)，可选安装带项目 Logo 的菜单栏控制器（含此组件的目录包执行 `dj controller install`），也可从 App 启动器打开。
-2. 为 AI 工具[安装 Skill、配置接口](skills/dj/references/clients.md)，核对原会话绑定。
+1. 按[安装与使用](docs/delivery.md)准备服务和普通 AI 调用身份；需要持续运行时配置 [macOS 常驻服务](docs/guides/macos-service.md)，可选安装带项目 Logo 的菜单栏控制器（含此组件的目录包执行 `dj controller install`），也可从 App 启动器打开。
+2. 为 AI 工具[安装 Skill、配置接口](skills/dj/references/clients.md)，由各对话自行核对原生ID并登记，允许同时订阅。
 3. 由接收对话建立[消息订阅](docs/guides/lark-realtime.md)，或直接向精确会话发送输入。
 
 Skill 安装先预览，再按实际目标执行：

@@ -355,7 +355,7 @@
                           :target_revision
                           (nativeGet agent "revision")
                           :target_constraint
-                          (nativeGet recipient "target_constraint")
+                          (nativeGet recipient "target_constraint" nil)
                           :authorization_revision
                           (nativeGet principal "authorization_revision")
                           :recipient_authorization_revision

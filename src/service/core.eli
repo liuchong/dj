@@ -152,6 +152,7 @@
               (Reflect/deleteProperty copy "client_profiles")
               (Reflect/deleteProperty copy "task_inspection")
               (Reflect/deleteProperty copy "message_delivery")
+              (Reflect/deleteProperty copy "subscriber_hints")
               (Reflect/deleteProperty copy "fixed_routes")
               (hashValue copy))))
 (setq admission (lambda
@@ -480,6 +481,7 @@
                   (put config :client_profiles (nativeGet candidate "client_profiles"))
                   (put config :task_inspection (nativeGet candidate "task_inspection"))
                   (put config :message_delivery (nativeGet candidate "message_delivery"))
+                  (put config :subscriber_hints (nativeGet candidate "subscriber_hints" t))
                   (put config :fixed_routes (nativeGet candidate "fixed_routes"))
                   (success
                     (js-object

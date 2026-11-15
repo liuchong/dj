@@ -1,6 +1,6 @@
 # 持久对话规则
 
-- target: 规则绑定原生对话稳定键，不绑定显示名、某条订阅或定时器。先agent.whoami核对独立主体和bound_agent_id；不要借操作员凭据。
+- target: 规则绑定原生对话稳定键，不绑定显示名、某条订阅或定时器。先agent.whoami核对调用主体和bound_agent_ids，并显式选择准确agent_id；不要借操作员凭据。
 - read: 调用session.rules.get，例如`{"agent_id":"agent_example"}`。也可用session_key或当前有效session_ref，三个选择器互斥。读取需要session.rules.read。首次无规则返回revision=1、text=""。
 - save: 完整保存原文，不自动总结；调用session.rules.update：
 

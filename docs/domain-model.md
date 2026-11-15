@@ -12,7 +12,7 @@ DJ 的类型和规则都是确定性数据，不要求 DJ 理解自然语言。�
 
 | 类型 | 字段与约束 | 生命周期 |
 | --- | --- | --- |
-| Principal | principal_id、kind(operator/agent/service)、grant_refs、bound_agent_id?、target_constraint? | 由可信接入配置赋予，不信任请求自报 |
+| Principal | principal_id、kind(operator/agent/service)、grant_refs、bound_agent_ids、target_constraint? | 由可信接入配置赋予，不信任请求自报 |
 | Connection | connection_id、platform、tenant_ref、account_ref、display_name、credential_ref、brand、identity、source_delivery、source_health、capabilities、state、revision | 配置持久；source_health 安全字段见 IM 接入；秘密另存 |
 | ConversationAddress | connection_id、native_chat_id、native_thread_id?、thread_kind | 原生精确地址；未知 thread 不转换为空线程 |
 | ConversationHandle | conversation_ref、principal_id、address、source_revision、expires_at | 查询/resolve 签发的类型化地址引用；非凭据 |
@@ -45,9 +45,9 @@ source_key 在连接内唯一：只有适配器确认原生事件 ID 具有稳�
 
 surface 为 desktop/cli/sdk；tool 为 codex/claude/cursor/opencode/pi/agy/antigravity，未知插件须先由操作员注册描述符。正式接线使用 existing；数据模型中保留的 managed 描述不代表配置允许托管启动。历史只作为发现候选，不能当活 Binding。
 
-主体系绑定由可信宿主/启动配置创建，初始 target_constraint 限制工具、namespace 与原生会话。Agent 自报信息必须与候选及约束一致；不是靠猜测当前宿主或标题验证所有权。普通 Agent 只为自己登记；操作员代登记时必须指定配置中已存在的 recipient_principal_id，不把操作员全权限凭据发给目标。
+主体系绑定由可信宿主/启动配置创建，可选target_constraint收窄工具、namespace与原生会话；普通本机AI身份可省略，由动作授权和准确原生候选核验。Agent 自报信息必须与候选及约束一致；不是靠猜测当前宿主或标题验证所有权。普通 Agent 只为自己登记；操作员代登记时必须指定配置中已存在的 recipient_principal_id，不把操作员全权限凭据发给目标。
 
-runtime_state 为 unknown/idle/busy/waiting_permission/offline/incompatible。原生状态缺失就保留 unknown。注册通过后原子建立 recipient 的 bound_agent_id/target_constraint 绑定；操作员代登记也执行该步骤，owner 与 recipient 的授权保持独立。同主体重复登记相同 canonical_target_key 返回已存在目标，不再建一条；其他主体无授权不可据此探知对象存在。
+runtime_state 为 unknown/idle/busy/waiting_permission/offline/incompatible。原生状态缺失就保留 unknown。注册通过后原子登记准确原生目标；同recipient可以有多个bound_agent_ids，可选target_constraint由部署配置收窄，不由登记改写。owner与recipient授权保持独立。同主体重复登记相同 canonical_target_key 返回已存在目标，不再建一条；其他主体无授权不可据此探知对象存在。
 
 原生目标身份不因 display_name 改变。重绑只能更新同一目标的临时 Binding；不同窗口/CLI 视图若指同后端，适配器给出同一 canonical_target_key。existing 离线不自动新建或恢复；正式配置拒绝 managed_profiles，不通过创建进程替代原目标。
 
@@ -112,3 +112,5 @@ direct 的 delivery_policy 仅 busy/offline/ttl_seconds，不接 context_policy�
 - Delivery 信封含 schema_version=1、kind=external_message、delivery/event ID、source、sender、匹配原因、content、attachments、reply_context_id?、allowed_actions。正文永远是结构化数据字段，不拼入受信任头。传输版本、信封 schema_version 与对象 revision 分开。
 
 信封按 origin 分支：subscription_event 使用 IM source、Sender、event_id 和匹配贡献；direct 使用 source.kind=api、ApiSender={principal_id,principal_kind:operator/agent/service}、event_id=null、无匹配贡献和无 IM 回复引用。不能将 API 主体伪造成人类 IM 作者；未接线 DJ 工具的接收方 allowed_actions 为空，输入仍可留在原生会话。当前均为未发布草案，两个分支的 schema 必须一起验证。
+
+多对多接线现行边界见[0027](specs/0027-many-to-many-subscribers.md)：调用身份与接收目标分离，whoami返回登记数组，普通AI自行登记订阅；同事件协作提示不决定任务归属。

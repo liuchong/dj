@@ -24694,8 +24694,8 @@
         "A17"
       ],
       "given": "F01/F02/F03/F04/F08/F10；隔离真实SQLite/UDS/自有测试进程及受控协议对端，无真实账号或模型",
-      "when": "缺可信target_constraint的主体自登记",
-      "then": "拒绝零效果，无bound_agent_id"
+      "when": "有明确agent.bind授权但省略可选target_constraint时自主登记",
+      "then": "准确原生目标登记成功，whoami返回bound_agent_ids"
     },
     {
       "case_id": "T02.repeat-register-same-target.integration",
@@ -28951,6 +28951,54 @@
       "given": "Exact native metadata or an explicit subscriber report",
       "when": "Project bounded metadata",
       "then": "No credentials, no guesses, fresh native precedence and honest stale reports"
+    },
+    {
+      "case_id": "T33.many-subscribers.integration",
+      "parent_id": "T33",
+      "file": "tests/integration/many-subscribers.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 30000,
+      "resource_group": "isolated-integration",
+      "requirements": [
+        "Q11"
+      ],
+      "acceptance_ids": [
+        "A04",
+        "A06",
+        "A17"
+      ],
+      "given": "F01/F02/F03/F04/F08/F10；隔离真实SQLite/UDS/自有测试进程及受控协议对端，无真实账号或模型",
+      "when": "同一普通身份主动登记多个会话，订阅同一事件，push/pull及退订后续发",
+      "then": "多目标均接收；同事件提示去重且可关闭；单项退订不影响其他订阅"
+    },
+    {
+      "case_id": "T38.many-fixed-targets.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/many-subscribers.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 30000,
+      "resource_group": "isolated-integration",
+      "requirements": [
+        "Q11"
+      ],
+      "acceptance_ids": [
+        "A04",
+        "A06",
+        "A17"
+      ],
+      "given": "F01/F02/F03/F04/F08/F10；隔离真实SQLite/UDS/自有测试进程及受控协议对端，无真实账号或模型",
+      "when": "同一recipient配置两个准确原生目标的固定接线",
+      "then": "按recipient与target精确登记，两个目标同时收同一事件"
     }
   ],
   "source_extension_base": "c1eb7b1"

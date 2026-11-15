@@ -279,20 +279,18 @@
         :instance_id (nativeGet endpoint "instance_id") :native_session_id (nativeGet (nativeGet route "target") "native_session_id")
         :workspace_ref (nativeGet endpoint "workspace_ref" nil)))))
   (defun validateFixedRoutes (config)
-    (let ((seen (new globalThis.Set)) (recipients (new globalThis.Map)))
+    (let ((seen (new globalThis.Set)))
       (js-call (nativeGet config "fixed_routes" (js-array)) :forEach (lambda (route)
         (let* ((key (nativeGet route "id")) (owner (js-call (nativeGet config "principals") :find
           (lambda (item) (= (nativeGet item "principal_id") (nativeGet route "owner_principal_id")))))
           (recipient (js-call (nativeGet config "principals") :find
             (lambda (item) (= (nativeGet item "principal_id") (nativeGet route "recipient_principal_id")))))
-          (target (fixedRouteTarget config route)) (recipient-id (nativeGet route "recipient_principal_id"))
-          (fingerprint (and target (hashValue target))))
+          (target (fixedRouteTarget config route)))
           (unless (and (not (js-call seen :has key)) owner (= (nativeGet owner "kind") "operator") (not (nativeGet owner "disabled"))
             recipient (= (nativeGet recipient "kind") "agent") (not (nativeGet recipient "disabled"))
-            target (targetAllowed recipient target)
-            (or (not (js-call recipients :has recipient-id)) (= (js-call recipients :get recipient-id) fingerprint)))
+            target (targetAllowed recipient target))
             (throw (new globalThis.TypeError "invalid fixed route identity or target")))
-          (js-call seen :add key) (js-call recipients :set recipient-id fingerprint)
+          (js-call seen :add key)
           (js-call (nativeGet route "sources") :forEach (lambda (source)
             (unless (and
               (js-call (nativeGet config "connections" (js-array)) :some (lambda (connection)
@@ -331,6 +329,7 @@
             (js-object :const t)
             :busy_timeout
             (js-object :type "integer" :minimum 0 :maximum 1000)))
+        :subscriber_hints (js-object :type "boolean")
         :message_delivery
         (obj (js-object :busy (enumOf "steer" "queue") :max_in_flight (js-object :type "integer" :minimum 1 :maximum 64)))
         :task_inspection
