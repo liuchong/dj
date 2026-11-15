@@ -57,7 +57,7 @@ dj skill install --target codex --scope user --dry-run
 dj skill config --target codex --client-profile PRIVATE_PROFILE
 ```
 
-先检查预览，再按实际目标安装。安装不会覆盖不同内容或链接；`skill check` 核对文件，`skill config` 只生成 MCP 片段供显式合并，不修改客户端信任或启动模型。完整位置与流程见[客户端接线](../skills/dj/references/clients.md)。
+先检查预览，再按实际目标安装。默认安装不会覆盖不同内容；升级已安装副本使用 `dj skill install --target TOOL --scope user --update`，可先加 `--dry-run`。共享根使用 `--target dj`，链接与非Markdown资产仍拒绝替换；`skill check` 核对文件，`skill config` 只生成 MCP 片段供显式合并，不修改客户端信任或启动模型。完整位置与流程见[客户端接线](../skills/dj/references/clients.md)。
 
 CLI、本地 API、MCP 和 GEPO 共用操作目录和权限。MCP 是连接原服务的 stdio 薄代理；GEPO 使用同一私有 UDS，不是 MCP HTTP URL。不要为接线临时开放无认证公网端口。
 

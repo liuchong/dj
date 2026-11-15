@@ -392,6 +392,13 @@
           (put self :identity_revision 1)
           (js-call (js-call db :query "UPDATE events SET payload=? WHERE native_message_id='earlier-self'") :run (JSON/stringify self))
           (js-call (expect (nativeGet (await (funcall resolve identity)) "basis")) :toBe "thread_participation")
+          ;; A self-authored message in a thread we participated in must not synthesize
+          ;; passive thread_participation addressing back onto ourselves.
+          (let ((own-followup (funcall make)))
+            (put own-followup :sender (js-object :id "ou_self" :kind "human"))
+            (let ((own-rel (nativeGet (await (resolveMessageInteraction identity own-followup context port normalizeLarkEvent)) "interaction")))
+              (js-call (expect (nativeGet own-rel "addressed_self")) :toBe false)
+              (js-call (expect (nativeGet own-rel "basis")) :toBe undefined)))
           (js-call db :exec "UPDATE events SET tombstone=1 WHERE native_message_id='earlier-self'")
           (js-call (expect (nativeGet (await (funcall resolve identity)) "addressed_self")) :toBe false)
           (let* ((bot (Object/assign (js-object) identity (js-object :identity "bot")))

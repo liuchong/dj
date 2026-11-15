@@ -42,8 +42,8 @@
         :project_id (nativeGet native "projectID") :directory (nativeGet (nativeGet native "location") "directory") :title (nativeGet native "title" "")
         :runtime_state (or state "unknown") :live_receiver t :coverage "covered"
         :visibility (if opened (js-array "history" "live" "desktop-open") (js-array "history" "live"))
-        :model_selection (js-object :provider_id (nativeGet model "providerID") :model_id (nativeGet model "id")
-          :variant (nativeGet model "variant")))))
+        :model_selection (js-object :provider_id (nativeGet model "providerID" nil) :model_id (nativeGet model "id" nil)
+          :variant (nativeGet model "variant" nil)))))
       (js-call (js-array "created" "updated") :forEach (lambda (field)
         (let ((ms (nativeGet (nativeGet native "time") field)))
           (when (Number/isSafeInteger ms) (put record (str field "_at") (js-call (new globalThis.Date ms) :toISOString)))))) record))

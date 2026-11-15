@@ -1,5 +1,5 @@
 (module dj.registry.agents
-  (import "../core/native.eli" nativeNullish nativeGet)
+  (import "../core/native.eli" nativeNullish nativeGet nativeTypeOf)
   (import "../core/types.eli"
     stableSessionKey
     canonicalTargetKey
@@ -31,6 +31,18 @@
     attachBinding)
   (import "../catalog/snapshots.eli" openSnapshot resumeSnapshot advanceSnapshot)
   (import "../sessions/models.eli" subscriberMetadata)
+  (defun sanitizePending (value)
+    (cond
+      ((= (nativeTypeOf value) "undefined") nil)
+      ((Array/isArray value) (js-call value :map sanitizePending))
+      ((and value (= (nativeTypeOf value) "object"))
+        (let ((clean (js-object)))
+          (js-call (Object/keys value) :forEach (lambda (key)
+            (let ((entry (nativeGet value key)))
+              (unless (= (nativeTypeOf entry) "undefined")
+                (put clean key (sanitizePending entry))))))
+          clean))
+      (t value)))
   (defconst agentFields
     (js-array
       "agent_id"
@@ -281,7 +293,7 @@
                           keys
                           :push
                           (js-object :resource_key (nativeGet session "session_key")))))))
-                (put checkpoint :pending pending)
+                (put checkpoint :pending (sanitizePending pending))
                 (js-call
                   sources
                   :push
@@ -864,6 +876,7 @@
             djReturn12Value
             (throw djReturn12Error))))))
   (export
+    sanitizePending
     discoverAgent
     registerAgent
     rebindAgent

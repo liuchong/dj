@@ -5,6 +5,7 @@
   (import "../../src/delivery/snapshot.eli" unpackEnvelope)
   (import "../../src/adapters/agent/desktop.eli" createDesktopPort)
   (import "../../src/adapters/agent/opencode-http.eli" createOpenCodePort)
+  (import "../../src/interfaces/skill.eli" runSkillCommand installSkill)
   (import "../../src/storage/repository.eli" createRepository)
   (import "../../src/service/core.eli" createCore)
   (import "../../src/adapters/agent/cursor-control.eli" activateCursorControl cursorCreationId)
@@ -14,7 +15,7 @@
   (import "bun:test" expect)
   (import "bun:sqlite" Database)
   (import "node:net" createServer)
-  (import "node:fs/promises" mkdir writeFile rm)
+  (import "node:fs/promises" mkdir realpath writeFile rm)
   (import "node:path" resolve)
   (import "node:crypto" randomUUID)
   (import "../support/case.eli" withCase)
@@ -58,12 +59,13 @@
           (try
             (js-call db :exec "CREATE TABLE threads(id TEXT PRIMARY KEY,title TEXT,cwd TEXT,updated_at INTEGER,archived INTEGER)")
             (js-call (js-call db :query "INSERT INTO threads VALUES(?,?,?,?,0)") :run
-              "codex-thread" "Codex native fixture" workspace 1767225600)
+              "codex-thread" "Codex native fixture" workspace 1767225700)
             ;; A scoped recipient must not sit behind pages of other workspaces.
             (let ((index 0))
               (while (< index 150)
                 (js-call (js-call db :query "INSERT INTO threads VALUES(?,?,?,?,0)") :run
-                  (str "a-foreign-" index) "Other workspace" (resolve root "other-workspace") 1767225600)
+                  (str "a-foreign-" index) "Other workspace" (resolve root "other-workspace")
+                  (if (= index 0) 1767225690 1767225600))
                 (setq index (1+ index))))
             (js-call (js-call db :query "INSERT INTO threads VALUES(?,?,?,?,1)") :run
               "a-archived" "Archived target" workspace 1767225600)
@@ -121,23 +123,28 @@
                       (funcall send (Object/assign
                         (js-object :type "response" :requestId (nativeGet request "requestId")
                           :resultType "success" :result (js-object :clientId "dj-client"))
-                        (if (= method "thread-owner-discovery")
+                        (if (and (= method "thread-owner-discovery")
+                                 (js-call (js-array "codex-thread" "a-foreign-0") :includes (nativeGet params "conversationId")))
                           (js-object :handledByClientId "codex-owner") (js-object)))))
-                    ((and (= method "thread-stream-following-changed") (= (nativeGet params "following") t))
-                      (funcall send (js-object :type "broadcast" :method "thread-stream-state-changed"
-                        :sourceClientId "codex-owner" :version 11
-                        :params (js-object :hostId "local" :conversationId "codex-thread"
-                          :change (js-object :type "snapshot" :revision 1
-                            :conversationState (js-object :id "codex-thread" :cwd workspace
-                              :fixture_padding (nativeGet h "codex_padding" "")
-                              :title "Codex native fixture" :resumeState "resumed" :requests (js-array)
-                              :threadRuntimeStatus (js-object :type (nativeGet h "codex_status"))
-                              :turnHistory (when (nativeGet h "codex_incomplete")
-                                (js-object :kind "canonical" :history (js-object :isComplete false
-                                  :islands (js-array) :entitiesByKey (js-object))))
-                              :turnsPagination (js-object :hasLoadedOldest t)
-                              :turns (js-array (js-object :turnId "native-turn" :status "completed"
-                                :items (fixtureCodexItems h)))))))))))))))))))
+                    ((and (= method "thread-stream-following-changed") (= (nativeGet params "following") t)
+                          (js-call (js-array "codex-thread" "a-foreign-0") :includes (nativeGet params "conversationId")))
+                      (let ((cid (nativeGet params "conversationId")))
+                        (funcall send (js-object :type "broadcast" :method "thread-stream-state-changed"
+                          :sourceClientId "codex-owner" :version 11
+                          :params (js-object :hostId "local" :conversationId cid
+                            :change (js-object :type "snapshot" :revision 1
+                              :conversationState (js-object :id cid
+                                :cwd (if (= cid "a-foreign-0") (resolve root "other-workspace") workspace)
+                                :fixture_padding (nativeGet h "codex_padding" "")
+                                :title (if (= cid "a-foreign-0") "Other workspace" "Codex native fixture")
+                                :resumeState "resumed" :requests (js-array)
+                                :threadRuntimeStatus (js-object :type (nativeGet h "codex_status"))
+                                :turnHistory (when (nativeGet h "codex_incomplete")
+                                  (js-object :kind "canonical" :history (js-object :isComplete false
+                                    :islands (js-array) :entitiesByKey (js-object))))
+                                :turnsPagination (js-object :hasLoadedOldest t)
+                                :turns (js-array (js-object :turnId "native-turn" :status "completed"
+                                  :items (fixtureCodexItems h))))))))))))))))))))
           (put h :ipc server)
           (await (new globalThis.Promise (lambda (done reject)
             (js-call server :once "error" reject)
@@ -797,5 +804,65 @@
                   (catch error (setq error-code (nativeGet error "code"))))
                 (js-call (expect error-code) :toBe "desktop_history_limit")
                 (finally (await (js-call port :close)))))
-            (setq index (1+ index))))))
+            (setq index (1+ index))))
+        ;; Instance-scoped Codex endpoint discovers cross-workspace live sessions
+        ;; newest-first over one shared IPC channel while preserving directories.
+        (let* ((base-endpoint (aref (nativeGet (nativeGet f "config") "agent_endpoints") 0))
+               (instance-endpoint (Object/assign (js-object) base-endpoint (js-object :workspace_scope "instance")))
+               (port (createDesktopPort "codex" (js-object :endpoints (js-array instance-endpoint)) (js-object))))
+          (try
+            (let* ((first (await (js-call port :listSessions (js-object) nil
+                            (js-object :max_records 2) (js-object :deadline (+ (performance/now) 2000)))))
+                   (second (await (js-call port :listSessions (js-object) (nativeGet first "next_cursor")
+                             (js-object :max_records 2) (js-object :deadline (+ (performance/now) 2000)))))
+                   (live (await (js-call port :discover "live"
+                           (js-object :instance_id "codex-native") (js-object :deadline (+ (performance/now) 3000))))))
+              (js-call (expect (js-call (nativeGet first "items") :map
+                (lambda (row) (nativeGet row "native_session_id")))) :toEqual (js-array "codex-thread" "a-foreign-0"))
+              (js-call (expect (nativeGet (aref (nativeGet first "items") 0) "workspace_ref")) :toBe "ws-test")
+              (js-call (expect (js-call (nativeGet (aref (nativeGet first "items") 1) "workspace_ref") :startsWith "codex-workspace-")) :toBe t)
+              (js-call (expect (nativeGet (aref (nativeGet first "items") 1) "directory"))
+                :toBe (resolve (nativeGet h "root") "other-workspace"))
+              (js-call (expect (js-length (nativeGet second "items"))) :toBe 2)
+              (js-call (expect (js-call (nativeGet live "items") :map
+                (lambda (row) (nativeGet row "native_session_id")))) :toEqual (js-array "codex-thread" "a-foreign-0")))
+            (finally (await (js-call port :close)))))
+        ;; Explicit Skill --update refreshes valid Markdown Skill trees and removes
+        ;; obsolete Markdown assets while still refusing non-Markdown conflicts.
+        (let* ((raw-project (resolve (nativeGet h "root") "skill-project"))
+               (skill-project nil)
+               (out (js-array)) (err (js-array))
+               (io (js-object :stdout (lambda (s) (js-call out :push s)) :stderr (lambda (s) (js-call err :push s))))
+               (repo-root (resolve ".")))
+          (await (mkdir raw-project (js-object :recursive t :mode 448)))
+          (setq skill-project (await (realpath raw-project)))
+          (let ((shared (await (installSkill
+            (resolve repo-root "skills/dj") (js-object :action "install" :target "dj" :scope "user") skill-project))))
+            (js-call (expect (nativeGet (nativeGet shared "data") "destination"))
+              :toBe (resolve skill-project ".dj/skills/dj")))
+          (js-call (expect (await (runSkillCommand
+            (js-array "skill" "install" "--target" "agents" "--scope" "project" "--project" skill-project "--json")
+            io repo-root))) :toBe 0)
+          (js-call (expect (nativeGet (nativeGet (JSON/parse (aref out 0)) "data") "state")) :toBe "installed")
+          (await (writeFile (resolve skill-project ".agents/skills/dj/SKILL.md") "# outdated\n"))
+          (await (writeFile (resolve skill-project ".agents/skills/dj/references/obsolete.md") "# obsolete\n"))
+          (js-call (expect (await (runSkillCommand
+            (js-array "skill" "install" "--target" "agents" "--scope" "project" "--project" skill-project "--json")
+            io repo-root))) :toBe 2)
+          (js-call (expect (await (runSkillCommand
+            (js-array "skill" "install" "--target" "agents" "--scope" "project" "--project" skill-project "--update" "--dry-run" "--json")
+            io repo-root))) :toBe 0)
+          (js-call (expect (nativeGet (nativeGet (JSON/parse (aref out 1)) "data") "state")) :toBe "planned")
+          (js-call (expect (await (runSkillCommand
+            (js-array "skill" "install" "--target" "agents" "--scope" "project" "--project" skill-project "--update" "--json")
+            io repo-root))) :toBe 0)
+          (js-call (expect (nativeGet (nativeGet (JSON/parse (aref out 2)) "data") "state")) :toBe "updated")
+          (js-call (expect (await (runSkillCommand
+            (js-array "skill" "check" "--target" "agents" "--scope" "project" "--project" skill-project "--json")
+            io repo-root))) :toBe 0)
+          (js-call (expect (nativeGet (nativeGet (JSON/parse (aref out 3)) "data") "state")) :toBe "unchanged")
+          (await (writeFile (resolve skill-project ".agents/skills/dj/non-markdown.txt") "conflict"))
+          (js-call (expect (await (runSkillCommand
+            (js-array "skill" "install" "--target" "agents" "--scope" "project" "--project" skill-project "--update" "--json")
+            io repo-root))) :toBe 2))))
     cleanupDesktop))

@@ -69,5 +69,33 @@
             :create_time "1767225600000" :content "{\"text\":\"@_user_1 hello\"}"
             :mentions (js-array (js-object :id (js-object :open_id "native-bot") :name "same-name" :key "@_user_1")))))))
         (normalized (normalizeLarkEvent source flat)))
-        (js-call (expect (nativeGet (aref (nativeGet normalized "mentions") 0) "key")) :toBe "@_user_1")))))
+        (js-call (expect (nativeGet (aref (nativeGet normalized "mentions") 0) "key")) :toBe "@_user_1"))
+      ;; Interaction specificity tiers: direct reply > thread root/mention > thread participation,
+      ;; while genuine same-tier conflicts still fail closed as ambiguous_target.
+      (let* ((peer-row nil)
+        (dual-ctx (Object/assign (js-object) context (js-object
+          :ports (js-object :clock (js-object :utcNow (lambda () "2026-01-01T00:00:00.000Z")))
+          :store (js-object :db (js-object :query (lambda (sql)
+            (js-object :all (lambda (&rest ignored)
+              (if peer-row (js-array (js-object :payload (JSON/stringify peer-row))) (js-array))))))))))
+        (bot-thread (js-object :connection_id "source" :identity_revision 1 :event_kind "message.created"
+          :native_message_id "m-tier" :source_time "2026-01-01T00:00:00.000Z" :chat_type "group"
+          :conversation (js-object :connection_id "source" :native_chat_id "chat" :native_thread_id "t1")
+          :mentions (js-array)
+          :interaction (js-object :state "resolved" :kind "thread" :target_id "native-bot" :target_message_id "root-bot"))))
+        (put user :event_subject_id "native-user")
+        (setq peer-row (Object/assign (JSON/parse (JSON/stringify bot-thread))
+          (js-object :connection_id "user"
+            :interaction (js-object :state "resolved" :kind "thread" :basis "thread_participation"
+              :target_id "native-user" :target_message_id "prev-user"))))
+        (let ((picked (selectReplyRoute dual-ctx bot-thread "session")))
+          (js-call (expect (nativeGet picked "status")) :toBe "ready")
+          (js-call (expect (nativeGet picked "connection_id")) :toBe "source"))
+        (put (nativeGet peer-row "interaction") :kind "reply")
+        (Reflect/deleteProperty (nativeGet peer-row "interaction") "basis")
+        (let ((picked (selectReplyRoute dual-ctx bot-thread "session")))
+          (js-call (expect (nativeGet picked "status")) :toBe "ready")
+          (js-call (expect (nativeGet picked "connection_id")) :toBe "user"))
+        (put (nativeGet bot-thread "interaction") :kind "reply")
+        (js-call (expect (nativeGet (selectReplyRoute dual-ctx bot-thread "session") "status")) :toBe "ambiguous_target")))))
 )

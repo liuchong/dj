@@ -1,9 +1,10 @@
 (module dj.adapters.agent.antigravity
   (import "../../core/native.eli" nativeGet nativeTypeOf)
-  (import "../../core/types.eli" utf8Bytes)
+  (import "../../core/types.eli" utf8Bytes hashValue)
   (import "../../delivery/envelope.eli" renderEnvelope)
   (import "./native-local.eli" antigravityRpc expectedEpoch)
-  (import "node:url" pathToFileURL)
+  (import "node:url" pathToFileURL fileURLToPath)
+  (import "node:path" isAbsolute)
   (defconst antigravityCapabilities (Object/freeze
     (js-object :session_list "supported" :session_messages "supported" :session_probe "supported"
       :session_send "supported" :start_idle "supported" :message_during_run "unsupported" :session_create "unsupported"
@@ -12,11 +13,28 @@
   (defun cascadeState (status)
     (cond ((= status "CASCADE_RUN_STATUS_IDLE") "idle")
       ((= status "CASCADE_RUN_STATUS_RUNNING") "busy") (t "unknown")))
+  (defun cascadeDirectory (endpoint row)
+    (let* ((workspaces (nativeGet row "workspaces" (js-array)))
+           (uris (nativeGet (nativeGet row "trajectoryMetadata") "workspaceUris" (js-array)))
+           (candidate (or (and (Array/isArray workspaces) (> (js-length workspaces) 0)
+                            (nativeGet (aref workspaces 0) "workspaceFolderAbsoluteUri"))
+                          (and (Array/isArray uris) (> (js-length uris) 0) (aref uris 0)))))
+      (if (and (= (nativeTypeOf candidate) "string") (> (js-length candidate) 0))
+        (try
+          (let ((resolved (fileURLToPath candidate)))
+            (and (= (nativeTypeOf resolved) "string") (isAbsolute resolved) resolved))
+          (catch invalid nil))
+        (when (and (= (nativeGet endpoint "workspace_scope") "instance")
+                   (= (nativeTypeOf (nativeGet endpoint "directory")) "string")
+                   (isAbsolute (nativeGet endpoint "directory")))
+          (nativeGet endpoint "directory")))))
   (defun cascadeWorkspace (endpoint row)
-    (let ((uri (js-call (pathToFileURL (nativeGet endpoint "directory")) :toString)))
-      (or (js-call (nativeGet row "workspaces" (js-array)) :some
-            (lambda (workspace) (= (nativeGet workspace "workspaceFolderAbsoluteUri") uri)))
-          (js-call (nativeGet (nativeGet row "trajectoryMetadata") "workspaceUris" (js-array)) :includes uri))))
+    (if (= (nativeGet endpoint "workspace_scope") "instance")
+      (not (not (cascadeDirectory endpoint row)))
+      (let ((uri (js-call (pathToFileURL (nativeGet endpoint "directory")) :toString)))
+        (or (js-call (nativeGet row "workspaces" (js-array)) :some
+              (lambda (workspace) (= (nativeGet workspace "workspaceFolderAbsoluteUri") uri)))
+            (js-call (nativeGet (nativeGet row "trajectoryMetadata") "workspaceUris" (js-array)) :includes uri)))))
   (defun cascadeMessage (step)
     (let* ((user (nativeGet step "userInput")) (answer (nativeGet step "plannerResponse"))
            (id (if user (nativeGet (nativeGet step "metadata") "modelApiContentId") (nativeGet answer "messageId")))
@@ -50,12 +68,19 @@
             (throw (new globalThis.Error "original Antigravity workspace/session unavailable")))
           (js-object :endpoint endpoint :row row :instance_epoch (nativeGet response "instance_epoch")))))
       (setq project (lambda (endpoint id row epoch)
-        (js-object :tool "antigravity" :native_namespace (nativeGet endpoint "native_namespace")
-          :native_session_id id :instance_id (nativeGet endpoint "instance_id") :instance_epoch epoch
-          :workspace_ref (nativeGet endpoint "workspace_ref") :title (nativeGet (nativeGet row "annotations") "title" (nativeGet row "summary" "Antigravity"))
-          :runtime_state (cascadeState (nativeGet row "status")) :live_receiver t
-          :visibility (js-array "live") :coverage "partial" :evidence_level "native_protocol"
-          :capabilities antigravityCapabilities)))
+        (let* ((dir (or (cascadeDirectory endpoint row) (nativeGet endpoint "directory")))
+               (ws (if (and (= (nativeGet endpoint "workspace_scope") "instance")
+                            (= (nativeTypeOf dir) "string") (isAbsolute dir)
+                            (not (= dir (nativeGet endpoint "directory"))))
+                     (str "antigravity-workspace-" (hashValue dir))
+                     (nativeGet endpoint "workspace_ref"))))
+          (js-object :tool "antigravity" :surface "desktop" :native_namespace (nativeGet endpoint "native_namespace")
+            :native_session_id id :instance_id (nativeGet endpoint "instance_id") :instance_epoch epoch
+            :workspace_ref ws :directory dir
+            :title (nativeGet (nativeGet row "annotations") "title" (nativeGet row "summary" "Antigravity"))
+            :runtime_state (cascadeState (nativeGet row "status")) :live_receiver t
+            :visibility (js-array "live") :coverage "partial" :evidence_level "native_protocol"
+            :capabilities antigravityCapabilities))))
       (setq steps (async (endpoint id offset total context &optional include-config)
         (unless (and (Number/isSafeInteger total) (Number/isSafeInteger offset) (>= offset 0)
                      (<= offset total) (<= (- total offset) 128))
@@ -77,6 +102,7 @@
               (when (and (or (not (nativeGet scope "instance_ids"))
                             (js-call (nativeGet scope "instance_ids") :includes (nativeGet endpoint "instance_id")))
                          (or (not (nativeGet scope "workspace_refs"))
+                            (= (nativeGet endpoint "workspace_scope") "instance")
                             (js-call (nativeGet scope "workspace_refs") :includes (nativeGet endpoint "workspace_ref"))))
                 (try
                   (let* ((response (await (funcall summaries endpoint context)))
@@ -85,9 +111,12 @@
                     (while (< n (js-length ids))
                       (let* ((id (aref ids n)) (row (nativeGet rows id)))
                         (when (cascadeWorkspace endpoint row)
-                          (when (and (>= index skip) (< (js-length items) maximum))
-                            (js-call items :push (funcall project endpoint id row (nativeGet response "instance_epoch"))))
-                          (setq index (1+ index))))
+                          (let ((projected (funcall project endpoint id row (nativeGet response "instance_epoch"))))
+                            (when (or (not (nativeGet scope "workspace_refs"))
+                                      (js-call (nativeGet scope "workspace_refs") :includes (nativeGet projected "workspace_ref")))
+                              (when (and (>= index skip) (< (js-length items) maximum))
+                                (js-call items :push projected))
+                              (setq index (1+ index))))))
                       (setq n (1+ n))))
                   (catch unavailable (setq partial t)))))
             (setq i (1+ i))))

@@ -7,7 +7,7 @@ Kimi Work / Code Web 与 DSH Desktop / Web 的形态、既有实例接收及调�
 - inspect: 使用已生成目录包的 bin/dj；先运行 `dj skill targets` 查看目录，再选择目标与 scope。安装不会修改客户端设置、启动模型或建立订阅。
 - project: `dj skill install --target cursor --scope project --project PROJECT --dry-run` 先预览；确认目标正确后去掉 `--dry-run`。PROJECT 必须是已存在的真实目录。
 - user: `dj skill install --target codex --scope user --dry-run`；显式安装后可用相同参数的 `dj skill check` 核对。共享目录只需安装一次，不要为每个客户端重复创建同名 Skill。
-- conflict: 所有引用随目录复制，报告逐文件 SHA256。已存在且字节一致返回 unchanged；任何不同文件、软链接或非普通资产都拒绝，保留原内容，没有 force 覆盖。部分写入失败不报告安装成功，先检查目标再决定清理或恢复。
+- conflict: 所有引用随目录复制，报告逐文件 SHA256。已存在且字节一致返回 unchanged；默认不覆盖不同文件；共享安装根使用 `--target dj --scope user` 更新 `~/.dj/skills/dj`；升级既有完整 Markdown Skill 目录时显式传 `dj skill install --update`（可先配 `--dry-run`），任何软链接或非普通 Markdown 资产仍拒绝替换。部分写入失败不报告安装成功，先检查目标再决定清理或恢复。
 - adoption: 文件安装成功仅证明文件可用。随后在客户端查看 dj 是否可发现，显式加载正文与所需 references，并执行 service.status/agent.whoami。不要用一个 OK 回复证明采用，不自动重启原对话。
 
 | target | 用户级 Skill 根 | 项目级 Skill 根 | 使用说明 |
@@ -70,3 +70,4 @@ The service supports an existing Claude Code native inbox and an existing Antigr
 - autonomy: 不同工具和对话允许同时订阅同一消息；只删除调用方自己选中的订阅，不要求转移其他对话。
 - advisory: subscriber_hints默认提供本事件其他实际匹配接收者，至多32项；仅供AI自行判断是否协作，不是任务分配或互斥令牌。操作员用服务subscriber_hints=false可关闭。
 - opencode: 已有对话按同一本机服务实例发现，project_id和directory是对话元数据；无需为每个项目再加endpoint。原生创建仍使用endpoint配置工作区。
+- codex_antigravity: Codex Desktop 与 Antigravity App 单实例端点可显式设置 `workspace_scope: "instance"`，按实例发现并投递不同项目目录的原生对话（保留各自真实 `directory` 与派生的 `workspace_ref`）；省略时保持默认 `directory` 精确目录边界。

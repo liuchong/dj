@@ -12,7 +12,7 @@
 | `ownership` | `existing` | `existing` |
 | 原生入口 | `socket_path` 指向同用户 IPC socket | `manifest_path` 指向同用户 0600 Desktop Bridge manifest，或显式配置 `native_api`（两者互斥） |
 | 历史库 | `history_database` 指向当前 `state_*.sqlite` | Bridge 使用 `history_database`；native_api 读取原生内存，不需要历史库 |
-| 目标范围 | `directory` 必须等于目标原生线程的 `cwd` | `window_id` 必须等于原生窗口；native_api 另核对原 PID/origin、workspace_id；自动开关另核对 process_birth 与只读 helper |
+| 目标范围 | 默认 `directory` 必须等于目标原生线程的 `cwd`；显式设置 `workspace_scope: "instance"` 时覆盖该实例全部本地工作区线程并保留各自真实 `directory` | `window_id` 必须等于原生窗口；native_api 另核对原 PID/origin、workspace_id；自动开关另核对 process_birth 与只读 helper |
 | 原生帧预算 | 可显式设置 `snapshot_max_bytes`，1–64 MiB；省略时沿用调用方响应预算 | 原生响应仍受调用方响应预算约束 |
 | 工作区引用 | 明确配置 `workspace_ref` / `workspace_refs` | 明确配置 `workspace_ref` / `workspace_refs`；它们是部署者为该窗口分配的范围标签 |
 

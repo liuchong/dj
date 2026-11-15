@@ -15,7 +15,31 @@
             :predicate (js-object :all (js-array)))))))
       (let ((principal (aref (nativeGet config "principals") 2)))
         (Reflect/deleteProperty principal "target_constraint")
-        (put principal :grants (js-array (js-object :action "*" :resources (js-array "*"))))))))))
+        (put principal :grants (js-array (js-object :action "*" :resources (js-array "*")))))
+      (let ((inspect-peer (js-call (nativeGet config "principals") :find (lambda (p) (= (nativeGet p "principal_id") "B"))))
+            (isolated-peer (js-call (nativeGet config "principals") :find (lambda (p) (= (nativeGet p "principal_id") "S")))))
+        (when inspect-peer
+          (Reflect/deleteProperty inspect-peer "target_constraint")
+          (put inspect-peer :grants (js-array
+            (js-object :action "agent.inspect" :resources (js-array "*"))
+            (js-object :action "subscription.manage" :resources (js-array "*"))
+            (js-object :action "subscription.consume" :resources (js-array "*")))))
+        (when isolated-peer
+          (Reflect/deleteProperty isolated-peer "target_constraint")
+          (put isolated-peer :grants (js-array
+            (js-object :action "agent.inspect" :resources (js-array (js-object :tool "opencode" :native_namespace "ns-opencode" :native_session_id "s-isolated")))
+            (js-object :action "subscription.manage" :resources (js-array "*"))
+            (js-object :action "subscription.consume" :resources (js-array "*"))))))
+      (let ((sessions (nativeGet (js-call (nativeGet ports "agent_ports") :get "opencode") "sessions")))
+        (js-call sessions :push
+          (js-object :tool "opencode" :native_namespace "ns-opencode" :native_session_id "s-inspect"
+            :instance_id "oc-existing" :instance_epoch "epoch-1" :title "inspect-peer" :workspace_ref "ws-test"
+            :visibility (js-array "live") :runtime_state "idle" :live_receiver t
+            :model_selection (js-object :provider_id undefined :model_id undefined :variant undefined))
+          (js-object :tool "opencode" :native_namespace "ns-opencode" :native_session_id "s-isolated"
+            :instance_id "oc-existing" :instance_epoch "epoch-1" :title "isolated-peer" :workspace_ref "ws-test"
+            :visibility (js-array "live") :runtime_state "idle" :live_receiver t
+            :model_selection (js-object :provider_id undefined :model_id undefined :variant undefined)))))))))
   (defasync register (f session)
     (let* ((page (await (callOk f "A" "agent.discover" (js-object :tool "opencode" :scope "live"))))
       (candidate (js-call (nativeGet page "items") :find (lambda (row) (= (nativeGet row "native_session_id") session)))))
@@ -53,14 +77,50 @@
       (await (js-call f :ingest (createdEvent "lark" "after-unsubscribe" "only b")))
       (await (js-call f :tick))
       (js-call (expect (js-length (nativeGet peer "inputs"))) :toBe 3)
-      (js-call (expect (js-length (nativeGet (nativeGet (nativeGet (aref (nativeGet peer "inputs") 2) "envelope") "subscriber_hints") "subscribers"))) :toBe 0)
+      (js-call (expect (nativeGet (nativeGet (aref (nativeGet peer "inputs") 2) "envelope") "subscriber_hints")) :toBeUndefined)
       (js-call (expect (nativeGet (await (callOk f "A" "subscription.get" (js-object :subscription_id (nativeGet sb "subscription_id")))) "state")) :toBe "active")
+      ;; Cross-principal subscriber_hints allows agent.inspect visibility while
+      ;; preserving isolation and post-filter has_more for restricted principals.
+      (let* ((page (await (callOk f "O" "agent.discover" (js-object :tool "opencode" :scope "live"))))
+             (c-inspect (js-call (nativeGet page "items") :find (lambda (row) (= (nativeGet row "native_session_id") "s-inspect"))))
+             (c-isolated (js-call (nativeGet page "items") :find (lambda (row) (= (nativeGet row "native_session_id") "s-isolated"))))
+             (ag-inspect (await (callOk f "O" "agent.register" (js-object :candidate_ref (nativeGet c-inspect "candidate_ref")
+               :display_name "inspect-peer" :binding_mode "existing" :recipient_principal_id "B" :idempotency_key "reg-inspect"))))
+             (ag-isolated (await (callOk f "O" "agent.register" (js-object :candidate_ref (nativeGet c-isolated "candidate_ref")
+               :display_name "isolated-peer" :binding_mode "existing" :recipient_principal_id "S" :idempotency_key "reg-isolated")))))
+        (await (subscribe f ag-inspect "lark" 60 "B"))
+        (await (subscribe f ag-isolated "lark" 60 "S"))
+        (await (js-call f :ingest (createdEvent "lark" "cross-principal-event" "shared across principals")))
+        (await (js-call f :tick))
+        (let* ((recent (js-call (nativeGet peer "inputs") :slice 3))
+               (for-inspect (js-call recent :find (lambda (item) (= (nativeGet (nativeGet (nativeGet item "envelope") "recipient") "native_session_id") "s-inspect"))))
+               (for-isolated (js-call recent :find (lambda (item) (= (nativeGet (nativeGet (nativeGet item "envelope") "recipient") "native_session_id") "s-isolated")))))
+          (js-call (expect (js-length (nativeGet (nativeGet (nativeGet for-inspect "envelope") "subscriber_hints") "subscribers"))) :toBe 2)
+          (js-call (expect (nativeGet (nativeGet (nativeGet for-inspect "envelope") "subscriber_hints") "has_more")) :toBe false)
+          (js-call (expect (nativeGet (nativeGet for-isolated "envelope") "subscriber_hints")) :toBeUndefined)))
+      ;; Paginated agent.discover (>20 candidates with undefined optional fields)
+      ;; must serialize pending snapshot items cleanly across pages.
+      (let ((extra 0))
+        (while (< extra 55)
+          (js-call (nativeGet peer "sessions") :push
+            (js-object :tool "opencode" :native_namespace "ns-opencode" :native_session_id (str "s-page-" extra)
+              :instance_id "oc-existing" :instance_epoch "epoch-1" :title (str "paged-" extra) :workspace_ref "ws-test"
+              :visibility (js-array "live") :runtime_state "idle" :live_receiver t
+              :model_selection (js-object :provider_id undefined :model_id undefined :variant undefined)))
+          (setq extra (1+ extra)))
+        (let* ((first-page (await (callOk f "A" "agent.discover" (js-object :tool "opencode" :scope "live" :limit 20))))
+               (second-page (await (callOk f "A" "agent.discover" (js-object :tool "opencode" :scope "live" :cursor (nativeGet first-page "next_cursor") :limit 20))))
+               (third-page (await (callOk f "A" "agent.discover" (js-object :tool "opencode" :scope "live" :cursor (nativeGet second-page "next_cursor") :limit 20)))))
+          (js-call (expect (js-length (nativeGet first-page "items"))) :toBe 20)
+          (js-call (expect (js-length (nativeGet second-page "items"))) :toBe 20)
+          (js-call (expect (> (js-length (nativeGet third-page "items")) 15)) :toBe t)
+          (js-call (expect (nativeGet third-page "complete")) :toBe t)))
       (let ((config (JSON/parse (JSON/stringify (nativeGet f "config")))))
         (put config :subscriber_hints false)
         (js-call (expect (nativeGet (await (js-call (nativeGet f "core") :reloadConfig config)) "ok")) :toBe t))
       (await (js-call f :ingest (createdEvent "lark" "hints-off" "body")))
       (await (js-call f :tick))
-      (js-call (expect (nativeGet (nativeGet (aref (nativeGet peer "inputs") 3) "envelope") "subscriber_hints")) :toBeUndefined)
+      (js-call (expect (nativeGet (nativeGet (aref (nativeGet peer "inputs") (- (js-length (nativeGet peer "inputs")) 1)) "envelope") "subscriber_hints")) :toBeUndefined)
       (let ((forbidden (await (js-call f :call (nativeGet f "X") "agent.register" (js-object :candidate_ref "unknown" :display_name "x" :binding_mode "existing" :idempotency_key "cannot-bind")))))
         (js-call (expect (nativeGet forbidden "ok")) :toBe false)))) closeFixture)
   (withCase "T38.many-fixed-targets.integration" (async () (await (setup t))) (async (f)

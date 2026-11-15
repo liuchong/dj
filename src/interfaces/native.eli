@@ -6,7 +6,7 @@
   (import "node:fs/promises" lstat mkdir writeFile unlink)
   (import "node:path" resolve join)
   (defconst nativeHelp
-    "dj native configure --input PRIVATE_JSON\nBinds an already running Antigravity language server or Claude Code native inbox. Input: tool, pid, directory, workspace_ref, instance_id, native_namespace, output_directory, process_helper_ref; Antigravity also base_url; Claude also registry_path. Writes a new private endpoint.json (and Antigravity credential.json). Does not start an AI, create a conversation, send a message, change permissions or install anything. Merge the endpoint into service.agent_endpoints explicitly.\n")
+    "dj native configure --input PRIVATE_JSON\nBinds an already running Antigravity language server or Claude Code native inbox. Input: tool, pid, directory, workspace_ref, instance_id, native_namespace, output_directory, process_helper_ref; Antigravity also base_url and optional workspace_scope (directory|instance); Claude also registry_path. Writes a new private endpoint.json (and Antigravity credential.json). Does not start an AI, create a conversation, send a message, change permissions or install anything. Merge the endpoint into service.agent_endpoints explicitly.\n")
   (defasync configureNative (input)
     (unless (and (js-call (js-array "claude" "antigravity") :includes (nativeGet input "tool"))
                  (Number/isSafeInteger (nativeGet input "pid")) (> (nativeGet input "pid") 0)
@@ -31,6 +31,10 @@
              (endpoint-path (join directory "endpoint.json")))
         (if (= (nativeGet input "tool") "antigravity")
           (progn
+            (when (object-has? input :workspace_scope)
+              (unless (js-call (js-array "directory" "instance") :includes (nativeGet input "workspace_scope"))
+                (throw (new globalThis.TypeError "workspace_scope must be directory or instance")))
+              (put endpoint :workspace_scope (nativeGet input "workspace_scope")))
             (put endpoint :base_url (nativeGet input "base_url"))
             (await (processProof endpoint context))
             ;; Read only this verified language-server's own argv; never print it.
@@ -42,6 +46,8 @@
               (setq credential (js-object :csrf_token (aref match 1) :certificate_pem (nativeGet certificate "certificate_pem")))
               (put endpoint :credential_ref credential-path)))
           (let* ((path (resolve (nativeGet input "registry_path"))) (registry (await (ownedJson path false))))
+            (when (object-has? input :workspace_scope)
+              (throw (new globalThis.TypeError "workspace_scope is supported only for Antigravity")))
             (put endpoint :registry_path path)
             (put endpoint :native_session_id (nativeGet registry "sessionId"))
             (put endpoint :socket_path (nativeGet registry "messagingSocketPath" (nativeGet registry "sock")))

@@ -62,7 +62,11 @@
       (js-call (expect (cascadeWorkspace endpoint (js-object :workspaces
         (js-array (js-object :workspaceFolderAbsoluteUri uri))))) :toBe t)
       (js-call (expect (cascadeWorkspace endpoint (js-object :workspaces
-        (js-array (js-object :workspaceFolderAbsoluteUri (str uri "-other")))))) :toBe false))
+        (js-array (js-object :workspaceFolderAbsoluteUri (str uri "-other")))))) :toBe false)
+      (put endpoint :workspace_scope "instance")
+      (js-call (expect (cascadeWorkspace endpoint (js-object :workspaces
+        (js-array (js-object :workspaceFolderAbsoluteUri (str uri "-other")))))) :toBe t)
+      (js-call (expect (cascadeWorkspace endpoint (js-object :workspaces (js-array)))) :toBe t))
     (let ((base (js-object :schema_version 1 :service (js-object :service_id "native-boundaries")
                   :principals (js-array) :managed_profiles (js-array))))
       (js-call (js-array "claude" "antigravity") :forEach (lambda (tool)
@@ -76,6 +80,12 @@
               (put (nativeGet endpoint "process_binding") :certificate_sha256 (js-call "a" :repeat 64))))
           (put config :agent_endpoints (js-array endpoint))
           (js-call (expect (nativeGet (validateStructure config) "ok")) :toBe t)
+          (let* ((scoped (JSON/parse (JSON/stringify config)))
+                 (scoped-item (aref (nativeGet scoped "agent_endpoints") 0))
+                 (accepted false))
+            (put scoped-item :workspace_scope "instance")
+            (try (setq accepted (nativeGet (validateStructure scoped) "ok")) (catch invalid (setq accepted false)))
+            (js-call (expect accepted) :toBe (= tool "antigravity")))
           (js-call (js-array "no_process_binding" "bad_pid" "mixed_transport" "argv_profile") :forEach (lambda (change)
             (let* ((copy (JSON/parse (JSON/stringify config))) (item (aref (nativeGet copy "agent_endpoints") 0)) (rejected false))
               (cond

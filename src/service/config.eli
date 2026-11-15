@@ -204,6 +204,8 @@
         (js-object :type "integer" :minimum 1)
         :directory
         id
+        :workspace_scope
+        (enumOf "directory" "instance")
         :workspace_ref
         id
         :workspace_refs
@@ -448,6 +450,9 @@
             :forEach
             (lambda (endpoint)
               (let ((tool (nativeGet endpoint "tool")))
+                (when (and (nativeGet endpoint "workspace_scope")
+                           (not (js-call (js-array "codex" "antigravity" "opencode") :includes tool)))
+                  (throw (new globalThis.TypeError "workspace_scope applies only to Codex, Antigravity or OpenCode endpoints")))
                 (when (and (= tool "opencode") (or (nativeGet endpoint "service_file") (nativeGet endpoint "desktop_registry_path")))
                   (unless (and (nativeGet endpoint "directory") (nativeGet endpoint "workspace_ref")
                     (or (nativeGet endpoint "service_file") (nativeGet endpoint "base_url"))
