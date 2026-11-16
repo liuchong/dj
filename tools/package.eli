@@ -210,7 +210,7 @@
                   (cond ((js-call entry :isDirectory) (await (visit path)))
                     ((and (js-call entry :isFile) (not (js-call entry :isSymbolicLink)))
                       (await
-                        (chmod path (if (js-call (js-array "bin/dj" "libexec/dj-codex-loader" "libexec/dj-process-info" "libexec/dj-status-bar")
+                        (chmod path (if (js-call (js-array "bin/dj" "libexec/dj-codex-loader" "libexec/dj-cursor-restart" "libexec/dj-process-info" "libexec/dj-status-bar")
                           :includes (relative root path)) 448 384)))
                       (js-call
                         files
@@ -326,6 +326,7 @@
       (await (copyAsset "bin/dj" staging "bin/dj" t))
       (await (copyAsset "dist/native/dj-process-info" staging "libexec/dj-process-info" t))
       (await (copyAsset "dist/native/dj-codex-loader" staging "libexec/dj-codex-loader" t))
+      (await (copyAsset "dist/native/dj-cursor-restart" staging "libexec/dj-cursor-restart" t))
       (when (nativeGet options "with_controller")
         (await (buildStatusBar (resolve staging "libexec/dj-status-bar")))
         (let ((result (await (Bun/build (js-object

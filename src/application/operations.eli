@@ -968,6 +968,11 @@
   (addOperation "session.rename" "lifecycle" (js-array "session_ref" "title")
     (js-object :session_ref idSchema :title (js-object :type "string" :minLength 1 :maxLength 512))
     (js-object :effect "accept" :result "lifecycle"))
+  (addOperation "instance.restart" "lifecycle"
+    (js-array "instance_id" "expected_instance_epoch" "allow_interrupt")
+    (js-object :instance_id idSchema :expected_instance_epoch idSchema
+      :allow_interrupt (js-object :type "boolean" :const t))
+    (js-object :effect "accept" :guard "expected_instance_epoch" :result "lifecycle"))
   (addOperation
     "instance.stop"
     "lifecycle"

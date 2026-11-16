@@ -115,7 +115,7 @@
   (let ((properties (js-object)))
     (js-call
       (js-call
-        "receive_events send reply_thread markdown create_thread replay native_history creation_model_selection creation_requires_content session_create session_rename session_send session_list session_messages session_probe instance_start instance_stop native_idempotency lookup_send lookup_create observe live_receiver managed_rpc start_idle message_during_run"
+        "receive_events send reply_thread markdown create_thread replay native_history creation_model_selection creation_requires_content session_create session_rename session_send session_list session_messages session_probe instance_start instance_stop instance_restart native_idempotency lookup_send lookup_create observe live_receiver managed_rpc start_idle message_during_run"
         :split
         " ")
       :forEach
@@ -813,6 +813,10 @@
           :initial_delivery_id nullableString
           :initial_input_error nullableString
           :initial_input_receipt_key nullableString
+          :result_instance_epoch nullableString
+          :resume_coverage stringSchema
+          :restart_scope stringSchema
+          :resume_sessions (arr (obj (strings "native_session_id title runtime_state" (js-object :workspace_id nullableString))))
           :initial_session_key
           nullableString
           :session_key

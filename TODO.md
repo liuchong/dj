@@ -52,3 +52,5 @@
 
 - [x] 0030 会话控制补齐：创建可带首条 content，独立持久投递；统一 session.rename 接通 OpenCode、Cursor native_api、Antigravity。Skill 明确目标优先，DJ 达不到效果时可用自身其他能力、接口或已安装 Skill，不依赖特定外部工具。
 - [x] 0030 Codex原生工具宿主接收端、Claude Desktop、Pi扩展创建/改名补齐：9项定向集成与34项保护/契约回归通过；Codex真实创建/改名及Cursor当前实例读回通过。Claude/Pi当前无活实例，其真实客户端验收待实例启动；代码、包、Skill与当前文档一起交付。
+
+- [x] 0030 Cursor显式重启、原会话快照、新进程重连与AI续接说明；不猜业务、不重放不确定投递。

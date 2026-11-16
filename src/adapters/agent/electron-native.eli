@@ -118,7 +118,7 @@
            (queue (or (js-call electronQueues :get key)
                     (js-object :tail (Promise/resolve) :depth 0))))
       (desktopDeadline context)
-      (unless (and (js-call (js-array "list" "probe" "messages" "submit" "create" "lookup_create" "rename" "inspect") :includes (nativeGet payload "operation"))
+      (unless (and (js-call (js-array "list" "probe" "messages" "submit" "create" "lookup_create" "rename" "inspect" "restart_snapshot") :includes (nativeGet payload "operation"))
                    (<= (Buffer/byteLength (JSON/stringify payload)) 300000))
         (throw (desktopError "desktop_frame_limit")))
       (when (>= (nativeGet queue "depth") 64) (throw (desktopError "cursor_native_busy")))

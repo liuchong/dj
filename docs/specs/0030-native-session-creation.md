@@ -77,3 +77,11 @@ Codex 当前原生 create_thread 需要非空首条消息；DJ 在动作受理�
 | T53.native-initial-input.sqlite | 原生同时受理首条输入后不重复投递 |
 | T38.pi-native-creation-unknown.unit | 可能已创建的SDK请求不按同键重建 |
 | T38.native-host-result-boundaries.unit | 原生结果、未知信息与创建工作区边界 |
+
+## Cursor 受控重启与续接
+
+`instance.restart` 接收 `instance_id`、当前 `expected_instance_epoch`、`allow_interrupt=true` 和 `idempotency_key`，使用独立的 `instance.restart` 权限。仅支持配置了受保护 `native_api.restart_helper_ref` 的 Cursor 原生端点。它关闭实例输入 gate，等已提交或结果不明的原生投递核实后再执行；先持久保存可见原会话 ID、标题及忙闲状态，再通过 macOS 应用 API 正常退出和启动原 App。启动参数只配置本机 Inspector 端口，不传任务、会话或模型。拒绝退出时不强杀。
+
+`lifecycle.get` 返回 `resume_sessions`、`resume_coverage=partial`、`restart_scope=application` 和成功后的 `result_instance_epoch`。快照限当前原生窗口已加载的最多 200 条会话，不代表整台机器所有工作。重启影响同 App 的所有窗口；多窗口不能唯一重连时返回 unknown，不猜窗口。unknown 使用 `lifecycle.reconcile` 核对现有进程，不再执行重启。
+
+发起调用的 AI 应在重启前补存自己的任务检查点，成功后按新 epoch 重新发现准确原会话，读取状态和历史。已经继续运行的会话不重复输入；之前忙、现在空闲的会话，由调用方决定发送续接指令。DJ 不判断任务、负责人或续接内容，不自动重放 accepted/submitting/unknown 投递。客户端自行重启后，适配器也可重新核验同 UID 的现存 Cursor 主进程、出生身份、窗口和原生工作区；写入仍校验当前 epoch。

@@ -199,7 +199,7 @@
         (obj (js-object :inspector_url id
           :process_id (js-object :type "integer" :minimum 1)
           :process_origin (js-object :type "number" :minimum 0)
-          :workspace_id id :manage_inspector (js-object :type "boolean")
+          :workspace_id id :restart_helper_ref id :manage_inspector (js-object :type "boolean")
           :process_birth id :process_helper_ref id)
           (js-array "inspector_url" "process_id" "process_origin"))
         :window_id
@@ -705,6 +705,9 @@
                   (js-call (js-array "process_helper_ref" "executable_ref" "parent_executable_ref" "entry_ref" "package_ref") :forEach
                     (lambda (field) (when (nativeGet (nativeGet endpoint "process_binding") field)
                       (put (nativeGet endpoint "process_binding") field (resolve base (nativeGet (nativeGet endpoint "process_binding") field)))))))
+                (when (nativeGet (nativeGet endpoint "native_api") "restart_helper_ref")
+                  (put (nativeGet endpoint "native_api") :restart_helper_ref
+                    (resolve base (nativeGet (nativeGet endpoint "native_api") "restart_helper_ref"))))
                 (when (nativeGet (nativeGet endpoint "native_api") "process_helper_ref")
                   (put (nativeGet endpoint "native_api") :process_helper_ref
                     (resolve base (nativeGet (nativeGet endpoint "native_api") "process_helper_ref"))))

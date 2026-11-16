@@ -29,6 +29,10 @@ metadata:
 - prerequisites: session.create 不隐含 instance.inspect；部署创建调用方时同时配置实例查询、lifecycle.inspect、lifecycle.reconcile。先读 instance.get，核对当前 epoch、workspace_scope 和目录；forbidden 的 details.reason 区分工作区与模型能力，不猜测需要 managed profile。
 - workspace: directory 范围仅配置目录；instance 范围允许同一实例其他工作区，传发现得到的 workspace_ref 和绝对 directory，或由 DJ 从已发现会话解析目录。创建可以为空，也可显式传 content 作为首条消息。DJ 在同一原生会话创建成功后持久受理该消息；核对 lifecycle.initial_delivery_id 和 delivery.get，不把创建 ready 当消息已送达。不自动订阅或选择任务。
 
+## Cursor 受控重启
+
+- restart: instance.restart 使用准确实例、当前 epoch、allow_interrupt=true 和独立幂等键。先保存任务检查点；重启影响整个 App，生命周期返回可见原会话快照及新 epoch，按[客户端说明](references/clients.md#cursor-重启与原工作续接)由发起方 AI 续接。DJ 不推断任务或盲重发。
+
 ## 对话督工
 
 - operations: session.supervision.start / get / cancel；[用法与恢复边界](references/supervision.md)。长期任务可主动登记，在意外空闲后由 DJ 通过原实例接口续接，完成或主动暂停时取消。

@@ -29626,6 +29626,78 @@
       "given": "Explicit workspace identities, native model enums and creation keys",
       "when": "Check directory bounds, persisted workspace resolution and deterministic native IDs",
       "then": "Invalid scopes and models reject; original creation ID remains stable"
+    },
+    {
+      "case_id": "T53.cursor-restart.sqlite",
+      "parent_id": "T53",
+      "file": "tests/integration/cursor-restart.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {
+        "boundary": "native-restart"
+      },
+      "required_profile": null,
+      "timeout_ms": 10000,
+      "resource_group": "sqlite",
+      "requirements": [
+        "0030"
+      ],
+      "acceptance_ids": [
+        "CREATE01"
+      ],
+      "given": "Existing instance and explicit interruption permission",
+      "when": "Restart with durable native session snapshot",
+      "then": "One native restart, new epoch, no task input replay; unknown reconciles read-only"
+    },
+    {
+      "case_id": "T53.cursor-restart-unknown.sqlite",
+      "parent_id": "T53",
+      "file": "tests/integration/cursor-restart.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {
+        "boundary": "native-restart"
+      },
+      "required_profile": null,
+      "timeout_ms": 10000,
+      "resource_group": "sqlite",
+      "requirements": [
+        "0030"
+      ],
+      "acceptance_ids": [
+        "CREATE01"
+      ],
+      "given": "Existing instance and explicit interruption permission",
+      "when": "Restart with durable native session snapshot",
+      "then": "One native restart, new epoch, no task input replay; unknown reconciles read-only"
+    },
+    {
+      "case_id": "T38.cursor-restart-snapshot.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/cursor-restart.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {
+        "boundary": "native-restart"
+      },
+      "required_profile": null,
+      "timeout_ms": 5000,
+      "resource_group": "pure",
+      "requirements": [
+        "0030"
+      ],
+      "acceptance_ids": [
+        "CREATE01"
+      ],
+      "given": "Loaded native sessions with busy and unknown status",
+      "when": "Capture restart snapshot",
+      "then": "Bounded IDs and actual status; partial application coverage remains explicit"
     }
   ],
   "source_extension_base": "c1eb7b1"

@@ -5,6 +5,7 @@
   (import "node:crypto" randomUUID)
   (import "../im/telegram.eli" readJson)
   (import "./electron-native.eli" electronNativeRequest electronNativeUrl)
+  (import "./cursor-recovery.eli" recoverCursorEndpoint)
 
   ;; Fixed protocol glue executes inside the existing native client, never a
   ;; new Agent process. Only the fixed operations below reach the repository.
@@ -23,6 +24,7 @@
       "  return {a,h,data,row:{id,title:(h.name?.value??'').slice(0,512),source:'local',windowId:request.window,\n"
       "   status:status==='in_progress'?'running':status==='done'?'completed':status==='needs_attention'?'idle':'unknown'}};\n"
       " };\n"
+      " if(request.operation==='restart_snapshot'){return {items:[...loaded.keys()].slice(0,200).map(id=>{const h=repo.getAgentHeader(id),a=loaded.get(id);return {native_session_id:id,title:(h?.name?.value??'').slice(0,512),workspace_id:a?._composerDataHandle?.data?.workspaceIdentifier?.id??null,runtime_state:h?.status?.value==='in_progress'?'busy':h?.status?.value==='done'?'idle':'unknown'};}),coverage:'partial',scope:'application'};}\n"
       " if (request.operation==='list') {\n"
       "  const rows=[];\n"
       "  for (const id of loaded.keys()) { const x=get(id); if(x) rows.push(x.row); if(rows.length>200)break; }\n"
@@ -146,7 +148,17 @@
 
   (defun cursorNativeUrl (value) (electronNativeUrl value))
   (defasync cursorNativeRequest (endpoint payload context)
-    (await (electronNativeRequest endpoint payload context
-      (js-call (js-call cursorMain :replace "RENDERER" (lambda () (JSON/stringify cursorRenderer)))
-        :replace "SELECTOR" (lambda () (JSON/stringify cursorConstructorSelector))))))
+    (let ((program (js-call (js-call cursorMain :replace "RENDERER" (lambda () (JSON/stringify cursorRenderer)))
+        :replace "SELECTOR" (lambda () (JSON/stringify cursorConstructorSelector)))))
+      (try (await (electronNativeRequest endpoint payload context program))
+        (catch error
+          (unless (js-call (js-array "cursor_process_metadata" "desktop_target_changed") :includes (nativeGet error "code")) (throw error))
+          ;; Do not turn a live wrong process or origin into a different target.
+          ;; Only definite disappearance permits ordinary read-side rebinding.
+          (let ((gone false))
+            (try (js-call globalThis.process :kill (nativeGet (nativeGet endpoint "native_api") "process_id") 0)
+              (catch missing (when (= (nativeGet missing "code") "ESRCH") (setq gone t))))
+            (unless gone (throw error)))
+          (await (recoverCursorEndpoint endpoint context))
+          (await (electronNativeRequest endpoint payload context program))))))
   (export cursorNativeRequest cursorNativeUrl cursorRenderer cursorConstructorSelector))

@@ -61,3 +61,5 @@ DJ 独立直连各工具的原生接口，不依赖其他 AI 工具的控制程�
 多对多接线现行边界见[0027](specs/0027-many-to-many-subscribers.md)：调用身份与接收目标分离，whoami返回登记数组，普通AI自行登记订阅；同事件协作提示不决定任务归属。
 
 Codex 的可选创建/改名通过现有原生 Node 工具宿主加载的 DJ 接收端；Follower 通知接线独立保留。原生创建需要调用方明确首条 content，受理后 initial_input_state=native_queued、initial_input_receipt_key，不再制造第二次投递。Claude Desktop 的原生 LocalSessions 与 Pi 同进程 SDK 创建接入同一统一接口；它们与 CLI inbox、Pi 历史文件的边界见[0030](specs/0030-native-session-creation.md)。
+
+Cursor 支持显式 instance.restart：先持久记录可见原会话，再正常退出并原地启动，重新绑定进程身份及 epoch。调用方 AI 根据部分覆盖的 resume_sessions 决定续接，不把 App 重开等同于业务恢复。见[0030](specs/0030-native-session-creation.md#cursor-受控重启与续接)。

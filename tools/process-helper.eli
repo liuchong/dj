@@ -17,4 +17,5 @@
       (js-object :path path :sha256 (sha256 (await (readFile path))))))
   (defasync buildProcessHelper () (await (buildNativeHelper "dj-process-info" "src/host/darwin/process-info.swift")))
   (defasync buildCodexLoader () (await (buildNativeHelper "dj-codex-loader" "src/host/darwin/codex-loader.swift")))
-  (export buildProcessHelper buildCodexLoader))
+  (defasync buildCursorRestart () (await (buildNativeHelper "dj-cursor-restart" "src/host/darwin/cursor-restart.swift")))
+  (export buildProcessHelper buildCodexLoader buildCursorRestart))

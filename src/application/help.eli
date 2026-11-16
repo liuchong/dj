@@ -171,8 +171,10 @@
       "沿准确 session_ref 修改原生标题；独立 session.rename 权限，持久记账后写原接口并读回。同一幂等键不重复写；unknown 用 lifecycle.reconcile 只读核对。"
       :instance.stop
       "仅停止 DJ-owned managed 实例；先关 gate 再排空，期限到不强杀、不要求队列清空。"
+      :instance.restart
+      "显式重启现有 Cursor App；allow_interrupt=true 表示允许中断，先保存可见原会话快照再重启。ready 返回新 epoch，调用方 AI 决定续接原会话；unknown 仅核对，不重复重启。"
       :lifecycle.get
-      "读取启动/创建/改名/停止台账及当前实例，并为当前可见会话重签短期引用。"
+      "读取启动/创建/改名/重启/停止台账及当前实例，并为当前可见会话重签短期引用。"
       :lifecycle.reconcile
       "按原 launch token/创建关联键追加原生观察；不另起进程或再次创建。"
       :lifecycle.resolve
@@ -359,6 +361,7 @@
       ((= name "session.rename") (js-array "session_rename" "instance_gate_open"))
       ((= name "instance.start")
         (js-array "instance_start" "approved_profile" "managed_slot"))
+      ((= name "instance.restart") (js-array "instance_restart" "explicit_interrupt" "native_resume_snapshot"))
       ((= name "instance.stop")
         (js-array "instance_stop" "verified_managed_ownership" "native_drain"))
       ((= group "message_actions") (js-array "exact_native_message" "same_connection_identity" "native_message_action"))

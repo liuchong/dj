@@ -18,6 +18,7 @@
   (import "../catalog/records.eli" putSession projectSession)
   (import "../catalog/service.eli" objectProjection)
   (import "./workspaces.eli" creationWorkspace)
+  (import "./restart.eli" acceptRestart runRestart)
   (import "../catalog/service.eli" resolveSessionRecord)
   (import "./gates.eli" assertGate closeGate releaseSlot reserveSlot)
   (defun projectLifecycle
@@ -40,6 +41,7 @@
               "initial_delivery_id"
               "initial_input_error"
               "initial_input_receipt_key"
+              "resume_sessions" "resume_coverage" "restart_scope" "result_instance_epoch"
               "profile_id"
               "revision"
               "created_at"
@@ -99,6 +101,7 @@
       (try
         (let ((repository (nativeGet context "repository")))
           (cond
+            ((= operation "instance.restart") (acceptRestart context args projectLifecycle))
             ((= operation "instance.start")
               (let
                 ((profile (js-call repository :get "profiles" (nativeGet args "profile_id"))))
@@ -737,6 +740,11 @@
             (action (js-call repository :get "lifecycle_actions" lifecycle-id)))
           (unless action
             (progn (setq djReturn6Value (failure "not_found")) (throw djReturn6Token)))
+          (when (= (nativeGet action "action") "restart")
+            (setq djReturn6Value (if (> (pendingNative base (nativeGet action "instance_id") lifecycle-id) 0)
+              (success (projectLifecycle (executionContext base action) action))
+              (await (runRestart (executionContext base action) action projectLifecycle writeAction))))
+            (throw djReturn6Token))
           (unless
             (js-call (js-array "recorded" "stopping") :includes (nativeGet action "state"))
             (progn
@@ -1018,6 +1026,9 @@
               (port (agentPort context instance)))
             (unless (can context "lifecycle.reconcile" action)
               (progn (setq djReturn8Value (failure "forbidden")) (throw djReturn8Token)))
+            (when (= (nativeGet action "action") "restart")
+              (setq djReturn8Value (await (runRestart context action projectLifecycle writeAction t)))
+              (throw djReturn8Token))
             (try
               (let
                 (
@@ -1081,7 +1092,7 @@
         (cond
           (
             (js-call
-              (js-array "instance.start" "session.create" "session.rename" "instance.stop")
+              (js-array "instance.start" "instance.restart" "session.create" "session.rename" "instance.stop")
               :includes
               operation)
             (acceptLifecycle context operation args))
