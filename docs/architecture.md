@@ -109,3 +109,7 @@ catalog 的读取与 direct 的发送可以独立于 registry/subscriptions；Ta
 ## 工具性关系辅助的模块边界
 
 IM上下文与根引用读取归messaging/context，原生话题标识归messaging/topics，同话题历史接收映射归messaging/related-sessions。关系查询返回客观证据和覆盖范围，不判断任务负责人；既有tasks模块仅维护调用方显式登记的关系。工具实例的历史定位与活接收端区别归Agent适配器，Core只执行调用方明确请求。AI自行选择查找、联系、协作及恢复方式，也可使用获准的独立工具。各模块复用授权、身份与预算机制，不按账号、AI工具昵称或业务项目分叉。
+
+## 组订阅分发
+
+组管理归subscriptions/groups，纯选择归routing/group-selection，持久选中与恢复归delivery/group-dispatch，额度观测归registry/availability。厂商只读额度接口及稳定错误码由Agent适配器提供；普通订阅共用既有delivery，不进入组算法。详见[0028](specs/0028-group-subscriptions.md)。

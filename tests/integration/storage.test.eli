@@ -205,7 +205,7 @@
             (js-call (expect (nativeGet (funcall read "subscriptions" "sub-1") "revision")) :toBe 2)
             (js-call (expect (nativeGet (funcall read "connections" "conn-0") "identity_revision")) :toBe 2)
             (success t))))))
-        ;; P2: repository.getSubscriptionState (exact 4-column projection, missing -> nil, invalid ID -> TypeError)
+        ;; P2: repository.getSubscriptionState (exact 5-column projection, missing -> nil, invalid ID -> TypeError)
         ;; and withContributionReads(context, work, subscriptionStateOnly?) narrow mode vs default full mode:
         (let ((full-sub-gets 0) (narrow-sub-gets 0) (escaped-narrow-read nil)
           (original-get (nativeGet repository "get"))
@@ -218,9 +218,9 @@
           (let ((state-only (js-call repository :getSubscriptionState "sub-1"))
             (full-sub (js-call repository :get "subscriptions" "sub-1")))
             (js-call (expect (js-call (Object/keys state-only) :sort))
-              :toEqual (js-array "owner_principal_id" "revision" "state" "subscription_id"))
+              :toEqual (js-array "group_id" "owner_principal_id" "revision" "state" "subscription_id"))
             (js-call (expect state-only)
-              :toEqual (js-object :subscription_id "sub-1" :owner_principal_id "O" :state "paused" :revision 2))
+              :toEqual (js-object :subscription_id "sub-1" :owner_principal_id "O" :state "paused" :revision 2 :group_id nil))
             (js-call (expect (nativeGet state-only "agent_id")) :toBe undefined)
             (js-call (expect (nativeGet full-sub "agent_id")) :toBe "agent-1"))
           (put repository :get (lambda (table key)
@@ -249,7 +249,7 @@
                 (js-call (expect (Object/isFrozen s1)) :toBe t)
                 (js-call (expect (nativeGet s1 "agent_id")) :toBe undefined)
                 (js-call (expect s1)
-                  :toEqual (js-object :subscription_id "sub-1" :owner_principal_id "O" :state "paused" :revision 2))
+                  :toEqual (js-object :subscription_id "sub-1" :owner_principal_id "O" :state "paused" :revision 2 :group_id nil))
                 (js-call (expect (nativeGet a1 "route_id")) :toBe "route-1")
                 (js-call (expect missing) :toBe nil))) t)
             (js-call (expect full-sub-gets) :toBe 1)
@@ -265,7 +265,7 @@
               (successful (js-call repository :replace "subscriptions" sub 2)))
             (withContributionReads context (lambda (read)
               (js-call (expect (funcall read "subscriptions" "sub-1"))
-                :toEqual (js-object :subscription_id "sub-1" :owner_principal_id "O2" :state "active" :revision 3))
+                :toEqual (js-object :subscription_id "sub-1" :owner_principal_id "O2" :state "active" :revision 3 :group_id nil))
               (success t)) t))))
           (successful (inTransaction context (lambda (tx)
             (let ((sub (funcall original-get "subscriptions" "sub-1")))
@@ -1053,7 +1053,7 @@
             ;; - Requires active sync transaction; validates dense Array 0..128 of non-empty strings BEFORE any SQL
             ;; - Empty array returns [] with 0 SQL statements
             ;; - Deduplicates via Set in first-seen order before chunking by 1..16 precomputed IN (?,...,?) SQL statements
-            ;; - Returns only existing 4-column objects {subscription_id, owner_principal_id, state, revision} (missing keys omitted, payload not parsed)
+            ;; - Returns only existing 5-column objects {subscription_id, owner_principal_id, state, revision, group_id} (missing keys omitted, payload not parsed)
             (js-call (expect (lambda ()
               (js-call repository :getSubscriptionStates (js-array)))) :toThrow)
             (js-call (expect (lambda ()
@@ -1080,7 +1080,7 @@
                 (js-call bad-17-empty :push "")
                 (js-call bad-17-num :push 123)
                 (put db :query (lambda (sql)
-                  (when (js-call sql :startsWith "SELECT subscription_id,owner_principal_id,state,revision FROM subscriptions WHERE subscription_id IN (")
+                  (when (js-call sql :startsWith "SELECT subscription_id,owner_principal_id,state,revision,json_extract(payload,'$.group_id') AS group_id FROM subscriptions WHERE subscription_id IN (")
                     (setq sub-batch-sql (1+ sub-batch-sql)))
                   (funcall original-query sql)))
                 (try
@@ -1099,7 +1099,7 @@
                   (js-call (expect (lambda () (js-call repository :getSubscriptionStates bad-17-num))) :toThrow)
                   ;; Zero SQL statements executed across all pre-SQL validation failures (even when chunk 1 had 16 valid IDs):
                   (js-call (expect sub-batch-sql) :toBe 0)
-                  ;; Seed k1-sub-1..k1-sub-128 with extra payload fields to verify 0/1/16/17/128 boundaries, deduplication, and 4-column projection:
+                  ;; Seed k1-sub-1..k1-sub-128 with extra payload fields to verify 0/1/16/17/128 boundaries, deduplication, and 5-column projection:
                   (let ((si 1))
                     (while (<= si 128)
                       (js-call repository :insert "subscriptions" (js-object
@@ -1113,14 +1113,14 @@
                   ;; 0 items -> [] and 0 SQL statements:
                   (js-call (expect (js-call repository :getSubscriptionStates (js-array))) :toEqual (js-array))
                   (js-call (expect sub-batch-sql) :toBe 0)
-                  ;; 1 item -> 1 row (exact 4 keys, no agent_id/note from payload) and 1 SQL statement:
+                  ;; 1 item -> 1 row (exact 5 keys, no agent_id/note from payload) and 1 SQL statement:
                   (let ((res-1 (js-call repository :getSubscriptionStates (js-array "k1-sub-1"))))
                     (js-call (expect sub-batch-sql) :toBe 1)
                     (js-call (expect (js-length res-1)) :toBe 1)
                     (js-call (expect (js-call (Object/keys (aref res-1 0)) :sort))
-                      :toEqual (js-array "owner_principal_id" "revision" "state" "subscription_id"))
+                      :toEqual (js-array "group_id" "owner_principal_id" "revision" "state" "subscription_id"))
                     (js-call (expect (aref res-1 0))
-                      :toEqual (js-object :subscription_id "k1-sub-1" :owner_principal_id "O" :state "active" :revision 1))
+                      :toEqual (js-object :subscription_id "k1-sub-1" :owner_principal_id "O" :state "active" :revision 1 :group_id nil))
                     (js-call (expect (nativeGet (aref res-1 0) "agent_id")) :toBe undefined)
                     (js-call (expect (nativeGet (aref res-1 0) "note")) :toBe undefined))
                   ;; 16 items -> 16 rows and 1 SQL statement (exact 16-placeholder chunk):
@@ -1170,11 +1170,11 @@
                     (let ((batch-s1 (aref (js-call repository :getSubscriptionStates (js-array "k1-sub-1")) 0))
                       (single-s1 (js-call repository :getSubscriptionState "k1-sub-1")))
                       (js-call (expect batch-s1)
-                        :toEqual (js-object :subscription_id "k1-sub-1" :owner_principal_id "O2" :state "paused" :revision 99))
+                        :toEqual (js-object :subscription_id "k1-sub-1" :owner_principal_id "O2" :state "paused" :revision 99 :group_id nil))
                       (js-call (expect single-s1) :toEqual batch-s1)))
                   ;; K1b: withContributionReads(context, work, subscriptionStateOnly?, subscriptionIds?)
                   ;; - 4th arg requires subscriptionStateOnly === true, otherwise throws TypeError before SQL
-                  ;; - Preloads existing 4-column rows (frozen) and negative-caches missing IDs as nil via 1 getSubscriptionStates call
+                  ;; - Preloads existing 5-column rows (frozen) and negative-caches missing IDs as nil via 1 getSubscriptionStates call
                   ;; - Inside work: reading preloaded existing/missing IDs performs 0 getSubscriptionState and 0 get("subscriptions") calls;
                   ;;   reading unpreloaded ID falls back to getSubscriptionState; preserves 256 cap, routes rejection, and finally revocation
                   (let ((full-gets-k1b 0) (single-state-gets-k1b 0) (batch-state-gets-k1b 0) (escaped-k1b-read nil)
@@ -1218,9 +1218,9 @@
                           (js-call (expect (Object/isFrozen s1-a)) :toBe t)
                           (js-call (expect (Object/isFrozen s2)) :toBe t)
                           (js-call (expect s1-a)
-                            :toEqual (js-object :subscription_id "k1-sub-1" :owner_principal_id "O2" :state "paused" :revision 99))
+                            :toEqual (js-object :subscription_id "k1-sub-1" :owner_principal_id "O2" :state "paused" :revision 99 :group_id nil))
                           (js-call (expect s2)
-                            :toEqual (js-object :subscription_id "k1-sub-2" :owner_principal_id "O2" :state "active" :revision 2))
+                            :toEqual (js-object :subscription_id "k1-sub-2" :owner_principal_id "O2" :state "active" :revision 2 :group_id nil))
                           (js-call (expect s-miss-a) :toBe nil)
                           (js-call (expect s-miss-b) :toBe nil)
                           ;; Unpreloaded subscription key falls back to single-key getSubscriptionState once and caches:
@@ -1231,7 +1231,7 @@
                             (js-call (expect s4-a) :toBe s4-b)
                             (js-call (expect (Object/isFrozen s4-a)) :toBe t)
                             (js-call (expect s4-a)
-                              :toEqual (js-object :subscription_id "k1-sub-4" :owner_principal_id "O" :state "active" :revision 4)))
+                              :toEqual (js-object :subscription_id "k1-sub-4" :owner_principal_id "O" :state "active" :revision 4 :group_id nil)))
                           (js-call (expect (lambda () (funcall read "routes" "route-1"))) :toThrow)))
                         t (js-array "k1-sub-1" "k1-sub-2" "k1-sub-1" "k1-sub-does-not-exist"))
                       (js-call (expect (lambda () (funcall escaped-k1b-read "subscriptions" "k1-sub-1"))) :toThrow)
@@ -1952,7 +1952,7 @@
                 (js-call batch-write-order :push table)
                 inserted)))
             (put db :query (lambda (sql)
-              (when (js-call sql :startsWith "SELECT subscription_id,owner_principal_id,state,revision FROM subscriptions WHERE subscription_id IN (")
+              (when (js-call sql :startsWith "SELECT subscription_id,owner_principal_id,state,revision,json_extract(payload,'$.group_id') AS group_id FROM subscriptions WHERE subscription_id IN (")
                 (setq sub-batch-sql-calls (1+ sub-batch-sql-calls)))
               (when (js-call sql :startsWith "INSERT INTO deliveries(")
                 (setq del-batch-sql-calls (1+ del-batch-sql-calls)))
@@ -2355,7 +2355,7 @@
                   (js-call many-7c :push (js-array table (js-length records) inserted))
                   inserted)))
               (put db :query (lambda (sql)
-                (when (js-call sql :startsWith "SELECT subscription_id,owner_principal_id,state,revision FROM subscriptions WHERE subscription_id IN (")
+                (when (js-call sql :startsWith "SELECT subscription_id,owner_principal_id,state,revision,json_extract(payload,'$.group_id') AS group_id FROM subscriptions WHERE subscription_id IN (")
                   (setq sub-sql-7c (1+ sub-sql-7c)))
                 (when (js-call sql :startsWith "INSERT INTO deliveries(") (setq del-sql-7c (1+ del-sql-7c)))
                 (when (js-call sql :startsWith "INSERT INTO match_decisions(") (setq md-sql-7c (1+ md-sql-7c)))
@@ -2402,7 +2402,7 @@
                 (js-call sub-batch-7d :push (js-length ids))
                 (funcall original-get-sub-states ids)))
               (put db :query (lambda (sql)
-                (when (js-call sql :startsWith "SELECT subscription_id,owner_principal_id,state,revision FROM subscriptions WHERE subscription_id IN (")
+                (when (js-call sql :startsWith "SELECT subscription_id,owner_principal_id,state,revision,json_extract(payload,'$.group_id') AS group_id FROM subscriptions WHERE subscription_id IN (")
                   (setq sub-sql-7d (1+ sub-sql-7d)))
                 (funcall original-query sql)))
               (let ((res-7d (successful (await (matchBatch mt-context "mt-ev-nomatch")))))

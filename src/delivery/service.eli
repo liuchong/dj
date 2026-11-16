@@ -104,6 +104,7 @@
                 (js-object
                   :owner_principal_id
                   (nativeGet (currentPrincipal context) "principal_id")))))))))
+  (import "../subscriptions/groups.eli" groupMember)
   (defun isContributionEffective
     (context contribution event agent &optional read known-route)
     (let*
@@ -133,6 +134,8 @@
           (and route (funcall reader "sessions" (nativeGet route "session_key")))))
       (and
         subscription
+        (or (not (nativeGet subscription "group_id"))
+          (groupMember context (nativeGet subscription "group_id") (nativeGet agent "agent_id")))
         owner
         recipient
         connection
@@ -581,6 +584,7 @@
                 (nativeGet version "owner_principal_id")
                 :recipient_principal_id
                 (nativeGet agent "recipient_principal_id"))))
+          (when (nativeGet version "group_id") (put contribution :group_id (nativeGet version "group_id")))
           (when (nativeGet version "instruction_policy")
             (put contribution :instruction_policy (nativeGet version "instruction_policy")))
           (when (and planning
@@ -604,10 +608,10 @@
                   (js-call
                     db
                     :query
-                    "SELECT payload FROM deliveries WHERE route_id=? AND event_id=? AND origin='subscription_event'")
+                    "SELECT payload FROM deliveries WHERE route_id=? AND event_id=? AND origin='subscription_event' AND COALESCE(json_extract(payload,'$.distribution_key'),'')=?")
                   :get
                   (nativeGet route "route_id")
-                  (nativeGet event "event_id"))))
+                  (nativeGet event "event_id") (if (nativeGet version "group_id") (nativeGet version "subscription_id") ""))))
               (delivery (if planning (js-call planning :delivery (nativeGet route "route_id"))
                 (and existing (JSON/parse (nativeGet existing "payload"))))))
             (unless delivery
@@ -653,6 +657,7 @@
                   (js-array)
                   :dispatch_key
                   (nextId context "dispatch")))
+              (when (nativeGet version "group_id") (put delivery :distribution_key (nativeGet version "subscription_id")))
               (unless (nativeGet planning "defer_insert" false)
                 (js-call repository :insert "deliveries" delivery))
               (when planning (js-call planning :created delivery)))
@@ -663,7 +668,11 @@
                 (nativeGet delivery "state"))
               (put contribution :delivery_id (nativeGet delivery "delivery_id"))
               (if (nativeNullish pending-contributions)
-                (js-call repository :insertIfAbsent "contributions" contribution)
+                (if (and (nativeGet version "group_id")
+                  (js-call repository :get "contributions" (js-object :delivery_id (nativeGet delivery "delivery_id")
+                    :subscription_id (nativeGet version "subscription_id") :revision (nativeGet version "revision"))))
+                  (js-call repository :replace "contributions" contribution)
+                  (js-call repository :insertIfAbsent "contributions" contribution))
                 (js-call pending-contributions :push contribution)))
             (success delivery)))
         (catch djReturn5Error

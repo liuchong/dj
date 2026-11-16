@@ -60,3 +60,7 @@ bun run package:directory
 README 面向首次使用者，保留定位、功能、开始方式和必要链接。使用指南记录当前行为；操作 schema 以 `src/application/operations.eli` 和运行时帮助为准。旧构建编号、方案讨论和逐轮验收明细只放历史资料，不在每份文档重复堆积。更改文件位置时更新引用并检查链接，不把整理文档当作新的功能或验收完成证据。
 
 DJ 自有代码与文档使用[1PL](../../LICENSE)，第三方依赖保留各自许可证。
+
+## 组订阅定向回归
+
+0028 的用例位于 tests/integration/groups.test.eli 与 tests/unit/groups.test.eli，覆盖真实Core/SQLite组选择、重启、pull成员隔离、额度等待和恢复、明确未发送换成员与unknown防重、订阅目标结构的数据保留；纯选择和原生额度证据由后置单测保护。已有many-subscribers、fixed-routes、antigravity-input及必要的存储批量写用例按影响复用，不扩大为全工具、全IM和性能矩阵。

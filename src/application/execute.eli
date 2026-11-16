@@ -22,6 +22,7 @@
       "session_rules"
       "working"
       "acknowledgement"
+      "subscription_group"
       "subscription"
       "delivery"
       "outbound"

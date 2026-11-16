@@ -29123,6 +29123,178 @@
       "acceptance_ids": [
         "SPEC-0007"
       ]
+    },
+    {
+      "case_id": "T33.group-round-robin.integration",
+      "parent_id": "T33",
+      "file": "tests/integration/groups.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 20000,
+      "resource_group": "isolated-integration",
+      "requirements": [
+        "0028"
+      ],
+      "acceptance_ids": [
+        "G-A1",
+        "G-A2",
+        "G-A3",
+        "G-A4"
+      ],
+      "given": "Explicit group members, subscription filters and exact native receiver identities",
+      "when": "Exercise group-round-robin",
+      "then": "One selected receiver with durable selection, evidence-based quota handling and no unknown resubmission"
+    },
+    {
+      "case_id": "T33.group-quota-pull.integration",
+      "parent_id": "T33",
+      "file": "tests/integration/groups.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 20000,
+      "resource_group": "isolated-integration",
+      "requirements": [
+        "0028"
+      ],
+      "acceptance_ids": [
+        "G-A1",
+        "G-A2",
+        "G-A3",
+        "G-A4"
+      ],
+      "given": "Explicit group members, subscription filters and exact native receiver identities",
+      "when": "Exercise group-quota-pull",
+      "then": "One selected receiver with durable selection, evidence-based quota handling and no unknown resubmission"
+    },
+    {
+      "case_id": "T33.group-failure-boundary.integration",
+      "parent_id": "T33",
+      "file": "tests/integration/groups.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 20000,
+      "resource_group": "isolated-integration",
+      "requirements": [
+        "0028"
+      ],
+      "acceptance_ids": [
+        "G-A1",
+        "G-A2",
+        "G-A3",
+        "G-A4"
+      ],
+      "given": "Explicit group members, subscription filters and exact native receiver identities",
+      "when": "Exercise group-failure-boundary",
+      "then": "One selected receiver with durable selection, evidence-based quota handling and no unknown resubmission"
+    },
+    {
+      "case_id": "T33.group-target-storage.integration",
+      "parent_id": "T33",
+      "file": "tests/integration/groups.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 20000,
+      "resource_group": "isolated-integration",
+      "requirements": [
+        "0028"
+      ],
+      "acceptance_ids": [
+        "G-A1",
+        "G-A2",
+        "G-A3",
+        "G-A4"
+      ],
+      "given": "Explicit group members, subscription filters and exact native receiver identities",
+      "when": "Exercise group-target-storage",
+      "then": "One selected receiver with durable selection, evidence-based quota handling and no unknown resubmission"
+    },
+    {
+      "case_id": "T33.group-selection.unit",
+      "parent_id": "T33",
+      "file": "tests/unit/groups.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 5000,
+      "resource_group": "pure",
+      "requirements": [
+        "0028"
+      ],
+      "acceptance_ids": [
+        "G-A1",
+        "G-A2",
+        "G-A3"
+      ],
+      "given": "Explicit group members, subscription filters and exact native receiver identities",
+      "when": "Exercise group-selection",
+      "then": "One selected receiver with durable selection, evidence-based quota handling and no unknown resubmission"
+    },
+    {
+      "case_id": "T33.group-quota-evidence.unit",
+      "parent_id": "T33",
+      "file": "tests/unit/groups.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 5000,
+      "resource_group": "pure",
+      "requirements": [
+        "0028"
+      ],
+      "acceptance_ids": [
+        "G-A1",
+        "G-A2",
+        "G-A3"
+      ],
+      "given": "Explicit group members, subscription filters and exact native receiver identities",
+      "when": "Exercise group-quota-evidence",
+      "then": "One selected receiver with durable selection, evidence-based quota handling and no unknown resubmission"
+    },
+    {
+      "case_id": "T33.group-native-quota.unit",
+      "parent_id": "T33",
+      "file": "tests/unit/groups.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 5000,
+      "resource_group": "pure",
+      "requirements": [
+        "0028"
+      ],
+      "acceptance_ids": [
+        "G-A1",
+        "G-A2",
+        "G-A3"
+      ],
+      "given": "Explicit group members, subscription filters and exact native receiver identities",
+      "when": "Exercise group-native-quota",
+      "then": "One selected receiver with durable selection, evidence-based quota handling and no unknown resubmission"
     }
   ],
   "source_extension_base": "c1eb7b1"

@@ -81,7 +81,9 @@
     "tests/integration/many-subscribers.test.eli",
     "tests/integration/swift-hosts.test.eli",
     "tests/unit/swift-hosts.test.eli",
-    "tests/integration/antigravity-input.test.eli"
+    "tests/integration/antigravity-input.test.eli",
+    "tests/integration/groups.test.eli",
+    "tests/unit/groups.test.eli"
   ],
   "outDir": "dist-tests"
 }

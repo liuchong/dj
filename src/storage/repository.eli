@@ -9,7 +9,7 @@
     (while (<= count 16)
       (js-call placeholders :push "?")
       (js-call subscriptionStateSql :push
-        (str "SELECT subscription_id,owner_principal_id,state,revision FROM subscriptions WHERE subscription_id IN ("
+        (str "SELECT subscription_id,owner_principal_id,state,revision,json_extract(payload,'$.group_id') AS group_id FROM subscriptions WHERE subscription_id IN ("
           (js-call placeholders :join ",") ")"))
       (setq count (1+ count))))
   (defun defineTable
@@ -71,6 +71,10 @@
         :progress_sql progress-sql
         :progress_revision_sql (and progress-sql (str progress-sql " AND revision=?"))
         :delete_sql (str "DELETE FROM " table " WHERE " where)))))
+  (defineTable "subscription_groups" "group_id" "group_id owner_principal_id state revision")
+  (defineTable "group_dispatches" "subscription_id event_id" "subscription_id event_id state next_check_at")
+  (defineTable "group_cursors" "subscription_id" "subscription_id")
+  (defineTable "agent_availability" "scope_key" "scope_key valid_until")
   (defineTable "session_supervisions" "session_key" "session_key principal_id state next_check_at revision")
   (defineTable "recipient_policies" "connection_id" "connection_id revision")
   (defineTable "recipient_optouts" "connection_id recipient_id" "connection_id recipient_id state")
@@ -286,7 +290,7 @@
               (> (js-length subscription-id) 0))
               (throw (new globalThis.TypeError "subscription state requires a nonempty identifier")))
             (or (js-call (js-call db :query
-              "SELECT subscription_id,owner_principal_id,state,revision FROM subscriptions WHERE subscription_id=?")
+              "SELECT subscription_id,owner_principal_id,state,revision,json_extract(payload,'$.group_id') AS group_id FROM subscriptions WHERE subscription_id=?")
               :get subscription-id) nil)))
         (setq
           getSubscriptionStates
@@ -328,7 +332,7 @@
           (lambda
             (table record)
             (assertTransaction)
-            (unless (js-call (js-array "match_decisions" "contributions") :includes table)
+            (unless (js-call (js-array "match_decisions" "contributions" "group_dispatches") :includes table)
               (throw (new globalThis.TypeError "unsupported insert-if-absent table")))
             (let* ((info (tableInfo table))
               (values (js-call (nativeGet info "columns") :map

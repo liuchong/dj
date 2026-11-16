@@ -99,3 +99,5 @@
 所有工具适用。订阅 preview 的 `spec.subscriber_model` 可提供 `provider_id`、完整 `model_id`（允许含斜杠），及可得的 `variant`、`reasoning_effort`。先核对本对话真实原生模型；不知道就省略，DJ 返回 unknown，禁止用工具品牌或全局默认值猜。原生会话观察优先，自报明确标记 subscriber_report，作为参考而非实时证明。
 
 create/update 正式保存后，subscription.get 的 subscriber 是提交时快照；后续通知的 recipient 是该通知的准确接收对话与模型参考。分派或创建对话时可以参考这些字段，不能因此自动更换固定搭档模型。stale、unknown 和 source 必须保留，不把旧报告说成当前已核实的模型。工具 tool 与模型供应商 provider_id 是不同概念。凭据不会包含在此元数据中。
+
+- group_target: spec可以使用group_id替代agent_id，在同一组订阅中机械选一个成员；配置默认、请求选择算法、额度未知策略及pull成员参数见[组订阅](groups.md)。

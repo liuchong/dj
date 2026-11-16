@@ -54,7 +54,7 @@
       "CREATE INDEX events_reaction_activity ON events(connection_id,ingress_seq) WHERE event_kind='message.reaction.added' AND tombstone=0"
       "CREATE INDEX events_body_expiry ON events(body_expires_at,event_id) WHERE tombstone=0"
       "CREATE TABLE rejected_ingress(diagnostic_id TEXT PRIMARY KEY, connection_id TEXT NOT NULL, source_key TEXT NOT NULL, reason TEXT NOT NULL, received_at TEXT NOT NULL, UNIQUE(connection_id,source_key)) STRICT"
-      "CREATE TABLE subscriptions(subscription_id TEXT PRIMARY KEY, owner_principal_id TEXT NOT NULL, agent_id TEXT NOT NULL REFERENCES agents(agent_id), state TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0), payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE TABLE subscriptions(subscription_id TEXT PRIMARY KEY, owner_principal_id TEXT NOT NULL, agent_id TEXT REFERENCES agents(agent_id), state TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0), payload TEXT NOT NULL CHECK(json_valid(payload)), CHECK(agent_id IS NOT NULL OR COALESCE(json_type(payload,'$.group_id')='text',0))) STRICT"
       "CREATE INDEX subscriptions_agent ON subscriptions(agent_id,subscription_id)"
       "CREATE TABLE subscription_versions(subscription_id TEXT NOT NULL REFERENCES subscriptions(subscription_id), revision INTEGER NOT NULL CHECK(revision>0), start_seq INTEGER NOT NULL, cutover_seq INTEGER, state TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)), PRIMARY KEY(subscription_id,revision)) STRICT"
       "CREATE TABLE subscription_sources(connection_id TEXT NOT NULL REFERENCES connections(connection_id), native_chat_id TEXT NOT NULL, thread_key TEXT NOT NULL, event_kind TEXT NOT NULL, subscription_id TEXT NOT NULL, revision INTEGER NOT NULL, include_threads INTEGER NOT NULL CHECK(include_threads IN (0,1)), PRIMARY KEY(connection_id,native_chat_id,thread_key,event_kind,subscription_id,revision), FOREIGN KEY(subscription_id,revision) REFERENCES subscription_versions(subscription_id,revision)) STRICT"
@@ -63,7 +63,7 @@
       "CREATE INDEX routing_pending ON routing_work(state,ingress_seq)"
       "CREATE TABLE match_decisions(event_id TEXT NOT NULL REFERENCES events(event_id), subscription_id TEXT NOT NULL, revision INTEGER NOT NULL, result TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)), PRIMARY KEY(event_id,subscription_id,revision), FOREIGN KEY(subscription_id,revision) REFERENCES subscription_versions(subscription_id,revision)) STRICT"
       "CREATE TABLE deliveries(delivery_id TEXT PRIMARY KEY, route_id TEXT NOT NULL REFERENCES routes(route_id), origin TEXT NOT NULL CHECK(origin IN ('direct','subscription_event')), principal_id TEXT, operation_id TEXT UNIQUE REFERENCES operations(operation_id), agent_id TEXT REFERENCES agents(agent_id), event_id TEXT REFERENCES events(event_id), delivery_seq INTEGER NOT NULL, state TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0), expires_at TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)), UNIQUE(route_id,delivery_seq), CHECK((origin='direct' AND event_id IS NULL AND principal_id IS NOT NULL AND operation_id IS NOT NULL) OR (origin='subscription_event' AND event_id IS NOT NULL AND agent_id IS NOT NULL))) STRICT"
-      "CREATE UNIQUE INDEX delivery_event_route ON deliveries(route_id,event_id) WHERE origin='subscription_event'"
+      "CREATE UNIQUE INDEX delivery_event_route ON deliveries(route_id,event_id,COALESCE(json_extract(payload,'$.distribution_key'),'')) WHERE origin='subscription_event'"
       "CREATE INDEX deliveries_route_head ON deliveries(route_id,delivery_seq) WHERE state IN ('ready','deferred','blocked','submitting','unknown')"
       "CREATE INDEX deliveries_owner ON deliveries(principal_id,delivery_id)"
       "CREATE INDEX deliveries_state ON deliveries(state,delivery_id)"
@@ -121,6 +121,35 @@
           (catch error
             (try (js-call db :run "ROLLBACK") (catch ignored nil))
             (throw error))))
+      ;; Converge the real store to the current target constraint, preserving all
+      ;; rows and dependent FKs. No second read/write representation is retained.
+      (when (= (nativeGet (js-call (js-call db :query "PRAGMA table_info(subscriptions)") :all)
+        "length") 0) (throw (new globalThis.Error "subscriptions table missing")))
+      (when (js-call (js-call (js-call db :query "PRAGMA table_info(subscriptions)") :all) :some
+        (lambda (column) (and (= (nativeGet column "name") "agent_id") (= (nativeGet column "notnull") 1))))
+        (js-call db :run "PRAGMA foreign_keys=OFF")
+        (try
+          (js-call db :run "BEGIN IMMEDIATE")
+          (js-call db :run "CREATE TABLE subscriptions_target(subscription_id TEXT PRIMARY KEY,owner_principal_id TEXT NOT NULL,agent_id TEXT REFERENCES agents(agent_id),state TEXT NOT NULL,revision INTEGER NOT NULL CHECK(revision>0),payload TEXT NOT NULL CHECK(json_valid(payload)),CHECK(agent_id IS NOT NULL OR COALESCE(json_type(payload,'$.group_id')='text',0))) STRICT")
+          (js-call db :run "INSERT INTO subscriptions_target SELECT * FROM subscriptions")
+          (js-call db :run "DROP TABLE subscriptions")
+          (js-call db :run "ALTER TABLE subscriptions_target RENAME TO subscriptions")
+          (js-call db :run "CREATE INDEX subscriptions_agent ON subscriptions(agent_id,subscription_id)")
+          (when (> (js-length (js-call (js-call db :query "PRAGMA foreign_key_check") :all)) 0)
+            (throw (new globalThis.Error "subscription target foreign key check failed")))
+          (js-call db :run "COMMIT")
+          (catch error (try (js-call db :run "ROLLBACK") (catch ignored nil)) (throw error))
+          (finally (js-call db :run "PRAGMA foreign_keys=ON"))))
+      (js-call (js-array
+        "CREATE TABLE IF NOT EXISTS subscription_groups(group_id TEXT PRIMARY KEY,owner_principal_id TEXT NOT NULL,state TEXT NOT NULL,revision INTEGER NOT NULL,payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+        "CREATE TABLE IF NOT EXISTS group_dispatches(subscription_id TEXT NOT NULL REFERENCES subscriptions(subscription_id),event_id TEXT NOT NULL REFERENCES events(event_id),state TEXT NOT NULL,next_check_at TEXT NOT NULL,payload TEXT NOT NULL CHECK(json_valid(payload)),PRIMARY KEY(subscription_id,event_id)) STRICT"
+        "CREATE INDEX IF NOT EXISTS group_dispatch_due ON group_dispatches(state,next_check_at,subscription_id,event_id)"
+        "CREATE TABLE IF NOT EXISTS group_cursors(subscription_id TEXT PRIMARY KEY REFERENCES subscriptions(subscription_id),payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+        "CREATE TABLE IF NOT EXISTS agent_availability(scope_key TEXT PRIMARY KEY,valid_until TEXT NOT NULL,payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+        "CREATE INDEX IF NOT EXISTS subscriptions_group ON subscriptions(json_extract(payload,'$.group_id'),state)"
+      ) :forEach (lambda (sql) (js-call db :run sql)))
+      (js-call db :run "DROP INDEX IF EXISTS delivery_event_route")
+      (js-call db :run "CREATE UNIQUE INDEX delivery_event_route ON deliveries(route_id,event_id,COALESCE(json_extract(payload,'$.distribution_key'),'')) WHERE origin='subscription_event'")
       ;; A client may receive through several exact native conversations.
       (js-call db :run "DROP INDEX IF EXISTS agents_recipient")
       (js-call db :run "CREATE INDEX agents_recipient ON agents(recipient_principal_id,agent_id) WHERE state='registered'")

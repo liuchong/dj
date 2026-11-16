@@ -31,6 +31,7 @@
     attachBinding)
   (import "../catalog/snapshots.eli" openSnapshot resumeSnapshot advanceSnapshot)
   (import "../sessions/models.eli" subscriberMetadata)
+  (import "./availability.eli" inspectAvailability)
   (defun sanitizePending (value)
     (cond
       ((= (nativeTypeOf value) "undefined") nil)
@@ -844,6 +845,7 @@
     (let ((djReturn12Token (js-object)) (djReturn12Value nil))
       (try
         (cond
+          ((= operation "agent.availability") (await (inspectAvailability context args)))
           ((= operation "agent.whoami")
             (let* ((principal (currentPrincipal context))
               (projection (principalProjection principal))

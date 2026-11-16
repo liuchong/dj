@@ -1,4 +1,5 @@
 (module dj.service.runtime
+  (import "../delivery/group-dispatch.eli" processGroupDispatches)
   (import "../sessions/supervision.eli" processSupervisions)
   (import "./fixed-routes.eli" processFixedRoutes)
   (import "../core/native.eli" nativeClearTimeout nativeSetTimeout nativeGet)
@@ -681,6 +682,7 @@
           (queueControlJobs context)
           (when (and (= (nativeGet runtime "state") "ready") (not (nativeGet runtime "storage_blocked")))
             (launch context "fixed-routes" (async () (await (processFixedRoutes context))))
+            (launch context "group-dispatch" (async () (await (processGroupDispatches context))))
             (launch context "session-supervision" (async () (await (processSupervisions context)))))
           (when (= (nativeGet runtime "state") "ready")
             (queueSourceJobs context)

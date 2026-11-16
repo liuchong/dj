@@ -1,0 +1,10 @@
+(module dj.core.availability
+  (import "./native.eli" nativeGet nativeTypeOf)
+  (defun quotaFailure (code)
+    (cond
+      ((js-call (js-array "insufficient_quota" "quota_exhausted" "usage_limit_reached") :includes code)
+        (js-object :state "exhausted" :reason "quota_exhausted" :source "native_error" :reset_at nil))
+      ((js-call (js-array "rate_limit_exceeded" "rate_limited") :includes code)
+        (js-object :state "unknown" :reason "rate_limited" :source "native_error" :reset_at nil))
+      (t nil)))
+  (export quotaFailure))

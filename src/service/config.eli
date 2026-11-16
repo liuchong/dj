@@ -9,7 +9,7 @@
   (import "../policy/principals.eli" credentialDigest)
   (import "../adapters/agent/cursor-native.eli" cursorNativeUrl)
   (import "../people/registry.eli" identityKey)
-  (import "../application/operations.eli" specSchema predicateSchema)
+  (import "../application/operations.eli" specSchema predicateSchema distributionSchema)
   (import "../application/schema.eli" validateRequest)
   (import "../policy/authorize.eli" targetAllowed)
   (defconst id
@@ -265,7 +265,7 @@
       (js-array "profile_id" "tool" "revision" "argv" "workspace_refs")))
   (defconst fixedRouteSchema
     (obj (Object/assign (js-object
-      :id id :owner_principal_id id :recipient_principal_id id
+      :id id :owner_principal_id id :recipient_principal_id id :group_id id :distribution distributionSchema
       :event_kinds (nativeGet (nativeGet (nativeGet (nativeGet specSchema "properties") "selector") "properties") "event_kinds") :enabled (js-object :type "boolean")
       :target (obj (js-object :instance_id id :native_session_id id) (js-array "instance_id" "native_session_id"))
       :sources (arr (obj (js-object :connection_id id :native_chat_id id :native_thread_id nullableId
@@ -273,13 +273,14 @@
       (let ((fields (js-object)))
         (js-call (js-array "predicate" "context_policy" "delivery_policy" "instruction_policy") :forEach
           (lambda (key) (put fields key (nativeGet (nativeGet specSchema "properties") key)))) fields))
-      (js-array "id" "owner_principal_id" "recipient_principal_id" "target" "sources")))
+      (js-array "id" "owner_principal_id" "recipient_principal_id" "sources")))
   (defun fixedRouteTarget (config route)
+    (if (nativeGet route "group_id") (js-object :group_id (nativeGet route "group_id"))
     (let ((endpoint (js-call (nativeGet config "agent_endpoints" (js-array)) :find
       (lambda (item) (= (nativeGet item "instance_id") (nativeGet (nativeGet route "target") "instance_id"))))))
       (when endpoint (js-object :tool (nativeGet endpoint "tool") :native_namespace (nativeGet endpoint "native_namespace")
         :instance_id (nativeGet endpoint "instance_id") :native_session_id (nativeGet (nativeGet route "target") "native_session_id")
-        :workspace_ref (nativeGet endpoint "workspace_ref" nil)))))
+        :workspace_ref (nativeGet endpoint "workspace_ref" nil))))))
   (defun validateFixedRoutes (config)
     (let ((seen (new globalThis.Set)))
       (js-call (nativeGet config "fixed_routes" (js-array)) :forEach (lambda (route)
@@ -290,7 +291,8 @@
           (target (fixedRouteTarget config route)))
           (unless (and (not (js-call seen :has key)) owner (= (nativeGet owner "kind") "operator") (not (nativeGet owner "disabled"))
             recipient (= (nativeGet recipient "kind") "agent") (not (nativeGet recipient "disabled"))
-            target (targetAllowed recipient target))
+            target (not (= (object-has? route :group_id) (object-has? route :target)))
+            (or (nativeGet route "group_id") (targetAllowed recipient target)))
             (throw (new globalThis.TypeError "invalid fixed route identity or target")))
           (js-call seen :add key)
           (js-call (nativeGet route "sources") :forEach (lambda (source)
@@ -303,6 +305,9 @@
           (let* ((spec (js-object :agent_id "configuration-validation" :selector (js-object :sources
             (js-call (nativeGet route "sources") :map (lambda (source) (js-object :connection_id (nativeGet source "connection_id")))))))
             (args (js-object :spec spec)))
+            (when (nativeGet route "group_id")
+              (Reflect/deleteProperty spec "agent_id") (put spec :group_id (nativeGet route "group_id")))
+            (when (nativeGet route "distribution") (put spec :distribution (nativeGet route "distribution")))
             (when (nativeGet route "event_kinds") (put (nativeGet spec "selector") :event_kinds (nativeGet route "event_kinds")))
             (js-call (js-array "predicate" "context_policy" "delivery_policy" "instruction_policy") :forEach
               (lambda (key) (when (object-has? route key) (put spec key (nativeGet route key)))))
@@ -332,6 +337,7 @@
             :busy_timeout
             (js-object :type "integer" :minimum 0 :maximum 1000)))
         :subscriber_hints (js-object :type "boolean")
+        :group_distribution distributionSchema
         :message_delivery
         (obj (js-object :busy (enumOf "steer" "queue") :max_in_flight (js-object :type "integer" :minimum 1 :maximum 64)))
         :task_inspection

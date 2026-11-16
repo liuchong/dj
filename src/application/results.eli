@@ -482,7 +482,7 @@
   (put definitions :fixed_route
     (obj (strings "id state owner_principal_id recipient_principal_id next_attempt_at"
       (js-object :agent_id nullableString :subscription_id nullableString :last_error nullableString :attempts integerSchema
-        :target (obj (strings "tool native_namespace native_session_id instance_id" (js-object :workspace_ref nullableString)))))))
+        :target (obj (strings "tool native_namespace native_session_id instance_id group_id" (js-object :workspace_ref nullableString)))))))
   (put definitions :event_receipt
     (obj (strings "event_id event_type state received_at next_attempt_at"
       (js-object :identity_revision integerSchema :processed_at nullableString :attempts integerSchema
@@ -1026,9 +1026,37 @@
   (put definitions :task_tree (obj (js-object :task (ref "task") :nodes (arr (ref "task_node")) :truncated boolSchema
     :as_of stringSchema :children_coverage stringSchema)))
   (put definitions :task_link (obj (strings "delivery_id parent_session_key child_session_key evidence")))
+  (put definitions :distribution (obj (js-object :algorithm stringSchema
+    :eligibility (obj (js-object :quota stringSchema)))))
+  (put definitions :subscription_group (obj (strings "group_id owner_principal_id name state"
+    (js-object :revision integerSchema :members (arr (obj (strings "agent_id"
+      (js-object :priority (js-object :type "integer") :enabled boolSchema))))))))
+  (put definitions :group_dispatch (obj (strings "subscription_id event_id state group_id next_check_at expires_at algorithm"
+    (js-object :revision integerSchema :agent_id nullableString :delivery_id nullableString :inbox_id nullableString
+      :selection_scope stringSchema
+      :excluded (arr (obj (strings "agent_id reason")))
+      :attempted (arr (obj (strings "agent_id" (js-object :scope nullableString :next_try_at stringSchema))))
+      :selection_history (arr (obj (strings "agent_id at reason" (js-object :delivery_id nullableString :inbox_id nullableString))))))))
+  (put definitions :group_dispatch_page (obj (js-object :items (arr (ref "group_dispatch")) :next_after nullableString)))
+  (put definitions :group_page (obj (js-object :items (arr (ref "subscription_group")) :next_after nullableString)))
+  (put definitions :availability (obj (strings "agent_id state scope_key observed_at valid_until source reason"
+    (js-object :reset_at nullableString))))
+  (js-call (js-array "spec" "subscription") :forEach (lambda (key)
+    (let ((properties (nativeGet (nativeGet definitions key) "properties")))
+      (put properties :group_id stringSchema) (put properties :distribution (ref "distribution"))
+      (put properties :agent_id nullableString))))
+  (put (nativeGet (nativeGet definitions "subscription") "properties") :subscriber (nullable (ref "subscriber")))
+  (put (nativeGet (nativeGet definitions "preview") "properties") :target
+    (js-object :anyOf (js-array (ref "agent") (ref "subscription_group"))))
+  (put (nativeGet (nativeGet definitions "inbox_pull") "properties") :agent_id stringSchema)
+  (js-call (Object/values definitions) :forEach (lambda (definition)
+    (let ((properties (nativeGet definition "properties")))
+      (when (and properties (object-has? properties :matched))
+        (put properties :group_dispatches (arr (obj (strings "group_id subscription_id selected_agent_id"))))))))
   (defun dataSchemaFor
     (operation kind)
-    (cond ((= operation "task.list") (ref "task_page"))
+    (cond ((= operation "subscription.group.list") (ref "group_page"))
+      ((= operation "task.list") (ref "task_page"))
       ((= operation "service.status") (ref "status"))
       ((= operation "operation.get") (ref "operation"))
       ((= operation "agent.whoami") (ref "principal"))

@@ -148,12 +148,19 @@
   (defconst subscriberModelSchema
     (objectSchema (js-object :provider_id idSchema :model_id idSchema :variant idSchema :reasoning_effort idSchema)
       (js-array "provider_id" "model_id")))
+  (defconst distributionSchema (objectSchema (js-object
+    :algorithm (enumSchema "random" "round_robin" "priority")
+    :eligibility (objectSchema (js-object :quota (enumSchema "ignore" "exclude_exhausted" "require_available"))))))
+  (defconst groupMembersSchema (arraySchema (objectSchema (js-object :agent_id idSchema
+    :priority (integerSchema -1000000 1000000) :enabled booleanSchema) (js-array "agent_id")) 32))
   (defconst specSchema
     (objectSchema
       (js-object
         :subscriber_model subscriberModelSchema
         :agent_id
         idSchema
+        :group_id idSchema
+        :distribution distributionSchema
         :selector
         (objectSchema
           (js-object
@@ -189,7 +196,7 @@
         (enumSchema "push" "pull")
         :start
         (enumSchema "now" "backfill"))
-      (js-array "agent_id" "selector")))
+      (js-array "selector")))
   (defconst bodyProperties
     (js-object
       :offset_bytes
@@ -482,8 +489,24 @@
             mutate
             :result
             "agent")))))
+  (addOperation "agent.availability" "registry" (js-array "agent_id")
+    (js-object :agent_id idSchema) (js-object :action "agent.inspect" :effect "observe" :result "availability"))
+  (addOperation "subscription.group.dispatches" "subscriptions" (js-array "subscription_id")
+    (js-object :subscription_id idSchema :after_id idSchema :limit (integerSchema 1 100))
+    (js-object :result "group_dispatch_page"))
+  (addOperation "subscription.group.create" "subscriptions" (js-array "name" "members")
+    (js-object :name idSchema :members groupMembersSchema) (js-object :effect "accept" :result "subscription_group"))
+  (addOperation "subscription.group.get" "subscriptions" (js-array "group_id")
+    (js-object :group_id idSchema) (js-object :result "subscription_group"))
+  (addOperation "subscription.group.list" "subscriptions" (js-array)
+    (js-object :after_id idSchema :limit (integerSchema 1 100)) (js-object :result "group_page"))
+  (addOperation "subscription.group.update" "subscriptions" (js-array "group_id" "name" "members")
+    (js-object :group_id idSchema :name idSchema :members groupMembersSchema)
+    (js-object :effect "accept" :revision t :result "subscription_group"))
+  (addOperation "subscription.group.delete" "subscriptions" (js-array "group_id")
+    (js-object :group_id idSchema) (js-object :effect "accept" :revision t :result "subscription_group"))
   (addOperation "subscription.pull" "subscriptions" (js-array "subscription_id")
-    (js-object :subscription_id idSchema :lease_seconds (integerSchema 1 300))
+    (js-object :subscription_id idSchema :agent_id idSchema :lease_seconds (integerSchema 1 300))
     (js-object :effect "accept" :result "inbox_pull"))
   (addOperation "subscription.ack" "subscriptions" (js-array "claim_ref" "disposition")
     (js-object :claim_ref idSchema :disposition (enumSchema "consumed" "retry"))
@@ -515,7 +538,7 @@
     (js-object
       :filters
       (objectSchema
-        (js-object :agent_id idSchema :state (enumSchema "active" "paused" "deleted"))))
+        (js-object :agent_id idSchema :group_id idSchema :state (enumSchema "active" "paused" "deleted"))))
     (js-object :page t :result "subscription"))
   (js-call
     (js-array "get" "update" "pause" "resume" "delete")
@@ -955,6 +978,7 @@
         (js-call (nativeGet one "operation") :localeCompare (nativeGet other "operation") "en"))))
   (defconst operationCatalogDigest (hashValue (descriptorData)))
   (export
+    distributionSchema
     operationCatalog
     operationCatalogDigest
     descriptorData

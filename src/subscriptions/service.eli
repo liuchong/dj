@@ -35,6 +35,8 @@
   (import "../sessions/models.eli" subscriberMetadata modelSelection)
   (import "../catalog/records.eli" writeSessionVersion putSession)
   (import "../application/context.eli" agentPort nativeCallContext)
+  (import "./groups.eli" subscriptionTarget groupFor groupFingerprint handleGroupOperation projectGroup)
+  (import "../routing/group-selection.eli" distributionPolicy)
   (defun projectSubscription
     (record)
     (safeFields
@@ -45,7 +47,7 @@
         "owner_principal_id"
         "subscriber_model"
         "subscriber"
-        "agent_id"
+        "agent_id" "group_id" "distribution"
         "selector"
         "resolved_sources"
         "predicate"
@@ -70,6 +72,7 @@
   (defun targetManageAllowed
     (context agent)
     (or
+      (and (nativeGet agent "group_id") (can context "subscription.manage" agent))
       (=
         (nativeGet (currentPrincipal context) "principal_id")
         (nativeGet agent "recipient_principal_id"))
@@ -143,6 +146,12 @@
     (context agent)
     (let ((djReturn3Token (js-object)) (djReturn3Value nil))
       (try
+        (when (nativeGet agent "group_id")
+          (unless (and (= (nativeGet agent "state") "active") (targetManageAllowed context agent))
+            (setq djReturn3Value (failure "forbidden")) (throw djReturn3Token))
+          (setq djReturn3Value (success (js-object :group_fingerprint (groupFingerprint context agent)
+            :session nil :instance nil :gate nil)))
+          (throw djReturn3Token))
         (let*
           ((repository (nativeGet context "repository"))
             (route (js-call repository :get "routes" (nativeGet agent "route_id")))
@@ -195,7 +204,7 @@
         (let*
           ((spec (nativeGet args "spec"))
             (repository (nativeGet context "repository"))
-            (agent (js-call repository :get "agents" (nativeGet spec "agent_id")))
+            (agent (subscriptionTarget context spec))
             (principal (currentPrincipal context))
             (recipient
               (and
@@ -230,7 +239,8 @@
             (unless
               (and
                 existing
-                (= (nativeGet existing "agent_id") (nativeGet agent "agent_id"))
+                (and (= (nativeGet existing "agent_id" nil) (nativeGet agent "agent_id" nil))
+                  (= (nativeGet existing "group_id" nil) (nativeGet agent "group_id" nil)))
                 (= (nativeGet existing "revision") (nativeGet args "expected_revision"))
                 (not (= (nativeGet existing "state") "deleted")))
               (progn
@@ -249,7 +259,9 @@
           (when (predicateUsesPerson (nativeGet spec "predicate"))
             (must (validatePersonReferences (js-array (js-object :predicate (nativeGet spec "predicate")))
               (nativeGet (readFilterPolicy context) "people" (js-array)))))
-          (await (refreshSubscriberModel context agent))
+          (if (nativeGet spec "group_id")
+            (put spec :distribution (distributionPolicy (nativeGet context "config") (nativeGet spec "distribution")))
+            (await (refreshSubscriberModel context agent)))
           (let*
             ((target (targetState context agent))
               (resolved (resolveSources context (nativeGet spec "selector") recipient)))
@@ -352,6 +364,7 @@
                           (hashValue spec)
                           :resolved_sources
                           sources
+                          :group_fingerprint (nativeGet (nativeGet target "data") "group_fingerprint" nil)
                           :target_revision
                           (nativeGet agent "revision")
                           :target_constraint
@@ -361,11 +374,11 @@
                           :recipient_authorization_revision
                           (nativeGet recipient "authorization_revision")
                           :instance_id
-                          (nativeGet (nativeGet (nativeGet target "data") "instance") "instance_id")
+                          (nativeGet (nativeGet (nativeGet target "data") "instance") "instance_id" nil)
                           :instance_epoch
-                          (nativeGet (nativeGet (nativeGet target "data") "instance") "instance_epoch")
+                          (nativeGet (nativeGet (nativeGet target "data") "instance") "instance_epoch" nil)
                           :gate_revision
-                          (nativeGet (nativeGet (nativeGet target "data") "gate") "revision")
+                          (nativeGet (nativeGet (nativeGet target "data") "gate") "revision" nil)
                           :expires_at
                           (nativeGet handle "expires_at")
                           :committed_operation_id
@@ -388,15 +401,15 @@
                         :resolved_sources
                         sources
                         :target
-                        (safeFields
+                        (if (nativeGet agent "group_id") (projectGroup agent) (safeFields
                           agent
                           (js-array
-                            "agent_id"
+                            "agent_id" "group_id" "members"
                             "tool"
                             "native_namespace"
                             "native_session_id"
                             "display_name"
-                            "revision"))
+                            "revision")))
                         :warnings
                         warnings
                         :blocking_issues
@@ -512,7 +525,7 @@
           (let*
             ((preview (nativeGet loaded "data"))
               (spec (nativeGet preview "normalized_spec"))
-              (agent (js-call repository :get "agents" (nativeGet spec "agent_id")))
+              (agent (subscriptionTarget context spec))
               (current
                 (and
                   (nativeGet args "subscription_id")
@@ -544,7 +557,7 @@
                     (let*
                       ((ticket (must (loadPreview context (nativeGet args "preview_id"))))
                         (target-agent
-                          (js-call repository :get "agents" (nativeGet spec "agent_id")))
+                          (subscriptionTarget context spec))
                         (recipient
                           (configuredPrincipal
                             (nativeGet (nativeGet context "config") "principals")
@@ -567,15 +580,17 @@
                         (and
                           (= (nativeGet ticket "target_revision") (nativeGet target-agent "revision"))
                           (nativeGet target "ok")
+                          (= (nativeGet ticket "group_fingerprint" nil)
+                            (nativeGet (nativeGet target "data") "group_fingerprint" nil))
                           (=
                             (nativeGet ticket "recipient_authorization_revision")
                             (nativeGet recipient "authorization_revision"))
                           (=
                             (nativeGet ticket "instance_epoch")
-                            (nativeGet (nativeGet (nativeGet target "data") "instance") "instance_epoch"))
+                            (nativeGet (nativeGet (nativeGet target "data") "instance") "instance_epoch" nil))
                           (=
                             (nativeGet ticket "gate_revision")
-                            (nativeGet (nativeGet (nativeGet target "data") "gate") "revision")))
+                            (nativeGet (nativeGet (nativeGet target "data") "gate") "revision" nil)))
                         (progn
                           (setq djReturn7Value (failure "preview_stale"))
                           (throw djReturn7Token)))
@@ -595,7 +610,8 @@
                             (= (nativeGet old "subscription_id") (nativeGet ticket "subscription_id"))
                             (= (nativeGet old "revision") (nativeGet args "expected_revision"))
                             (= (nativeGet old "revision") (nativeGet ticket "expected_revision"))
-                            (= (nativeGet old "agent_id") (nativeGet spec "agent_id"))
+                            (and (= (nativeGet old "agent_id" nil) (nativeGet spec "agent_id" nil))
+                            (= (nativeGet old "group_id" nil) (nativeGet spec "group_id" nil)))
                             (not (= (nativeGet old "state") "deleted")))
                           (progn
                             (setq djReturn7Value (failure "preview_stale"))
@@ -616,6 +632,7 @@
                               (js-object)
                               spec
                               (js-object
+                                :agent_id (nativeGet spec "agent_id" nil)
                                 :subscription_id
                                 (if old
                                   (nativeGet old "subscription_id")
@@ -627,7 +644,8 @@
                                 :recipient_principal_id
                                 (nativeGet target-agent "recipient_principal_id")
                                 :subscriber
-                                (subscriberMetadata (nativeGet (nativeGet target "data") "session") (utcNow context) (nativeGet spec "subscriber_model"))
+                                (if (nativeGet spec "group_id") nil
+                                  (subscriberMetadata (nativeGet (nativeGet target "data") "session") (utcNow context) (nativeGet spec "subscriber_model")))
                                 :resolved_sources
                                 (nativeGet ticket "resolved_sources")
                                 :start_seq
@@ -711,7 +729,7 @@
                       (let*
                         (
                           (agent
-                            (js-call repository :get "agents" (nativeGet current "agent_id")))
+                            (subscriptionTarget context current))
                           (recipient
                             (configuredPrincipal
                               (nativeGet (nativeGet context "config") "principals")
@@ -829,6 +847,7 @@
     (let ((djReturn11Token (js-object)) (djReturn11Value nil))
       (try
         (cond
+          ((js-call operation :startsWith "subscription.group.") (handleGroupOperation context operation args))
           ((= operation "subscription.replay") (replayEvents context args projectSubscription))
           ((= operation "subscription.pull") (pullInbox context args))
           ((= operation "subscription.ack") (ackInbox context args))

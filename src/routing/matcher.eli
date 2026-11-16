@@ -13,6 +13,7 @@
   (import "../delivery/read-scope.eli" withContributionReads)
   (import "../delivery/planning-scope.eli" withEventPlans)
   (import "../application/write-batch.eli" enqueueWrite)
+  (import "../delivery/group-dispatch.eli" queueGroupDispatch)
   (defconst versionCache (new globalThis.Map))
   (defvar versionCacheBytes 0)
   (defun compiledVersion
@@ -344,7 +345,8 @@
                                 (let
                                   (
                                     (planned
-                                      (planContribution tx event version decision read planning pending-contributions)))
+                                      (if (nativeGet version "group_id") (queueGroupDispatch tx event version decision)
+                                        (planContribution tx event version decision read planning pending-contributions))))
                                   (unless (nativeGet planned "ok")
                                     (if
                                       (=

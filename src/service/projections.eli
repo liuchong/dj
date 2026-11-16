@@ -18,6 +18,7 @@
   (import "../catalog/records.eli" projectSession isSessionVisible)
   (import "../catalog/service.eli" objectProjection)
   (import "../registry/agents.eli" projectAgent)
+  (import "../subscriptions/groups.eli" projectGroup)
   (import "../subscriptions/service.eli" projectSubscription)
   (import "../subscriptions/inbox.eli" projectInbox projectPull)
   (import "../delivery/service.eli" deliveryAccess projectDelivery)
@@ -81,6 +82,7 @@
                   :inbox_pull "inbox_pulls"
                   :agent
                   "agents"
+                  :subscription_group "subscription_groups"
                   :subscription
                   "subscriptions"
                   :delivery
@@ -117,6 +119,7 @@
             ((= kind "inbox_pull") (projectPull context record))
             ((and (= kind "agent") (can context "agent.bind" record))
               (success (projectAgent context record)))
+            ((and (= kind "subscription_group") (can context "subscription.manage" record)) (success (projectGroup record)))
             ((and (= kind "subscription") (can context "subscription.manage" record))
               (success (projectSubscription record)))
             (

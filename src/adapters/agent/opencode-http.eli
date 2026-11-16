@@ -5,6 +5,7 @@
   (import "../../delivery/envelope.eli" encodeAgentInput openCodeMessageId)
   (import "../im/telegram.eli" readJson)
   (import "./native-local.eli" ownedJson metadataCommand)
+  (import "../../core/availability.eli" quotaFailure)
   (import "node:fs/promises" lstat readdir)
   (import "node:path" join isAbsolute)
   (defun localUrl (text)
@@ -253,7 +254,9 @@
                       (= (nativeGet receipt "sessionID") (nativeGet binding "native_session_id")) (= (nativeGet receipt "delivery") "steer"))
                       (js-object :state "accepted" :kind "accepted" :native_ref (nativeGet receipt "id") :evidence_level "native_protocol"))
                       ((js-call (js-array 400 401 403 404 409 413 422 429) :includes (nativeGet r "status"))
-                        (js-object :state "failed" :definite_not_sent t :retryable (= (nativeGet r "status") 429)))
+                        (js-object :state "failed" :definite_not_sent t :retryable (= (nativeGet r "status") 429)
+                          :quota_signal (quotaFailure (nativeGet (nativeGet (nativeGet r "wire") "error") "code"
+                            (nativeGet (nativeGet r "wire") "code" nil)))))
                       (t (js-object :state "unknown" :definite_not_sent false))))))
               (catch invalid (js-object :state (if sent "unknown" "failed") :definite_not_sent (not sent) :retryable (not sent))))))
         :lookup (async (binding key ref context)

@@ -67,7 +67,7 @@
                 (js-call created-records :find
                   (lambda (delivery) (= (nativeGet delivery "route_id") route-id)))
                 (let* ((row (js-call (js-call db :query
-                    "SELECT payload FROM deliveries WHERE route_id=? AND event_id=? AND origin='subscription_event'")
+                    "SELECT payload FROM deliveries WHERE route_id=? AND event_id=? AND origin='subscription_event' AND json_extract(payload,'$.distribution_key') IS NULL")
                     :get route-id event-id))
                   (delivery (and row (JSON/parse (nativeGet row "payload")))))
                   (when delivery (setq existing-delivery-seen t))
