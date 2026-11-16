@@ -29,10 +29,10 @@
 
 ## 边界
 
-- socket 所在目录为当前用户私有 0700，socket/manifest 为 0600；每次会话生命周期使用独立 token/epoch，接口只提供 probe/messages/submit，拒绝 Origin、目标漂移和非空闲提交。
+- socket 所在目录为当前用户私有 0700，socket/manifest 为 0600；每次会话生命周期使用独立 token/epoch，接口提供有界 probe/messages/submit/create/lookup_create/rename，拒绝 Origin、目标漂移和未经确认的输入。
 - 每次 submit 通过原生 sendUserMessage 进入当前会话；accepted 表示接收 API 接受，不表示模型完成或 IM 已回复。网络/原生调用结果不明时保持 unknown，不自动重发。
 - 消息只读取当前分支的有界近期原生条目，最多 128 项/512KiB，coverage 明确 partial；使用原生条目 ID，不编造完整历史或合成原生 ID。
-- 不提供创建会话、启动/停止用户进程、修改模型、工具授权或审批接口。正常消息经过原 Pi 工具策略，扩展不增加其权限。
+- 创建仅使用下述同宿主 SDK 路径；不启动/停止用户进程，不修改原会话模型、工具授权或审批。正常消息经过原 Pi 工具策略，扩展不增加其权限。
 - reload、切换会话或进程结束后，旧 manifest/epoch 不能继续使用。DJ 不自动改绑；操作员重新核对端点和原会话，保留未知投递的屏障。
 - 代码/本地组合验证不代表已经安装进当前 Pi 或完成真实模型/IM 验收；没有接收端时先交付实现和说明，不等待或启动替代进程。
 
