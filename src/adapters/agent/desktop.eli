@@ -278,7 +278,7 @@
             ;; A saved chat without a loaded owner is still an exact historical
             ;; target. Publish its locator, never invent a live receiver or start it.
             (let ((historical nil))
-              (when (and (= tool "codex") (js-call (js-array "desktop_no_owner" "desktop_timeout" "ENOENT") :includes (nativeGet unavailable "code")))
+              (when (and (= tool "codex") (js-call (js-array "desktop_no_owner" "desktop_timeout" "desktop_rejected" "ENOENT") :includes (nativeGet unavailable "code")))
                 (try
                   (let* ((endpoint (funcall endpointFor binding)) (id (nativeGet target "native_session_id"))
                     (row (await (savedCodexHeader endpoint id))))

@@ -122,7 +122,8 @@
                             (js-object :tool "codex" :text (nativeGet input "text")))))
                       (funcall send (Object/assign
                         (js-object :type "response" :requestId (nativeGet request "requestId")
-                          :resultType "success" :result (js-object :clientId "dj-client"))
+                          :resultType (if (and (= method "thread-owner-discovery") (= (nativeGet params "conversationId") "a-foreign-1")) "error" "success")
+                          :result (js-object :clientId "dj-client"))
                         (if (and (= method "thread-owner-discovery")
                                  (js-call (js-array "codex-thread" "a-foreign-0") :includes (nativeGet params "conversationId")))
                           (js-object :handledByClientId "codex-owner") (js-object)))))
