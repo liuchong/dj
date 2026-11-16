@@ -23,10 +23,10 @@
 | Codex | 已有 Desktop 原会话通知、Lark 订阅、独立 recipient API、原消息回复与 Skill 采用 | 不据此推断所有 MCP/Hook 配置均已启用 |
 | Kimi Desktop Work / Code Web | 两种现有实例均经完整 Core 创建、输入、原文读回；Work 返回准确回复 | Web 本次未取得模型回复；不覆盖普通 Chat/TUI，未重启用户 App |
 | DSH Desktop / Web | 两种现有实例均经完整 Core 创建、输入、原文读回；Desktop 返回准确回复 | Web 模型执行与传输受理分开；未验证窗口像素、未迁移历史 |
-| Cursor | 已有 Desktop 原会话通知、订阅与原消息回复；按需 Inspector 开关 | 客户端升级、重启或工作区变化后需重新核对原生接口 |
-| OpenCode | 原 Desktop 会话直发、原生消息读回、去重、独立 recipient 与 Lark 原消息回复 | 原生分页覆盖和模型任务完成分别观察 |
+| Cursor | 已有 Desktop 原会话通知、订阅、原消息回复及原生空对话创建；按需 Inspector 开关 | 客户端升级、重启或工作区变化后需重新核对原生接口 |
+| OpenCode | 原 Desktop 会话直发、原生消息读回、去重、独立 recipient、Lark 原消息回复及同实例跨工作区空创建 | 原生分页覆盖和模型任务完成分别观察 |
 | Pi | 原 TUI 进程接收扩展、原会话通知、去重、独立 recipient 与原消息回复 | 临时加载不等于重启后持续安装 |
-| Antigravity | 原会话输入、原生读回与独立 API 调用；订阅消息已送达 | 已记录的模型额度耗尽不算接线失败，也不证明 IM 回复完成 |
+| Antigravity | 原会话输入、原生读回、独立 API 调用及原生空创建；订阅消息已送达 | 已记录的模型额度耗尽不算接线失败，也不证明 IM 回复完成 |
 | Claude Code | 原生接收端适配与协议夹具验证 | 缺少真实 Code 会话收件证据；Claude Desktop 不替代 Code |
 
 已有本机常驻服务和 Skill 安装、采用记录。它们只证明相应机器、身份与会话，不代表新用户无需配置，也不代表所有平台和账号都已经验证。
@@ -64,3 +64,5 @@
 ## Codex 原对话加载
 
 macOS既有客户端可配置原进程原对话加载器；查询保持只读，实际投递才请求加载，然后核对原owner并从原socket发输入。投递查询区分待投、加载原因、提交时间与原生回执；调用方AI决定代转和业务处理，DJ不选协调者。原生URL事件可能切换当前对话页，OS拒绝时明确报告。4项定向检查与本机正式后台服务的未加载原对话输入/标记回复实测通过；最终样本约4.4秒接收，Skill已安装，业务规则及退订状态保持。见[0029](specs/0029-codex-receiver-loading.md)。
+
+统一会话控制由 DJ 独立实现。OpenCode、Cursor、Antigravity 的空创建已通过普通 AI 身份调用 DJ 正式 API，并读回 ready 生命周期；同键重试返回原动作。实例查询公开实际适配器创建能力和工作区范围，部署示例与 Skill 已同步。创建、标题修改、读取和发送属于同一工具性控制职责；当前统一改标题接口及 Codex/Claude/Pi 空创建尚未接通，不能从其他工具的能力外推。详见[控制面](agent-control-plane.md)与[0030](specs/0030-native-session-creation.md)。

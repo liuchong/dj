@@ -1,6 +1,8 @@
 # Agent 会话查询与控制
 
-DJ 机械列举、读取和通知调用方明确指定的原生会话。查询与 `session.send` 不要求先建立 IM 订阅。实际工具方式见[适配说明](adapters/agent-tools.md)，支持和验证范围见[当前状态](status.md)。
+DJ 提供自己的统一会话控制接口，机械列举、读取、创建和通知调用方明确指定的原生会话。查询与 `session.send` 不要求先建立 IM 订阅。实际工具方式见[适配说明](adapters/agent-tools.md)，支持和验证范围见[当前状态](status.md)。
+
+DJ 独立直连各工具的原生接口，不依赖 agent-control 或其他 AI 工具的控制程序。调用方不必为每个目标工具学习另一套控制入口。创建、修改标题、发送消息、读取历史和运行状态等机械能力都属于这层职责；业务任务、目标选择和协作方式仍由 AI 决定。统一接口不代表所有目标已经实现全部动作：当前创建范围见[0030](specs/0030-native-session-creation.md)，统一改标题接口尚未实现，不能把外部工具能改名当作 DJ 已支持。
 
 ## 对象与身份
 
@@ -34,7 +36,7 @@ DJ 机械列举、读取和通知调用方明确指定的原生会话。查询�
 
 `session.send` 向一个准确会话输入；`message.send` 向 IM 发送，两者不能混用。直发不伪造 IM Event、Subscription 或订阅贡献，也不附加 IM 历史上下文。
 
-发送前重新核对活接收端、当前权限、epoch、gate 与原生能力。直发和订阅共用 canonical route、持久队列、submitting 提交点、unknown 屏障和回执，不能借另一个入口绕过同目标未结算输入。busy 默认 queue，offline 默认 hold；没有安全提交能力时明确拒绝或保持阻塞。
+发送前重新核对活接收端、当前权限、epoch、gate 与原生能力。直发和订阅共用 canonical route、持久队列、submitting 提交点、unknown 屏障和回执，不能借另一个入口绕过同目标未结算输入。busy 默认 steer，显式 queue 才等待空闲；offline 默认 hold；没有安全提交能力时明确拒绝或保持阻塞。
 
 请求超时先查原 operation 与幂等键，再核对 Delivery 和原生记录。原生 accepted 只证明接受输入；没有真实 started、回复或完成证据时不扩大成功含义。回答保留在原生会话，普通输出不自动转发 IM。
 
