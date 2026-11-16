@@ -8,7 +8,7 @@
   (import "node:path" isAbsolute)
   (defconst antigravityCapabilities (Object/freeze
     (js-object :session_list "supported" :session_messages "supported" :session_probe "supported"
-      :session_send "supported" :start_idle "supported" :message_during_run "supported" :max_dispatch_burst 32 :session_create "supported" :creation_model_selection "supported"
+      :session_send "supported" :start_idle "supported" :message_during_run "supported" :max_dispatch_burst 32 :session_create "supported" :session_rename "supported" :creation_model_selection "supported"
       :instance_start "unsupported" :instance_stop "unsupported" :native_idempotency "unsupported"
       :lookup_send "unsupported" :lookup_create "positive_only" :observe "unsupported" :max_input_frame_bytes 262144)))
   (defun cascadeCreationId (key)
@@ -179,6 +179,18 @@
             (catch invalid (js-object :state (if (or started lookup) "unknown" "failed")
               :native_ref id :definite_not_sent (not (or started lookup))))))))
       (js-object :capabilities antigravityCapabilities
+        :rename (async (session title context)
+          (let* ((before (await (funcall inspect session context)))
+                 (endpoint (nativeGet before "endpoint")) (id (nativeGet session "native_session_id")))
+            (expectedEpoch (nativeGet before "instance_epoch") session)
+            (await (funcall rpc endpoint "UpdateConversationAnnotations"
+              (js-object :cascadeId id :annotations (js-object :title title) :mergeAnnotations t)
+              (Object/assign (js-object) context (js-object :instance_epoch (nativeGet before "instance_epoch")))))
+            (let* ((after (await (funcall inspect session context)))
+                   (record (funcall project endpoint id (nativeGet after "row") (nativeGet after "instance_epoch"))))
+              (expectedEpoch (nativeGet after "instance_epoch") session)
+              (js-object :state (if (= (nativeGet record "title") title) "ready" "unknown")
+                :session record :native_ref id :evidence_level "native_protocol"))))
         :create (async (instance workspace key context) (funcall createSession instance workspace key context false))
         :lookupCreate (async (instance key ref context)
           (try

@@ -1,4 +1,4 @@
-# 0030 原生空对话创建
+# 0030 原生会话创建与标题控制
 
 DJ 独立提供会话发现、创建、读取、定位及投递。它直接调用已有实例的原生接口，不依赖其他 Agent 控制工具，不替 AI 选择任务或协作对象。调用方来自哪个工具，不限制目标工具；不建立工具两两配对的实现。
 
@@ -6,7 +6,7 @@ DJ 独立提供会话发现、创建、读取、定位及投递。它直接调�
 
 ## 请求与权限
 
-`session.create` 需要 `instance_id`、`expected_instance_epoch`、`workspace_ref`、独立 `idempotency_key`，可提供 `title`、绝对 `directory` 及目标支持的 `model_selection`。创建空对话与发送首条消息分开，不自动登记 Agent、订阅、复制权限或选择模型。
+`session.create` 需要 `instance_id`、`expected_instance_epoch`、`workspace_ref`、独立 `idempotency_key`，可提供 `title`、绝对 `directory`、目标支持的 `model_selection` 及首条 `content`。创建与输入分别记账，不自动登记 Agent、订阅、复制权限或选择模型。
 
 `session.create`、`instance.inspect`、`lifecycle.inspect`、`lifecycle.reconcile` 分别授权。正式创建 profile 应具备所需查询与恢复动作；create 不隐含管理权限。`existing` 实例可以创建，`managed_profiles` 继续必须为空。
 
@@ -26,10 +26,10 @@ DJ 独立提供会话发现、创建、读取、定位及投递。它直接调�
 | Cursor | native_api 的 LocalAgentRepository.createAgent，skipInitialSubmit | 既有原生 Inspector 通道，require-trusted，不修改信任、不提交 prompt；普通 Bridge 不支持创建 |
 | Antigravity | 已有 language_server 的 StartCascade、UpdateConversationAnnotations | 同 UID、进程出生身份、证书指纹、CSRF 及 epoch 校验不变；确定性原生 ID、原工作区读回 |
 | Kimi / DSH | 已有 Desktop / Web 的独立原生协议 | 保留配置工作区与原生形态约束，不宣称离线端点实测通过 |
-| Codex | 当前未接通符合合同的空对话创建接口 | 已有 owner IPC 只控制原对话；已确认的 App Tools 创建同时提交首条消息，不能用占位任务冒充空对话 |
-| Claude / Pi | 当前不支持已有实例上的空对话创建 | 不新建 CLI / RPC / ACP 进程替代 |
+| Codex | 当前创建尚未接通 | App Tools 支持带首条消息创建，但本轮直连管道被关闭；不捏造占位任务 |
+| Claude / Pi | 已有实例上的创建尚未接通 | 不新建 CLI / RPC / ACP 进程替代 |
 
-不支持的创建在持久动作受理前返回 `unsupported`，带原因 `native_empty_session_create_unavailable`。不支持的模型覆盖同样在受理前拒绝，原因 `creation_model_selection_unsupported`，不悄悄使用其他模型。Antigravity 模型使用明确的原生 enum，不按展示名称猜测；新建空对话的显式初始模型只用于首次输入，不冒充之后的实时模型选择。
+不支持的创建在持久动作受理前返回 `unsupported`，带原因 `native_session_create_unavailable`。不支持的模型覆盖同样在受理前拒绝，原因 `creation_model_selection_unsupported`，不悄悄使用其他模型。Antigravity 模型使用明确的原生 enum，不按展示名称猜测；显式初始模型只用于首次输入，不冒充之后的实时模型选择。
 
 ## 不确定结果与验收
 
@@ -39,4 +39,17 @@ DJ 独立提供会话发现、创建、读取、定位及投递。它直接调�
 
 验收聚焦创建与工作区组合：已有实例跨目录、目录范围拒绝、缺查询权限、准确 epoch、空对话无 prompt、模型显式覆盖、原 ID 不重复创建及不确定恢复。复用既有收件/订阅证据，不重跑 IM、性能或全工具矩阵。
 
-本轮验收：4 项创建集成、1 项既有桌面系统接线回归、2 项关键边界单测通过（合计 7 项）。已有 OpenCode Desktop、Antigravity Desktop、Cursor Desktop 均经本机原生接口创建空对话读回；Cursor 再次使用同一创建键读回同一 ID，Inspector 已关闭。该证据不包含模型执行、IM 外发或 Codex 空对话创建。
+此前空创建阶段验收：4 项创建集成、1 项既有桌面系统接线回归、2 项关键边界单测通过（合计 7 项）。已有 OpenCode Desktop、Antigravity Desktop、Cursor Desktop 均经本机原生接口创建空对话读回；Cursor 再次使用同一创建键读回同一 ID，Inspector 已关闭。该证据不包含模型执行、IM 外发或 Codex 空对话创建。
+
+
+## 首条消息与标题控制
+
+- 创建请求可带 `content={type:"text",text:...}` 与 `delivery_policy`，另需 `session.send` 权限。未带 content 保持空创建；不把空对话作为平台准入条件。
+- 创建 ready 后以稳定的 `creation-input:<lifecycle_id>` 操作键向准确的新 `session_key` 受理首条消息；不靠原始短期 handle 续期重发。创建与输入两个结果分别投影：`initial_input_state`、`initial_delivery_id`、`initial_input_error`，送达仍看 delivery.get。
+- 崩溃发生在首条消息持久受理与关联字段更新之间时，原键查回同一投递；创建 unknown 时不发送首条消息。权限撤销、实例变化或目标失效不能绕过，首条输入被拒绝需明确投影。
+- `session.rename(session_ref,title,idempotency_key)` 复用生命周期动作与 submitting 切点，独立权限，先持久记录再写原生接口，读回准确 ID、实例 epoch 与标题后完成。unknown 只观察标题，不重写；不直接改第三方历史数据库。
+- OpenCode 走原生 session PATCH；Antigravity 走 UpdateConversationAnnotations；Cursor native_api 走既有本地 repository 的 composerDataService，再读原生 header。其他端点以实际能力声明为准。
+- Codex 现有 follower IPC 不含创建/改名入口；本轮直接连接本机 App Tools 管道时，DJ 运行时和原生 bundled Node 均被关闭，未接通不等于平台不支持。不能再将此写成空对话限制，也不以新 App Server 或占位 prompt 补齐。Claude、Pi 创建仍未接通。
+- DJ 未接通或达不到效果时，调用方 AI 可选择自身原生能力、其他可用接口或已安装 Skill 完成；不依赖特定第三方工具，已受理或 unknown 操作须先查证，避免重复效果。
+
+本次补齐：干净候选源码树重建后，4 项创建/改名集成与 2 项保护性单测通过（134 条断言）。OpenCode、Cursor、Antigravity 的专用测试对话均完成真实原生改名并读回同 ID、同 epoch；Cursor Inspector 已关闭。额外运行的历史 lifecycle 套件中，9 项依赖已禁用且当前 fixture 未提供的 oc-profile，返回 not_found；未恢复进程托管或将其记为通过。

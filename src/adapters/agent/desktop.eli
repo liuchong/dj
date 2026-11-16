@@ -183,6 +183,7 @@
            (capabilities (js-object :session_list "supported" :session_messages "supported"
              :session_probe "supported" :session_send "supported" :start_idle "supported"
              :message_during_run (if (= tool "codex") "supported" "unsupported")
+             :session_rename (if (and (= tool "cursor") (js-call endpoints :every (lambda (e) (nativeGet e "native_api")))) "supported" "unsupported")
              :session_create (if create-enabled "supported" "unsupported") :instance_start "unsupported" :instance_stop "unsupported"
              :native_idempotency "unsupported" :lookup_send (if (= tool "codex") "positive_only" "unsupported") :lookup_create (if create-enabled "supported" "unsupported")
              :observe "unsupported" :max_input_frame_bytes 262144))
@@ -521,7 +522,19 @@
             :reason (if (js-call (js-array "desktop_bridge_disabled" "desktop_frame_limit")
                             :includes (nativeGet unavailable "code"))
               (nativeGet unavailable "code") "desktop_receiver_unavailable"))))))
-      (js-object :create (when create-enabled (async (instance workspace key context)
+      (js-object :rename (when (= (nativeGet capabilities "session_rename") "supported")
+                  (async (session title context)
+                    (let* ((endpoint (funcall endpointFor session))
+                           (response (await (cursorNativeRequest endpoint
+                             (js-object :operation "rename" :thread (nativeGet session "native_session_id") :title title)
+                             (Object/assign (js-object) context (js-object :expected_epoch (nativeGet session "instance_epoch"))))))
+                           (row (nativeGet (nativeGet response "data") "thread")))
+                      (unless (and (= (nativeGet response "instance_epoch") (nativeGet session "instance_epoch"))
+                                   (= (nativeGet row "id") (nativeGet session "native_session_id"))
+                                   (= (nativeGet row "title") title)) (throw (desktopError "desktop_rename_unconfirmed")))
+                      (js-object :state "ready" :session (funcall sessionRecord endpoint (nativeGet row "id") title
+                        (cursorRuntime row) (nativeGet response "instance_epoch")) :evidence_level "native_protocol"))))
+        :create (when create-enabled (async (instance workspace key context)
                     (await (funcall createSession instance workspace key context false))))
         :lookupCreate (when create-enabled (async (instance key ref context)
           (let ((endpoint (funcall endpointFor instance)))

@@ -315,6 +315,12 @@
           "resources": [
             "*"
           ]
+        },
+        {
+          "action": "session.rename",
+          "resources": [
+            "*"
+          ]
         }
       ]
     }

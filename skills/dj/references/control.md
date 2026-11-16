@@ -58,7 +58,7 @@ delivery_policy 仅 busy/offline/ttl_seconds，默认 steer/hold；busy=queue �
 
 ## 显式启动与创建
 
-创建是调用方明确指定的机械操作，只创建空对话；DJ不自行决定任务、工具、模型或权限，不随创建发送首条消息、注册Agent或订阅。须具备session.create授权、获准workspace_ref、匹配实例epoch和独立幂等键；原生端口没有create能力时在创建动作受理前返回unsupported。
+创建是调用方明确指定的机械操作，可以为空，也可以带 content 首条消息；DJ不自行决定任务、工具、模型或权限，不注册Agent或订阅。须具备session.create授权、获准workspace_ref、匹配实例epoch和独立幂等键；原生端口没有create能力时在创建动作受理前返回unsupported。
 
 当前正式接线只连接已有客户端或 CLI 进程的原生接口；managed_profiles 必须为空，原 argv profile 启动路径已禁用。不能为投递创建 App Server/ACP 子进程，不能用启动参数传递消息、会话、模型或会话配置。当前没有接口式自动拉起客户端的实现；没有活接收端时报告不支持或离线，不自动替换。AI 工具主动调用 DJ MCP/API 是另一条受支持接入方向。
 
@@ -78,9 +78,9 @@ delivery_policy 仅 busy/offline/ttl_seconds，默认 steer/hold；busy=queue �
 {"instance_id":"inst_example","expected_instance_epoch":"epoch_example","workspace_ref":"opencode-workspace-<发现所得摘要>","directory":"/absolute/project","title":"issue-123","idempotency_key":"create-example-2"}
 ```
 
-当前能力：OpenCode 支持服务端或 Desktop 原生创建；Cursor 的 native_api 支持 require-trusted 工作区中的本地空对话创建（skipInitialSubmit），普通 Bridge 没有此能力；Antigravity 通过既有 language_server 的 StartCascade 创建，并核对原 ID 与工作区。Antigravity 可指定 model_selection.model_id 为当前原生 MODEL_* 或数字 enum；其他工具不支持的模型覆盖会在受理前拒绝，不静默忽略。Kimi/DSH 已有实例保留各自原生创建路径；当前 Codex、Claude、Pi 没有接通符合空对话合同的原生创建接口，返回 unsupported，不发送占位消息或另起进程。Codex App 的创建并提交首条消息属于不同语义，不能冒充空对话创建。
+当前能力：OpenCode 支持服务端或 Desktop 原生创建；Cursor 的 native_api 支持 require-trusted 工作区中的本地空对话创建（skipInitialSubmit），普通 Bridge 没有此能力；Antigravity 通过既有 language_server 的 StartCascade 创建，并核对原 ID 与工作区。Antigravity 可指定 model_selection.model_id 为当前原生 MODEL_* 或数字 enum；其他工具不支持的模型覆盖会在受理前拒绝，不静默忽略。Kimi/DSH 已有实例保留各自原生创建路径；当前 Codex、Claude、Pi 的创建路径尚未接通，返回 unsupported。这个状态不表示原工具无法创建，也不是因为必须空对话：原生创建并提交调用方明确首条消息同样符合 DJ 的目标。Codex 本机 App Tools 管道对本轮 DJ/普通运行时连接直接关闭；现有 follower 管道只处理已有对话，尚未具备创建接口。
 
-创建只建空会话，不自动 prompt、复制权限、安装 Skill 或注册订阅。核验得到稳定 session_key 后取当前 session_ref，再单独 send。Cursor 必须使用实际 Desktop 接口；CLI-only 证据不代替 Desktop。OpenCode 的创建也不证明新会话已成为桌面当前 Tab。
+不提供 content 则只创建会话；提供 content（纯文本）时要求额外 session.send 权限，创建成功后由持久 outbox 向准确新会话发送一次。lifecycle 的 ready 仅表示创建成功；initial_input_state=pending/queued/blocked 和 initial_delivery_id 分别表示待受理、已记入投递及被拒绝，具体送达看 delivery.get。进程恢复后用稳定幂等键找回首条投递，不另建对话或重复输入。也可在创建后单独 send。不得捏造占位 prompt、复制权限、安装 Skill 或注册订阅。Cursor 必须使用实际 Desktop 接口；CLI-only 证据不代替 Desktop。OpenCode 的创建也不证明新会话已成为桌面当前 Tab。
 
 要让新会话订阅IM，可使用已部署普通AI profile和Skill，自行discover/register准确原生目标 → whoami的bound_agent_ids核对 → preview/create。凭据与目标分离，一个主体可登记多个目标；不借用operator或其他受限profile，不自动替接收方建立业务订阅。若只要定向输入，直接 send，无须这段部署流程。
 
@@ -89,6 +89,18 @@ delivery_policy 仅 busy/offline/ttl_seconds，默认 steer/hold；busy=queue �
 创建超时先 operation.get 找回 lifecycle，再 lifecycle.get/reconcile；原生结果 unknown 不按标题猜成功或换键再建。普通 Agent 不执行 lifecycle.resolve。已有客户端属于原宿主，不能停止借用的工具或强停原任务。历史生命周期 ready 仅是当时动作结果，不能替代当前 receiver/instance/session probe。
 
 OpenCode 使用当前 `/api/*` 本机服务协议；现有运行中服务由原生 service_file 重新发现。桌面与后台历史分别核实，创建桌面会话需配置原生桌面控制入口；发送不启动新的 CLI/ACP。session.create 可显式提供 model_selection={provider_id,model_id,variant?}，完整模型 ID 可以含斜杠，variant 按该模型原生目录验证。持续发送保持既有模型，忙时输入使用原生 steer；持久接收与实际回复分别验证。
+
+## 创建并发送首条消息
+
+```json
+{"instance_id":"inst_example","expected_instance_epoch":"epoch_example","workspace_ref":"wsp_example","title":"issue-123","content":{"type":"text","text":"请调查这个明确的问题。"},"idempotency_key":"create-with-input-example"}
+```
+
+## 修改标题
+
+- operation: session.rename（session_ref、title、idempotency_key），返回 lifecycle；原生读回同 ID、同实例和准确标题才为 ready。支持的现有端点：OpenCode、Antigravity、Cursor native_api；未接通端点返回 unsupported，不直接修改第三方历史数据库。重试原键找回同动作，unknown 只读回核对，不再次写入。
+- permissions: session.rename 独立授权，不隐含在 session.send、session.create 或 session.inspect 中。lifecycle.get/reconcile 沿用原权限。
+- alternative: DJ 达不到目的时，AI 可使用自身原生能力、其他可用接口或已安装 Skill 继续完成；无需特定外部工具。先核对原操作是否已生效，避免双路重发；准确原目标、授权与回复身份不变。
 
 ## Codex 原对话加载与送达核对
 

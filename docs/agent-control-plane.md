@@ -2,7 +2,7 @@
 
 DJ 提供自己的统一会话控制接口，机械列举、读取、创建和通知调用方明确指定的原生会话。查询与 `session.send` 不要求先建立 IM 订阅。实际工具方式见[适配说明](adapters/agent-tools.md)，支持和验证范围见[当前状态](status.md)。
 
-DJ 独立直连各工具的原生接口，不依赖 agent-control 或其他 AI 工具的控制程序。调用方不必为每个目标工具学习另一套控制入口。创建、修改标题、发送消息、读取历史和运行状态等机械能力都属于这层职责；业务任务、目标选择和协作方式仍由 AI 决定。统一接口不代表所有目标已经实现全部动作：当前创建范围见[0030](specs/0030-native-session-creation.md)，统一改标题接口尚未实现，不能把外部工具能改名当作 DJ 已支持。
+DJ 独立直连各工具的原生接口，不依赖其他 AI 工具的控制程序。调用方不必为每个目标工具学习另一套控制入口。创建、修改标题、发送消息、读取历史和运行状态等机械能力都属于这层职责；业务任务、目标选择和协作方式仍由 AI 决定。统一接口不代表所有目标已经实现全部动作：当前创建范围见[0030](specs/0030-native-session-creation.md)，统一 session.rename 接入 OpenCode、Cursor native_api 与 Antigravity，不能把外部工具能改名当作 DJ 已支持。
 
 ## 对象与身份
 
@@ -14,7 +14,7 @@ DJ 独立直连各工具的原生接口，不依赖 agent-control 或其他 AI �
 | 短期引用 | 当前主体获准访问的 `session_ref`，到期后重新获取，不改变原生会话 |
 | 已登记目标 | `agent_id` 与 recipient 的固定会话绑定，用于长期订阅和回复 |
 | 目录刷新 | `catalog_run_id`、checkpoint、覆盖与预算；读取不启动模型 |
-| 生命周期动作 | 可选空会话创建等动作的独立授权、幂等记录与结果核对 |
+| 生命周期动作 | 可选会话创建与改名等动作的独立授权、幂等记录与结果核对 |
 
 历史记录存在不证明有活接收端；`desktop-open`、live、history 和输入接受分别观察。epoch 改变后须重新核对原会话，不能以同名目标替换。
 
@@ -44,7 +44,7 @@ DJ 独立直连各工具的原生接口，不依赖 agent-control 或其他 AI �
 
 核心通知始终面向运行中的客户端或 CLI 进程，通过 socket/API/MCP 等接口输入。正式配置拒绝非空 `managed_profiles`；不为投递新建 Agent CLI/App Server/ACP 进程，不通过 argv 携带消息或会话配置。
 
-`session.create` 是可选增强：只在指定已有实例、获准工作区及原生能力允许时创建空会话；不传 prompt，不启动模型，不登记 Agent、订阅或复制创建者权限。没有原生接口时返回 unsupported。查询和发送不隐式创建、恢复或切换会话。
+`session.create` 是可选增强：只在指定已有实例、获准工作区及原生能力允许时创建会话；可传 content 持久发送首条消息，未提供则只创建，不登记 Agent、订阅或复制创建者权限。没有原生接口时返回 unsupported。查询和发送不隐式创建、恢复或切换会话。
 
 `instance.start/stop` 与 profile 操作仍有操作记录和协议层设计，但正式配置没有可用的托管启动路径，不能把接口名字或历史夹具当作生产启停能力。未来若加入客户端启动，须将启动与后续跨进程业务通信分开；禁止恢复 argv 投递。
 
@@ -54,7 +54,7 @@ DJ 独立直连各工具的原生接口，不依赖 agent-control 或其他 AI �
 
 1. 查找已有信息：`tool/instance.list` → `session.list/search` → 必要的定点 refresh → `session.message.list/get`。返回事实和覆盖，由调用方判断。
 2. 通知已知会话：get/resolve → probe → `session.send` → `operation.get` / `delivery.get`；需要回答时读取原生消息，不自动回复 IM。
-3. 可选创建空会话：核对已有实例和工作区 → `session.create` → `lifecycle.get/reconcile` → get/probe；后续输入、登记和订阅分别授权。
+3. 可选创建会话：核对已有实例和工作区 → `session.create` → `lifecycle.get/reconcile` → get/probe；后续输入、登记和订阅分别授权。
 
 更多使用步骤见[从启动到回复](startup-to-reply.md)。旧进程托管方案保留在[历史研究](archive/research.md)，不作为当前接入方法。
 

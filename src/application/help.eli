@@ -166,11 +166,13 @@
       :instance.start
       "显式启动获准预配 profile；先占持久 slot，unknown 不重新拉起。"
       :session.create
-      "在已有运行实例中显式创建空会话，不发送首条消息、不登记或订阅。先 instance.get 获取 epoch、workspace_scope 和 workspace_ref（需要 instance.inspect）。instance 范围可传绝对 directory 及其发现所得 workspace_ref；缺少 directory 时从同实例已发现会话解析。OpenCode 可传原生 model_selection；Antigravity model_id 使用精确 MODEL_* 或数字 enum。Cursor native_api 可创建不提交首条消息的本地对话；Codex/普通 Bridge/Claude/Pi 没有已接通的原生空会话创建接口，返回 unsupported；不能改走新进程或发送占位 prompt。"
+      "在已有运行实例中显式创建会话；可传 content 作为首条纯文本消息（另需 session.send），不登记或订阅。创建 ready 不代表首条消息送达：核对 initial_input_state、initial_delivery_id 和 delivery.get。先 instance.get 获取 epoch、workspace_scope 和 workspace_ref（需要 instance.inspect）。instance 范围可传绝对 directory 及其发现所得 workspace_ref；缺少 directory 时从同实例已发现会话解析。OpenCode 可传原生 model_selection；Antigravity model_id 使用精确 MODEL_* 或数字 enum。Cursor native_api 可创建不提交首条消息的本地对话；Codex/普通 Bridge/Claude/Pi 的创建接口尚未接通，返回 unsupported；不要求空对话，但不得捏造占位 prompt 或启动替代 Agent 进程。AI 可改用自身原生能力、其他可用接口或已安装 Skill 完成目标。"
+      :session.rename
+      "沿准确 session_ref 修改原生标题；独立 session.rename 权限，持久记账后写原接口并读回。同一幂等键不重复写；unknown 用 lifecycle.reconcile 只读核对。"
       :instance.stop
       "仅停止 DJ-owned managed 实例；先关 gate 再排空，期限到不强杀、不要求队列清空。"
       :lifecycle.get
-      "读取启动/创建/停止台账及当前实例，并为当前可见会话重签短期引用。"
+      "读取启动/创建/改名/停止台账及当前实例，并为当前可见会话重签短期引用。"
       :lifecycle.reconcile
       "按原 launch token/创建关联键追加原生观察；不另起进程或再次创建。"
       :lifecycle.resolve
@@ -354,6 +356,7 @@
       ((= name "session.send")
         (js-array "start_idle" "exact_live_receiver" "native_input_frame"))
       ((= name "session.create") (js-array "session_create" "instance_gate_open"))
+      ((= name "session.rename") (js-array "session_rename" "instance_gate_open"))
       ((= name "instance.start")
         (js-array "instance_start" "approved_profile" "managed_slot"))
       ((= name "instance.stop")

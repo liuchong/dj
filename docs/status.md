@@ -65,4 +65,6 @@
 
 macOS既有客户端可配置原进程原对话加载器；查询保持只读，实际投递才请求加载，然后核对原owner并从原socket发输入。投递查询区分待投、加载原因、提交时间与原生回执；调用方AI决定代转和业务处理，DJ不选协调者。原生URL事件可能切换当前对话页，OS拒绝时明确报告。4项定向检查与本机正式后台服务的未加载原对话输入/标记回复实测通过；最终样本约4.4秒接收，Skill已安装，业务规则及退订状态保持。见[0029](specs/0029-codex-receiver-loading.md)。
 
-统一会话控制由 DJ 独立实现。OpenCode、Cursor、Antigravity 的空创建已通过普通 AI 身份调用 DJ 正式 API，并读回 ready 生命周期；同键重试返回原动作。实例查询公开实际适配器创建能力和工作区范围，部署示例与 Skill 已同步。创建、标题修改、读取和发送属于同一工具性控制职责；当前统一改标题接口及 Codex/Claude/Pi 空创建尚未接通，不能从其他工具的能力外推。详见[控制面](agent-control-plane.md)与[0030](specs/0030-native-session-creation.md)。
+统一会话控制由 DJ 独立实现。OpenCode、Cursor、Antigravity 的空创建已通过普通 AI 身份调用 DJ 正式 API，并读回 ready 生命周期；同键重试返回原动作。实例查询公开实际适配器创建能力和工作区范围，部署示例与 Skill 已同步。创建、标题修改、读取和发送属于同一工具性控制职责；session.rename 接入 OpenCode、Cursor native_api 与 Antigravity；session.create 可带首条 content 并返回独立 initial_delivery_id。Codex/Claude/Pi 的创建与改名尚未接通，不能从其他工具的能力外推。详见[控制面](agent-control-plane.md)与[0030](specs/0030-native-session-creation.md)。
+
+本次会话控制补齐通过干净候选源码树重建、4项当前创建/改名集成和2项保护性单测（134条断言）；OpenCode、Cursor、Antigravity 专用测试会话的真实改名读回通过。历史托管生命周期测试的9项 oc-profile 缺失失败另列于规格0030，不计入本批通过项，也未恢复已禁用的 argv 托管方式。

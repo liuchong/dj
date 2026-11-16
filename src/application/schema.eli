@@ -208,7 +208,7 @@
         (unless (object-has? args :corpus) (put args :corpus "indexed")))
       (when (js-call (js-array "session.list" "session.search") :includes operation)
         (unless (object-has? args :sort) (put args :sort "session_key_asc")))
-      (when (= operation "session.send")
+      (when (or (= operation "session.send") (and (= operation "session.create") (nativeGet args "content")))
         (put args :delivery_policy (normalizedPolicy (nativeGet args "delivery_policy"))))
       (when (= operation "subscription.preview")
         (let* ((spec (nativeGet args "spec")) (selector (nativeGet spec "selector")))

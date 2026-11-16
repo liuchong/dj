@@ -1,18 +1,21 @@
 ---
 name: dj
-description: 通过 DJ 的 CLI/MCP/GEPO 机械查询跨工具会话和消息、免订阅定向输入、通过已有实例接口创建会话，以及持久对话督工和 Lark、Slack 消息收发、上下文、撤回编辑、表情和规则订阅。由调用方选择精确目标和结构化规则；普通代码修改或 IM 管理界面不使用此 Skill。
+description: 通过 DJ 的 CLI/MCP/GEPO 机械查询跨工具会话和消息、免订阅定向输入、通过已有实例接口创建或改名会话，以及持久对话督工和 Lark、Slack 消息收发、上下文、撤回编辑、表情和规则订阅。由调用方选择精确目标和结构化规则；普通代码修改或 IM 管理界面不使用此 Skill。
 metadata:
   stage: native-api-integration
 ---
 
 # Skill
 
-- purpose: 通过DJ确定性接口查询跨工具会话、定向输入、通过已有实例接口创建会话，以及登记IM订阅并回复原话题。
+- purpose: 通过DJ确定性接口查询跨工具会话、定向输入、通过已有实例接口创建或改名会话，以及登记IM订阅并回复原话题。
 - group_subscriptions: 多成员单接收的显式组订阅、随机/轮询/优先级及可组合额度筛选见[组订阅](references/groups.md)。普通订阅仍多对多，组内选人不判断业务归属。
 - trigger: 用户需要跨工具会话查询与控制，或通过DJ登记订阅、接收推送和回复来源会话。普通代码修改或IM管理界面不使用本Skill。
 - boundary: 本Skill仅提供调用说明，不包含模型服务、常驻脚本或安装器，不授予额外外发、启动进程或修改权限的许可。调用方负责理解意图、选择精确目标并生成回复；DJ没有模型和自然语言理解。
 
 ## 适用范围
+
+- outcome_first: 以完成用户目标、解决问题为先。优先使用 DJ 已有能力；DJ 返回不支持、接口未接通或实际达不到效果时，由 AI 自行选择本身可用的原生工具、目标工具接口或其他已安装 Skill 继续，不要求所有操作必须经 DJ，也不假定用户安装了某个外部控制工具。
+- alternative_safety: 切换入口仍使用准确的原会话、账号和 user/bot 身份。已受理投递先检查原 operation/delivery；仍待投时取消并确认，submitting/unknown 先查证，已 accepted 不重发。替代入口不扩大授权、不绕过收件人退订；结果按实际能力和证据说明。
 
 - connected_conversations: 已对接DJ的AI对话优先通过DJ CLI、MCP或GEPO使用现有收发、上下文、订阅、回复和处理状态能力；Lark能力入口见下表。DJ缺少所需功能或确有必要时，允许在原授权内使用Lark CLI补充，按[能力与同身份补充](references/lark.md)核对原账号身份；不是一律禁止使用CLI。
 - cli_identity: 使用Lark CLI时，必须与本来准备在DJ中使用的连接保持相同Lark账号及user/bot身份。回复按该通知已固定的reply_route核对；本人不换成机器人，机器人不换成另一个机器人，不以昵称或CLI默认账号判断身份相同。
@@ -24,7 +27,7 @@ metadata:
 
 - native_creation: DJ 自己实现原生接口，不依赖其他 Agent 控制工具。创建流程、权限与工具边界见[会话控制](references/control.md#显式启动与创建)。调用方工具不限制目标工具，目标由 instance_id 明确指定。
 - prerequisites: session.create 不隐含 instance.inspect；部署创建调用方时同时配置实例查询、lifecycle.inspect、lifecycle.reconcile。先读 instance.get，核对当前 epoch、workspace_scope 和目录；forbidden 的 details.reason 区分工作区与模型能力，不猜测需要 managed profile。
-- workspace: directory 范围仅配置目录；instance 范围允许同一实例其他工作区，传发现得到的 workspace_ref 和绝对 directory，或由 DJ 从已发现会话解析目录。创建仍只创建空对话，之后单独 session.send，不自动订阅或选择任务。
+- workspace: directory 范围仅配置目录；instance 范围允许同一实例其他工作区，传发现得到的 workspace_ref 和绝对 directory，或由 DJ 从已发现会话解析目录。创建可以为空，也可显式传 content 作为首条消息。DJ 在同一原生会话创建成功后持久受理该消息；核对 lifecycle.initial_delivery_id 和 delivery.get，不把创建 ready 当消息已送达。不自动订阅或选择任务。
 
 ## 对话督工
 
@@ -124,7 +127,7 @@ metadata:
 - refresh_reply: 权限更新导致原 reply_context_id 失效时，原接收者可用 message.reply_context(delivery_id) 重新取得引用；仍核对当前权限、原消息、原身份及原有效期，不延长 TTL，不换收件人或重放任务。新引用后使用同一逻辑回复的原幂等键，先查原操作，不能重发已 accepted 的回复。
 - route: 谁被询问就由谁回复：@本人用本人，@机器人用该机器人，私聊及引用/话题按确定原生对象。收件连接不等于回复身份，原生mentions和reply_route说明被提及者及DJ已固定的回复身份；message.reply只提交reply_context_id、content、稳定idempotency_key，不选择账号或收件人，不改为message.send绕开缺失引用。
 - decision: 按本对话规则判断是否处理、是否属于已有任务、是否及何时回复；不是每条通知都要建任务或回复，也不是每次输出都外发。最终回答不自动转发IM；真正外发是显式工具调用，可在最终回答前进行。
-- tool_boundary: DJ提供机械接线、映射和关系查询，不判断负责人或决定转交。历史接收者不等于任务所有者；AI自行决定如何查找、联系和协作，也可使用获准的agent-control等独立工具。
+- tool_boundary: DJ提供机械接线、映射和关系查询，不判断负责人或决定转交。历史接收者不等于任务所有者；AI自行决定如何查找、联系和协作，也可使用获准的原生工具、其他可用接口或已安装 Skill。
 - continuity: 换助手后用原event/delivery经message.context和message.history查回根消息、原话题；related_recipients提供历史接收会话定位，结合任务记录确认原协调者，以session.get/resolve取得新ref再session.send联系。history且live_receiver=false表示历史存在、当前未确认接收端，不是不存在。详见[续接](references/context.md#接手续接)。
 - private_recipient: 双连接收取同一私聊时，DJ区分实际接收方与发送回显：问机器人由机器人回复，问本人由本人回复，发送回显不增加一个回复身份；本人自聊仍可用。迟到回显后原reply_context继续按同一接收身份校验，无需改规则或挑选通知副本。
 - setup: 接收对话自己经session.rules.update维护reply_routes；来源应用范围内原生mention_id映射到获准出口connection_id，DJ自动固定每条通知路径。手工自发@同样匹配，不设本人sender排除。详见[对话规则](references/session-rules.md)。

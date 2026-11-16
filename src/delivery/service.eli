@@ -359,6 +359,8 @@
                 (throw djReturn3Token)))
             (let ((route (js-call repository :get "routes" (nativeGet alias "route_id"))))
               (setq target-args (js-object :session_key (nativeGet route "session_key")))))
+          (when (nativeGet context "creation")
+            (setq target-args (js-object :session_key (nativeGet (nativeGet context "creation") "session_key"))))
           (when (nativeGet context "supervision")
             (setq target-args (js-object :session_key (nativeGet (nativeGet context "supervision") "session_key"))))
           (let ((resolved (resolveSessionRecord context target-args action)))
@@ -400,6 +402,9 @@
                     nil
                     :allowed_actions
                     (js-array))))
+              (when (and (nativeGet context "creation")
+                         (not (= (nativeGet session "instance_epoch") (nativeGet (nativeGet context "creation") "instance_epoch"))))
+                (setq djReturn3Value (failure "stale_reference")) (throw djReturn3Token))
               (unless (nativeGet permission "ok")
                 (progn (setq djReturn3Value permission) (throw djReturn3Token)))
               (unless port

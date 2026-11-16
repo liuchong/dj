@@ -48,4 +48,7 @@
 
 - [x] 0029 Codex 原对话加载：原进程系统事件加载、精确owner复核、投递原因与时间查询、取消后安全代转；4项定向集成/保护性检查通过。正式后台服务在既有未加载测试对话完成自动加载、原生接收及标记回复，最终样本约4.4秒接收；Skill已安装，原业务规则和退订状态保留。
 
-- [x] 0030 原生空对话创建：DJ 独立实现 OpenCode 跨工作区、Antigravity、Cursor 原生空创建及权限/恢复说明；7 项定向集成/保护性验证通过，三种已有 Desktop 原生空创建读回通过。服务和 Skill 随本批交付更新。Codex/Claude/Pi 当前缺少符合空对话合同的已接通接口，明确 unsupported。
+- [x] 0030 原生空对话创建：DJ 独立实现 OpenCode 跨工作区、Antigravity、Cursor 原生空创建及权限/恢复说明；7 项定向集成/保护性验证通过，三种已有 Desktop 原生空创建读回通过。服务和 Skill 随本批交付更新。Codex/Claude/Pi 的创建接口尚未接通，明确 unsupported；并非必须空对话。
+
+- [x] 0030 会话控制补齐：创建可带首条 content，独立持久投递；统一 session.rename 接通 OpenCode、Cursor native_api、Antigravity。Skill 明确目标优先，DJ 达不到效果时可用自身其他能力、接口或已安装 Skill，不依赖特定外部工具。
+- [ ] 0030 Codex、Claude、Pi 的已有实例原生创建与改名接口继续接通；不使用替代 Agent 进程，不把能力缺口写成平台不支持。

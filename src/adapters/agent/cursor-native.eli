@@ -52,6 +52,12 @@
       " }\n"
       " if(!x) throw Error('cursor_native_no_owner');\n"
       " if(request.operation==='probe'||request.operation==='create')return {thread:x.row};\n"
+      " if(request.operation==='rename') {\n"
+      "  if(typeof request.title!=='string'||!request.title.trim()||typeof local.composerDataService?.updateComposerDataAsync!=='function')throw Error('cursor_native_shape');\n"
+      "  await local.composerDataService.updateComposerDataAsync(request.thread,set=>set('name',request.title));\n"
+      "  const after=get(request.thread);if(!after||after.row.title!==request.title)throw Error('cursor_native_rename_unconfirmed');\n"
+      "  return {thread:after.row};\n"
+      " }\n"
       " if(request.operation==='messages') {\n"
       "  const headers=x.data.fullConversationHeadersOnly;\n"
       "  if(!Array.isArray(headers)||headers.length>10000) throw Error('cursor_native_bound');\n"
@@ -252,7 +258,7 @@
            (queue (or (js-call cursorQueues :get key)
                     (js-object :tail (Promise/resolve) :depth 0))))
       (desktopDeadline context)
-      (unless (and (js-call (js-array "list" "probe" "messages" "submit" "create") :includes (nativeGet payload "operation"))
+      (unless (and (js-call (js-array "list" "probe" "messages" "submit" "create" "rename") :includes (nativeGet payload "operation"))
                    (<= (Buffer/byteLength (JSON/stringify payload)) 300000))
         (throw (desktopError "desktop_frame_limit")))
       (when (>= (nativeGet queue "depth") 64) (throw (desktopError "cursor_native_busy")))

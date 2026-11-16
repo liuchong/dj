@@ -52,7 +52,7 @@
   (defun createOpenCodePort (config host)
     (let* ((endpoints (nativeGet config "endpoints" (js-array))) (closed false)
       (capabilities (js-object :session_list "supported" :session_messages "supported" :session_probe "supported"
-        :session_create "supported" :creation_model_selection "supported" :session_send "supported" :start_idle "supported" :message_during_run "supported"
+        :session_create "supported" :session_rename "supported" :creation_model_selection "supported" :session_send "supported" :start_idle "supported" :message_during_run "supported"
         :instance_start "unsupported" :instance_stop "unsupported" :native_idempotency "supported"
         :lookup_send "positive_only" :lookup_create "unsupported" :observe "unsupported" :max_input_frame_bytes 262144))
       (endpointFor nil) (request nil) (connect nil) (desktop nil) (readMessages nil) (probe nil) (listSessions nil))
@@ -85,10 +85,12 @@
                 :signal (nativeGet controller "signal") :redirect "error"))))
               (status (nativeGet response "status"))
               (content-type (js-call (nativeGet response "headers") :get "content-type")))
-              (unless (and content-type (js-call content-type :includes "application/json"))
+              (if (= status 204)
+                (js-object :ok (nativeGet response "ok") :status status :wire nil)
+              (progn (unless (and content-type (js-call content-type :includes "application/json"))
                 (throw (new globalThis.Error "OpenCode returned a non-JSON protocol")))
               (let ((wire (await (readJson response (nativeGet limits "native_response_max_bytes")))))
-                (js-object :ok (nativeGet response "ok") :status status :wire wire)))
+                (js-object :ok (nativeGet response "ok") :status status :wire wire)))))
             (finally (when timer (nativeClearTimeout timer))
               (when parent (js-call parent :removeEventListener "abort" abort)))))))
       (setq connect (async (endpoint context)
@@ -275,6 +277,18 @@
               (js-object :state "unknown" :definite_not_sent false)))
           (catch unavailable (js-object :state "unknown" :status "not_proven" :definite_not_sent false))))
         :observe (async (binding ref cursor budget context) (js-object :items (js-array) :complete t :next_cursor nil))
+        :rename (async (session title context)
+          (let* ((e (funcall endpointFor session)) (c (await (funcall connect e context)))
+                 (before (await (funcall probe session session context))))
+            (unless (= (nativeGet before "instance_epoch") (nativeGet session "instance_epoch"))
+              (throw (new globalThis.Error "OpenCode rename target changed")))
+            (let ((result (await (funcall request c (str "/api/session/" (nativeEncodeURIComponent (nativeGet session "native_session_id")))
+                            "PATCH" (js-object :title title) context))))
+              (unless (nativeGet result "ok") (throw (new globalThis.Error "OpenCode rename not confirmed"))))
+            (let ((after (await (funcall probe session session context))))
+              (js-object :state (if (and (= (nativeGet after "instance_epoch") (nativeGet session "instance_epoch"))
+                                        (= (nativeGet after "title") title)) "ready" "unknown")
+                :session after :evidence_level "native_protocol"))))
         :create (async (instance workspace key context)
           (let ((created nil) (started false))
             (try

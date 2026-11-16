@@ -18,6 +18,7 @@
   (import "../catalog/records.eli" putSession projectSession)
   (import "../catalog/service.eli" objectProjection)
   (import "./workspaces.eli" creationWorkspace)
+  (import "../catalog/service.eli" resolveSessionRecord)
   (import "./gates.eli" assertGate closeGate releaseSlot reserveSlot)
   (defun projectLifecycle
     (context action)
@@ -35,6 +36,9 @@
               "workspace_ref"
               "directory"
               "native_ref"
+              "initial_input_state"
+              "initial_delivery_id"
+              "initial_input_error"
               "profile_id"
               "revision"
               "created_at"
@@ -223,6 +227,27 @@
                     (js-array
                       (typedRef "lifecycle" (nativeGet data "lifecycle_id"))
                       (typedRef "instance" (nativeGet data "instance_id")))))))
+            ((= operation "session.rename")
+              (let* ((resolved (resolveSessionRecord context args "session.rename")))
+                (if (not (nativeGet resolved "ok")) resolved
+                  (let* ((session (nativeGet resolved "data"))
+                         (instance (js-call repository :get "instances" (nativeGet session "instance_id")))
+                         (port (agentPort context instance)))
+                    (requirePermission context "session.rename" session)
+                    (if (not (and (nativeGet port "rename")
+                                  (= (nativeGet (nativeGet port "capabilities") "session_rename") "supported")))
+                      (failure "unsupported")
+                      (js-call context :accept (lambda (tx operation-id)
+                        (let ((current (must (resolveSessionRecord context args "session.rename")))
+                              (action (newAction context operation-id "rename" instance)))
+                          (must (assertGate tx (nativeGet instance "instance_id") (nativeGet current "instance_epoch") "open"))
+                          (put action :session_key (nativeGet current "session_key"))
+                          (put action :workspace_ref (nativeGet current "workspace_ref"))
+                          (put action :directory (nativeGet current "directory" nil))
+                          (put action :title (nativeGet args "title"))
+                          (js-call repository :insert "lifecycle_actions" action)
+                          (success (projectLifecycle context action))))
+                        (lambda (data) (js-array (typedRef "lifecycle" (nativeGet data "lifecycle_id"))))))))))
             ((or (= operation "session.create") (= operation "instance.stop"))
               (let*
                 (
@@ -243,13 +268,12 @@
                     (setq djReturn1Value (failure "not_found"))
                     (throw djReturn1Token)))
                 (when (= operation "session.create")
-                  (when (= (nativeGet instance "tool" (nativeGet instance "tool_id")) "pi")
-                    (progn
-                      (setq djReturn1Value (failure "unsupported"))
-                      (throw djReturn1Token)))
                   (let ((workspace (creationWorkspace instance args (nativeGet (nativeGet context "store") "db"))))
                     (unless (nativeGet workspace "ok")
                       (setq djReturn1Value workspace) (throw djReturn1Token)))
+                  (when (nativeGet args "content")
+                    (let ((permission (requirePermission context "session.send" resource)))
+                      (unless (nativeGet permission "ok") (setq djReturn1Value permission) (throw djReturn1Token))))
                   ;; Record a create only when this existing receiver exposes a
                   ;; native create interface. Never leave an unrunnable action or
                   ;; substitute a process launch for unsupported client APIs.
@@ -257,7 +281,7 @@
                     (unless (and port (nativeGet port "create")
                                  (= (nativeGet (nativeGet port "capabilities") "session_create") "supported"))
                       (setq djReturn1Value (failure "unsupported" (js-object :details
-                        (js-object :reason "native_empty_session_create_unavailable"
+                        (js-object :reason "native_session_create_unavailable"
                           :tool (nativeGet instance "tool" (nativeGet instance "tool_id"))))))
                       (throw djReturn1Token))
                     (when (and (nativeGet args "model_selection")
@@ -318,6 +342,10 @@
                                   (if (= operation "session.create") "create" "stop")
                                   current)))
                             (when (= operation "session.create")
+                              (when (nativeGet args "content")
+                                (put action :initial_content (nativeGet args "content"))
+                                (put action :initial_delivery_policy (nativeGet args "delivery_policy"))
+                                (put action :initial_input_state "pending"))
                               (when (nativeGet args "model_selection") (put action :model_selection (nativeGet args "model_selection")))
                               (put action :workspace_ref (nativeGet args "workspace_ref"))
                               (put action :directory (nativeGet
@@ -583,6 +611,15 @@
                   (put created :initial_model_selection (nativeGet action "model_selection")))
                 (let ((session (must (putSession context created instance))))
                   (put current :session_key (nativeGet session "session_key"))))
+              (when (= (nativeGet action "action") "rename")
+                (let ((original (js-call repository :get "sessions" (nativeGet action "session_key"))))
+                  (unless (and created (= (nativeGet created "instance_epoch") (nativeGet action "instance_epoch"))
+                               (= (nativeGet created "instance_id") (nativeGet original "instance_id"))
+                               (= (nativeGet created "native_namespace") (nativeGet original "native_namespace"))
+                               (= (nativeGet created "native_session_id") (nativeGet original "native_session_id"))
+                               (= (nativeGet created "title") (nativeGet action "title")))
+                    (setq djReturn4Value (failure "incompatible")) (throw djReturn4Token))
+                  (must (putSession context (Object/assign (js-object) original created) instance))))
               (put current :state "ready")
               (put current :evidence_level "native_protocol")
               (put current :native_ref (nativeGet report "native_ref" nil))
@@ -707,16 +744,17 @@
                   (js-call repository :get "profiles" (nativeGet instance "profile_id"))))
               (port (agentPort context instance))
               (operation
+                (if (= (nativeGet action "action") "rename") "session.rename"
                 (if (= (nativeGet action "action") "create")
                   "session.create"
-                  (str "instance." (nativeGet action "action"))))
+                  (str "instance." (nativeGet action "action")))))
               (resource
                 (if (= (nativeGet action "action") "start")
                   profile
-                  (Object/assign
-                    (js-object)
-                    instance
-                    (js-object :workspace_ref (nativeGet action "workspace_ref" nil))))))
+                  (if (= (nativeGet action "action") "rename")
+                    (js-call repository :get "sessions" (nativeGet action "session_key"))
+                    (Object/assign (js-object) instance
+                      (js-object :workspace_ref (nativeGet action "workspace_ref" nil)))))))
             (unless (and port (nativeGet port (nativeGet action "action")))
               (progn
                 (setq djReturn6Value (failure "unsupported"))
@@ -797,6 +835,8 @@
                                 (progn
                                   (setq djReturn7Value (failure "forbidden"))
                                   (throw djReturn7Token)))
+                              (when (= (nativeGet action "action") "rename")
+                                (must (assertGate tx (nativeGet instance "instance_id") (nativeGet action "instance_epoch") "open")))
                               (when (= (nativeGet action "action") "create")
                                 (let ((workspace (creationWorkspace instance action (nativeGet (nativeGet context "store") "db"))))
                                   (unless (nativeGet workspace "ok")
@@ -865,6 +905,10 @@
                                 (nativeGet instance "instance_epoch")))
                             (nativeGet action "launch_token")
                             (nativeCallContext context))))
+                      ((= (nativeGet action "action") "rename")
+                        (await (js-call port :rename
+                          (js-call repository :get "sessions" (nativeGet action "session_key"))
+                          (nativeGet action "title") (nativeCallContext context))))
                       ((= (nativeGet action "action") "create")
                         (await
                           (js-call
@@ -968,6 +1012,12 @@
               (let
                 (
                   (report
+                    (if (= (nativeGet action "action") "rename")
+                      (let ((session (await (js-call port :probe
+                              (js-call repository :get "sessions" (nativeGet action "session_key"))
+                              (js-call repository :get "sessions" (nativeGet action "session_key")) (nativeCallContext context)))))
+                        (js-object :state (if (= (nativeGet session "title") (nativeGet action "title")) "ready" "unknown")
+                          :session session :evidence_level "native_protocol"))
                     (if (= (nativeGet action "action") "create")
                       (if (nativeGet port "lookupCreate")
                         (await
@@ -985,11 +1035,13 @@
                           :inspectInstance
                           instance
                           (nativeGet action "launch_token" (nativeGet instance "launch_token"))
-                          (nativeCallContext context))))))
+                          (nativeCallContext context)))))))
                 (cond
+                  ((and (= (nativeGet action "action") "rename") (= (nativeGet report "state") "ready")
+                        (not (= (nativeGet action "state") "resolved"))) (recordReady context action report))
                   (
                     (and
-                      (not (= (nativeGet action "action") "create"))
+                      (= (nativeGet action "action") "stop")
                       (= (nativeGet report "absence_verified") t))
                     (recordAbsence context action report))
                   (
@@ -1019,7 +1071,7 @@
         (cond
           (
             (js-call
-              (js-array "instance.start" "session.create" "instance.stop")
+              (js-array "instance.start" "session.create" "session.rename" "instance.stop")
               :includes
               operation)
             (acceptLifecycle context operation args))
