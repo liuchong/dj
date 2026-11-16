@@ -84,6 +84,14 @@
                    (= (nativeBitAnd (nativeGet info "mode") 18) 0))
         (throw (desktopError "desktop_history_owner")))
       (new Database path (js-object :readonly t :create false :strict t))))
+  (defasync savedCodexHeader (endpoint id)
+    (let ((db (await (openHistory endpoint))))
+      (try
+        (let* ((row (js-call (js-call db :query "SELECT id,title,cwd FROM threads WHERE id=? AND archived=0") :get id))
+          (cwd (nativeGet row "cwd")))
+          (and row (= (nativeTypeOf cwd) "string") (isAbsolute cwd)
+            (or (= (nativeGet endpoint "workspace_scope") "instance") (= cwd (nativeGet endpoint "directory"))) row))
+        (finally (js-call db :close)))))
   (defasync assertCursorBridgeEnabled (endpoint)
     ;; A listening bridge can outlive the renderer's feature gate. Its empty
     ;; list in that state is not authoritative evidence of an empty catalog.
@@ -266,12 +274,26 @@
                     (js-object :provider_id (nativeGet state "modelProvider" nil) :model_id (nativeGet state "model" nil)
                       :reasoning_effort (nativeGet state "reasoningEffort" nil))
                     (nativeGet state "cwd")))) shared))))
-          (catch unavailable (js-object :runtime_state
+          (catch unavailable
+            ;; A saved chat without a loaded owner is still an exact historical
+            ;; target. Publish its locator, never invent a live receiver or start it.
+            (let ((historical nil))
+              (when (and (= tool "codex") (js-call (js-array "desktop_no_owner" "desktop_timeout" "ENOENT") :includes (nativeGet unavailable "code")))
+                (try
+                  (let* ((endpoint (funcall endpointFor binding)) (id (nativeGet target "native_session_id"))
+                    (row (await (savedCodexHeader endpoint id))))
+                    (when row
+                      (setq historical (funcall sessionRecord endpoint id (nativeGet row "title" "")
+                        "offline" (nativeGet endpoint "instance_epoch") nil (nativeGet row "cwd")))
+                      (put historical :live_receiver false) (put historical :visibility (js-array "history"))
+                      (put historical :evidence_level "none")))
+                  (catch unreadable nil)))
+              (or historical (js-object :runtime_state
             (if (js-call (js-array "ENOENT" "desktop_no_owner") :includes (nativeGet unavailable "code"))
               "offline" "unknown") :live_receiver false :evidence_level "none"
             :reason (if (js-call (js-array "desktop_bridge_disabled" "desktop_frame_limit")
                             :includes (nativeGet unavailable "code"))
-              (nativeGet unavailable "code") "desktop_receiver_unavailable"))))))
+              (nativeGet unavailable "code") "desktop_receiver_unavailable"))))))))
       (setq probe (async (target binding context)
         (await (funcall probeWith target binding context))))
       (setq listSessions (async (scope cursor budget context)

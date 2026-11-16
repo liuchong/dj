@@ -811,6 +811,13 @@
                (instance-endpoint (Object/assign (js-object) base-endpoint (js-object :workspace_scope "instance")))
                (port (createDesktopPort "codex" (js-object :endpoints (js-array instance-endpoint)) (js-object))))
           (try
+            (let ((saved (await (js-call port :probe
+              (js-object :tool "codex" :native_namespace "ns-codex" :native_session_id "a-foreign-1")
+              instance-endpoint (js-object :deadline (+ (performance/now) 2000))))))
+              (js-call (expect (nativeGet saved "native_session_id")) :toBe "a-foreign-1")
+              (js-call (expect (nativeGet saved "live_receiver")) :toBe false)
+              (js-call (expect (nativeGet saved "visibility")) :toEqual (js-array "history"))
+              (js-call (expect (nativeGet saved "directory")) :toBe (resolve (nativeGet h "root") "other-workspace")))
             (let* ((first (await (js-call port :listSessions (js-object) nil
                             (js-object :max_records 2) (js-object :deadline (+ (performance/now) 2000)))))
                    (second (await (js-call port :listSessions (js-object) (nativeGet first "next_cursor")

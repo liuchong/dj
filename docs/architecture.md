@@ -105,3 +105,7 @@ catalog 的读取与 direct 的发送可以独立于 registry/subscriptions；Ta
 当前代码分为 `packages/rack/` 独立装配包、`src/` 业务与宿主、`tests/` 分层验收、
 `tools/` 构建打包及 `skills/dj/` 使用接口。当前产品规格在 `docs/specs/`，历史
 施工记录在 `docs/archive/`。完整启动接线见 [启动到回复](startup-to-reply.md)。
+
+## 工具性关系辅助的模块边界
+
+IM上下文与根引用读取归messaging/context，原生话题标识归messaging/topics，同话题历史接收映射归messaging/related-sessions。关系查询返回客观证据和覆盖范围，不判断任务负责人；既有tasks模块仅维护调用方显式登记的关系。工具实例的历史定位与活接收端区别归Agent适配器，Core只执行调用方明确请求。AI自行选择查找、联系、协作及恢复方式，也可使用获准的独立工具。各模块复用授权、身份与预算机制，不按账号、AI工具昵称或业务项目分叉。

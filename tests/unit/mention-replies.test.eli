@@ -98,6 +98,13 @@
           (js-call (expect (nativeGet picked "connection_id")) :toBe "user"))
         (put (nativeGet bot-thread "interaction") :kind "reply")
         (js-call (expect (nativeGet (selectReplyRoute dual-ctx bot-thread "session") "status")) :toBe "ambiguous_target")
+        (put (nativeGet bot-thread "interaction") :kind "thread")
+        (put (nativeGet peer-row "interaction") :kind "thread")
+        (put (nativeGet peer-row "interaction") :basis "thread_mention")
+        (put (nativeGet peer-row "interaction") :target_message_id "root-bot")
+        (js-call (expect (nativeGet (selectReplyRoute dual-ctx bot-thread "session") "connection_id")) :toBe "source")
+        (put bot-thread :interaction nil)
+        (js-call (expect (nativeGet (selectReplyRoute dual-ctx bot-thread "session") "connection_id")) :toBe "user")
         ;; Native self identity, not source order or display name, distinguishes
         ;; a recipient from another connection's private-message sender echo.
         (put bot-thread :chat_type "p2p") (put peer-row :chat_type "p2p")

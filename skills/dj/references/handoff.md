@@ -72,3 +72,8 @@
 - blocked: 退订、出站黑白名单、主体授权、平台权限和unknown防重规则继续生效；CLI不用于绕过这些拒绝。用户明确的单条force_send按[收件人规则](recipients.md)经DJ执行，不解除禁收。
 - evidence: DJ发送记录保留operation_id/outbound_id；直接CLI操作保留实际原生message_id、发送者身份及结果，明确“未经过DJ台账”，不伪造DJ accepted。结果交回仍携带同一身份与来源元信息，避免协调者重复发送。
 - boundary: 这些是对接DJ任务链的调用规则，不是所有AI对话的全局CLI禁令。DJ服务本身不调用外部Lark CLI，也不能拦截服务外直接执行的命令；服务端身份机械校验和调用方遵守交接规则须分别说明。
+
+## 更换助手后的查回顺序
+
+- restore: 交接保留topic_key、root_message_id、context_ref、原协调者session_key和原event/delivery。收到简短续接消息先查原任务记录及message.context/message.history，不把自身短期上下文缺失当作服务没有历史。
+- contact: session.get或精确session.resolve换取原协调者新引用，再session.send回原对话协助。context.related_recipients仅供核实历史接收者，不据此猜负责人。原工作会话未加载时由原协调者的原生宿主续接，不另建替代、不恢复明确暂停、不要求用户手动重新接线。维护对话外发仍需要用户授权。

@@ -531,7 +531,7 @@
                   (nativeGet args "native_session_id")))
               (key (stableSessionKey target))
               (record (js-call repository :get "sessions" key)))
-            (if record
+            (if (and record (isSessionVisible context record))
               (getSession context (js-object :session_key key))
               (let ((port (agentPort context instance)))
                 (unless (and port (nativeGet port "probe"))

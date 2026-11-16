@@ -35,3 +35,9 @@ message.context/history的scope默认topic；有明确thread或回复链时优�
 原生@命中已配置订阅即可通知，不增加DJ任务归属判断；接收AI按自己持久保存的规则决定是否处理或回复。
 
 长连接收件与主动查询分别核验。conversation.resolve通过同一连接的官方API确认获准会话，不要求该会话预先出现接收事件；主动历史补取不生成事件、订阅触发或实时覆盖证明。
+
+## 话题根与原协调者
+
+话题根可能保存为群主流消息。沿原生parent/root引用允许同账号同群的根消息具有不同thread标识，逐条复核其自身可见性与授权；普通历史仍按请求thread读取，禁止跨群或跨账号。补取按消息实际地址缓存，不把根消息改写为话题回复。
+
+context.related_recipients在字节预算内列出同话题历史上实际收到过通知且调用方可查看的会话，最多8项；basis=same_topic_history_not_task_ownership，仅为历史接收证据，不证明任务归属或自动交接。truncated表示有界覆盖。可结合原任务记录，用准确session_key经session.get换取引用，再联系原协调者。

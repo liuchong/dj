@@ -293,6 +293,26 @@
             (setq index (1+ index))))
         (js-call (expect (js-length (sent f "lark"))) :toBe 3)
         (js-call (expect (js-length (sent f "lark-user"))) :toBe 3)
+        ;; A bot-authored topic root mentioning the user is not two direct
+        ;; addressees. A late historical mention must preserve the bot handle.
+        (let ((bot-view (crossEvent f "lark" "root-author-before-old-mention" (js-array)))
+          (user-view (crossEvent f "lark-user" "root-author-before-old-mention" (js-array))))
+          (put bot-view :interaction (js-object :state "resolved" :kind "thread" :target_id "ou_bot"
+            :target_kind "bot" :target_message_id "root-with-old-mention" :addressed_self t))
+          (put user-view :interaction (js-object :state "resolved" :kind "thread" :basis "thread_mention"
+            :target_id "ou_user" :target_kind "human" :target_message_id "root-with-old-mention" :addressed_self t))
+          (await (js-call f :ingest bot-view)) (await (js-call f :tick))
+          (let* ((envelope (nativeGet (aref (inputs f) (- (js-length (inputs f)) 1)) "envelope"))
+            (ref (nativeGet envelope "reply_context_id")))
+            (await (js-call f :ingest user-view)) (await (js-call f :tick))
+            (await (callOk f "A" "message.reply_context" (js-object :delivery_id (nativeGet envelope "delivery_id"))))
+            (let ((out (await (callOk f "A" "message.reply" (js-object :reply_context_id ref
+              :content (js-object :type "text" :text "Reply to the root author") :idempotency_key "root-author-reply")))))
+              (await (js-call f :tick)) (await (js-call f :tick))
+              (js-call (expect (nativeGet (await (callOk f "A" "outbound.get"
+                (js-object :outbound_id (nativeGet out "outbound_id")))) "state")) :toBe "accepted")))
+          (js-call (expect (js-length (sent f "lark"))) :toBe 4)
+          (js-call (expect (js-length (sent f "lark-user"))) :toBe 3))
         (let ((saved (await (callOk f "A" "session.rules.get" (js-object :agent_id (nativeGet agent "agent_id"))))))
           (js-call (expect (nativeGet saved "text")) :toBe "Only explicit tool calls send a reply.")
           (js-call (expect (js-length (nativeGet saved "reply_routes"))) :toBe 2))

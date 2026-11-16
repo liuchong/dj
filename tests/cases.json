@@ -29107,6 +29107,22 @@
       "given": "真实Core与SQLite、持续忙碌的原生接收端",
       "when": "有界连续受理既有会话的待投输入",
       "then": "同一岗位投出8条积压；同键、accepted与unknown不重复发送"
+    },
+    {
+      "case_id": "T38.thread-context-continuity.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/context.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "acceptance_ids": [
+        "SPEC-0007"
+      ]
     }
   ],
   "source_extension_base": "c1eb7b1"
