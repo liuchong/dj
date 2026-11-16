@@ -1,5 +1,5 @@
 (module dj.adapters.agent.cursor-native
-  (import "../../core/native.eli" nativeGet nativeFetch nativeSetTimeout nativeClearTimeout)
+  (import "../../core/native.eli" nativeGet nativeTypeOf nativeFetch nativeSetTimeout nativeClearTimeout)
   (import "../../core/types.eli" hashValue)
   (import "./desktop-transport.eli" desktopDeadline desktopError)
   (import "node:crypto" randomUUID)
@@ -28,6 +28,17 @@
       "  for (const id of loaded.keys()) { const x=get(id); if(x) rows.push(x.row); if(rows.length>200)break; }\n"
       "  return {threads:rows.slice(0,200),complete:rows.length<=200};\n"
       " }\n"
+      " if(request.operation==='create') {\n"
+      "  if(typeof request.thread!=='string'||!/^[a-f0-9-]{36}$/.test(request.thread))throw Error('cursor_native_target');\n"
+      "  const existing=local.agentMap?.get(request.thread);\n"
+      "  if(!existing) {\n"
+      "   if(typeof local.createAgent!=='function'||!(local.agentMap instanceof Map)||local.agentMap.size>5000)throw Error('cursor_native_shape');\n"
+      "   const template=[...local.agentMap.values()].find(r=>r.workspaceIdentifier?.id===request.workspace);\n"
+      "   if(!template)throw Error('cursor_native_workspace');\n"
+      "   const ref=await local.createAgent('',{type:'existing',environment:template.workspaceIdentifier},{composerId:request.thread,skipInitialSubmit:true,skipFocusAfterSubmission:true,trustPolicy:'require-trusted',promptPreview:request.title??''});\n"
+      "   try {const x=get(request.thread);if(!x)throw Error('cursor_native_create_unconfirmed');return {thread:x.row};}finally{ref.dispose();}\n"
+      "  }\n"
+      " }\n"
       " if(typeof request.thread!=='string'||!request.thread||request.thread.length>1024)throw Error('cursor_native_target');\n"
       " let retained;\n"
       " try {\n"
@@ -40,7 +51,7 @@
       "  x=get(request.thread);\n"
       " }\n"
       " if(!x) throw Error('cursor_native_no_owner');\n"
-      " if(request.operation==='probe')return {thread:x.row};\n"
+      " if(request.operation==='probe'||request.operation==='create')return {thread:x.row};\n"
       " if(request.operation==='messages') {\n"
       "  const headers=x.data.fullConversationHeadersOnly;\n"
       "  if(!Array.isArray(headers)||headers.length>10000) throw Error('cursor_native_bound');\n"
@@ -75,12 +86,13 @@
       " } finally {retained?.dispose();}\n"
       "}\n"
     ))
+  (defconst cursorConstructorSelector
+    "function(...values){const xs=values.filter(v=>Function.prototype.toString.call(v).startsWith('class')&&Function.prototype.toString.call(v).includes('this.agentRepositoryProxy'));if(xs.length>1)throw Error('cursor_native_shape');return xs[0]??null;}")
   (defconst cursorMain
     (str
       "(async()=>{\n"
       " const require=process.getBuiltinModule('module').createRequire(process.resourcesPath+'/app/package.json');\n"
       " const electron=require('electron');\n"
-      " if(electron.app.getVersion()!=='3.27.14')throw Error('cursor_native_version');\n"
       " const w=electron.webContents.fromId(REQUEST.window);\n"
       " if(!w||w.getType()!=='window')throw Error('cursor_native_window');\n"
       " const d=w.debugger;\n"
@@ -90,6 +102,9 @@
       " const cmd=(method,params)=>d.sendCommand(method,params);\n"
       " const props=async id=>await cmd('Runtime.getProperties',{objectId:id,ownProperties:true});\n"
       " try {\n"
+      "  const known=await cmd('Runtime.evaluate',{expression:'globalThis[Symbol.for(\"dispatch-junction.cursor-constructor\")]??null',objectGroup:group});\n"
+      "  let ctor=known.result?.type==='function'?known.result.objectId:null;\n"
+      "  if(!ctor){\n"
       "  const uri='vscode-file://vscode-app'+encodeURI(process.resourcesPath+'/app/out/vs/workbench/workbench.glass.main.js');\n"
       "  const m=await cmd('Runtime.evaluate',{expression:'import('+JSON.stringify(uri)+')',awaitPromise:true,objectGroup:group});\n"
       "  if(m.exceptionDetails)throw Error('cursor_native_module');\n"
@@ -97,12 +112,22 @@
       "  if(!entry)throw Error('cursor_native_shape');\n"
       "  const p=await props(entry.value.objectId),scopes=p.internalProperties?.find(x=>x.name==='[[Scopes]]');\n"
       "  if(!scopes)throw Error('cursor_native_shape');\n"
-      "  const list=await props(scopes.value.objectId);let ctor;\n"
+      "  const list=await props(scopes.value.objectId);const end=Date.now()+REQUEST.wait;\n"
       "  for(const x of list.result.filter(x=>/^\\d+$/.test(x.name))) {\n"
-      "   const scope=await props(x.value.objectId),v=scope.result.find(y=>y.name==='De2');\n"
-      "   if(v)ctor=v.value.objectId;\n"
+      "   const scope=await props(x.value.objectId);\n"
+      "   if(!Array.isArray(scope.result))throw Error('cursor_native_shape');\n"
+      "   const fs=scope.result.filter(y=>y.value?.type==='function'&&y.value.description?.startsWith('class'));\n"
+      "   if(fs.length>65536)throw Error('cursor_native_constructor_bound');\n"
+      "   for(let i=0;i<fs.length;i+=256){\n"
+      "    if(Date.now()>end)throw Error('cursor_native_discovery_timeout');\n"
+      "    const match=await cmd('Runtime.callFunctionOn',{objectId:x.value.objectId,functionDeclaration:SELECTOR,arguments:fs.slice(i,i+256).map(v=>({objectId:v.value.objectId})),objectGroup:group});\n"
+      "    if(match.result?.type==='function'){ctor=match.result.objectId;break;}\n"
+      "   }\n"
+      "   if(ctor)break;\n"
       "  }\n"
       "  if(!ctor)throw Error('cursor_native_shape');\n"
+      "   await cmd('Runtime.callFunctionOn',{objectId:ctor,functionDeclaration:'function(){globalThis[Symbol.for(\"dispatch-junction.cursor-constructor\")]=this;return true;}',objectGroup:group});\n"
+      "  }\n"
       "  const proto=await cmd('Runtime.callFunctionOn',{objectId:ctor,functionDeclaration:'function(){return this.prototype}',objectGroup:group});\n"
       "  const instances=await cmd('Runtime.queryObjects',{prototypeObjectId:proto.result.objectId,objectGroup:group});\n"
       "  const out=await cmd('Runtime.callFunctionOn',{objectId:instances.objects.objectId,functionDeclaration:RENDERER,\n"
@@ -205,7 +230,8 @@
                    (request (Object/assign (js-object) payload
                      (js-object :window (nativeGet endpoint "window_id") :workspace (nativeGet api "workspace_id")
                        :call (randomUUID) :wait (Math/min 5000 (Math/max 1 (- (desktopDeadline context) 1000))))))
-                   (expression (js-call (js-call cursorMain :replace "RENDERER" (lambda () (JSON/stringify cursorRenderer)))
+                   (expression (js-call (js-call (js-call cursorMain :replace "RENDERER" (lambda () (JSON/stringify cursorRenderer)))
+                                   :replace "SELECTOR" (lambda () (JSON/stringify cursorConstructorSelector)))
                                    :replaceAll "REQUEST" (lambda () (JSON/stringify request)))))
               (when (and (nativeGet context "expected_epoch")
                          (not (= epoch (nativeGet context "expected_epoch"))))
@@ -226,7 +252,7 @@
            (queue (or (js-call cursorQueues :get key)
                     (js-object :tail (Promise/resolve) :depth 0))))
       (desktopDeadline context)
-      (unless (and (js-call (js-array "list" "probe" "messages" "submit") :includes (nativeGet payload "operation"))
+      (unless (and (js-call (js-array "list" "probe" "messages" "submit" "create") :includes (nativeGet payload "operation"))
                    (<= (Buffer/byteLength (JSON/stringify payload)) 300000))
         (throw (desktopError "desktop_frame_limit")))
       (when (>= (nativeGet queue "depth") 64) (throw (desktopError "cursor_native_busy")))
@@ -259,4 +285,4 @@
           (finally
             (put queue :depth (1- (nativeGet queue "depth")))
             (when (= (nativeGet queue "depth") 0) (js-call cursorQueues :delete key)))))))
-  (export cursorNativeRequest cursorNativeUrl cursorRenderer))
+  (export cursorNativeRequest cursorNativeUrl cursorRenderer cursorConstructorSelector))

@@ -62,11 +62,23 @@ delivery_policy 仅 busy/offline/ttl_seconds，默认 steer/hold；busy=queue �
 
 当前正式接线只连接已有客户端或 CLI 进程的原生接口；managed_profiles 必须为空，原 argv profile 启动路径已禁用。不能为投递创建 App Server/ACP 子进程，不能用启动参数传递消息、会话、模型或会话配置。当前没有接口式自动拉起客户端的实现；没有活接收端时报告不支持或离线，不自动替换。AI 工具主动调用 DJ MCP/API 是另一条受支持接入方向。
 
+先 instance.list/get 核对支持的已有实例。部署凭据须显式配置 instance.inspect、session.create、lifecycle.inspect、lifecycle.reconcile；create 权限不隐含其他查询权限。ownership=existing 可以创建，不要求 managed profile；不要为创建打开已禁用的进程托管。
+
+实例投影公开 workspace_scope、workspace_ref、directory 和 workspace_refs。directory 范围只允许配置工作区；instance 范围的 OpenCode、Codex、Antigravity 可使用同实例发现所得的工作区引用和绝对目录。directory 可省略，此时 DJ 仅从同实例、同 epoch 已发现的会话解析，找不到就返回 creation_workspace_unresolved，不能靠标题猜目录。更改范围属于管理员配置，不能在请求中自行放宽。
+
 已有运行实例支持新建会话时，session.create 使用返回的 instance_epoch 和获准 workspace_ref：
 
 ```json
 {"instance_id":"inst_example","expected_instance_epoch":"epoch_example","workspace_ref":"wsp_example","title":"issue-123","idempotency_key":"create-example-1"}
 ```
+
+跨工作区示例（endpoint 已配置 workspace_scope=instance）：
+
+```json
+{"instance_id":"inst_example","expected_instance_epoch":"epoch_example","workspace_ref":"opencode-workspace-<发现所得摘要>","directory":"/absolute/project","title":"issue-123","idempotency_key":"create-example-2"}
+```
+
+当前能力：OpenCode 支持服务端或 Desktop 原生创建；Cursor 的 native_api 支持 require-trusted 工作区中的本地空对话创建（skipInitialSubmit），普通 Bridge 没有此能力；Antigravity 通过既有 language_server 的 StartCascade 创建，并核对原 ID 与工作区。Antigravity 可指定 model_selection.model_id 为当前原生 MODEL_* 或数字 enum；其他工具不支持的模型覆盖会在受理前拒绝，不静默忽略。Kimi/DSH 已有实例保留各自原生创建路径；当前 Codex、Claude、Pi 没有接通符合空对话合同的原生创建接口，返回 unsupported，不发送占位消息或另起进程。Codex App 的创建并提交首条消息属于不同语义，不能冒充空对话创建。
 
 创建只建空会话，不自动 prompt、复制权限、安装 Skill 或注册订阅。核验得到稳定 session_key 后取当前 session_ref，再单独 send。Cursor 必须使用实际 Desktop 接口；CLI-only 证据不代替 Desktop。OpenCode 的创建也不证明新会话已成为桌面当前 Tab。
 

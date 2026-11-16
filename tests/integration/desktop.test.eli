@@ -456,7 +456,7 @@
             (let ((history (await (js-call port :discover "history" (js-object :instance_id "native-instance") (funcall ctx)))))
               (js-call (expect (nativeGet history "coverage")) :toBe "partial")
               (js-call (expect (nativeGet history "items")) :toEqual (js-array)))
-            (js-call (expect (nativeGet (nativeGet port "capabilities") "session_create")) :toBe "unsupported")
+            (js-call (expect (nativeGet (nativeGet port "capabilities") "session_create")) :toBe "supported")
             (let ((messages (await (js-call port :readMessages target nil (js-object :max_records 10) (funcall ctx)))))
               (js-call (expect (nativeGet (aref (nativeGet messages "items") 0) "text")) :toBe "original receiver"))
             (let ((result (await (js-call port :submit binding envelope "start_idle" "native-send-one" (funcall ctx)))))

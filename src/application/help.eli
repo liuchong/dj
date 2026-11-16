@@ -166,7 +166,7 @@
       :instance.start
       "显式启动获准预配 profile；先占持久 slot，unknown 不重新拉起。"
       :session.create
-      "在支持的运行实例中显式创建空会话；不 prompt 或接线 recipient。OpenCode 可明确传 model_selection={provider_id,model_id,variant?}，核原生目录且不改已有会话。Pi 同 RPC 不支持。"
+      "在已有运行实例中显式创建空会话，不发送首条消息、不登记或订阅。先 instance.get 获取 epoch、workspace_scope 和 workspace_ref（需要 instance.inspect）。instance 范围可传绝对 directory 及其发现所得 workspace_ref；缺少 directory 时从同实例已发现会话解析。OpenCode 可传原生 model_selection；Antigravity model_id 使用精确 MODEL_* 或数字 enum。Cursor native_api 可创建不提交首条消息的本地对话；Codex/普通 Bridge/Claude/Pi 没有已接通的原生空会话创建接口，返回 unsupported；不能改走新进程或发送占位 prompt。"
       :instance.stop
       "仅停止 DJ-owned managed 实例；先关 gate 再排空，期限到不强杀、不要求队列清空。"
       :lifecycle.get

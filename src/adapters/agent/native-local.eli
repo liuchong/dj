@@ -95,7 +95,7 @@
                   (funcall finish (desktopError "native_tls_certificate") nil))))))
           (js-call socket :on "error" (lambda (unused) (funcall finish (desktopError "native_tls_certificate") nil))))))))
   (defasync antigravityRpc (endpoint method payload context)
-    (unless (js-call (js-array "GetUserStatus" "GetAllCascadeTrajectories" "GetCascadeTrajectorySteps" "SendUserCascadeMessage") :includes method)
+    (unless (js-call (js-array "GetUserStatus" "GetAllCascadeTrajectories" "GetCascadeTrajectorySteps" "SendUserCascadeMessage" "StartCascade" "UpdateConversationAnnotations") :includes method)
       (throw (desktopError "native_rpc_method")))
     (let* ((epoch (await (processProof endpoint context)))
            (secret (await (ownedJson (nativeGet endpoint "credential_ref") t)))

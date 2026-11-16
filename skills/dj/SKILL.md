@@ -20,6 +20,12 @@ metadata:
 - other_conversations: 上述要求只约束对接DJ的对话，不是所有AI对话的全局禁令。未对接DJ的其他对话仍按用户授权及各自规则使用Lark CLI等工具；仅安装或读取本Skill不等于已经对接DJ。
 - implementation_boundary: DJ程序内部直连官方API、不依赖第三方SDK或外部CLI，是DJ自身的实现要求；不得将它扩大成所有对话的工具禁令。
 
+## 独立会话创建
+
+- native_creation: DJ 自己实现原生接口，不依赖其他 Agent 控制工具。创建流程、权限与工具边界见[会话控制](references/control.md#显式启动与创建)。调用方工具不限制目标工具，目标由 instance_id 明确指定。
+- prerequisites: session.create 不隐含 instance.inspect；部署创建调用方时同时配置实例查询、lifecycle.inspect、lifecycle.reconcile。先读 instance.get，核对当前 epoch、workspace_scope 和目录；forbidden 的 details.reason 区分工作区与模型能力，不猜测需要 managed profile。
+- workspace: directory 范围仅配置目录；instance 范围允许同一实例其他工作区，传发现得到的 workspace_ref 和绝对 directory，或由 DJ 从已发现会话解析目录。创建仍只创建空对话，之后单独 session.send，不自动订阅或选择任务。
+
 ## 对话督工
 
 - operations: session.supervision.start / get / cancel；[用法与恢复边界](references/supervision.md)。长期任务可主动登记，在意外空闲后由 DJ 通过原实例接口续接，完成或主动暂停时取消。

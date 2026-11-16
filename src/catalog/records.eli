@@ -147,8 +147,12 @@
               field
               (js-call (new globalThis.Date (nativeGet result field)) :toISOString))
             (Reflect/deleteProperty result field))))
+      (when (nativeGet native "initial_model_selection")
+        (put result :initial_model_selection (nativeGet native "initial_model_selection")))
       (let ((existing (js-call (nativeGet context "repository") :get "sessions" key)))
         (when (= (nativeGet existing "instance_epoch") (nativeGet instance "instance_epoch"))
+          (when (nativeGet existing "initial_model_selection")
+            (put result :initial_model_selection (nativeGet existing "initial_model_selection")))
           (when (nativeGet existing "reported_model")
             (put result :reported_model (nativeGet existing "reported_model"))
             (put result :reported_model_at (nativeGet existing "reported_model_at")))))
@@ -311,6 +315,10 @@
             (nativeGet observation "runtime_state" "unknown")
             :capabilities
             (nativeGet observation "capabilities" (nativeGet instance "capabilities" (js-object))))))
+      (when (nativeGet session "initial_model_selection")
+        (put binding :initial_model_selection (nativeGet session "initial_model_selection")))
+      (when (nativeGet observation "model_selection")
+        (put binding :model_selection (nativeGet observation "model_selection")))
       (js-call repository :insert "bindings" binding)
       (put route :binding_id (nativeGet binding "binding_id"))
       (must (js-call repository :replaceProgress "routes" route))

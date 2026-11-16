@@ -179,7 +179,7 @@
       (throw (new globalThis.TypeError "Unsupported desktop tool")))
     (let* ((endpoints (nativeGet config "endpoints" (js-array))) (closed false)
            (create-enabled (and (= tool "cursor") (> (js-length endpoints) 0)
-             (js-call endpoints :every (lambda (endpoint) (nativeGet endpoint "control_manifest_path")))))
+             (js-call endpoints :every (lambda (endpoint) (or (nativeGet endpoint "native_api") (nativeGet endpoint "control_manifest_path"))))))
            (capabilities (js-object :session_list "supported" :session_messages "supported"
              :session_probe "supported" :session_send "supported" :start_idle "supported"
              :message_during_run (if (= tool "codex") "supported" "unsupported")
@@ -220,7 +220,7 @@
                  :runtime_state state :live_receiver (not (= state "offline")) :receiver_reason nil
                  :visibility (if (nativeGet endpoint "native_api") (js-array "live") (js-array "history" "live"))
                  :capabilities capabilities :coverage "covered" :evidence_level "native_protocol")))
-          (when (and (= tool "codex") (= (nativeTypeOf cwd) "string") (isAbsolute cwd))
+          (when (and (= (nativeTypeOf cwd) "string") (isAbsolute cwd))
             (put record :directory cwd))
           record)))
       (setq cursorThreads (async (endpoint context)
@@ -477,6 +477,17 @@
           (unless (and (= (nativeGet before "instance_epoch") (nativeGet instance "instance_epoch"))
                        (= workspace (nativeGet endpoint "workspace_ref")))
             (throw (desktopError "desktop_target_changed")))
+          (if (nativeGet endpoint "native_api")
+            (let* ((response (await (cursorNativeRequest endpoint
+                     (js-object :operation (if lookup "probe" "create") :thread id :title (nativeGet context "title" nil)) context)))
+                   (row (nativeGet (nativeGet response "data") "thread")))
+              (unless (and (= (nativeGet response "instance_epoch") (nativeGet instance "instance_epoch"))
+                           (= (nativeGet row "id") id) (= (nativeGet row "source") "local")
+                           (= (nativeGet row "windowId") (nativeGet endpoint "window_id")))
+                (throw (desktopError "desktop_create_unconfirmed")))
+              (js-object :state "ready" :creation_key key :native_ref id :evidence_level "native_protocol"
+                :session (funcall sessionRecord endpoint id (nativeGet row "title" "")
+                  (cursorRuntime row) (nativeGet response "instance_epoch"))))
           (let* ((response (await (cursorRequest
                     (js-object :manifest_path (nativeGet endpoint "control_manifest_path"))
                     (js-object :type (if lookup "lookupSession" "createSession")
@@ -494,7 +505,7 @@
               (js-object :state "ready" :creation_key key :evidence_level "native_protocol"
                 :session (funcall sessionRecord endpoint id (nativeGet row "title" "")
                            (cursorRuntime row) (nativeGet after "instance_epoch")))
-              (js-object :state "unknown" :creation_key key :definite_not_sent false :evidence_level "none"))))))
+              (js-object :state "unknown" :creation_key key :definite_not_sent false :evidence_level "none")))))))
       (setq probeInstance (async (instance context)
         (try
           (let* ((endpoint (funcall endpointFor instance))

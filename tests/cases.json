@@ -29372,6 +29372,116 @@
       "given": "A native receiver loading request",
       "when": "The target identifier or native application proof is invalid",
       "then": "Reject before any URL event or model input"
+    },
+    {
+      "case_id": "T53.instance-workspace-create.sqlite",
+      "parent_id": "T53",
+      "file": "tests/integration/session-creation.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 20000,
+      "resource_group": "isolated-sqlite",
+      "requirements": [
+        "0030"
+      ],
+      "acceptance_ids": [
+        "CREATE01"
+      ],
+      "given": "Real Core lifecycle creates across an explicitly instance-scoped workspace, persists directory, maintains independent inspection grants and idempotency",
+      "when": "Use explicit existing-instance creation and inspect original lifecycle or native session",
+      "then": "The exact empty session is confirmed with no prompt and no replacement process"
+    },
+    {
+      "case_id": "T53.antigravity-empty-create.integration",
+      "parent_id": "T53",
+      "file": "tests/integration/session-creation.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 20000,
+      "resource_group": "native-fixture",
+      "requirements": [
+        "0030"
+      ],
+      "acceptance_ids": [
+        "CREATE01"
+      ],
+      "given": "Native cascade protocol preserves deterministic identity, workspace and model without submitting prompt; retry and recovery inspect original ID",
+      "when": "Use explicit existing-instance creation and inspect original lifecycle or native session",
+      "then": "The exact empty session is confirmed with no prompt and no replacement process"
+    },
+    {
+      "case_id": "T53.opencode-cross-workspace.integration",
+      "parent_id": "T53",
+      "file": "tests/integration/session-creation.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 20000,
+      "resource_group": "native-fixture",
+      "requirements": [
+        "0030"
+      ],
+      "acceptance_ids": [
+        "CREATE01"
+      ],
+      "given": "Local HTTP and process ownership proof create in another project, preserve workspace reference and recover original ID without a second POST",
+      "when": "Use explicit existing-instance creation and inspect original lifecycle or native session",
+      "then": "The exact empty session is confirmed with no prompt and no replacement process"
+    },
+    {
+      "case_id": "T53.cursor-empty-create.integration",
+      "parent_id": "T53",
+      "file": "tests/integration/session-creation.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 20000,
+      "resource_group": "native-fixture",
+      "requirements": [
+        "0030"
+      ],
+      "acceptance_ids": [
+        "CREATE01"
+      ],
+      "given": "Execute the native renderer against an isolated local repository with an existing workspace",
+      "when": "Create twice with the same explicit identity, then request a foreign workspace",
+      "then": "Native skipInitialSubmit and require-trusted are enforced; no prompt, one original chat, disposed reference"
+    },
+    {
+      "case_id": "T38.native-create-boundaries.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/session-creation.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 5000,
+      "resource_group": "pure",
+      "requirements": [
+        "0030"
+      ],
+      "acceptance_ids": [
+        "CREATE01"
+      ],
+      "given": "Explicit workspace identities, native model enums and creation keys",
+      "when": "Check directory bounds, persisted workspace resolution and deterministic native IDs",
+      "then": "Invalid scopes and models reject; original creation ID remains stable"
     }
   ],
   "source_extension_base": "c1eb7b1"

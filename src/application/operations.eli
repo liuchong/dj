@@ -952,6 +952,7 @@
     "lifecycle"
     (js-array "instance_id" "expected_instance_epoch" "workspace_ref")
     (js-object
+      :directory idSchema
       :model_selection subscriberModelSchema
       :instance_id
       idSchema

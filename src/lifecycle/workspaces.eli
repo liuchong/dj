@@ -1,0 +1,37 @@
+(module dj.lifecycle.workspaces
+  (import "../core/native.eli" nativeGet nativeTypeOf)
+  (import "../core/types.eli" hashValue)
+  (import "../core/errors.eli" success failure)
+  (import "node:path" isAbsolute normalize)
+  ;; Instance-wide discovery and creation use the same deterministic workspace
+  ;; identity. Discovery alone never grants creation; the principal and endpoint
+  ;; scope are checked independently by the lifecycle admission path.
+  (defun creationWorkspace (instance args database)
+    (let* ((ref (nativeGet args "workspace_ref"))
+           (base (nativeGet instance "workspace_ref"))
+           (directory (nativeGet args "directory" nil))
+           (scope (nativeGet instance "workspace_scope" "directory"))
+           (tool (nativeGet instance "tool" (nativeGet instance "tool_id"))))
+      (when (and (not directory) (= ref base))
+        (setq directory (nativeGet instance "directory" nil)))
+      (when (and (not directory) (= scope "instance") database)
+        (let ((rows (js-call (js-call database :query
+          "SELECT DISTINCT json_extract(payload,'$.directory') AS directory FROM sessions WHERE instance_id=? AND instance_epoch=? AND workspace_ref=? AND tombstone=0 LIMIT 2")
+          :all (js-array (nativeGet instance "instance_id") (nativeGet instance "instance_epoch") ref))))
+          (when (= (js-length rows) 1) (setq directory (nativeGet (aref rows 0) "directory" nil)))))
+      (cond
+        ((and directory (or (not (= (nativeTypeOf directory) "string"))
+                            (not (isAbsolute directory)) (not (= directory (normalize directory)))))
+          (failure "invalid_argument" (js-object :details (js-object :reason "absolute_normalized_directory_required"))))
+        ((and (= scope "instance") (js-call (js-array "opencode" "codex" "antigravity") :includes tool))
+          (if (and directory (if (= ref base) (= directory (nativeGet instance "directory"))
+                 (= ref (str tool "-workspace-" (hashValue directory)))))
+            (success (js-object :directory directory :workspace_ref ref))
+            (failure "forbidden" (js-object :details (js-object :reason "creation_workspace_unresolved")
+              :next_actions (js-array "Pass directory and its discovered workspace_ref, or use the configured base workspace.")))))
+        ((and (js-call (nativeGet instance "workspace_refs" (js-array)) :includes ref)
+              (or (not directory) (= directory (nativeGet instance "directory"))))
+          (success (js-object :directory directory :workspace_ref ref)))
+        (t (failure "forbidden" (js-object :details (js-object :reason "creation_workspace_out_of_scope")
+          :next_actions (js-array "Inspect the instance creation scope; discovery does not expand directory-scoped creation.")))))))
+  (export creationWorkspace))

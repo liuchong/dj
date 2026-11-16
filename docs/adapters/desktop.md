@@ -34,7 +34,7 @@ Codex IPC 的状态快照是不可分页的原生帧，长会话可能超过 1 M
 
 Codex 会话列表来自只读状态库，消息来自当前原生 owner 的会话快照；快照历史不完整时报告 partial，不读取或复制开发者自身的原始运行日志作为兼容证据。Cursor 列表有原生 200 条上限，达到上限保持 partial；Bridge 消息读取限于本机已有缓存，缺失项不伪造完整正文；native_api 列表只报告已加载对话；已知原生 ID 的核验、消息读取和提交可通过本机 localRepo.loadAgent 加载已有本机记录，前提是原生 header 为 local、记录存在且工作区 ID 精确匹配。请求结束释放临时引用；提交引用仍由原模型请求持有。不会为了列表批量加载，不创建新对话或提交额外输入，也不把滞后缓存的空列表当作终态。两者都保留有界分页及响应字节预算。单条消息自身超过页字节预算时明确拒绝，不返回无法推进游标的空页，也不静默截断正文。
 
-这两个已有桌面端口不提供原生未支持的创建会话、启动/停止用户客户端、原生幂等或确定未送达查询；能力明确为 unsupported。需要这些能力时不能用新托管实例替换当前目标。已有 OpenCode/Pi 的独立生命周期能力保持原实现，不因此声明 Codex/Cursor 的全部形态已支持。
+Cursor 的 native_api 可通过已有 LocalAgentRepository.createAgent 的 skipInitialSubmit 创建本地空对话，保留 require-trusted 检查，不发 prompt、不调用云端、不修改工作区信任。普通 Bridge 不具备创建能力；已有显式创建连接器保留其原生协议。Codex 当前已有 IPC 不提供空对话创建；App Tools 的创建同时提交首条消息，不满足本接口合同，仍明确 unsupported。端口不启动/停止用户客户端，也不以新进程替代现有实例。OpenCode、Antigravity、Kimi/DSH 的创建边界及统一工作区规则见[0030](../specs/0030-native-session-creation.md)。
 
 先完成两条主要业务链的必要功能验收，再补关键保护性测试。其他工具的完整验收矩阵不作为本次交付前置。
 

@@ -297,6 +297,24 @@
           "resources": [
             "*"
           ]
+        },
+        {
+          "action": "instance.inspect",
+          "resources": [
+            "*"
+          ]
+        },
+        {
+          "action": "lifecycle.inspect",
+          "resources": [
+            "*"
+          ]
+        },
+        {
+          "action": "lifecycle.reconcile",
+          "resources": [
+            "*"
+          ]
         }
       ]
     }

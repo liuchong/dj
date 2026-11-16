@@ -61,6 +61,8 @@
       "expected_profile_revision"
       :--expected-instance-epoch
       "expected_instance_epoch"
+      :--directory
+      "directory"
       :--workspace-ref
       "workspace_ref"
       :--native-session-id
