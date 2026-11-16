@@ -53,10 +53,12 @@
                         (let ((input (if (= method "thread-follower-start-turn")
                           (nativeGet (nativeGet params "turnStart") "request") params)))
                           (js-call (nativeGet h "inputs") :push (nativeGet (aref (nativeGet input "input") 0) "text"))))
-                      (funcall send (Object/assign (js-object :type "response" :requestId (nativeGet request "requestId")
-                        :resultType "success" :result (js-object :clientId "client"))
-                        (if (and (= method "thread-owner-discovery") (existsSync marker))
-                          (js-object :handledByClientId "owner") (js-object)))))
+                      ;; Deliberately ignore the request timeout, like an unloaded native owner.
+                      (unless (and (= method "thread-owner-discovery") (not (existsSync marker)))
+                        (funcall send (Object/assign (js-object :type "response" :requestId (nativeGet request "requestId")
+                          :resultType "success" :result (js-object :clientId "client"))
+                          (if (= method "thread-owner-discovery")
+                            (js-object :handledByClientId "owner") (js-object))))))
                     (when (and (= method "thread-stream-following-changed") (= (nativeGet params "following") t))
                       (funcall send (js-object :type "broadcast" :method "thread-stream-state-changed" :sourceClientId "owner"
                         :params (js-object :hostId "local" :conversationId thread :change (js-object :type "snapshot"
@@ -81,7 +83,7 @@
     (let* ((f (nativeGet h "fixture")) (root (nativeGet h "root"))
       (session (await (callOk f "O" "session.resolve" (js-object :instance_id "codex-native" :native_session_id thread)))))
       (js-call (expect (nativeGet session "live_receiver")) :toBe false)
-      (js-call (expect (nativeGet session "receiver_reason")) :toBe "receiver_not_loaded")
+      (js-call (expect (nativeGet session "receiver_reason")) :toBe "receiver_discovery_timeout")
       (js-call (expect (existsSync (join root "loaded"))) :toBe false)
       (let* ((delivery (await (callOk f "O" "session.send" (js-object :session_ref (nativeGet session "session_ref")
         :content (js-object :type "text" :text "load the exact existing receiver") :idempotency_key "load-once"))))

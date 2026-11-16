@@ -84,4 +84,4 @@ Codex 原生 send_message_to_thread 会先加载原对话；DJ 的 follower sock
 
 调用 session.probe 取得新鲜 live_receiver/runtime_state/receiver_reason；session.get 的缓存必须结合 stale 判断。session.send 返回 ready 只表示持久受理，不表示送达；保存 delivery_id，以 delivery.get 的 state、blocked_reason、receiver_reason、submitted_at、accepted_at 和 receipts 核对。accepted 是原生接收，busy 是当前运行观察，都不是该任务完成证明。
 
-receiver_loader_unconfigured、receiver_load_permission_denied、receiver_load_rejected、receiver_load_pending 或 receiver_load_backoff 表示加载尚未完成。调用方 AI 可以据此决定请准确的原 Codex 助手使用其 send_message_to_thread 代转，保留原任务和回复身份；DJ 不猜助手、不自动转交。原 DJ 投递仍待投时，先 delivery.cancel 取消并读回确认，再走另一发送入口；submitting/unknown 先 reconcile，禁止双路盲重发。已 accepted 的消息不再转发。查询后续原生 userMessage/轮次确认是否开始处理。
+receiver_discovery_timeout 表示本次有界探测未确认owner，不等同于会话不存在。receiver_loader_unconfigured、receiver_load_permission_denied、receiver_load_rejected、receiver_load_pending 或 receiver_load_backoff 表示加载尚未完成。调用方 AI 可以据此决定请准确的原 Codex 助手使用其 send_message_to_thread 代转，保留原任务和回复身份；DJ 不猜助手、不自动转交。原 DJ 投递仍待投时，先 delivery.cancel 取消并读回确认，再走另一发送入口；submitting/unknown 先 reconcile，禁止双路盲重发。已 accepted 的消息不再转发。查询后续原生 userMessage/轮次确认是否开始处理。

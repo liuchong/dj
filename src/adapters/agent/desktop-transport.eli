@@ -147,7 +147,14 @@
             (waiting (funcall reject (desktopError "desktop_concurrent_read")))
             (t (setq waiting (js-object :resolve resolve :reject reject))))))))
       (setq call (async (method params version &optional target)
-        (let ((id (randomUUID)) (answer nil))
+        (let ((id (randomUUID)) (answer nil) (discovery-timer nil))
+          (try
+            ;; The vendor owner search may ignore timeoutMs and wait ten seconds.
+            ;; Bound our own read; a timeout is not proof that no owner exists.
+            (when (= method "thread-owner-discovery")
+              (setq discovery-timer (nativeSetTimeout
+                (lambda () (funcall fail (desktopError "desktop_owner_timeout")))
+                (Math/min 1000 (desktopDeadline context)))))
           (funcall write (Object/assign
             (js-object :type "request" :requestId id :method method :params params
               :version version :timeoutMs (Math/ceil (if (= method "thread-owner-discovery")
@@ -160,7 +167,8 @@
                 (unless (= (nativeGet frame "resultType") "success")
                   (throw (desktopError "desktop_rejected")))
                 (setq answer frame))))
-          answer)))
+          answer
+          (finally (when discovery-timer (nativeClearTimeout discovery-timer)))))))
       (setq abort (lambda () (funcall fail (desktopError "desktop_cancelled"))))
       (setq close (lambda ()
         (unless closed

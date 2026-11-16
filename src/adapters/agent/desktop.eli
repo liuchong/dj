@@ -245,7 +245,7 @@
             (let* ((result (try (await (js-call channel :snapshot id))
                       (catch unavailable
                         (unless (and (not shared) (= (nativeGet context "receiver_intent") "delivery")
-                          (js-call (js-array "desktop_no_owner" "desktop_rejected") :includes (nativeGet unavailable "code"))
+                          (js-call (js-array "desktop_no_owner" "desktop_rejected" "desktop_owner_timeout") :includes (nativeGet unavailable "code"))
                           (await (savedCodexHeader endpoint id))) (throw unavailable))
                         (js-call channel :close)
                         (await (requestCodexLoad endpoint id context))
@@ -256,7 +256,7 @@
                             (try (setq loaded (await (js-call channel :snapshot id)))
                               (catch waiting
                                 (js-call channel :close)
-                                (unless (js-call (js-array "desktop_no_owner" "desktop_rejected") :includes (nativeGet waiting "code"))
+                                (unless (js-call (js-array "desktop_no_owner" "desktop_rejected" "desktop_owner_timeout") :includes (nativeGet waiting "code"))
                                   (throw waiting))))
                             (setq step (1+ step)))
                           (unless loaded (throw (desktopError "receiver_load_pending"))) loaded)))) (state (nativeGet result "state"))
@@ -297,19 +297,22 @@
             ;; target. Publish its locator, never invent a live receiver or start it.
             (let ((historical nil))
               (when (and (= tool "codex") (or
-                (js-call (js-array "desktop_no_owner" "desktop_timeout" "desktop_rejected" "ENOENT") :includes (nativeGet unavailable "code"))
+                (js-call (js-array "desktop_no_owner" "desktop_timeout" "desktop_owner_timeout" "desktop_rejected" "ENOENT") :includes (nativeGet unavailable "code"))
                 (js-call (nativeGet unavailable "code" "") :startsWith "receiver_")))
                 (try
                   (let* ((endpoint (funcall endpointFor binding)) (id (nativeGet target "native_session_id"))
                     (row (await (savedCodexHeader endpoint id))))
                     (when row
                       (setq historical (funcall sessionRecord endpoint id (nativeGet row "title" "")
-                        "offline" (nativeGet endpoint "instance_epoch") nil (nativeGet row "cwd")))
+                        (if (= (nativeGet unavailable "code") "desktop_owner_timeout") "unknown" "offline")
+                        (nativeGet endpoint "instance_epoch") nil (nativeGet row "cwd")))
                       (put historical :live_receiver false) (put historical :visibility (js-array "history"))
                       (put historical :evidence_level "none")
                       (put historical :receiver_reason
                         (if (js-call (nativeGet unavailable "code" "") :startsWith "receiver_")
-                          (nativeGet unavailable "code") "receiver_not_loaded"))))
+                          (nativeGet unavailable "code")
+                          (if (= (nativeGet unavailable "code") "desktop_owner_timeout")
+                            "receiver_discovery_timeout" "receiver_not_loaded")))))
                   (catch unreadable nil)))
               (or historical (js-object :runtime_state
             (if (js-call (js-array "ENOENT" "desktop_no_owner") :includes (nativeGet unavailable "code"))
