@@ -42,6 +42,7 @@
             "packaging/runtime.md"
             "packaging/launchd.example.plist"
             "connectors/pi/README.md"
+            "connectors/codex/README.md"
             "connectors/cursor/package.json"
             "connectors/cursor/README.md"
             "connectors/cursor/extension.vsixmanifest"

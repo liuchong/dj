@@ -78,5 +78,13 @@ The service supports an existing Claude Code native inbox and an existing Antigr
 ## 控制接口
 
 - creation: session.create 可带 content；创建与首条输入分别记账，读取 initial_delivery_id 后查询 delivery.get。
-- rename: session.rename 使用 session_ref、title、idempotency_key；OpenCode、Cursor native_api、Antigravity 已接通。
+- rename: session.rename 使用 session_ref、title、idempotency_key；OpenCode、Cursor native_api、Antigravity、Codex 原生工具宿主接收端、Claude Desktop 和 Pi 接收扩展已接通。
 - outcome: DJ 达不到效果时，AI 可使用自身原生能力、其他接口或已安装 Skill，不依赖特定外部包。先核对原操作，避免重复效果，保持准确目标和回复身份。
+
+## 现有桌面宿主与 Pi 创建
+
+- native_host: Codex 通过已有原生 Node 工具宿主加载 DJ 接收端并配置 control_manifest_path；保留原 socket_path 与 history_database，参见运行包 connectors/codex/README.md。Claude Desktop 通过 `dj native configure` 的 `surface=desktop` 绑定 PID 出生身份、窗口与 origin，按需使用并关闭本机 Inspector；均不新建 Agent CLI/App Server。不要把 Claude inbox 端点当成 Desktop 创建入口。
+- pi_host: Pi 接收扩展在已有宿主中创建独立原生 SDK 会话，保留原交互对话，原生 ID 可沿 DJ 继续输入、读取和改名。Pi 在首条 assistant 后才保存历史；空会话可在宿主内使用，但不能承诺退出后仍存在。生成入口与完整运行包保持相对位置。
+- confirmation: 创建 ready、initial_delivery_id 的 accepted、模型输出和业务完成是不同结果。工具缺失运行实例时先完成配置说明，不能新开 CLI 冒充已有接收端。
+
+- codex_initial_input: 原生创建需要明确非空 content；initial_input_state=native_queued 与 initial_input_receipt_key 表示原生同时受理创建和首条消息，没有第二份 initial_delivery_id。不要再向新会话重复发送同一首条消息。宿主未加载接收端时，原会话通知仍走原 socket；创建缺口不影响正常订阅投递。

@@ -1,14 +1,14 @@
 # Pi 已有进程接收扩展
 
-该入口由 Pi 原生 Extension API 加载，调用随包 Eliscript 实现；不启动 Pi/RPC 子进程，不发送终端按键，不切换会话或模型。扩展工厂只注册生命周期处理器；收到 session_start 后才在 Pi 自己的进程中创建私有 HTTP-over-Unix-socket 接口，session_shutdown 时清理自己创建的资源。
+该入口由 Pi 原生 Extension API 加载，调用随包 Eliscript 实现；不启动 Pi/RPC 子进程，不发送终端按键，不替换当前交互会话。扩展工厂只注册生命周期处理器；收到 session_start 后才在 Pi 自己的进程中创建私有 HTTP-over-Unix-socket 接口，session_shutdown 时清理自己创建的资源。
 
 ## 安装和使用
 
-1. 使用当前 DJ 运行包，保持 connectors/pi/extension.mjs 与 dist/src/connectors/pi.mjs 的相对布局。需要 Pi 0.80.3 和 Node.js 22.19+；当前代码依据该版本原生 Extension API，其他版本需核对。
+1. 使用当前 DJ 运行包，保持 connectors/pi/extension.mjs 与 control.mjs 的相对布局。使用本机当前 Pi 的原生 Extension API 与 SDK；本批核对 Pi 0.80.3。以本机安装和官方当前接口为准，不为旧版保留兼容分支。
 2. 在专用 Pi 工作区的 .pi/settings.json，或用户明确选择的 ~/.pi/agent/settings.json 中，将运行包的 connectors/pi/extension.mjs 实际路径追加到 extensions 数组。保留其他项，不复制凭据到设置文件。此步骤不由 DJ 自动执行。
 3. 由使用者在已有 Pi 中按原生流程 reload；不为接入重开替代 CLI，不通过启动参数携带消息或会话。Pi 显示 DJ receiver 的私有 manifest 路径；也可由可信操作员在 ~/.dj/pi-receivers 中查看文件名。
 4. 在 DJ 私有 agent_endpoints 配置已有端点：tool=pi、ownership=existing、instance_id/endpoint_ref 为操作员分配标签、native_namespace=pi-local、manifest_path 为该 manifest、directory 必须等于 Pi 当前 cwd、workspace_ref 为固定工作区标签。不要读取或转发 manifest 内的 token 给模型。
-5. DJ 通过 session.resolve/probe 或 agent.discover(scope=live) 核对当前原生 session ID，再直发或登记订阅。单个 manifest 只代表一个当前已有会话，不是 Pi 的全部历史目录。Agent 仍须使用独立 recipient profile 调用 DJ 的 CLI/MCP/GEPO；扩展不会代它回复 IM。
+5. DJ 通过 session.resolve/probe 或 agent.discover(scope=live) 核对当前原生 session ID，再直发或登记订阅。单个 manifest 代表当前交互会话和通过该宿主明确创建的原生 SDK 会话，不扫描全部历史目录。Agent 仍须使用独立 recipient profile 调用 DJ 的 CLI/MCP/GEPO；扩展不会代它回复 IM。
 
 最小端点形状：
 
@@ -37,3 +37,9 @@
 - 代码/本地组合验证不代表已经安装进当前 Pi 或完成真实模型/IM 验收；没有接收端时先交付实现和说明，不等待或启动替代进程。
 
 扩展加载入口由 `tools/connector-entries.eli` 在打包时生成；源目录仅维护说明及必要宿主清单。请使用完整目录包/VSIX，不直接把源码目录当成可加载扩展。业务实现仍来自Eliscript。
+
+## 创建与改名
+
+`session.create` 在已加载扩展的 Pi 进程内调用宿主提供的 `createAgentSession`；使用同一工作区的原生模型、配置、工具、扩展和权限规则，不启动另一个 Pi。新会话有独立原生 ID，通过同一私有接口发现、读取、改名及发送。`session.rename` 调用 Pi 的 `setSessionName`，不手改历史文件。最多保留 128 个宿主会话。
+
+Pi 自己在第一条 assistant 消息出现时才把新会话写入历史目录；此前是宿主内真实可用会话，不承诺空会话在进程退出后仍存在或出现在历史选择器。扩展卸载、根会话关闭或进程退出会关闭接收端；已由 Pi 保存的历史仍由 Pi 管理。DJ 创建 ready 不代表模型已执行，首条消息与结果分别查询。

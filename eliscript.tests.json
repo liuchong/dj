@@ -87,7 +87,9 @@
     "tests/integration/codex-loader.test.eli",
     "tests/unit/codex-loader.test.eli",
     "tests/integration/session-creation.test.eli",
-    "tests/unit/session-creation.test.eli"
+    "tests/unit/session-creation.test.eli",
+    "tests/integration/native-host-control.test.eli",
+    "tests/unit/native-host-control.test.eli"
   ],
   "outDir": "dist-tests"
 }

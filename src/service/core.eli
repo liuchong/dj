@@ -37,6 +37,7 @@
   (import "../adapters/agent/pi-native.eli" createPiNativePort)
   (import "../adapters/agent/antigravity.eli" createAntigravityPort)
   (import "../adapters/agent/claude-inbox.eli" createClaudeInboxPort)
+  (import "../adapters/agent/claude-desktop.eli" createClaudeDesktopPort)
   (import "../adapters/agent/kimi-dsh.eli" createKimiDshPort)
   (import "./composition.eli" createComposition mountPort)
   (import "./config.eli" prepareConfig)
@@ -238,6 +239,7 @@
 (setq assemblePorts (async ()
   (let* ((repository (nativeGet base "repository")) (agent-ports (nativeGet ports "agent_ports"))
     (im-ports (nativeGet ports "im_ports"))
+    (claude-injected (js-call agent-ports :has "claude"))
     (endpoints (js-call (nativeGet config "agent_endpoints") :map (lambda (endpoint)
       (let ((instance (js-call repository :get "instances" (nativeGet endpoint "instance_id"))))
         (Object/assign (js-object) endpoint (js-object :instance_epoch (nativeGet instance "instance_epoch")))))))
@@ -254,10 +256,20 @@
     (put base :moduleStatus (lambda () (js-call rack :inspect)))
     (js-call rack :provide "application" base)
     (js-call factories :forEach (lambda (factory tool)
-      (let ((selected (js-call endpoints :filter (lambda (endpoint) (= (nativeGet endpoint "tool") tool)))))
+      (let ((selected (js-call endpoints :filter (lambda (endpoint)
+        (and (= (nativeGet endpoint "tool") tool) (or (not (= tool "claude")) (not (nativeGet endpoint "native_api"))))))))
         (when (and (> (js-length selected) 0) (not (js-call agent-ports :has tool)))
           (js-call loaded :push (mountPort rack (str "agent:" tool) agent-ports tool
             (lambda () (funcall factory tool selected))))))))
+    ;; Desktop and CLI Claude endpoints may coexist. Exact instance lookup
+    ;; selects the Desktop port; the shared CLI inbox keeps one callback owner.
+    (unless claude-injected
+      (js-call endpoints :forEach (lambda (endpoint)
+        (when (and (= (nativeGet endpoint "tool") "claude") (nativeGet endpoint "native_api")
+                   (not (js-call agent-ports :has (nativeGet endpoint "instance_id"))))
+          (let ((id (nativeGet endpoint "instance_id")))
+            (js-call loaded :push (mountPort rack (str "agent:" id) agent-ports id
+              (lambda () (createClaudeDesktopPort (js-object :endpoints (js-array endpoint)) ports)))))))))
     ;; Supplied ports are managed by the same lifetime owner as native adapters.
     (js-call (Array/from (js-call agent-ports :entries)) :forEach (lambda (entry)
       (js-call loaded :push (mountPort rack (str "agent:" (aref entry 0)) agent-ports (aref entry 0) (lambda () (aref entry 1))))))

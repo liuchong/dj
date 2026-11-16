@@ -166,7 +166,7 @@
       :instance.start
       "显式启动获准预配 profile；先占持久 slot，unknown 不重新拉起。"
       :session.create
-      "在已有运行实例中显式创建会话；可传 content 作为首条纯文本消息（另需 session.send），不登记或订阅。创建 ready 不代表首条消息送达：核对 initial_input_state、initial_delivery_id 和 delivery.get。先 instance.get 获取 epoch、workspace_scope 和 workspace_ref（需要 instance.inspect）。instance 范围可传绝对 directory 及其发现所得 workspace_ref；缺少 directory 时从同实例已发现会话解析。OpenCode 可传原生 model_selection；Antigravity model_id 使用精确 MODEL_* 或数字 enum。Cursor native_api 可创建不提交首条消息的本地对话；Codex/普通 Bridge/Claude/Pi 的创建接口尚未接通，返回 unsupported；不要求空对话，但不得捏造占位 prompt 或启动替代 Agent 进程。AI 可改用自身原生能力、其他可用接口或已安装 Skill 完成目标。"
+      "在已有运行实例中显式创建会话；可传 content 作为首条纯文本消息（另需 session.send），不登记或订阅。创建 ready 不代表首条消息送达：核对 initial_input_state、initial_delivery_id 和 delivery.get。先 instance.get 获取 epoch、workspace_scope 和 workspace_ref（需要 instance.inspect）。instance 范围可传绝对 directory 及其发现所得 workspace_ref；缺少 directory 时从同实例已发现会话解析。OpenCode 可传原生 model_selection；Antigravity model_id 使用精确 MODEL_* 或数字 enum。Cursor native_api 可创建不提交首条消息的本地对话；Codex 原生工具宿主接收端需明确非空 content，一次原生创建与首条输入受理后返回 native_queued 和 initial_input_receipt_key，不再重复投递；Claude Desktop 和 Pi 接收扩展可创建并改名，CLI inbox/普通 Bridge 以实际能力为准；不要求空对话，但不得捏造占位 prompt 或启动替代 Agent 进程。AI 可改用自身原生能力、其他可用接口或已安装 Skill 完成目标。"
       :session.rename
       "沿准确 session_ref 修改原生标题；独立 session.rename 权限，持久记账后写原接口并读回。同一幂等键不重复写；unknown 用 lifecycle.reconcile 只读核对。"
       :instance.stop

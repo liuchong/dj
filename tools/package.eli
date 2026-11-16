@@ -13,7 +13,7 @@
   (import "node:crypto" randomUUID)
   (import "./build.eli" bindCompiler)
   (import "./controller.eli" buildStatusBar)
-  (import "./connector-entries.eli" writeConnectorEntry)
+  (import "./connector-entries.eli" writeConnectorEntry writeNativeConnectorBundle)
   (import "./build-inputs.eli" sha256 assertBuildBinding)
   (defun within
     (root path)
@@ -335,7 +335,10 @@
           :plugins (js-array (fixedRuntimePlugin (nativeGet compiler "root"))))))))
           (unless (nativeGet result "success") (throw (new globalThis.Error "standalone controller bundling failed")))))
       (await (copyTree "skills/dj" staging "skills/dj"))
+      (await (copyTree "connectors/codex" staging "connectors/codex"))
+      (await (writeNativeConnectorBundle "codex" (resolve staging "connectors/codex/control.mjs")))
       (await (copyTree "connectors/pi" staging "connectors/pi"))
+      (await (writeNativeConnectorBundle "pi" (resolve staging "connectors/pi/control.mjs")))
       (await (writeConnectorEntry "pi" (resolve staging "connectors/pi/extension.mjs")))
       (await
         (copyAsset "config/service.example.json" staging "config/service.example.json"))

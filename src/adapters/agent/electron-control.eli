@@ -1,0 +1,65 @@
+(module dj.adapters.agent.electron-control
+  (import "../../core/native.eli" nativeGet)
+  (import "./electron-native.eli" electronNativeRequest)
+  ;; Fixed, bounded calls through the existing renderer's authenticated native
+  ;; host API. No App Tools peer impersonation, new Agent or arbitrary eval API.
+  (defconst renderer (str
+    "async function(request) {\n"
+    " const creations=globalThis[Symbol.for('dispatch-junction.native-creations')]??=new Map();\n"
+    " if(creations.size>256)throw Error('native_creation_bound');\n"
+    " if(request.tool!=='claude')throw Error('native_tool');\n"
+    " const api=window['claude.web']?.LocalSessions;\n"
+    " if(typeof api?.start!=='function'||typeof api?.getSession!=='function')throw Error('native_runtime_shape');\n"
+    " let id=request.thread;\n"
+    " if(request.operation==='list') {\n"
+    "  const rows=await api.getAll();if(!Array.isArray(rows)||rows.length>10000)throw Error('native_list_bound');\n"
+    "  return {items:rows.filter(x=>!x.remoteTarget&&!x.sshConfig).map(x=>({id:x.id??x.sessionId,title:x.title??'',cwd:x.cwd,\n"
+    "   status:x.status,model:x.model??null,effort:x.effort??null}))};\n"
+    " }\n"
+    " if(request.operation==='create'||request.operation==='lookup_create') {\n"
+    "  id=creations.get(request.key);\n"
+    "  if(!id&&request.operation==='lookup_create')return {state:'unknown'};\n"
+    "  if(!id) {\n"
+    "   if(request.model_selection?.variant||request.model_selection?.provider_id&&request.model_selection.provider_id!=='anthropic')throw Error('native_model_selection_unsupported');\n"
+    "   const options={cwd:request.directory,message:'',sessionId:request.native_id,title:request.title??'',useWorktree:false};\n"
+    "   if(request.model_selection?.model_id)options.model=request.model_selection.model_id;\n"
+    "   if(request.model_selection?.reasoning_effort)options.effort=request.model_selection.reasoning_effort;\n"
+    "   const created=await api.start(options);id=created?.sessionId;\n"
+    "   if(typeof id!=='string'||!id)throw Error('native_create_unconfirmed');\n"
+    "   creations.set(request.key,id);\n"
+    "  }\n"
+    " }\n"
+    " if(request.operation==='rename')await api.updateSession(id,{title:request.title});\n"
+    " const session=await api.getSession(id);\n"
+    " if(!session||(session.id??session.sessionId)!==id||session.remoteTarget||session.sshConfig)throw Error('native_thread_unconfirmed');\n"
+    " if(request.operation==='submit') {\n"
+    "  await api.sendMessage(id,request.text,undefined,undefined,undefined,'now',undefined,request.dispatch_key);\n"
+    "  return {state:'accepted',native_receipt_key:request.dispatch_key};\n"
+    " }\n"
+    " if(request.operation==='messages')return {transcript:await api.getTranscript(id)};\n"
+    " return {state:'ready',thread:{id,title:session.title??'',cwd:session.cwd,status:session.status,model:session.model??null,effort:session.effort??null}};\n"
+    "}\n"
+  ))
+  (defconst main (str
+    "(async()=>{\n"
+    " const require=process.getBuiltinModule('module').createRequire(process.resourcesPath+'/app.asar/package.json');\n"
+    " const electron=require('electron');\n"
+    " if(REQUEST.operation==='inspect')return {origin:performance.timeOrigin,windows:electron.webContents.getAllWebContents().filter(w=>w.getType()==='window'&&!w.isDestroyed()).map(w=>({id:w.id,url:w.getURL()}))};\n"
+    " const w=electron.webContents.fromId(REQUEST.window);\n"
+    " if(!w||w.isDestroyed()||w.getType()!=='window')throw Error('native_window');\n"
+    " const d=w.debugger;if(d.isAttached())throw Error('native_debugger_busy');\n"
+    " d.attach('1.3');\n"
+    " const group='dj-native-'+REQUEST.call;\n"
+    " try {\n"
+    "  const out=await d.sendCommand('Runtime.evaluate',{expression:'('+RENDERER+')('+JSON.stringify(REQUEST)+')',\n"
+    "   awaitPromise:true,returnByValue:true,objectGroup:group});\n"
+    "  if(out.exceptionDetails)throw Error(out.exceptionDetails.exception?.description??'native_operation_failed');\n"
+    "  return out.result.value;\n"
+    " } finally {try{await d.sendCommand('Runtime.releaseObjectGroup',{objectGroup:group});}finally{d.detach();}}\n"
+    "})()\n"
+  ))
+  (defasync electronControl (endpoint request context)
+    (await (electronNativeRequest endpoint
+      (Object/assign (js-object :tool (nativeGet endpoint "tool")) request) context
+      (js-call main :replace "RENDERER" (lambda () (JSON/stringify renderer))))))
+  (export electronControl renderer))

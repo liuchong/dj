@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "source_specification": "docs/construction/case-cards.md",
+  "source_specification": "docs/archive/case-cards.md",
   "source_commit": "5629237",
   "status": "written-not-run",
   "cases": [
@@ -29470,6 +29470,150 @@
       "e2e": false,
       "applicability": "enabled-positive",
       "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 5000,
+      "resource_group": "pure",
+      "requirements": [
+        "0030"
+      ],
+      "acceptance_ids": [
+        "CREATE01"
+      ],
+      "given": "Explicit workspace identities, native model enums and creation keys",
+      "when": "Check directory bounds, persisted workspace resolution and deterministic native IDs",
+      "then": "Invalid scopes and models reject; original creation ID remains stable"
+    },
+    {
+      "case_id": "T53.desktop-host-control.integration",
+      "parent_id": "T53",
+      "file": "tests/integration/native-host-control.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {
+        "mechanism": "existing-native-host-control"
+      },
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "requirements": [
+        "0030"
+      ],
+      "acceptance_ids": [
+        "CREATE01"
+      ],
+      "given": "Real Core lifecycle creates across an explicitly instance-scoped workspace, persists directory, maintains independent inspection grants and idempotency",
+      "when": "Use explicit existing-instance creation and inspect original lifecycle or native session",
+      "then": "The exact empty session is confirmed with no prompt and no replacement process"
+    },
+    {
+      "case_id": "T53.pi-host-control.integration",
+      "parent_id": "T53",
+      "file": "tests/integration/native-host-control.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {
+        "mechanism": "existing-native-host-control"
+      },
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "requirements": [
+        "0030"
+      ],
+      "acceptance_ids": [
+        "CREATE01"
+      ],
+      "given": "Real Core lifecycle creates across an explicitly instance-scoped workspace, persists directory, maintains independent inspection grants and idempotency",
+      "when": "Use explicit existing-instance creation and inspect original lifecycle or native session",
+      "then": "The exact empty session is confirmed with no prompt and no replacement process"
+    },
+    {
+      "case_id": "T53.codex-host-control.integration",
+      "parent_id": "T53",
+      "file": "tests/integration/native-host-control.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {
+        "mechanism": "existing-native-host-control"
+      },
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "requirements": [
+        "0030"
+      ],
+      "acceptance_ids": [
+        "CREATE01"
+      ],
+      "given": "Real Core lifecycle creates across an explicitly instance-scoped workspace, persists directory, maintains independent inspection grants and idempotency",
+      "when": "Use explicit existing-instance creation and inspect original lifecycle or native session",
+      "then": "The exact empty session is confirmed with no prompt and no replacement process"
+    },
+    {
+      "case_id": "T53.native-initial-input.sqlite",
+      "parent_id": "T53",
+      "file": "tests/integration/session-creation.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {
+        "mechanism": "native-atomic-first-input"
+      },
+      "required_profile": null,
+      "timeout_ms": 20000,
+      "resource_group": "isolated-sqlite",
+      "requirements": [
+        "0030"
+      ],
+      "acceptance_ids": [
+        "CREATE01"
+      ],
+      "given": "Real Core lifecycle creates across an explicitly instance-scoped workspace, persists directory, maintains independent inspection grants and idempotency",
+      "when": "Use explicit existing-instance creation and inspect original lifecycle or native session",
+      "then": "The exact empty session is confirmed with no prompt and no replacement process"
+    },
+    {
+      "case_id": "T38.pi-native-creation-unknown.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/native-host-control.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {
+        "boundary": "native-host-control"
+      },
+      "required_profile": null,
+      "timeout_ms": 5000,
+      "resource_group": "pure",
+      "requirements": [
+        "0030"
+      ],
+      "acceptance_ids": [
+        "CREATE01"
+      ],
+      "given": "Explicit workspace identities, native model enums and creation keys",
+      "when": "Check directory bounds, persisted workspace resolution and deterministic native IDs",
+      "then": "Invalid scopes and models reject; original creation ID remains stable"
+    },
+    {
+      "case_id": "T38.native-host-result-boundaries.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/native-host-control.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {
+        "boundary": "native-host-control"
+      },
       "required_profile": null,
       "timeout_ms": 5000,
       "resource_group": "pure",

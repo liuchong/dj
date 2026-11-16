@@ -39,6 +39,7 @@
               "initial_input_state"
               "initial_delivery_id"
               "initial_input_error"
+              "initial_input_receipt_key"
               "profile_id"
               "revision"
               "created_at"
@@ -283,6 +284,11 @@
                       (setq djReturn1Value (failure "unsupported" (js-object :details
                         (js-object :reason "native_session_create_unavailable"
                           :tool (nativeGet instance "tool" (nativeGet instance "tool_id"))))))
+                      (throw djReturn1Token))
+                    (when (and (= (nativeGet (nativeGet port "capabilities") "creation_requires_content") "supported")
+                               (not (nativeGet args "content")))
+                      (setq djReturn1Value (failure "invalid_argument" (js-object :details
+                        (js-object :reason "native_creation_requires_content"))))
                       (throw djReturn1Token))
                     (when (and (nativeGet args "model_selection")
                       (not (= (nativeGet (nativeGet port "capabilities") "creation_model_selection") "supported")))
@@ -607,6 +613,9 @@
                   (progn
                     (setq djReturn4Value (failure "incompatible"))
                     (throw djReturn4Token)))
+                (when (nativeGet report "initial_input_receipt_key")
+                  (put current :initial_input_state "native_queued")
+                  (put current :initial_input_receipt_key (nativeGet report "initial_input_receipt_key")))
                 (when (nativeGet action "model_selection")
                   (put created :initial_model_selection (nativeGet action "model_selection")))
                 (let ((session (must (putSession context created instance))))
@@ -919,7 +928,8 @@
                             (nativeGet action "creation_key")
                             (Object/assign
                               (nativeCallContext context)
-                              (js-object :model_selection (nativeGet action "model_selection")
+                              (js-object :creation_content (nativeGet action "initial_content" nil)
+                                :model_selection (nativeGet action "model_selection")
                                 :directory (nativeGet action "directory" nil))
                               (if (nativeGet action "title")
                                 (js-object :title (nativeGet action "title"))

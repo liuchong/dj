@@ -2,7 +2,7 @@
 
 DJ 提供自己的统一会话控制接口，机械列举、读取、创建和通知调用方明确指定的原生会话。查询与 `session.send` 不要求先建立 IM 订阅。实际工具方式见[适配说明](adapters/agent-tools.md)，支持和验证范围见[当前状态](status.md)。
 
-DJ 独立直连各工具的原生接口，不依赖其他 AI 工具的控制程序。调用方不必为每个目标工具学习另一套控制入口。创建、修改标题、发送消息、读取历史和运行状态等机械能力都属于这层职责；业务任务、目标选择和协作方式仍由 AI 决定。统一接口不代表所有目标已经实现全部动作：当前创建范围见[0030](specs/0030-native-session-creation.md)，统一 session.rename 接入 OpenCode、Cursor native_api 与 Antigravity，不能把外部工具能改名当作 DJ 已支持。
+DJ 独立直连各工具的原生接口，不依赖其他 AI 工具的控制程序。调用方不必为每个目标工具学习另一套控制入口。创建、修改标题、发送消息、读取历史和运行状态等机械能力都属于这层职责；业务任务、目标选择和协作方式仍由 AI 决定。统一接口不代表所有目标已经实现全部动作：当前创建范围见[0030](specs/0030-native-session-creation.md)，统一 session.rename 接入 OpenCode、Cursor native_api、Antigravity、Codex 原生工具宿主接收端、Claude Desktop 与 Pi 接收扩展；按具体端点声明能力。
 
 ## 对象与身份
 
@@ -59,3 +59,5 @@ DJ 独立直连各工具的原生接口，不依赖其他 AI 工具的控制程�
 更多使用步骤见[从启动到回复](startup-to-reply.md)。旧进程托管方案保留在[历史研究](archive/research.md)，不作为当前接入方法。
 
 多对多接线现行边界见[0027](specs/0027-many-to-many-subscribers.md)：调用身份与接收目标分离，whoami返回登记数组，普通AI自行登记订阅；同事件协作提示不决定任务归属。
+
+Codex 的可选创建/改名通过现有原生 Node 工具宿主加载的 DJ 接收端；Follower 通知接线独立保留。原生创建需要调用方明确首条 content，受理后 initial_input_state=native_queued、initial_input_receipt_key，不再制造第二次投递。Claude Desktop 的原生 LocalSessions 与 Pi 同进程 SDK 创建接入同一统一接口；它们与 CLI inbox、Pi 历史文件的边界见[0030](specs/0030-native-session-creation.md)。

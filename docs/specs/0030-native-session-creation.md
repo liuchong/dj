@@ -26,8 +26,9 @@ DJ 独立提供会话发现、创建、读取、定位及投递。它直接调�
 | Cursor | native_api 的 LocalAgentRepository.createAgent，skipInitialSubmit | 既有原生 Inspector 通道，require-trusted，不修改信任、不提交 prompt；普通 Bridge 不支持创建 |
 | Antigravity | 已有 language_server 的 StartCascade、UpdateConversationAnnotations | 同 UID、进程出生身份、证书指纹、CSRF 及 epoch 校验不变；确定性原生 ID、原工作区读回 |
 | Kimi / DSH | 已有 Desktop / Web 的独立原生协议 | 保留配置工作区与原生形态约束，不宣称离线端点实测通过 |
-| Codex | 当前创建尚未接通 | App Tools 支持带首条消息创建，但本轮直连管道被关闭；不捏造占位任务 |
-| Claude / Pi | 已有实例上的创建尚未接通 | 不新建 CLI / RPC / ACP 进程替代 |
+| Codex | 已有签名原生 Node 工具宿主内的 DJ 接收端 | 官方 App Tools 原生管道，create_thread / set_thread_title；仍由平台鉴权，不启动 App Server、不伪装 peer |
+| Claude Desktop | 已有 LocalSessions.start / updateSession | 原生 IPC 创建、改名及收发；现有 Claude Code inbox 仍只支持已有会话 |
+| Pi | 已有 Pi Extension 宿主的 createAgentSession / setSessionName | 同进程独立会话，保留原交互会话；历史持久化遵循 Pi 首条 assistant 后写盘 |
 
 不支持的创建在持久动作受理前返回 `unsupported`，带原因 `native_session_create_unavailable`。不支持的模型覆盖同样在受理前拒绝，原因 `creation_model_selection_unsupported`，不悄悄使用其他模型。Antigravity 模型使用明确的原生 enum，不按展示名称猜测；显式初始模型只用于首次输入，不冒充之后的实时模型选择。
 
@@ -49,7 +50,30 @@ DJ 独立提供会话发现、创建、读取、定位及投递。它直接调�
 - 崩溃发生在首条消息持久受理与关联字段更新之间时，原键查回同一投递；创建 unknown 时不发送首条消息。权限撤销、实例变化或目标失效不能绕过，首条输入被拒绝需明确投影。
 - `session.rename(session_ref,title,idempotency_key)` 复用生命周期动作与 submitting 切点，独立权限，先持久记录再写原生接口，读回准确 ID、实例 epoch 与标题后完成。unknown 只观察标题，不重写；不直接改第三方历史数据库。
 - OpenCode 走原生 session PATCH；Antigravity 走 UpdateConversationAnnotations；Cursor native_api 走既有本地 repository 的 composerDataService，再读原生 header。其他端点以实际能力声明为准。
-- Codex 现有 follower IPC 不含创建/改名入口；本轮直接连接本机 App Tools 管道时，DJ 运行时和原生 bundled Node 均被关闭，未接通不等于平台不支持。不能再将此写成空对话限制，也不以新 App Server 或占位 prompt 补齐。Claude、Pi 创建仍未接通。
+- Codex follower IPC 继续用于原会话通知；创建/改名走现有原生 Node 工具宿主接收端。Claude Desktop 走 LocalSessions，Pi 走宿主 SDK，均不启动替代 Agent。Claude Code inbox 不具备创建接口时明确 unsupported，调用方可选择已有 Claude Desktop 实例。
 - DJ 未接通或达不到效果时，调用方 AI 可选择自身原生能力、其他可用接口或已安装 Skill 完成；不依赖特定第三方工具，已受理或 unknown 操作须先查证，避免重复效果。
 
-本次补齐：干净候选源码树重建后，4 项创建/改名集成与 2 项保护性单测通过（134 条断言）。OpenCode、Cursor、Antigravity 的专用测试对话均完成真实原生改名并读回同 ID、同 epoch；Cursor Inspector 已关闭。额外运行的历史 lifecycle 套件中，9 项依赖已禁用且当前 fixture 未提供的 oc-profile，返回 not_found；未恢复进程托管或将其记为通过。
+此前首条输入与改名批次：干净候选源码树重建后，4 项创建/改名集成与 2 项保护性单测通过（134 条断言）。OpenCode、Cursor、Antigravity 的专用测试对话均完成真实原生改名并读回同 ID、同 epoch；Cursor Inspector 已关闭。额外运行的历史 lifecycle 套件中，9 项依赖已禁用且当前 fixture 未提供的 oc-profile，返回 not_found；未恢复进程托管或将其记为通过。
+
+## 现有宿主控制与边界
+
+- Cursor、Claude Desktop 共用同 UID、PID 出生身份、进程 origin、准确 window 与 loopback Inspector 传输；只开放固定机械操作，不提供任意脚本执行接口。Inspector 调用按端点串行，限制队列及截止时间，仅关闭本次打开的 Inspector；已有调试器占用时拒绝，失败、取消也执行清理。
+- `dj native configure` 支持 `tool=claude,surface=desktop`：先检查已有进程，再只读获取原生窗口和 origin，写私有端点；多窗口必须指定 window_id。不会修改第三方签名、关闭 App Tools 认证或冒充受信调用方。Claude 业务请求调用 renderer 已持有的 LocalSessions；Codex 接收端加载及鉴权边界见 [原生工具宿主](../../connectors/codex/README.md)。
+- Codex 的创建键保留在接收端本次生命周期内；宿主或接收端重启后无法查证的创建保持 unknown，不按同名会话猜测或自动重建。Claude Desktop 同理。
+- Claude Desktop 和 Claude Code inbox 是不同原生接收形态；不以 Desktop 创建结果冒充 CLI inbox 的创建能力。Pi 扩展生成入口从宿主导入 SDK，业务实现仍为 Eliscript；SDK 会话复用原生资源加载与权限，不修改当前交互会话。
+- 当前能力交付和真实客户端证据分开记录在状态页；没有运行实例的工具继续完成代码、包与说明，留待实例启动后核验，不为验证新启替代 CLI。
+
+### 原生一次创建与首条输入
+
+Codex 当前原生 create_thread 需要非空首条消息；DJ 在动作受理前检查 content，原因 native_creation_requires_content。该明确文本作为创建请求的一部分持久保存，再交原生接口一次受理。确认后 initial_input_state=native_queued 并返回 initial_input_receipt_key，不再走第二次 session.send，不制造 initial_delivery_id。原生 API 受理、输入可读、模型执行及业务完成分别核对。原生创建未知时只查同一创建键；缺失结果不会触发重建。新创建标题及改名都从活会话读回，不把可能滞后的历史 SQLite 标题当作当前标题。
+
+本批补齐经干净候选树构建、9项定向集成与34项保护/契约回归通过（631条断言）；包含原生首条输入不重复投递、Pi多会话隔离/分页、创建键不确定防重及Claude原生协议调用。真实Codex已完成创建、改名、同ID读回与固定标记响应；Cursor新进程上的原测试会话读回通过且Inspector关闭。当前无Claude Desktop/Pi活实例，协议替身不冒充这两项真实客户端验收。
+
+| 用例 | 保护点 |
+| --- | --- |
+| T53.desktop-host-control.integration | Claude Desktop 原生创建、改名、原ID发送 |
+| T53.codex-host-control.integration | 私有接收端、原生管道、工作区和首条文本、同键防重 |
+| T53.pi-host-control.integration | 原交互会话保留、独立子会话发现/改名/输入/读取与分页 |
+| T53.native-initial-input.sqlite | 原生同时受理首条输入后不重复投递 |
+| T38.pi-native-creation-unknown.unit | 可能已创建的SDK请求不按同键重建 |
+| T38.native-host-result-boundaries.unit | 原生结果、未知信息与创建工作区边界 |

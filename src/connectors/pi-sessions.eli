@@ -1,0 +1,55 @@
+(module dj.connectors.pi-sessions
+  (import "../core/native.eli" nativeGet nativeTypeOf)
+  ;; Sessions are real persistent Pi SDK sessions in this already running host.
+  ;; The interactive session is never replaced and no CLI is spawned.
+  (defun createPiSessions (pi context sdk)
+    (let* ((sessions (new globalThis.Map)) (creations (new globalThis.Map))
+           (manager (nativeGet context "sessionManager")) (id (js-call manager :getSessionId)))
+      (js-call sessions :set id (js-object :context context
+        :rename (lambda (title) (js-call pi :setSessionName title))
+        :send (async (text) (await (js-call pi :sendUserMessage text)))))
+      (js-object :get (lambda (target) (js-call sessions :get target))
+        :list (lambda () (Array/from (js-call sessions :keys)))
+        :create (async (key directory title selection lookup)
+          (let ((existing (js-call creations :get key)))
+            (if (js-call creations :has key) existing
+              (if lookup nil
+                (progn
+                  (unless (and sdk (= directory (nativeGet context "cwd")) (< (nativeGet sessions "size") 128))
+                    (throw (new globalThis.TypeError "Pi native creation requires the host SDK and current workspace")))
+                  (when (nativeGet selection "variant") (throw (new globalThis.TypeError "Pi has no model variant parameter")))
+                  (let* ((model (if (nativeGet selection "model_id")
+                            (js-call (nativeGet context "modelRegistry") :find
+                              (nativeGet selection "provider_id") (nativeGet selection "model_id"))
+                            (nativeGet context "model")))
+                         (result nil) (session nil) (child nil) (entry nil))
+                    (unless model (throw (new globalThis.TypeError "Pi model selection is unavailable")))
+                    (js-call creations :set key nil)
+                    (setq result (await (js-call sdk :createAgentSession
+                      (js-object :cwd directory :model model :modelRegistry (nativeGet context "modelRegistry")
+                        :thinkingLevel (or (nativeGet selection "reasoning_effort") (js-call pi :getThinkingLevel))))))
+                    (setq session (nativeGet result "session"))
+                    (let ((manager (nativeGet session "sessionManager")))
+                      (setq child (js-call manager :getSessionId))
+                      ;; Persist native session information through Pi, including
+                      ;; empty chats; DJ never manufactures a history file.
+                      (js-call session :setSessionName (or title "Pi"))
+                      (setq entry (js-object :session session :context
+                        (js-object :sessionManager manager :model model :cwd directory
+                          :isIdle (lambda () (not (nativeGet session "isStreaming"))))
+                        :rename (lambda (name) (js-call session :setSessionName name))
+                        :send (lambda (text)
+                          (new globalThis.Promise (lambda (resolve reject)
+                            (let ((accepted false))
+                              (js-call (js-call session :prompt text
+                                (js-object :source "extension" :preflightResult (lambda (ok)
+                                  (if ok (progn (setq accepted t) (funcall resolve t))
+                                    (funcall reject (new globalThis.Error "Pi input rejected"))))))
+                                :then (lambda () (unless accepted (funcall resolve t)))
+                                (lambda (error) (unless accepted (funcall reject error))))))))))
+                      (js-call sessions :set child entry) (js-call creations :set key child) child)))))))
+        :close (lambda ()
+          (js-call sessions :forEach (lambda (entry)
+            (when (nativeGet entry "session") (js-call (nativeGet entry "session") :dispose))))
+          (js-call sessions :clear) (js-call creations :clear)))))
+  (export createPiSessions))

@@ -48,3 +48,7 @@ native_api 指定 inspector_url、process_id、process_origin、workspace_id；�
 
 
 macOS Codex 端点可配置 `receiver_loader_ref` 和 `process_helper_ref`，分别指向打包的 `libexec/dj-codex-loader` / `libexec/dj-process-info`。只有实际投递才尝试加载，查询保持只读。加载器由 Swift 通过定向到既有 PID 的系统 URL 事件打开准确原对话，可能切换客户端当前对话页；不调用启动 API，不把正文、模型或会话参数放入 Agent 启动命令。先核对 socket、同 UID 主进程与出生身份，再核对加载后的原生 owner/epoch/工作区。OS 拒绝事件或接收端尚未就绪时保留待投，返回明确 receiver_reason；不伪造已送达、不绕过权限。详见 [0029](../specs/0029-codex-receiver-loading.md)。
+
+## 原生会话控制
+
+Codex 的创建与改名通过显式加载在已有原生 Node 工具宿主内的 DJ 接收端，配置 `control_manifest_path`，普通通知保持原 follower socket。此路径不需要 Inspector、不启动替代 App Server，平台仍核验真实宿主来源。加载与生命周期见 [Codex 接收端](../../connectors/codex/README.md)。Cursor 保持原 native_api 和按需 Inspector；两者共用统一 session.create/rename 与持久生命周期，但原生传输分开，不能相互冒充。

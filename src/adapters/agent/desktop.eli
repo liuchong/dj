@@ -6,7 +6,7 @@
   (import "./codex-loader.eli" requestCodexLoad)
   (import "./cursor-control.eli" cursorCreationId)
   (import "./cursor-native.eli" cursorNativeRequest)
-  (import "./desktop-transport.eli" desktopError desktopDeadline cursorRequest openCodexChannel)
+  (import "./desktop-transport.eli" desktopError desktopDeadline cursorRequest openCodexChannel readCursorManifest)
   (import "bun:sqlite" Database)
   (import "node:fs/promises" lstat)
   (import "node:path" isAbsolute)
@@ -178,18 +178,23 @@
     (unless (js-call (js-array "codex" "cursor") :includes tool)
       (throw (new globalThis.TypeError "Unsupported desktop tool")))
     (let* ((endpoints (nativeGet config "endpoints" (js-array))) (closed false)
-           (create-enabled (and (= tool "cursor") (> (js-length endpoints) 0)
-             (js-call endpoints :every (lambda (endpoint) (or (nativeGet endpoint "native_api") (nativeGet endpoint "control_manifest_path"))))))
+           (create-enabled (and (> (js-length endpoints) 0)
+             (js-call endpoints :every (lambda (endpoint)
+               (or (nativeGet endpoint "control_manifest_path")
+                   (and (= tool "cursor") (nativeGet endpoint "native_api")))))))
            (capabilities (js-object :session_list "supported" :session_messages "supported"
              :session_probe "supported" :session_send "supported" :start_idle "supported"
              :message_during_run (if (= tool "codex") "supported" "unsupported")
-             :session_rename (if (and (= tool "cursor") (js-call endpoints :every (lambda (e) (nativeGet e "native_api")))) "supported" "unsupported")
+             :session_rename (if (and (> (js-length endpoints) 0) (js-call endpoints :every (lambda (e)
+               (if (= tool "codex") (nativeGet e "control_manifest_path") (nativeGet e "native_api"))))) "supported" "unsupported")
+             :creation_requires_content (if (= tool "codex") "supported" "unsupported")
+             :creation_model_selection (if (and (= tool "codex") create-enabled) "supported" "unsupported")
              :session_create (if create-enabled "supported" "unsupported") :instance_start "unsupported" :instance_stop "unsupported"
              :native_idempotency "unsupported" :lookup_send (if (= tool "codex") "positive_only" "unsupported") :lookup_create (if create-enabled "supported" "unsupported")
              :observe "unsupported" :max_input_frame_bytes 262144))
            (endpointFor nil) (instanceScope nil) (workspaceFor nil) (sessionRecord nil) (cursorThreads nil)
            (codexSnapshot nil) (probeWith nil) (probe nil) (listSessions nil) (readMessages nil) (submit nil)
-           (probeInstance nil) (createSession nil))
+           (probeInstance nil) (createSession nil) (nativeControl nil))
       (setq endpointFor (lambda (target)
         (when closed (throw (desktopError "desktop_closed")))
         (when (and (nativeGet target "tool") (not (= (nativeGet target "tool") tool)))
@@ -219,7 +224,7 @@
                  :workspace_ref (funcall workspaceFor endpoint cwd)
                  :title (nativeGet (sliceUtf8 (or title "") 0 (nativeGet limits "title_bytes")) "text" "")
                  :runtime_state state :live_receiver (not (= state "offline")) :receiver_reason nil
-                 :visibility (if (nativeGet endpoint "native_api") (js-array "live") (js-array "history" "live"))
+                 :visibility (if (and (= tool "cursor") (nativeGet endpoint "native_api")) (js-array "live") (js-array "history" "live"))
                  :capabilities capabilities :coverage "covered" :evidence_level "native_protocol")))
           (when (and (= (nativeTypeOf cwd) "string") (isAbsolute cwd))
             (put record :directory cwd))
@@ -470,7 +475,47 @@
             (catch unavailable
               (js-object :state (if started "unknown" "failed") :kind (if started "unknown" "rejected")
                 :definite_not_sent (not started) :retryable (not started) :evidence_level "none"))))))
+      (setq nativeControl (async (instance request context)
+          (let* ((endpoint (funcall endpointFor instance))
+                 (channel (await (openCodexChannel endpoint context))))
+            (try
+              (unless (= (nativeGet channel "instance_epoch") (nativeGet instance "instance_epoch"))
+                (throw (desktopError "desktop_target_changed")))
+              (let* ((transport (js-object :manifest_path (nativeGet endpoint "control_manifest_path")))
+                     (manifest (await (readCursorManifest transport)))
+                     (valid (unless (and (= (nativeGet manifest "tool") "codex")
+                                        (= (nativeGet manifest "apiVersion") "dj-native-control"))
+                              (throw (desktopError "desktop_control_manifest"))))
+                     (wire (await (cursorRequest transport (Object/assign (js-object) request
+                       (js-object :receiver_epoch (nativeGet manifest "instanceEpoch")))
+                       (Object/assign (js-object) context (js-object :expected_epoch nil)))))
+                     (response (js-object :data (nativeGet (nativeGet wire "data") "data")))
+                     (check (await (openCodexChannel endpoint context))))
+                (try
+                  (unless (= (nativeGet check "instance_epoch") (nativeGet channel "instance_epoch"))
+                    (throw (desktopError "desktop_target_changed")))
+                  (put response :instance_epoch (nativeGet channel "instance_epoch")) response
+                  (finally (js-call check :close))))
+              (finally (js-call channel :close))))))
       (setq createSession (async (instance workspace key context lookup)
+        (if (= tool "codex")
+          (let* ((endpoint (funcall endpointFor instance))
+                 (directory (or (nativeGet context "directory") (nativeGet endpoint "directory")))
+                 (response (await (funcall nativeControl instance
+                   (js-object :operation (if lookup "lookup_create" "create") :key key
+                     :directory directory :content (nativeGet context "creation_content" nil) :title (nativeGet context "title" nil)
+                     :model_selection (nativeGet context "model_selection" nil)) context)))
+                 (data (nativeGet response "data")) (id (nativeGet data "thread_id"))
+                 (row (when id (await (funcall probeWith
+                   (js-object :native_session_id id) instance context)))))
+            (if (not row) (js-object :state "unknown" :creation_key key :native_ref (or id key) :evidence_level "none")
+              (progn
+                (unless (or lookup (= (nativeGet row "directory") directory)) (throw (desktopError "desktop_target_mismatch")))
+                (js-object :state "ready" :creation_key key :native_ref id
+                  :initial_input_receipt_key (nativeGet data "initial_input_receipt_key")
+                  :evidence_level "native_protocol" :session (funcall sessionRecord endpoint id
+                    (nativeGet row "title") (nativeGet row "runtime_state" "unknown") (nativeGet response "instance_epoch") nil (nativeGet row "directory"))))))
+        (progn
         (unless create-enabled (throw (desktopError "desktop_create_unsupported")))
         (let* ((endpoint (funcall endpointFor instance))
                (before (await (funcall cursorThreads endpoint context)))
@@ -506,7 +551,8 @@
               (js-object :state "ready" :creation_key key :evidence_level "native_protocol"
                 :session (funcall sessionRecord endpoint id (nativeGet row "title" "")
                            (cursorRuntime row) (nativeGet after "instance_epoch")))
-              (js-object :state "unknown" :creation_key key :definite_not_sent false :evidence_level "none")))))))
+              (js-object :state "unknown" :creation_key key :definite_not_sent false :evidence_level "none"))))))))
+)
       (setq probeInstance (async (instance context)
         (try
           (let* ((endpoint (funcall endpointFor instance))
@@ -525,15 +571,22 @@
       (js-object :rename (when (= (nativeGet capabilities "session_rename") "supported")
                   (async (session title context)
                     (let* ((endpoint (funcall endpointFor session))
-                           (response (await (cursorNativeRequest endpoint
-                             (js-object :operation "rename" :thread (nativeGet session "native_session_id") :title title)
-                             (Object/assign (js-object) context (js-object :expected_epoch (nativeGet session "instance_epoch"))))))
-                           (row (nativeGet (nativeGet response "data") "thread")))
+                           (response (if (= tool "codex")
+                             (await (funcall nativeControl session
+                               (js-object :operation "rename" :thread (nativeGet session "native_session_id") :title title) context))
+                             (await (cursorNativeRequest endpoint
+                               (js-object :operation "rename" :thread (nativeGet session "native_session_id") :title title)
+                               (Object/assign (js-object) context (js-object :expected_epoch (nativeGet session "instance_epoch")))))))
+                           (row (if (= tool "codex")
+                             (let ((probe (await (funcall probeWith session session context))))
+                               (js-object :id (nativeGet probe "native_session_id") :title (nativeGet probe "title")
+                                 :cwd (nativeGet probe "directory") :runtime_state (nativeGet probe "runtime_state")))
+                             (nativeGet (nativeGet response "data") "thread"))))
                       (unless (and (= (nativeGet response "instance_epoch") (nativeGet session "instance_epoch"))
                                    (= (nativeGet row "id") (nativeGet session "native_session_id"))
                                    (= (nativeGet row "title") title)) (throw (desktopError "desktop_rename_unconfirmed")))
                       (js-object :state "ready" :session (funcall sessionRecord endpoint (nativeGet row "id") title
-                        (cursorRuntime row) (nativeGet response "instance_epoch")) :evidence_level "native_protocol"))))
+                        (if (= tool "codex") (nativeGet row "runtime_state" "unknown") (cursorRuntime row)) (nativeGet response "instance_epoch") nil (nativeGet row "cwd" (nativeGet endpoint "directory"))) :evidence_level "native_protocol"))))
         :create (when create-enabled (async (instance workspace key context)
                     (await (funcall createSession instance workspace key context false))))
         :lookupCreate (when create-enabled (async (instance key ref context)
@@ -544,7 +597,7 @@
         :initialize (lambda (context) (setq closed false))
         :discover (async (visibility page context)
           (if (or (not (js-call (js-array "history" "live") :includes visibility))
-                  (and (= visibility "history")
+                  (and (= tool "cursor") (= visibility "history")
                     (js-call endpoints :some (lambda (endpoint)
                       (and (nativeGet endpoint "native_api")
                         (or (not (nativeGet page "instance_id"))

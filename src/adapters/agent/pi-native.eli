@@ -6,12 +6,12 @@
   (defconst piCapabilities
     (js-object :session_list "supported" :session_messages "supported"
       :session_probe "supported" :session_send "supported" :start_idle "supported" :message_during_run "unsupported"
-      :session_create "unsupported" :instance_start "unsupported" :instance_stop "unsupported"
-      :native_idempotency "unsupported" :lookup_send "unsupported" :lookup_create "unsupported"
+      :creation_model_selection "supported" :session_create "supported" :session_rename "supported" :instance_start "unsupported" :instance_stop "unsupported"
+      :native_idempotency "unsupported" :lookup_send "unsupported" :lookup_create "positive_only"
       :observe "unsupported" :max_input_frame_bytes 262144))
   (defun createPiNativePort (config host)
     (let ((endpoints (nativeGet config "endpoints" (js-array))) (closed false))
-      (let ((endpointFor nil) (request nil) (project nil) (probe nil) (listSessions nil))
+      (let ((endpointFor nil) (request nil) (project nil) (probe nil) (listSessions nil) (createSession nil))
         (setq endpointFor (lambda (target)
           (let ((matches (js-call endpoints :filter (lambda (endpoint)
             (and (= (nativeGet endpoint "instance_id") (nativeGet target "instance_id"))
@@ -31,19 +31,18 @@
                          (> (js-length (nativeGet manifest "instanceEpoch")) 0)
                          (= (nativeTypeOf (nativeGet manifest "sessionId")) "string")
                          (> (js-length (nativeGet manifest "sessionId")) 0)
-                         (or (not (nativeGet target "native_session_id"))
-                             (= (nativeGet target "native_session_id") (nativeGet manifest "sessionId"))))
+                         t)
               (throw (new globalThis.TypeError "Pi receiver identity changed")))
             (let* ((call-context (Object/assign (js-object) context
                        (if (nativeGet target "instance_epoch")
                          (js-object :expected_epoch (nativeGet target "instance_epoch")) (js-object))))
                    (response (await (cursorRequest endpoint
                      (Object/assign (js-object :schema_version 1 :operation operation
-                       :session_id (nativeGet manifest "sessionId") :receiver_epoch (nativeGet manifest "instanceEpoch")) args)
+                       :session_id (nativeGet target "native_session_id" (nativeGet manifest "sessionId")) :receiver_epoch (nativeGet manifest "instanceEpoch")) args)
                      call-context)))
                    (wire (nativeGet response "data")) (data (nativeGet wire "data")))
               (unless (and (= (nativeGet wire "ok") t)
-                           (= (nativeGet data "session_id") (nativeGet manifest "sessionId"))
+                           (= (nativeGet data "session_id") (nativeGet target "native_session_id" (nativeGet manifest "sessionId")))
                            (= (nativeGet data "receiver_epoch") (nativeGet manifest "instanceEpoch"))
                            (= (nativeGet data "directory") (nativeGet endpoint "directory")))
                 (throw (new globalThis.Error "Pi receiver did not confirm the original session")))
@@ -55,7 +54,7 @@
               :instance_id (nativeGet endpoint "instance_id") :instance_epoch (nativeGet response "instance_epoch")
               :workspace_ref (nativeGet endpoint "workspace_ref") :title (nativeGet data "title" "Pi")
               :runtime_state (nativeGet data "runtime_state" "unknown") :live_receiver t
-              :visibility (js-array "live") :capabilities piCapabilities :coverage "current_session_only"
+              :visibility (js-array "live") :capabilities piCapabilities :coverage "host_sessions"
               :evidence_level "native_protocol"))))
         (setq probe (async (target binding context)
           (let ((endpoint (funcall endpointFor binding)))
@@ -68,21 +67,54 @@
                               (js-call (nativeGet scope "instance_ids") :includes (nativeGet endpoint "instance_id")))
                           (or (not (nativeGet scope "workspace_refs"))
                               (js-call (nativeGet scope "workspace_refs") :includes (nativeGet endpoint "workspace_ref")))))))
-                 (index (nativeGet cursor "endpoint_index" 0)) (items (js-array)) (partial false))
+                 (index (nativeGet cursor "endpoint_index" 0)) (items (js-array)) (partial false) (session-index (nativeGet cursor "session_index" 0)))
             (unless (and (Number/isSafeInteger index) (>= index 0) (<= index (js-length selected)))
               (throw (new globalThis.TypeError "invalid Pi endpoint cursor")))
             (while (and (< index (js-length selected))
                         (< (js-length items) (nativeGet budget "max_records" 32)))
               (let ((endpoint (aref selected index)))
                 (try
-                  (js-call items :push (funcall project endpoint
-                    (await (funcall request endpoint (js-object) "probe" (js-object) context))))
-                  (catch unavailable (setq partial t))))
-              (setq index (1+ index)))
+                  (let* ((page (await (funcall request endpoint (js-object) "list" (js-object) context)))
+                         (ids (nativeGet (nativeGet page "data") "session_ids")))
+                    (unless (and (Array/isArray ids) (<= (js-length ids) 128)
+                      (Number/isSafeInteger session-index) (>= session-index 0) (<= session-index (js-length ids)))
+                      (throw (new globalThis.TypeError "invalid Pi host page")))
+                    (while (and (< session-index (js-length ids)) (< (js-length items) (nativeGet budget "max_records" 32)))
+                      (js-call items :push (funcall project endpoint (await (funcall request endpoint
+                        (js-object :native_session_id (aref ids session-index)) "probe" (js-object) context))))
+                      (setq session-index (1+ session-index)))
+                    (when (= session-index (js-length ids)) (setq session-index 0 index (1+ index))))
+                  (catch unavailable (setq partial t index (1+ index) session-index 0)))))
             (js-object :items items :complete (= index (js-length selected))
               :coverage (if partial "partial" "covered")
-              :next_cursor (if (< index (js-length selected)) (js-object :endpoint_index index) nil)))))
-        (js-object :capabilities piCapabilities :probe probe :listSessions listSessions
+              :next_cursor (if (< index (js-length selected)) (js-object :endpoint_index index :session_index session-index) nil)))))
+        (setq createSession (async (instance workspace key context lookup)
+          (let* ((endpoint (funcall endpointFor instance))
+                 (valid-workspace (unless (= workspace (nativeGet endpoint "workspace_ref"))
+                   (throw (new globalThis.TypeError "Pi creation workspace changed"))))
+                 (response (await (funcall request endpoint instance (if lookup "lookup_create" "create")
+                   (js-object :creation_key key :directory (nativeGet endpoint "directory")
+                     :title (nativeGet context "title" nil) :model_selection (nativeGet context "model_selection" nil)) context)))
+                 (id (nativeGet (nativeGet response "data") "created_id")))
+            (unless (= workspace (nativeGet endpoint "workspace_ref"))
+              (throw (new globalThis.TypeError "Pi creation workspace changed")))
+            (if (not id) (js-object :state "unknown" :evidence_level "none")
+              (js-object :state "ready" :creation_key key :native_ref id :evidence_level "native_protocol"
+                :session (funcall project endpoint (await (funcall request endpoint
+                  (js-object :native_session_id id :instance_epoch (nativeGet instance "instance_epoch"))
+                  "probe" (js-object) context))))))))
+        (js-object :create (async (instance workspace key context)
+                     (await (funcall createSession instance workspace key context false)))
+          :lookupCreate (async (instance key ref context)
+            (await (funcall createSession instance (nativeGet (funcall endpointFor instance) "workspace_ref") key context t)))
+          :rename (async (session title context)
+            (let* ((endpoint (funcall endpointFor session))
+                   (response (await (funcall request endpoint session "rename" (js-object :title title) context))))
+              (unless (= (nativeGet (nativeGet response "data") "title") title)
+                (throw (new globalThis.Error "Pi rename unconfirmed")))
+              (js-object :state "ready" :evidence_level "native_protocol"
+                :session (await (funcall probe session session context)))))
+          :capabilities piCapabilities :probe probe :listSessions listSessions
           :initialize (lambda (context) (setq closed false))
           :probeInstance (async (instance context)
             (try

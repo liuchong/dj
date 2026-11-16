@@ -23,7 +23,7 @@
         ((and directory (or (not (= (nativeTypeOf directory) "string"))
                             (not (isAbsolute directory)) (not (= directory (normalize directory)))))
           (failure "invalid_argument" (js-object :details (js-object :reason "absolute_normalized_directory_required"))))
-        ((and (= scope "instance") (js-call (js-array "opencode" "codex" "antigravity") :includes tool))
+        ((and (= scope "instance") (js-call (js-array "opencode" "codex" "antigravity" "claude") :includes tool))
           (if (and directory (if (= ref base) (= directory (nativeGet instance "directory"))
                  (= ref (str tool "-workspace-" (hashValue directory)))))
             (success (js-object :directory directory :workspace_ref ref))
