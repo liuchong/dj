@@ -50,6 +50,8 @@
     (let* ((a (await (register f "s1"))) (b (await (register f "s2"))) (g (await (group f a b)))
       (s (await (sub f g))) (seen (js-array)))
       (js-call (expect (nativeGet (nativeGet s "distribution") "algorithm")) :toBe "round_robin")
+      (let ((status (await (callOk f "A" "service.status" (js-object)))))
+        (js-call (expect (js-call (nativeGet status "visible_operations") :includes "agent.availability")) :toBe t))
       (let ((i 0)) (while (< i 4)
         (await (js-call f :ingest (createdEvent "lark" (str "round-" i) "one member")))
         (await (pump f))

@@ -54,7 +54,9 @@
                 (and
                   (or
                     (= (nativeGet grant "action") "*")
-                    (= (nativeGet grant "action") (nativeGet descriptor "action")))
+                    (= (nativeGet grant "action") (nativeGet descriptor "action"))
+                    (and (= (nativeGet descriptor "operation") "agent.availability")
+                      (= (nativeGet grant "action") "agent.bind")))
                   (> (js-length (nativeGet grant "resources")) 0)))))))))
   (defun resourceProjection
     (context ref)
