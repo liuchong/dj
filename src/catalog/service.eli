@@ -838,8 +838,8 @@
         (catch djReturn9Error
           (if (eq djReturn9Error djReturn9Token) djReturn9Value (throw djReturn9Error))))))
   (defun objectProjection
-    (kind record)
-    (cond
+    (kind record &optional context)
+    (let ((result (cond
       ((= kind "tool")
         (safeFields
           record
@@ -884,7 +884,13 @@
             "workspace_refs"
             "capabilities"
             "created_at"
-            "checked_at")))))
+            "checked_at"))))))
+      (when (= kind "instance")
+        (put result :workspace_scope (nativeGet record "workspace_scope" "directory"))
+        (when context
+          (let ((port (agentPort context record)))
+            (when port (put result :capabilities (nativeGet port "capabilities" (js-object)))))))
+      result))
   (defun queryObjects
     (context operation args)
     (let ((djReturn10Token (js-object)) (djReturn10Value nil))
@@ -906,7 +912,7 @@
                   (setq djReturn10Value (failure "forbidden"))
                   (throw djReturn10Token)))
               (progn
-                (setq djReturn10Value (success (objectProjection kind record)))
+                (setq djReturn10Value (success (objectProjection kind record context)))
                 (throw djReturn10Token))))
           (let*
             (
@@ -951,7 +957,7 @@
                       (or
                         (not (nativeGet filters "adapter_state"))
                         (= (nativeGet filters "adapter_state") (nativeGet record "adapter_state"))))
-                    (js-call items :push (objectProjection kind record))
+                    (js-call items :push (objectProjection kind record context))
                     (js-call keys :push (js-object :resource_key last-key))))
                 (setq index (1+ index)))
               (advanceSnapshot

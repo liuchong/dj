@@ -49,7 +49,7 @@
         (instance (js-call repository :get "instances" (nativeGet action "instance_id")))
         (key (nativeGet action "session_key" (nativeGet action "initial_session_key"))))
       (when (and instance (can context "instance.inspect" instance))
-        (put projection :current_instance (objectProjection "instance" instance)))
+        (put projection :current_instance (objectProjection "instance" instance context)))
       (when key
         (let ((session (js-call repository :get "sessions" key)))
           (when

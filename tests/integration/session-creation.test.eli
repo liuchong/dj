@@ -37,6 +37,8 @@
              (ref (str "opencode-workspace-" (hashValue directory)))
              (args (js-object :instance_id "oc-existing" :expected_instance_epoch (nativeGet instance "instance_epoch")
                :workspace_ref ref :directory directory :title "isolated empty chat" :idempotency_key "cross-create")))
+        (js-call (expect (nativeGet (nativeGet instance "capabilities") "session_create")) :toBe "supported")
+        (js-call (expect (nativeGet instance "workspace_scope")) :toBe "instance")
         ;; A different AI principal can create; it is not an operator-only or
         ;; managed-instance operation. Query permissions remain independent.
         (let ((denied (await (js-call f :call (nativeGet f "A") "instance.get" (js-object :instance_id "oc-existing")))))
