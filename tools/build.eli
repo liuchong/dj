@@ -4,7 +4,7 @@
   (import "node:path" resolve dirname relative isAbsolute)
   (import "./build-inputs.eli" sha256 requiredBuildInputs)
   (import "./runtime.eli" installFixedRuntime)
-  (import "./process-helper.eli" buildProcessHelper)
+  (import "./process-helper.eli" buildProcessHelper buildCodexLoader)
   (defun inside
     (root name)
     (unless
@@ -225,6 +225,7 @@
             (await (collect directory))))
         (setq index (1+ index)))
       (js-call outputs :push (await (buildProcessHelper)))
+      (js-call outputs :push (await (buildCodexLoader)))
       (setq index 0)
       (while (< index (js-length sources))
         (let ((row (aref sources index)))

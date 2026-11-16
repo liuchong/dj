@@ -12,6 +12,7 @@
         (paths
           (js-array
             "src/host/darwin/process-info.swift"
+            "src/host/darwin/codex-loader.swift"
             "src/host/darwin/status-bar.swift"
             "docs/pages/assets/dj-mark.svg"
             "package.json"

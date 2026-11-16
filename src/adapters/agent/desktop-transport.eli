@@ -150,7 +150,8 @@
         (let ((id (randomUUID)) (answer nil))
           (funcall write (Object/assign
             (js-object :type "request" :requestId id :method method :params params
-              :version version :timeoutMs (Math/ceil (desktopDeadline context)))
+              :version version :timeoutMs (Math/ceil (if (= method "thread-owner-discovery")
+                (Math/min 1000 (desktopDeadline context)) (desktopDeadline context))))
             (if client-id (js-object :sourceClientId client-id) (js-object))
             (if target (js-object :targetClientId target) (js-object))))
           (while (not answer)

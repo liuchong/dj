@@ -44,4 +44,7 @@ native_api 指定 inspector_url、process_id、process_origin、workspace_id；�
 
 ## 已保存但未加载的Codex对话
 
-精确session.resolve可识别同一已验证端点历史中的原生ID，返回真实工作区和history定位，live_receiver=false；不把未加载说成不存在，不自动创建或恢复业务。旧扫描隐藏的条目经精确原生核对可重新公开。历史定位不证明IPC可投递；调用方沿原任务记录联系仍可接收的原协调者，由其原生宿主续接。
+精确session.resolve可识别同一已验证端点历史中的原生ID，返回真实工作区和history定位，live_receiver=false；不把未加载说成不存在，不自动创建对话。旧扫描隐藏的条目经精确原生核对可重新公开。历史定位不证明IPC可投递；调用方沿原任务记录联系仍可接收的原协调者，由其原生宿主续接。
+
+
+macOS Codex 端点可配置 `receiver_loader_ref` 和 `process_helper_ref`，分别指向打包的 `libexec/dj-codex-loader` / `libexec/dj-process-info`。只有实际投递才尝试加载，查询保持只读。加载器由 Swift 通过定向到既有 PID 的系统 URL 事件打开准确原对话，可能切换客户端当前对话页；不调用启动 API，不把正文、模型或会话参数放入 Agent 启动命令。先核对 socket、同 UID 主进程与出生身份，再核对加载后的原生 owner/epoch/工作区。OS 拒绝事件或接收端尚未就绪时保留待投，返回明确 receiver_reason；不伪造已送达、不绕过权限。详见 [0029](../specs/0029-codex-receiver-loading.md)。

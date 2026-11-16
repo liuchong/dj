@@ -29295,6 +29295,83 @@
       "given": "Explicit group members, subscription filters and exact native receiver identities",
       "when": "Exercise group-native-quota",
       "then": "One selected receiver with durable selection, evidence-based quota handling and no unknown resubmission"
+    },
+    {
+      "case_id": "T01.codex-loader.integration",
+      "parent_id": "T01",
+      "file": "tests/integration/codex-loader.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {
+        "native_transport": "codex-framed-ipc",
+        "receiver_loader": "isolated-helper"
+      },
+      "required_profile": null,
+      "timeout_ms": 20000,
+      "resource_group": "isolated-native-desktop",
+      "requirements": [
+        "Q01",
+        "Q02",
+        "Q05",
+        "Q11"
+      ],
+      "acceptance_ids": [
+        "A06",
+        "A16"
+      ],
+      "given": "An exact saved native conversation without a loaded receiver",
+      "when": "Read its state, send once, load the existing receiver, observe a later loading cooldown and cancel before relaying",
+      "then": "Only delivery loads the receiver; one native input and receipt are recorded; cancellation prevents an alternate route duplicate"
+    },
+    {
+      "case_id": "T38.codex-loader-target.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/codex-loader.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 5000,
+      "resource_group": "pure",
+      "requirements": [
+        "Q11",
+        "Q12"
+      ],
+      "acceptance_ids": [
+        "A06",
+        "A16"
+      ],
+      "given": "A native receiver loading request",
+      "when": "The target identifier or native application proof is invalid",
+      "then": "Reject before any URL event or model input"
+    },
+    {
+      "case_id": "T38.codex-loader-helper.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/codex-loader.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 5000,
+      "resource_group": "pure",
+      "requirements": [
+        "Q11",
+        "Q12"
+      ],
+      "acceptance_ids": [
+        "A06",
+        "A16"
+      ],
+      "given": "A native receiver loading request",
+      "when": "The target identifier or native application proof is invalid",
+      "then": "Reject before any URL event or model input"
     }
   ],
   "source_extension_base": "c1eb7b1"

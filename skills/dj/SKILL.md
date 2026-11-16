@@ -66,6 +66,7 @@ metadata:
 - kimi_dsh: kimi/dsh 通过既有 Desktop Work/Web 原生接口接入，native_namespace 和实例必须精确区分；Kimi 普通 Chat/TUI 不因品牌相同就算可投递。使用、安装和配置见 [Kimi 与 DSH](references/kimi-dsh.md)。模型额度错误与原生接收分别判断，不新建 CLI 进程替代原会话。
 
 - reference: 查询、免订阅直发及已有实例内创建见[会话控制](references/control.md)，不要求订阅或已登记agent_id。
+- codex_receiver: Codex可配置原进程原对话加载；用session.probe及delivery.get区分接收端、持久受理、原生接收和实际工作，加载受阻由调用方AI决定是否找助手代转，先取消原待投避免双发。详见[会话控制](references/control.md#codex-原对话加载与送达核对)。
 - selectors: tools和instance_ids筛选工具或实例；agent_id仅表示已登记的单个会话。检查覆盖和新鲜度，不把空缓存当不存在。
 - busy_input: Antigravity 的 steer 在原生下一次模型调用前输入，显式 queue 才等空闲；待投积压有界连续投出，不等模型逐条完成。accepted不等于已处理，不重发已接受或结果未知项；具体边界见[消息消费](references/delivery.md)。
 - effects: 查询不启动，发送不创建；create必须通过已有实例接口且显式获准；正式配置不接受argv启动profile，不启动Agent子进程代替原目标。session.send发给Agent，保留独立目标权限；message.send/reply发给IM，身份认证后默认开放。不要让DJ判断任务应该在哪；DJ不提供IM操作界面。

@@ -656,6 +656,7 @@
                           "expired"
                           "no_effective_contributions"))
                       (throw djReturn4Token)))))
+              (put record :receiver_reason (nativeGet observation "receiver_reason" nil))
               (unless (exactObservation session observation
                 (and (= busy-policy "steer") (= (nativeGet capabilities "message_during_run") "supported")))
                 (progn
@@ -1086,7 +1087,8 @@
                   (setq
                     observation
                     (await
-                      (js-call port :probe session session (nativeCallContext context))))
+                      (js-call port :probe session session
+                        (Object/assign (js-object) (nativeCallContext context) (js-object :receiver_intent "delivery")))))
                   (catch unavailable
                     (when (eq unavailable djReturn6Token) (throw unavailable))
                     nil)))

@@ -185,6 +185,8 @@
           :parent_pid (js-object :type "integer" :minimum 1) :parent_birth id :parent_executable_ref id
           :entry_ref id :package_ref id)
           (js-array "pid" "process_birth" "process_helper_ref"))
+        :receiver_loader_ref id
+        :process_helper_ref id
         :snapshot_max_bytes
         (js-object :type "integer" :minimum 1048576 :maximum 67108864)
         :manifest_path
@@ -456,6 +458,10 @@
             :forEach
             (lambda (endpoint)
               (let ((tool (nativeGet endpoint "tool")))
+                (when (and (or (nativeGet endpoint "receiver_loader_ref") (nativeGet endpoint "process_helper_ref"))
+                           (or (not (= tool "codex")) (not (nativeGet endpoint "receiver_loader_ref"))
+                             (not (nativeGet endpoint "process_helper_ref"))))
+                  (throw (new globalThis.TypeError "Receiver loading requires a Codex endpoint and both native helpers")))
                 (when (and (nativeGet endpoint "workspace_scope")
                            (not (js-call (js-array "codex" "antigravity" "opencode") :includes tool)))
                   (throw (new globalThis.TypeError "workspace_scope applies only to Codex, Antigravity or OpenCode endpoints")))
@@ -690,7 +696,7 @@
               :forEach
               (lambda
                 (endpoint)
-                (js-call (js-array "socket_path" "manifest_path" "control_manifest_path" "history_database" "registry_path" "history_log" "credential_ref" "data_root" "cookie_database") :forEach
+                (js-call (js-array "receiver_loader_ref" "process_helper_ref" "socket_path" "manifest_path" "control_manifest_path" "history_database" "registry_path" "history_log" "credential_ref" "data_root" "cookie_database") :forEach
                   (lambda (field)
                     (when (nativeGet endpoint field)
                       (put endpoint field (resolve base (nativeGet endpoint field))))))

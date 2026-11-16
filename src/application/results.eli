@@ -412,6 +412,7 @@
           (strings
             "session_key session_ref tool native_namespace native_session_id instance_id instance_epoch title workspace_ref workspace_label runtime_state created_at updated_at observed_at expires_at created_by coverage"
             (js-object
+              :receiver_reason nullableString
               :surface stringSchema :project_id stringSchema :directory stringSchema
               :model_selection (ref "model_selection")
               :agent_id
@@ -690,6 +691,8 @@
       (strings
         "delivery_id route_id origin delivery_seq state expires_at"
         (js-object
+          :blocked_reason nullableString :receiver_reason nullableString
+          :submitted_at nullableString :accepted_at nullableString
           :operation_id nullableString :principal_id nullableString
           :agent_id
           nullableString

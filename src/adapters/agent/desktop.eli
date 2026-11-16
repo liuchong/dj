@@ -1,8 +1,9 @@
 (module dj.adapters.agent.desktop
-  (import "../../core/native.eli" nativeGet nativeTypeOf nativeBitAnd)
+  (import "../../core/native.eli" nativeGet nativeTypeOf nativeBitAnd nativeSetTimeout)
   (import "../../core/types.eli" utf8Bytes sliceUtf8 hashValue)
   (import "../../core/limits.eli" limits)
   (import "../../delivery/envelope.eli" renderEnvelope)
+  (import "./codex-loader.eli" requestCodexLoad)
   (import "./cursor-control.eli" cursorCreationId)
   (import "./cursor-native.eli" cursorNativeRequest)
   (import "./desktop-transport.eli" desktopError desktopDeadline cursorRequest openCodexChannel)
@@ -216,7 +217,7 @@
                  :native_session_id id :instance_id (nativeGet endpoint "instance_id") :instance_epoch epoch
                  :workspace_ref (funcall workspaceFor endpoint cwd)
                  :title (nativeGet (sliceUtf8 (or title "") 0 (nativeGet limits "title_bytes")) "text" "")
-                 :runtime_state state :live_receiver (not (= state "offline"))
+                 :runtime_state state :live_receiver (not (= state "offline")) :receiver_reason nil
                  :visibility (if (nativeGet endpoint "native_api") (js-array "live") (js-array "history" "live"))
                  :capabilities capabilities :coverage "covered" :evidence_level "native_protocol")))
           (when (and (= tool "codex") (= (nativeTypeOf cwd) "string") (isAbsolute cwd))
@@ -241,7 +242,24 @@
       (setq codexSnapshot (async (endpoint id context work &optional shared)
         (let ((channel (or shared (await (openCodexChannel endpoint context)))))
           (try
-            (let* ((result (await (js-call channel :snapshot id))) (state (nativeGet result "state"))
+            (let* ((result (try (await (js-call channel :snapshot id))
+                      (catch unavailable
+                        (unless (and (not shared) (= (nativeGet context "receiver_intent") "delivery")
+                          (js-call (js-array "desktop_no_owner" "desktop_rejected") :includes (nativeGet unavailable "code"))
+                          (await (savedCodexHeader endpoint id))) (throw unavailable))
+                        (js-call channel :close)
+                        (await (requestCodexLoad endpoint id context))
+                        (let ((loaded nil) (step 0))
+                          (while (and (not loaded) (< step 3))
+                            (await (new globalThis.Promise (lambda (done) (nativeSetTimeout done 150))))
+                            (setq channel (await (openCodexChannel endpoint context)))
+                            (try (setq loaded (await (js-call channel :snapshot id)))
+                              (catch waiting
+                                (js-call channel :close)
+                                (unless (js-call (js-array "desktop_no_owner" "desktop_rejected") :includes (nativeGet waiting "code"))
+                                  (throw waiting))))
+                            (setq step (1+ step)))
+                          (unless loaded (throw (desktopError "receiver_load_pending"))) loaded)))) (state (nativeGet result "state"))
                    (cwd (nativeGet state "cwd")))
               (unless (if (funcall instanceScope endpoint)
                         (and (= (nativeTypeOf cwd) "string") (isAbsolute cwd))
@@ -278,7 +296,9 @@
             ;; A saved chat without a loaded owner is still an exact historical
             ;; target. Publish its locator, never invent a live receiver or start it.
             (let ((historical nil))
-              (when (and (= tool "codex") (js-call (js-array "desktop_no_owner" "desktop_timeout" "desktop_rejected" "ENOENT") :includes (nativeGet unavailable "code")))
+              (when (and (= tool "codex") (or
+                (js-call (js-array "desktop_no_owner" "desktop_timeout" "desktop_rejected" "ENOENT") :includes (nativeGet unavailable "code"))
+                (js-call (nativeGet unavailable "code" "") :startsWith "receiver_")))
                 (try
                   (let* ((endpoint (funcall endpointFor binding)) (id (nativeGet target "native_session_id"))
                     (row (await (savedCodexHeader endpoint id))))
@@ -286,7 +306,10 @@
                       (setq historical (funcall sessionRecord endpoint id (nativeGet row "title" "")
                         "offline" (nativeGet endpoint "instance_epoch") nil (nativeGet row "cwd")))
                       (put historical :live_receiver false) (put historical :visibility (js-array "history"))
-                      (put historical :evidence_level "none")))
+                      (put historical :evidence_level "none")
+                      (put historical :receiver_reason
+                        (if (js-call (nativeGet unavailable "code" "") :startsWith "receiver_")
+                          (nativeGet unavailable "code") "receiver_not_loaded"))))
                   (catch unreadable nil)))
               (or historical (js-object :runtime_state
             (if (js-call (js-array "ENOENT" "desktop_no_owner") :includes (nativeGet unavailable "code"))

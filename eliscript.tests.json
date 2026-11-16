@@ -83,7 +83,9 @@
     "tests/unit/swift-hosts.test.eli",
     "tests/integration/antigravity-input.test.eli",
     "tests/integration/groups.test.eli",
-    "tests/unit/groups.test.eli"
+    "tests/unit/groups.test.eli",
+    "tests/integration/codex-loader.test.eli",
+    "tests/unit/codex-loader.test.eli"
   ],
   "outDir": "dist-tests"
 }

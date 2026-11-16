@@ -77,3 +77,11 @@ delivery_policy 仅 busy/offline/ttl_seconds，默认 steer/hold；busy=queue �
 创建超时先 operation.get 找回 lifecycle，再 lifecycle.get/reconcile；原生结果 unknown 不按标题猜成功或换键再建。普通 Agent 不执行 lifecycle.resolve。已有客户端属于原宿主，不能停止借用的工具或强停原任务。历史生命周期 ready 仅是当时动作结果，不能替代当前 receiver/instance/session probe。
 
 OpenCode 使用当前 `/api/*` 本机服务协议；现有运行中服务由原生 service_file 重新发现。桌面与后台历史分别核实，创建桌面会话需配置原生桌面控制入口；发送不启动新的 CLI/ACP。session.create 可显式提供 model_selection={provider_id,model_id,variant?}，完整模型 ID 可以含斜杠，variant 按该模型原生目录验证。持续发送保持既有模型，忙时输入使用原生 steer；持久接收与实际回复分别验证。
+
+## Codex 原对话加载与送达核对
+
+Codex 原生 send_message_to_thread 会先加载原对话；DJ 的 follower socket 只负责已有接收端。macOS 端点配置 receiver_loader_ref 与 process_helper_ref 后，已受理投递可向同一已验证 App 进程发送原对话链接，等待接收端出现，再从原 socket 发正文。不会启动 App、Agent CLI 或 App Server，不新建对话；客户端可能切到目标对话页。列表、resolve、probe 不自动加载。
+
+调用 session.probe 取得新鲜 live_receiver/runtime_state/receiver_reason；session.get 的缓存必须结合 stale 判断。session.send 返回 ready 只表示持久受理，不表示送达；保存 delivery_id，以 delivery.get 的 state、blocked_reason、receiver_reason、submitted_at、accepted_at 和 receipts 核对。accepted 是原生接收，busy 是当前运行观察，都不是该任务完成证明。
+
+receiver_loader_unconfigured、receiver_load_permission_denied、receiver_load_rejected、receiver_load_pending 或 receiver_load_backoff 表示加载尚未完成。调用方 AI 可以据此决定请准确的原 Codex 助手使用其 send_message_to_thread 代转，保留原任务和回复身份；DJ 不猜助手、不自动转交。原 DJ 投递仍待投时，先 delivery.cancel 取消并读回确认，再走另一发送入口；submitting/unknown 先 reconcile，禁止双路盲重发。已 accepted 的消息不再转发。查询后续原生 userMessage/轮次确认是否开始处理。
