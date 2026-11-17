@@ -1,6 +1,7 @@
 (module dj.tests.support.entries
   (import "../../src/core/native.eli" nativeClearTimeout nativeSetTimeout nativeGet)
   (import "node:fs/promises" mkdir writeFile)
+  (import "../../src/core/limits.eli" limits)
   (import "node:path" resolve)
   (import "node:crypto" randomUUID)
   (defasync writeClientProfile
@@ -81,7 +82,7 @@
           :envelope
           (JSON/parse (js-call stream :trim))))))
   (defasync createMcpClient
-    (p actor &optional entry working-directory)
+    (p actor &optional entry working-directory runtime-root)
     (let*
       ((profile (await (writeClientProfile p actor)))
         (child
@@ -96,7 +97,8 @@
               (Object/assign
                 (js-object)
                 (nativeGet globalThis.process "env")
-                (js-object :DJ_CLIENT_PROFILE profile))
+                (js-object :DJ_CLIENT_PROFILE profile)
+                (if runtime-root (js-object :DJ_RUNTIME_ROOT runtime-root) (js-object)))
               :stdin
               "pipe"
               :stdout
@@ -141,7 +143,7 @@
                             :decode
                             (nativeGet part "value")
                             (js-object :stream t))))
-                      (when (> (js-length buffer) 1048576)
+                      (when (> (js-length buffer) (nativeGet limits "api_response_bytes"))
                         (throw (new globalThis.Error "oversized MCP protocol output")))
                       (while (js-call buffer :includes "\n")
                         (let*

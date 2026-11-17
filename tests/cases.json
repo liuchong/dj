@@ -30024,6 +30024,66 @@
       "given": "Native outbound and receive identity snapshots",
       "when": "Evaluate topic creation, exact receipt namespace, and independent trigger boundaries",
       "then": "Keep exact identity guards and genuine new actions; reject nontransactional reservations"
+    },
+    {
+      "case_id": "T55.mcp-install-refresh.integration",
+      "parent_id": "T55",
+      "file": "tests/integration/interfaces.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "requirements": [
+        "SPEC-0033"
+      ],
+      "acceptance_ids": [
+        "MCP01"
+      ],
+      "given": "A running Core and one stdio MCP proxy launched through a stable installation path",
+      "when": "Switch the installation to a changed catalog and then an unreadable package",
+      "then": "Refresh tools and validators without restarting or replaying a mutation; reject removed tools and unavailable packages"
+    },
+    {
+      "case_id": "T55.mcp-runtime-validation.unit",
+      "parent_id": "T55",
+      "file": "tests/unit/contract.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 5000,
+      "resource_group": "pure",
+      "requirements": [
+        "SPEC-0033"
+      ],
+      "acceptance_ids": [
+        "MCP02"
+      ],
+      "given": "Current MCP runtime and output descriptors",
+      "when": "Validate malformed output or resolve a missing installation",
+      "then": "Retain authoritative output validation and uncertain mutation evidence"
+    },
+    {
+      "case_id": "T55.mcp-runtime-unavailable.unit",
+      "parent_id": "T55",
+      "file": "tests/unit/contract.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 5000,
+      "resource_group": "pure",
+      "requirements": [
+        "SPEC-0033"
+      ],
+      "acceptance_ids": [
+        "MCP02"
+      ],
+      "given": "Current MCP runtime and output descriptors",
+      "when": "Validate malformed output or resolve a missing installation",
+      "then": "Reject missing installations without falling back to a stale bundled runtime"
     }
   ],
   "source_extension_base": "c1eb7b1"

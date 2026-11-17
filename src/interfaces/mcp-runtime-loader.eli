@@ -1,0 +1,18 @@
+(module dj.interfaces.mcp-runtime-loader
+  (import "../core/native.eli" nativeGet nativeImport)
+  (import "node:fs/promises" realpath)
+  (import "node:path" resolve)
+  (import "node:url" pathToFileURL)
+  (import "./mcp-runtime.eli" mcpRuntime)
+  ;; The launcher supplies the stable installation path, not a release path.
+  ;; Each request captures one current implementation; effects are never retried.
+  (defun createRuntimeLoader (&optional supplied-root)
+    (let ((root (or supplied-root (nativeGet (nativeGet globalThis.process "env") "DJ_RUNTIME_ROOT"))))
+      (async ()
+        (if root
+          (let* ((physical (await (realpath root)))
+                 (uri (js-call (pathToFileURL (resolve physical "dist/src/interfaces/mcp-runtime.mjs")) :toString))
+                 (module (await (nativeImport uri))))
+            (nativeGet module "mcpRuntime"))
+          mcpRuntime))))
+  (export createRuntimeLoader))

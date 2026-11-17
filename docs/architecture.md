@@ -8,7 +8,7 @@ DJ公开准确会话信息与确定性操作结果，调用方AI选择目标、�
 
 ## 运行结构
 
-Eliscript 业务源码编译为 ESM，由 Bun 执行，Core 通过独立 Rack 包装配 IM、Agent 适配器和业务操作处理器。CLI 是短命客户端，MCP 是连接同一服务的 stdio 薄代理，GEPO 与 JSON API 共用私有 UDS。客户端退出不删除订阅，也不停止 Core。
+Eliscript 业务源码编译为 ESM，由 Bun 执行，Core 通过独立 Rack 包装配 IM、Agent 适配器和业务操作处理器。CLI 是短命客户端，MCP 是连接同一服务的 stdio 薄代理，GEPO 与 JSON API 共用私有 UDS。客户端退出不删除订阅，也不停止 Core。常驻 MCP 代理按[安装更新](specs/0033-mcp-runtime-refresh.md)跟随稳定安装入口刷新目录和校验器，并通知客户端更新工具列表；业务请求不因升级自动重试。
 
 ```mermaid
 flowchart LR

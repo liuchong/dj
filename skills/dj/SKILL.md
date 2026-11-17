@@ -66,7 +66,7 @@ metadata:
 
 ## 运行时与身份
 
-- status: 先用当前主体的`dj service status --json`或MCP `dj_service_status`核对运行时、能力和目录摘要。源码或Skill存在不证明服务已启动或验收通过。MCP返回incompatible只证明该入口当前不兼容；使用已安装稳定入口`~/.dj/current/bin/dj`及同一普通client profile核对服务，CLI可用就继续经CLI完成，不把一个入口失败当成整个DJ不可用。所有DJ入口均不可用时明确报告范围，并按outcome_first选择其他已授权能力，不自建替代服务或假装成功。
+- status: 先用当前主体的`dj service status --json`或MCP `dj_service_status`核对运行时、能力和目录摘要。源码或Skill存在不证明服务已启动或验收通过。稳定入口启动的MCP代理随安装更新刷新目录并发送tools/list_changed；首次安装此机制前启动的代理需由客户端重新连接一次。显式固定摘要不符仍返回incompatible，不自动重试发送。MCP返回incompatible只证明该入口当前不兼容；使用已安装稳定入口`~/.dj/current/bin/dj`及同一普通client profile核对服务，CLI可用就继续经CLI完成，不把一个入口失败当成整个DJ不可用。所有DJ入口均不可用时明确报告范围，并按outcome_first选择其他已授权能力，不自建替代服务或假装成功。
 - profile: 默认客户端配置为`~/.dj/client.json`。使用部署配置的普通本机AI profile；可共享给获准本机对话，不读取或借用operator或其他受限身份凭据。
 - communication: 身份认证后默认可发现、读取、订阅及收发已配置连接中平台可访问的信息，无需message或resource的逐连接／逐群grants；自己的消息操作和出站台账也可核验。订阅过滤不是读取或回复许可。仍使用真实账号、当前引用和原幂等键，平台权限、停用状态、回复身份及其他Agent控制／管理边界继续生效。
 - identity: 用`agent.whoami`核对真实主体及bound_agent_ids列表；一个主体允许登记多个准确对话，共享配置不证明当前会话身份。核对原生ID和实例，不凭标题猜会话；自行discover并register准确candidate_ref，再用返回的agent_id订阅，不要求操作员逐对话配置。只有历史而无收件口时报告限制，不用新进程替代。

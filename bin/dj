@@ -1,4 +1,6 @@
 #!/bin/sh
 set -eu
+DJ_RUNTIME_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -L)
+export DJ_RUNTIME_ROOT
 DJ_BUNDLE_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
 exec bun "$DJ_BUNDLE_ROOT/dist/src/interfaces/cli.mjs" "$@"

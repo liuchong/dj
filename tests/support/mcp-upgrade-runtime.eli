@@ -1,0 +1,22 @@
+(module dj.tests.support.mcp-upgrade-runtime
+  (import "../../src/core/native.eli" nativeGet)
+  (import "../../src/interfaces/mcp-runtime.eli" toolsFromStatus validateResult)
+  (import "../../src/interfaces/client.eli" callService)
+  (import "../../src/application/operations.eli" operationCatalog)
+  (defconst catalog (new globalThis.Map operationCatalog))
+  (js-call catalog :delete "session.search")
+  (defconst mcpRuntime (js-object :validate validateResult
+    :catalog catalog :digest (js-call "f" :repeat 64)
+    :call (async (profile operation args &optional timeout endpoint options)
+      (let ((result (await (callService profile operation args timeout endpoint options))))
+        (when (and (= operation "service.status") (nativeGet result "ok"))
+          (let ((data (nativeGet result "data")))
+            (put data :operation_catalog_digest (js-call "f" :repeat 64))
+            (put data :visible_operations (js-call (nativeGet data "visible_operations") :filter
+              (lambda (name) (js-call catalog :has name))))))
+        result))
+    :tools (lambda (status)
+      (js-call (toolsFromStatus status) :map (lambda (tool)
+        (when (= (nativeGet tool "name") "dj_service_status")
+          (put tool :description "Current MCP installation")) tool)))))
+  (export mcpRuntime))

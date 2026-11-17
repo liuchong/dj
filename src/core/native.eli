@@ -11,6 +11,7 @@
   (defconst nativeClearInterval (get NativeGlobal :clearInterval))
   (defconst nativeFetch (get NativeGlobal :fetch))
   (defconst nativeEncodeURIComponent (get NativeGlobal :encodeURIComponent))
+  (defun nativeImport (specifier) (js* "import(specifier)"))
   (defun nativeTypeOf (value) (js* "typeof value"))
   (defun nativeNullish (value) (or (eq value nil) (undefined? value)))
   (defun nativeBitAnd (left right) (js* "left & right"))
@@ -24,6 +25,7 @@
     NativeBun
     NativeNumber
     NativeBigInt
+    nativeImport
     nativeTypeOf
     nativeNullish
     nativeBitAnd

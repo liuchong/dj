@@ -733,4 +733,28 @@
                   (expect
                     (nativeGet (validateRequest "session.list" (js-object :scope scope)) "ok"))
                   :toBe
-                  (= edge "at"))))))))))
+                  (= edge "at")))))))))
+  (import "../../src/interfaces/mcp-runtime.eli" toolsFromStatus validateResult toolName)
+  (import "../../src/interfaces/mcp-runtime-loader.eli" createRuntimeLoader)
+  (import "../../src/application/operations.eli" operationCatalog)
+  (withUnitCase "T55.mcp-runtime-validation.unit"
+    (lambda (unused)
+      (let* ((descriptor (js-call operationCatalog :get "session.send"))
+             (known (failure "invalid_argument"))
+             (invalid (validateResult descriptor (js-object :ok t)))
+             (recorded (validateResult descriptor (js-object :ok t :operation_id "known-operation"))))
+        (js-call (expect (eq (validateResult descriptor known) known)) :toBe t)
+        (js-call (expect (nativeGet (nativeGet invalid "error") "code")) :toBe "internal_error")
+        (js-call (expect (nativeGet invalid "effect_state")) :toBe "unknown")
+        (js-call (expect (nativeGet recorded "effect_state")) :toBe "recorded")
+        (js-call (expect (nativeGet (nativeGet (nativeGet recorded "error") "details") "operation_id")) :toBe "known-operation")
+        (js-call (expect (toolName "service.status")) :toBe "dj_service_status")
+        (js-call (expect (lambda () (toolsFromStatus (js-object :visible_operations (js-array "removed.operation"))))) :toThrow))))
+  (withUnitCase "T55.mcp-runtime-unavailable.unit"
+    (async (unused)
+      (let ((failed false))
+        (try
+          (await (funcall (createRuntimeLoader (resolve ".local/missing-mcp-install"))))
+          (catch error (setq failed t)))
+        (js-call (expect failed) :toBe t))))
+)

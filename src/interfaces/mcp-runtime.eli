@@ -1,0 +1,85 @@
+(module dj.interfaces.mcp-runtime
+  (import "../core/native.eli" nativeGet)
+  (import "@modelcontextprotocol/server" ProtocolError ProtocolErrorCode)
+  (import "ajv/dist/2020.js" :default Ajv2020)
+  (import "../core/errors.eli" failure)
+  (import "../application/operations.eli" operationCatalog operationCatalogDigest)
+  (import "./client.eli" callService)
+  (defconst validators (new globalThis.Map))
+  (defconst ajv
+    (new
+      Ajv2020
+      (js-object
+        :strict
+        t
+        :allErrors
+        t
+        :allowUnionTypes
+        t
+        :coerceTypes
+        false
+        :removeAdditional
+        false
+        :useDefaults
+        false)))
+  (defun toolName (operation) (str "dj_" (js-call operation :replaceAll "." "_")))
+  (defun toolsFromStatus
+    (status)
+    (js-call
+      (nativeGet status "visible_operations")
+      :map
+      (lambda
+        (operation)
+        (let ((descriptor (js-call operationCatalog :get operation)))
+          (unless descriptor
+            (throw
+              (new
+                ProtocolError
+                (nativeGet ProtocolErrorCode "InternalError")
+                "DJ operation catalog is incompatible")))
+          (js-object
+            :name
+            (toolName operation)
+            :description
+            (nativeGet descriptor "help")
+            :inputSchema
+            (nativeGet descriptor "input_schema")
+            :outputSchema
+            (nativeGet descriptor "output_schema")
+            :annotations
+            (js-object
+              :readOnlyHint
+              (nativeGet descriptor "read_only")
+              :destructiveHint
+              (nativeGet descriptor "destructive")
+              :idempotentHint
+              (or
+                (nativeGet descriptor "read_only")
+                (= (nativeGet descriptor "idempotency") "required"))
+              :openWorldHint
+              (not (= (nativeGet descriptor "effect_kind") "query"))))))))
+  (defun validateResult
+    (descriptor result)
+    (let ((validate (js-call validators :get (nativeGet descriptor "operation"))))
+      (unless validate
+        (setq validate (js-call ajv :compile (nativeGet descriptor "output_schema")))
+        (js-call validators :set (nativeGet descriptor "operation") validate))
+      (if (funcall validate result)
+        result
+        (failure
+          "internal_error"
+          (js-object
+            :effect_state
+            (cond ((nativeGet result "operation_id") "recorded")
+              ((= (nativeGet descriptor "idempotency") "required") "unknown")
+              (t "none"))
+            :details
+            (if (nativeGet result "operation_id")
+              (js-object :operation_id (nativeGet result "operation_id"))
+              (js-object))
+            :warnings
+            (js-array "invalid_result_inspect_original_operation"))))))
+  (defconst mcpRuntime (js-object
+    :catalog operationCatalog :digest operationCatalogDigest
+    :call callService :tools toolsFromStatus :validate validateResult))
+  (export mcpRuntime toolsFromStatus toolName validateResult))
