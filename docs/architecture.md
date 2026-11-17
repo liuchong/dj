@@ -113,3 +113,7 @@ IM上下文与根引用读取归messaging/context，原生话题标识归messagi
 ## 组订阅分发
 
 组管理归subscriptions/groups，纯选择归routing/group-selection，持久选中与恢复归delivery/group-dispatch，额度观测归registry/availability。厂商只读额度接口及稳定错误码由Agent适配器提供；普通订阅共用既有delivery，不进入组算法。详见[0028](specs/0028-group-subscriptions.md)。
+
+## 交互投递上下文的设计边界
+
+[0031](specs/0031-dispatch-contexts.md)定义后续通知归并及持续身份绑定：收件保留独立线路事实，订阅只匹配，交互上下文固定身份及显式转移，传输只消费已冻结目标。当前逐消息回复引用不等于该持续绑定机制，具体实现状态以规格中的交付状态为准。
