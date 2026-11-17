@@ -29698,6 +29698,222 @@
       "given": "Loaded native sessions with busy and unknown status",
       "when": "Capture restart snapshot",
       "then": "Bounded IDs and actual status; partial application coverage remains explicit"
+    },
+    {
+      "case_id": "T40.dispatch-contexts.integration",
+      "parent_id": "T40",
+      "file": "tests/integration/dispatch-contexts.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {
+        "boundary": "dispatch-contexts"
+      },
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "sqlite",
+      "requirements": [
+        "0031"
+      ],
+      "acceptance_ids": [
+        "DISPATCH01"
+      ],
+      "given": "Independent native connection views and explicit recipient identities",
+      "when": "Match and deliver through persistent interaction context",
+      "then": "One notification per target and action; immutable identity snapshots, explicit transfer and crash-safe reservation"
+    },
+    {
+      "case_id": "T40.dispatch-reservations.integration",
+      "parent_id": "T40",
+      "file": "tests/integration/dispatch-contexts.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {
+        "boundary": "dispatch-contexts"
+      },
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "sqlite",
+      "requirements": [
+        "0031"
+      ],
+      "acceptance_ids": [
+        "DISPATCH01"
+      ],
+      "given": "Independent native connection views and explicit recipient identities",
+      "when": "Match and deliver through persistent interaction context",
+      "then": "One notification per target and action; immutable identity snapshots, explicit transfer and crash-safe reservation"
+    },
+    {
+      "case_id": "T40.dispatch-definite-unsent.integration",
+      "parent_id": "T40",
+      "file": "tests/integration/dispatch-contexts.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {
+        "boundary": "dispatch-contexts"
+      },
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "sqlite",
+      "requirements": [
+        "0031"
+      ],
+      "acceptance_ids": [
+        "DISPATCH01"
+      ],
+      "given": "Independent native connection views and explicit recipient identities",
+      "when": "Match and deliver through persistent interaction context",
+      "then": "One notification per target and action; immutable identity snapshots, explicit transfer and crash-safe reservation"
+    },
+    {
+      "case_id": "T40.dispatch-many-targets.integration",
+      "parent_id": "T40",
+      "file": "tests/integration/dispatch-contexts.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {
+        "boundary": "dispatch-contexts"
+      },
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "sqlite",
+      "requirements": [
+        "0031"
+      ],
+      "acceptance_ids": [
+        "DISPATCH01"
+      ],
+      "given": "Independent native connection views and explicit recipient identities",
+      "when": "Match and deliver through persistent interaction context",
+      "then": "One notification per target and action; immutable identity snapshots, explicit transfer and crash-safe reservation"
+    },
+    {
+      "case_id": "T40.dispatch-pull-group.integration",
+      "parent_id": "T40",
+      "file": "tests/integration/dispatch-contexts.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {
+        "boundary": "dispatch-contexts"
+      },
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "sqlite",
+      "requirements": [
+        "0031"
+      ],
+      "acceptance_ids": [
+        "DISPATCH01"
+      ],
+      "given": "Independent native connection views and explicit recipient identities",
+      "when": "Match and deliver through persistent interaction context",
+      "then": "One notification per target and action; immutable identity snapshots, explicit transfer and crash-safe reservation"
+    },
+    {
+      "case_id": "T38.dispatch-event-identity.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/dispatch-contexts.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {
+        "boundary": "dispatch-contexts"
+      },
+      "required_profile": null,
+      "timeout_ms": 5000,
+      "resource_group": "pure",
+      "requirements": [
+        "0031"
+      ],
+      "acceptance_ids": [
+        "DISPATCH01"
+      ],
+      "given": "Native identifiers, immutable identities and exact ingress sequence",
+      "when": "Compare events, bind identity or validate explicit transfer request",
+      "then": "Separate namespaces, actions and targets remain distinct; exact 64-bit ordering and identity fences hold"
+    },
+    {
+      "case_id": "T38.dispatch-binding-scope.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/dispatch-contexts.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {
+        "boundary": "dispatch-contexts"
+      },
+      "required_profile": null,
+      "timeout_ms": 5000,
+      "resource_group": "pure",
+      "requirements": [
+        "0031"
+      ],
+      "acceptance_ids": [
+        "DISPATCH01"
+      ],
+      "given": "Native identifiers, immutable identities and exact ingress sequence",
+      "when": "Compare events, bind identity or validate explicit transfer request",
+      "then": "Separate namespaces, actions and targets remain distinct; exact 64-bit ordering and identity fences hold"
+    },
+    {
+      "case_id": "T38.dispatch-exact-sequence.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/dispatch-contexts.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {
+        "boundary": "dispatch-contexts"
+      },
+      "required_profile": null,
+      "timeout_ms": 5000,
+      "resource_group": "pure",
+      "requirements": [
+        "0031"
+      ],
+      "acceptance_ids": [
+        "DISPATCH01"
+      ],
+      "given": "Native identifiers, immutable identities and exact ingress sequence",
+      "when": "Compare events, bind identity or validate explicit transfer request",
+      "then": "Separate namespaces, actions and targets remain distinct; exact 64-bit ordering and identity fences hold"
+    },
+    {
+      "case_id": "T38.dispatch-transfer-contract.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/dispatch-contexts.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {
+        "boundary": "dispatch-contexts"
+      },
+      "required_profile": null,
+      "timeout_ms": 5000,
+      "resource_group": "pure",
+      "requirements": [
+        "0031"
+      ],
+      "acceptance_ids": [
+        "DISPATCH01"
+      ],
+      "given": "Native identifiers, immutable identities and exact ingress sequence",
+      "when": "Compare events, bind identity or validate explicit transfer request",
+      "then": "Separate namespaces, actions and targets remain distinct; exact 64-bit ordering and identity fences hold"
     }
   ],
   "source_extension_base": "c1eb7b1"

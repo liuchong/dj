@@ -6,7 +6,7 @@
   (import "../../src/adapters/im/lark-http.eli" createLarkHttpTransport)
   (import "../../src/service/config.eli" validateStructure)
   (import "../../src/core/rules.eli" validatePredicate evaluatePredicate)
-  (import "../../src/connections/replies.eli" selectReplyRoute)
+  (import "../../src/dispatch/evidence.eli" selectReplyRoute)
   (import "../../src/connections/echo.eli" reactionEchoState echoState)
   (import "../../src/delivery/envelope.eli" renderEnvelope)
   (import "../../src/connections/interactions.eli" resolveMessageInteraction messageInteraction)

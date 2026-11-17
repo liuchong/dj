@@ -1,0 +1,13 @@
+(module dj.connections.network
+  (import "../core/native.eli" nativeGet)
+  (defun sameReplyNetwork (source destination)
+    (and source destination (not (nativeGet source "disabled")) (not (nativeGet destination "disabled"))
+      (= (nativeGet source "platform") (nativeGet destination "platform"))
+      (= (nativeGet source "brand") (nativeGet destination "brand"))
+      (or (not (nativeGet source "tenant_ref")) (not (nativeGet destination "tenant_ref"))
+        (= (nativeGet source "tenant_ref") (nativeGet destination "tenant_ref")))
+      (or (= (nativeGet source "connection_id") (nativeGet destination "connection_id"))
+        (= (nativeGet source "platform") "lark")
+        (and (= (nativeGet source "platform") "slack") (nativeGet source "tenant_ref")
+          (= (nativeGet source "tenant_ref") (nativeGet destination "tenant_ref"))))))
+  (export sameReplyNetwork))

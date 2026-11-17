@@ -39,3 +39,5 @@
 | cli_account_usage | string | true | 1 |
 | recovery_priority | string | true | 1 |
 | recovery_notice | string | true | 1 |
+| dispatch_context_id | string | false | 1 |
+| identity_binding_id | string | false | 1 |

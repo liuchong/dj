@@ -10,7 +10,7 @@
   (import "../policy/authorize.eli" authorize)
   (import "../ingestion/visibility.eli" eventContentAvailable)
   (import "../messaging/recipients.eli" checkRecipients)
-  (import "../connections/replies.eli" checkReplyIdentity)
+  (import "../dispatch/contexts.eli" checkReplyIdentity)
   (defun markRecipientAllowed (context mark)
     (let* ((row (and (not (nativeGet mark "destination"))
       (js-call (js-call (nativeGet (nativeGet context "store") "db") :query

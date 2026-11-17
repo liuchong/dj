@@ -1,5 +1,6 @@
 (module dj.delivery.service
   (import "../core/types.eli" sourceContainer sourceReadAction)
+  (import "../dispatch/notifications.eli" notificationSummary)
   (import "../core/native.eli" nativeGet nativeNullish)
   (import "../core/errors.eli" success failure)
   (import "../core/types.eli" nextRevision addSeconds encodeSeq)
@@ -214,6 +215,7 @@
                     "delivery_policy"
                     "blocked_reason"
                     "receiver_reason"
+                    "notification_key" "coalesced_into" "dispatch_context_id" "identity_binding_id"
                     "submitted_at"
                     "accepted_at"
                     "retryable"
@@ -221,6 +223,7 @@
                     "resolution"
                     "evidence_level")))
               (contributions (js-array)))
+            (let ((summary (notificationSummary context record))) (when summary (put projection :notification summary)))
             (put projection :session_key (nativeGet route "session_key"))
             (put projection :allowed_actions (nativeGet record "allowed_actions" (js-array)))
             (if event

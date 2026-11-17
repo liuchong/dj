@@ -91,7 +91,9 @@
     "tests/integration/native-host-control.test.eli",
     "tests/unit/native-host-control.test.eli",
     "tests/integration/cursor-restart.test.eli",
-    "tests/unit/cursor-restart.test.eli"
+    "tests/unit/cursor-restart.test.eli",
+    "tests/integration/dispatch-contexts.test.eli",
+    "tests/unit/dispatch-contexts.test.eli"
   ],
   "outDir": "dist-tests"
 }

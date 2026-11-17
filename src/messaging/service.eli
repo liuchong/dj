@@ -1,6 +1,6 @@
 (module dj.messaging.service
   (import "./recipients.eli" checkRecipients recipientContent policyOperation)
-  (import "../connections/replies.eli" checkReplyIdentity)
+  (import "../dispatch/contexts.eli" checkReplyIdentity)
   (import "../tasks/commands.eli" taskOutboundAllowed)
   (import "./topics.eli" topicOf trackedTopic)
   (import "../delivery/working.eli" finishWorking queueAcknowledgement)

@@ -9,6 +9,7 @@
   (import "../policy/authorize.eli" authorize)
   (defconst resourceKinds
     (js-array
+      "dispatch_context"
       "recipient_policy"
       "lark_api"
       "message_action"

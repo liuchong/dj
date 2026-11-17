@@ -689,6 +689,13 @@
     (js-object :result "lark_api" :action "message.send" :effect "accept"))
   (addOperation "lark.api.get" "lark_api" (js-array "action_id") (js-object :action_id idSchema)
     (js-object :result "lark_api" :action "operation.inspect"))
+  (addOperation "dispatch.context.get" "dispatch" (js-array)
+    (js-object :context_id idSchema :delivery_id idSchema)
+    (js-object :exclusive (js-array "context_id" "delivery_id") :action "message.read" :result "dispatch_context"))
+  (addOperation "dispatch.context.transfer" "dispatch" (js-array "context_id" "expected_binding_id" "connection_id" "explicit" "reason")
+    (js-object :context_id idSchema :expected_binding_id idSchema :connection_id idSchema
+      :explicit (js-object :type "boolean" :const t) :reason (js-object :type "string" :minLength 1 :maxLength 512))
+    (js-object :effect "accept" :action "message.reply" :result "dispatch_context"))
   (addOperation "message.reply_context" "messaging" (js-array "delivery_id")
     (js-object :delivery_id idSchema) (js-object :result "reply_context"))
   (addOperation "message.acknowledge" "messaging" (js-array "reply_context_id")

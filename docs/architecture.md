@@ -54,7 +54,8 @@ Core 先排空原生在途工作，确认端口停止，再卸载注册、释放
 | ingestion | normalize(raw, connection)、accept(event)；事件去重和源游标 | 模型判断 |
 | subscriptions | preview/commit；固定规范化规则、版本与 cutover_seq | 理解自然语言、修改来源权限 |
 | routing | 用来源/事件索引取候选，执行编译谓词 → MatchDecision | 模型推理、全订阅扫描、执行 shell |
-| delivery | plan、claim、dispatch、observe、reconcile；IM 订阅与直发共享 TargetRoute 队列 | Agent 任务调度与业务完成 |
+| dispatch | 原生事件等价、交互身份快照与显式转移、通知原子占位及来源归并 | 物理连接、订阅规则解释、业务任务判断 |
+| delivery | plan、claim、dispatch、observe、reconcile；消费已冻结目标、执行原生传输并维护回执 | 重新选IM账号、Agent任务调度与业务完成 |
 | messaging | list/get/search/send/reply；回复引用和发送 outbox | 自动回传完整对话 |
 | storage | 原子写入、索引、租约、游标、操作台账、outbox、幂等键 | 网络副作用 |
 | adapters.im | receive、normalize、send、lookup；平台能力与源 ACK | 订阅业务判断 |
@@ -114,6 +115,6 @@ IM上下文与根引用读取归messaging/context，原生话题标识归messagi
 
 组管理归subscriptions/groups，纯选择归routing/group-selection，持久选中与恢复归delivery/group-dispatch，额度观测归registry/availability。厂商只读额度接口及稳定错误码由Agent适配器提供；普通订阅共用既有delivery，不进入组算法。详见[0028](specs/0028-group-subscriptions.md)。
 
-## 交互投递上下文的设计边界
+## 交互投递上下文
 
-[0031](specs/0031-dispatch-contexts.md)定义后续通知归并及持续身份绑定：收件保留独立线路事实，订阅只匹配，交互上下文固定身份及显式转移，传输只消费已冻结目标。当前逐消息回复引用不等于该持续绑定机制，具体实现状态以规格中的交付状态为准。
+[0031](specs/0031-dispatch-contexts.md)定义通知归并及持续身份绑定：收件保留独立线路事实，订阅只匹配，交互上下文固定身份及显式转移，传输只消费已冻结目标。`src/dispatch/events.eli`判断原生事件及关系，`evidence.eli`解析当前目标事实，`contexts.eli`持久固定身份，`notifications.eli`原子管理通知占位，`service.eli`提供工具接口。连接注册、订阅和原生发送不持有这些选择规则。

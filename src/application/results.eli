@@ -147,6 +147,9 @@
     (nativeGet (nativeGet definitions "source_health") "properties")
     :reason_codes
     (arr stringSchema))
+  (put definitions :dispatch_context (obj (strings "context_id anchor native_chat_id binding_id source_time"
+    (js-object :binding (nullable (obj (strings "binding_id connection_id identity basis state cause_key source_time reason"
+      (js-object :identity_revision integerSchema :previous_binding_id nullableString))))))))
   (put
     definitions
     :coverage
@@ -691,6 +694,12 @@
       (strings
         "delivery_id route_id origin delivery_seq state expires_at"
         (js-object
+          :notification_key nullableString
+          :coalesced_into nullableString
+          :dispatch_context_id nullableString
+          :identity_binding_id nullableString
+          :notification (obj (strings "notification_key owner_id" (js-object :has_more_sources boolSchema
+            :sources (arr (obj (strings "event_id connection_id" (js-object :delivery_id nullableString :inbox_id nullableString :subscription_ids (arr stringSchema))))))))
           :blocked_reason nullableString :receiver_reason nullableString
           :submitted_at nullableString :accepted_at nullableString
           :operation_id nullableString :principal_id nullableString
@@ -1047,6 +1056,7 @@
       (js-object :priority (js-object :type "integer") :enabled boolSchema))))))))
   (put definitions :group_dispatch (obj (strings "subscription_id event_id state group_id next_check_at expires_at algorithm"
     (js-object :revision integerSchema :agent_id nullableString :delivery_id nullableString :inbox_id nullableString
+      :coalesced_into_event_id nullableString
       :selection_scope stringSchema
       :excluded (arr (obj (strings "agent_id reason")))
       :attempted (arr (obj (strings "agent_id" (js-object :scope nullableString :next_try_at stringSchema))))

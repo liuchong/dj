@@ -1,4 +1,5 @@
 (module dj.service.projections
+  (import "../dispatch/service.eli" projectContext)
   (import "../core/native.eli" nativeNullish nativeGet)
   (import "../core/errors.eli" success failure)
   (import "../core/limits.eli" limits)
@@ -69,6 +70,7 @@
             (table
               (nativeGet
                 (js-object
+                  :dispatch_context "dispatch_contexts"
                   :recipient_policy "recipient_policies"
                   :lark_api "operations"
                   :message_action "operations"
@@ -106,6 +108,7 @@
           (unless record
             (progn (setq djReturn1Value (failure "forbidden")) (throw djReturn1Token)))
           (cond
+            ((= kind "dispatch_context") (projectContext context record))
             ((= kind "recipient_policy") (if (can context "connection.manage" record) (success record) (failure "forbidden")))
             ((= kind "lark_api") (projectApi context record))
             ((= kind "message_action") (projectAction context record))

@@ -25,6 +25,7 @@
   (import "../lifecycle/service.eli" :as Lifecycle)
   (import "../delivery/service.eli" :as Delivery)
   (import "../messaging/service.eli" :as Messaging)
+  (import "../dispatch/service.eli" :as Dispatch)
   (import "../messaging/context.eli" :as MessageContext)
   (import "../messaging/actions.eli" :as MessageActions)
   (import "../lark/service.eli" :as LarkApi)
@@ -300,7 +301,8 @@
                   (js-array "lark_api" LarkApi)
                   (js-array "resources" Resources)
                   (js-array "message_recovery" MessageRecovery)
-                  (js-array "messaging" Messaging))
+                  (js-array "messaging" Messaging)
+                  (js-array "dispatch" Dispatch))
                 :forEach
                 (lambda
                   (entry)

@@ -9,6 +9,10 @@
       :lark.api.read "用指定连接和identity_revision直连官方GET API；path为/open-apis/相对路径，query按原生文档填写，响应保留http_status/native_ok/response。bytes响应为base64，最多512KiB，分页显式续传原生page_token。"
       :lark.api.call "用指定连接身份调用官方POST/PUT/PATCH/DELETE API；支持JSON body或multipart form（文件含base64/filename/content_type）。必须幂等键，先落台账再调用，unknown不得重发；原生拒绝与权限详情见response。消息写入须使用message.send/reply/edit等受控操作；通用API不允许绕过收件人禁收。其他resource操作优先固定业务台账。"
       :lark.api.get "读取原生API写操作台账；accepted只表示平台受理，unknown表示结果未确定，同一幂等键不会再次执行。"
+      :dispatch.context.get
+      "读取消息投递的持续IM身份绑定；delivery.get.notification列出同一通知的来源副本与归并关系。交互上下文不是AI任务或负责人。"
+      :dispatch.context.transfer
+      "仅在用户明确要求身份转移时调用；传context_id、当前expected_binding_id、目标connection_id、explicit=true及reason。只改变之后的交互，不改旧投递快照、订阅或退订状态。"
       :message.reply_context "原接收者在原有效期内重新取得固定回复引用；重检当前授权和原身份，不改目标、不延长有效期。"
       :task.list "按当前管理员白名单或本人连接范围分页巡查任务；accepted 不代表完成。"
       :task.tree "展示原 IM 消息、准确 AI 会话与登记的子对话；未知关联明确标注。"

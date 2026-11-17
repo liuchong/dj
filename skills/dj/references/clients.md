@@ -94,3 +94,8 @@ The service supports an existing Claude Code native inbox and an existing Antigr
 - restart: 先保存自身任务检查点。读取 instance.get 当前 epoch，调用 instance.restart，参数 instance_id、expected_instance_epoch、allow_interrupt=true、idempotency_key；需独立 instance.restart 权限和已配置 restart_helper_ref。此操作影响整个 App，会正常退出后重新启动，不强杀。
 - snapshot: lifecycle.get 返回 resume_sessions、resume_coverage、restart_scope。当前仅当前窗口已加载会话、最多200条，partial 不代表全部工作。ready 后使用 result_instance_epoch 重新发现准确原会话。
 - resume: 核对原会话状态与历史；仍在运行则不要重复输入，先前忙而现在空闲的由发起重启的 AI 决定如何续接。DJ 不自动恢复业务，不重放 accepted/submitting/unknown 输入。unknown 先 lifecycle.reconcile，只核对现有进程，不重复重启。
+
+## 同一通知的多线路副本
+
+- lookup: delivery.get中的notification.owner_id是原通知，sources保留原生事件与连接、订阅命中。coalesced_into不是新的原生回执；不要重发。
+- identity: 通知中的dispatch_context是固定IM身份，调用方换工具或交接任务仍应保留。dispatch.context.get读取持续绑定；身份转移仅用显式接口或之后的新原生指定，不从到达线路推断。

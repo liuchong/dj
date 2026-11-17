@@ -141,6 +141,11 @@
           (catch error (try (js-call db :run "ROLLBACK") (catch ignored nil)) (throw error))
           (finally (js-call db :run "PRAGMA foreign_keys=ON"))))
       (js-call (js-array
+        "CREATE TABLE IF NOT EXISTS dispatch_contexts(context_id TEXT PRIMARY KEY,payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+        "CREATE TABLE IF NOT EXISTS dispatch_bindings(binding_id TEXT PRIMARY KEY,context_id TEXT NOT NULL REFERENCES dispatch_contexts(context_id),cause_key TEXT NOT NULL,source_time TEXT NOT NULL,ingress_seq TEXT NOT NULL CHECK(length(ingress_seq)=20),payload TEXT NOT NULL CHECK(json_valid(payload)),UNIQUE(context_id,cause_key)) STRICT"
+        "CREATE INDEX IF NOT EXISTS dispatch_bindings_time ON dispatch_bindings(context_id,source_time DESC,ingress_seq DESC,cause_key DESC)"
+        "CREATE TABLE IF NOT EXISTS dispatch_notifications(notification_key TEXT PRIMARY KEY,owner_id TEXT NOT NULL,owner_kind TEXT NOT NULL,payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+        "CREATE INDEX IF NOT EXISTS dispatch_notifications_owner ON dispatch_notifications(owner_kind,owner_id)"
         "CREATE TABLE IF NOT EXISTS subscription_groups(group_id TEXT PRIMARY KEY,owner_principal_id TEXT NOT NULL,state TEXT NOT NULL,revision INTEGER NOT NULL,payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
         "CREATE TABLE IF NOT EXISTS group_dispatches(subscription_id TEXT NOT NULL REFERENCES subscriptions(subscription_id),event_id TEXT NOT NULL REFERENCES events(event_id),state TEXT NOT NULL,next_check_at TEXT NOT NULL,payload TEXT NOT NULL CHECK(json_valid(payload)),PRIMARY KEY(subscription_id,event_id)) STRICT"
         "CREATE INDEX IF NOT EXISTS group_dispatch_due ON group_dispatches(state,next_check_at,subscription_id,event_id)"

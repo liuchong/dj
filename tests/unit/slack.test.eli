@@ -1,7 +1,7 @@
 (module dj.tests.unit.slack
   (import "../../src/core/native.eli" nativeGet)
   (import "../../src/adapters/im/slack-normalize.eli" slackMessageId splitSlackMessageId normalizeSlackMessage)
-  (import "../../src/connections/replies.eli" sameReplyNetwork)
+  (import "../../src/connections/network.eli" sameReplyNetwork)
   (import "../../packages/slack/src/index.eli" createSlackClient apiUrl)
   (import "../support/case.eli" withUnitCase)
   (import "bun:test" expect)

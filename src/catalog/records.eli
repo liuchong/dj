@@ -318,7 +318,7 @@
       (when (nativeGet session "initial_model_selection")
         (put binding :initial_model_selection (nativeGet session "initial_model_selection")))
       (when (nativeGet observation "model_selection")
-        (put binding :model_selection (nativeGet observation "model_selection")))
+        (put binding :model_selection (nativeModelSelection (nativeGet observation "model_selection") (utcNow context))))
       (js-call repository :insert "bindings" binding)
       (put route :binding_id (nativeGet binding "binding_id"))
       (must (js-call repository :replaceProgress "routes" route))

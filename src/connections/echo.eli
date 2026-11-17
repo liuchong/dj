@@ -1,6 +1,6 @@
 (module dj.connections.echo
   (import "../core/native.eli" nativeGet NativeNumber)
-  (import "./replies.eli" sameReplyNetwork)
+  (import "./network.eli" sameReplyNetwork)
   (defun reactionEchoState (context event)
     (let* ((repository (nativeGet context "repository")) (db (nativeGet (nativeGet context "store") "db"))
       (source (js-call repository :get "connections" (nativeGet event "connection_id")))

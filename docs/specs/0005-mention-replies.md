@@ -37,13 +37,13 @@ message.reply_context(delivery_id) 允许原接收者在原持久回复记录仍
 目标：问本人由本人回复，问机器人由对应机器人回复；接收连接不等于被询问身份。
 不修改任何对话规则正文、reply_routes、订阅或收件人退订资料。
 
-- R1：`connections/replies.eli` 在现有映射之外使用连接已登记的原生自身 ID；相同 Lark 原生 message_id、chat_id、source_time 的当前身份记录作为同一消息的证据。保留原生 mention.key；同一键或唯一提及可合并证据，绝不按昵称或不同应用 OpenID 字符串猜身份。显式提及优先于引用/话题；无提及的私聊按接收身份，引用/话题按已确认作者。缺证据返回 unmapped_target，矛盾返回 ambiguous_target，均不给发送引用；多对多输入仍保留。
-- R2：冻结引用及发送提交前共享同一身份核验，迟到的另一连接也不能令既有引用用错身份。已冻结引用只校验、不改道；映射改变或新证据冲突明确拒绝。已有 accepted/unknown 不重发。自动 Working/Get 同样核验，清理已有表情继续允许。增加原生消息索引，使交叉核对按单消息有界读取，最多64份证据，超出拒绝。
+- R1：`dispatch/evidence.eli` 在现有映射之外使用连接已登记的原生自身 ID；相同 Lark 原生 message_id、chat_id、source_time 的当前身份记录作为同一消息的证据。保留原生 mention.key；同一键或唯一提及可合并证据，绝不按昵称或不同应用 OpenID 字符串猜身份。显式提及优先于引用/话题；无提及的私聊按接收身份，引用/话题按已确认作者。缺证据返回 unmapped_target，矛盾返回 ambiguous_target，均不给发送引用；多对多输入仍保留。
+- R2：冻结引用及发送提交前共享同一身份核验，迟到的另一连接也不能令既有引用用错身份。已冻结引用只校验自身身份快照、不改道；账号身份改变或权限失效拒绝，晚到线路副本不改写已经固定的身份。持久绑定及显式转移按[0031](0031-dispatch-contexts.md)。已有 accepted/unknown 不重发。自动 Working/Get 同样核验，清理已有表情继续允许。增加原生消息索引，使交叉核对按单消息有界读取，最多64份证据，超出拒绝。
 - R3：同步 Skill，说明 ready 是机械确定的身份而非让 AI 选择；业务正文要 @ 谁仍由调用方按原事项决定，DJ不猜最初上报者。退订优先级完全不变。
 
 验收：集中验证真实SQLite/Core下双连接到达顺序、跨应用单一/多提及、缺映射、冲突、迟到证据、引用刷新与出站提交切点、私聊及引用/话题优先级；再补关键纯函数保护。原生HTTP和AI端口使用明确替身，不向真实群发测试消息，不重放已撤回业务。
 
-- 当前实现：`reply_route.basis`说明native_mentions/shared_native_message/private_recipient/native_interaction/source_default；unmapped_target与ambiguous_target无可发送引用。reply_identity_unresolved是不发送错误，不允许AI选择另一份重复通知的账号绕过。输入记录及订阅继续正常处理，跨连接证据核对不合并或删除消息。
+- 当前实现：`reply_route.basis`说明native_mentions/shared_native_message/private_recipient/native_interaction/source_default；unmapped_target与ambiguous_target无可发送引用。reply_identity_unresolved是不发送错误，不允许AI选择另一份重复通知的账号绕过。输入记录及订阅继续正常处理，跨连接证据核对不删除来源消息；同一目标的等价线路通知按[0031](0031-dispatch-contexts.md)归并，完整来源保持可查。
 
 ## 跨AI任务交接与外部工具补充
 

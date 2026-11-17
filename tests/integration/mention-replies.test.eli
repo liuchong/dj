@@ -164,20 +164,20 @@
         (await (js-call f :ingest (crossEvent f "lark" "same-bot" (js-array "ou_bot"))))
         (await (js-call f :ingest (crossEvent f "lark-user" "same-bot" (js-array "foreign-bot"))))
         (await (js-call f :tick))
-        (js-call (expect (js-length (inputs f))) :toBe 2)
+        (js-call (expect (js-length (inputs f))) :toBe 1)
         (js-call (inputs f) :forEach (lambda (input)
           (js-call (expect (nativeGet (nativeGet (nativeGet input "envelope") "reply_route") "connection_id")) :toBe "lark")))
         ;; A missing mapping alone never turns an unrecognized @ into a user reply.
         (await (js-call f :ingest (crossEvent f "lark-user" "missing-bot" (js-array "foreign-bot"))))
         (await (js-call f :tick))
-        (setq latest (nativeGet (aref (inputs f) 2) "envelope"))
+        (setq latest (nativeGet (aref (inputs f) 1) "envelope"))
         (js-call (expect (nativeGet (nativeGet latest "reply_route") "status")) :toBe "unmapped_target")
         (js-call (expect (nativeGet latest "reply_context_id")) :toBeNull)
         ;; Real contradictory mappings across two views cannot be delegated to AI.
         (await (js-call f :ingest (crossEvent f "lark" "conflicting" (js-array "ou_bot"))))
         (await (js-call f :ingest (crossEvent f "lark-user" "conflicting" (js-array "ou_user"))))
         (await (js-call f :tick))
-        (let ((i 3)) (while (< i 5)
+        (let ((i 2)) (while (< i 3)
           (setq latest (nativeGet (aref (inputs f) i) "envelope"))
           (js-call (expect (nativeGet (nativeGet latest "reply_route") "status")) :toBe "ambiguous_target")
           (js-call (expect (nativeGet latest "reply_context_id")) :toBeNull)
@@ -186,29 +186,25 @@
         (await (js-call f :ingest (crossEvent f "lark" "multi-bot" (js-array "ou_bot" "ou_bot") (js-array "@_user_1" "@_user_2"))))
         (await (js-call f :ingest (crossEvent f "lark-user" "multi-bot" (js-array "foreign-bot-b" "foreign-bot-a") (js-array "@_user_2" "@_user_1"))))
         (await (js-call f :tick))
-        (let ((i 5)) (while (< i 7)
+        (let ((i 3)) (while (< i 4)
           (setq latest (nativeGet (aref (inputs f) i) "envelope"))
           (js-call (expect (nativeGet (nativeGet latest "reply_route") "connection_id")) :toBe "lark")
           (setq i (1+ i))))
-        ;; A new native view after freezing must block both the old handle and a
-        ;; queued outbound, not change that handle's account or submit twice.
+        ;; Late transport evidence cannot rewrite the committed identity snapshot.
         (await (js-call f :ingest (crossEvent f "lark" "late-conflict" (js-array "ou_bot"))))
         (await (js-call f :tick))
-        (setq latest (nativeGet (aref (inputs f) 7) "envelope"))
+        (setq latest (nativeGet (aref (inputs f) 4) "envelope"))
         (let* ((ref (nativeGet latest "reply_context_id"))
-          (accepted (await (callOk f "A" "message.reply" (js-object :reply_context_id ref
-            :content (js-object :type "text" :text "must not leave after conflict") :idempotency_key "late-queued")))))
+          (args (js-object :reply_context_id ref :content (js-object :type "text" :text "Keep the original bot identity") :idempotency_key "late-queued"))
+          (accepted (await (callOk f "A" "message.reply" args))))
           (await (js-call f :ingest (crossEvent f "lark-user" "late-conflict" (js-array "ou_user"))))
-          (let ((denied (await (js-call f :call (nativeGet f "A") "message.reply_context"
-            (js-object :delivery_id (nativeGet latest "delivery_id"))))))
-            (js-call (expect (nativeGet (nativeGet denied "error") "code")) :toBe "reply_identity_unresolved"))
-          (let ((denied (await (js-call f :call (nativeGet f "A") "message.reply"
-            (js-object :reply_context_id ref :content (js-object :type "text" :text "no alternate account") :idempotency_key "late-refuse")))))
-            (js-call (expect (nativeGet (nativeGet denied "error") "code")) :toBe "reply_identity_unresolved"))
+          (let ((refreshed (await (callOk f "A" "message.reply_context" (js-object :delivery_id (nativeGet latest "delivery_id"))))))
+            (js-call (expect (nativeGet refreshed "reply_context_id")) :toBeDefined))
+          (await (callOk f "A" "message.reply" args))
           (await (js-call f :tick))
           (js-call (expect (nativeGet (js-call (js-call db :query "SELECT state FROM outbound WHERE outbound_id=?") :get
-            (nativeGet accepted "outbound_id")) "state")) :toBe "blocked")
-          (js-call (expect (js-length (sent f "lark"))) :toBe 0)
+            (nativeGet accepted "outbound_id")) "state")) :toBe "accepted")
+          (js-call (expect (js-length (sent f "lark"))) :toBe 1)
           (js-call (expect (js-length (sent f "lark-user"))) :toBe 0))
         ;; A follow-up under a bot-owned topic root must keep the bot reply route
         ;; even when the user connection also observed prior thread participation.
@@ -242,7 +238,7 @@
                 :content (js-object :type "text" :text "bot thread reply succeeds")
                 :idempotency_key "bot-thread-followup-reply")))))
           (await (js-call f :tick))
-          (js-call (expect (js-length (sent f "lark"))) :toBe 1)
+          (js-call (expect (js-length (sent f "lark"))) :toBe 2)
           (js-call (expect (js-length (sent f "lark-user"))) :toBe 0))
         ;; Private recipient and sender echo share one native message. Exercise
         ;; both arrival orders, reverse bot/user direction, self-chat and human DM.
@@ -291,7 +287,7 @@
               (let ((last-sent (aref (sent f expected) (- (js-length (sent f expected)) 1))))
                 (js-call (expect (nativeGet (nativeGet last-sent "outbound") "native_reply_to")) :toBe id)))
             (setq index (1+ index))))
-        (js-call (expect (js-length (sent f "lark"))) :toBe 3)
+        (js-call (expect (js-length (sent f "lark"))) :toBe 4)
         (js-call (expect (js-length (sent f "lark-user"))) :toBe 3)
         ;; A bot-authored topic root mentioning the user is not two direct
         ;; addressees. A late historical mention must preserve the bot handle.
@@ -311,7 +307,7 @@
               (await (js-call f :tick)) (await (js-call f :tick))
               (js-call (expect (nativeGet (await (callOk f "A" "outbound.get"
                 (js-object :outbound_id (nativeGet out "outbound_id")))) "state")) :toBe "accepted")))
-          (js-call (expect (js-length (sent f "lark"))) :toBe 4)
+          (js-call (expect (js-length (sent f "lark"))) :toBe 5)
           (js-call (expect (js-length (sent f "lark-user"))) :toBe 3))
         (let ((saved (await (callOk f "A" "session.rules.get" (js-object :agent_id (nativeGet agent "agent_id"))))))
           (js-call (expect (nativeGet saved "text")) :toBe "Only explicit tool calls send a reply.")

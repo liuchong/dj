@@ -29,6 +29,7 @@
       "trigger_reasons"
       "interaction"
       "reply_route"
+      "dispatch_context"
       "content"
       "attachments"
       "reply_context_id"

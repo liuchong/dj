@@ -2,7 +2,8 @@
   (import "../messaging/topics.eli" topicOf trackedTopic)
   (import "../resources/service.eli" resourceEnvelope)
   (import "../messaging/context.eli" envelopeContext)
-  (import "../connections/replies.eli" selectReplyRoute)
+  (import "../dispatch/contexts.eli" existingSelection prepareIdentity activateIdentity)
+  (import "../dispatch/notifications.eli" notificationState)
   (import "./working.eli" trackWorking finishWorking)
   (import "../connections/echo.eli" echoState)
   (import "../connections/manager.eli" imPort)
@@ -326,6 +327,9 @@
                     (js-array "reply")
                     :expires_at
                     expiry)))
+              (when (nativeGet selected "identity_binding_id")
+                (put reply :identity_binding_id (nativeGet selected "identity_binding_id"))
+                (put reply :dispatch_context_id (nativeGet selected "dispatch_context_id")))
               (when (nativeGet record "inbox_id")
                 (put reply :inbox_id (nativeGet record "inbox_id"))
                 (put reply :inbox_claim_ref (nativeGet record "inbox_claim_ref")))
@@ -334,7 +338,7 @@
         (catch djReturn3Error
           (if (eq djReturn3Error djReturn3Token) djReturn3Value (throw djReturn3Error))))))
   (defun freezeEnvelope
-    (context record event contributions &optional known-agent read)
+    (context record event contributions &optional known-agent read selection)
     (if (= (nativeGet record "origin") "direct")
       (let
         (
@@ -399,7 +403,7 @@
                 (nativeGet (nativeGet context "config") "principals")
                 (nativeGet agent "recipient_principal_id")))
             (resource-event (= (nativeGet (nativeGet event "conversation") "kind") "resource"))
-            (selected (if resource-event (js-object :status "not_applicable" :mention_ids (js-array)) (selectReplyRoute context event (nativeGet (js-call (nativeGet context "repository") :get "routes" (nativeGet record "route_id" (nativeGet agent "route_id"))) "session_key"))))
+            (selected (if resource-event (js-object :status "not_applicable" :mention_ids (js-array)) (or selection (existingSelection context record event (nativeGet (js-call (nativeGet context "repository") :get "routes" (nativeGet record "route_id" (nativeGet agent "route_id"))) "session_key")))))
             (reply (and (not resource-event) (replyContext context record event recipient read selected)))
             (content
               (js-object
@@ -462,6 +466,10 @@
             :allowed_actions
             (if reply (js-array "reply") (js-array))))
                  (instructions (composeInstructions contributions event body)))
+            (when (nativeGet selected "identity_binding_id")
+              (put envelope :dispatch_context (js-object :context_id (nativeGet selected "dispatch_context_id")
+                :identity_binding_id (nativeGet selected "identity_binding_id") :connection_id (nativeGet selected "connection_id")
+                :identity (nativeGet selected "identity") :basis (nativeGet selected "basis"))))
             (put envelope :topic (trackedTopic context event))
             (put envelope :trigger_reasons (triggerReasons event))
             (when (nativeGet event "pin") (put envelope :pin (nativeGet event "pin")))
@@ -656,6 +664,13 @@
                           "expired"
                           "no_effective_contributions"))
                       (throw djReturn4Token)))))
+              (when event
+                (let ((state (notificationState context record event (nativeGet route "session_key") "push" contributions)))
+                  (when (js-call (js-array "coalesced" "pending") :includes state)
+                    (setq djReturn4Value (holdDelivery context record claim
+                      (if (= state "coalesced") "coalesced" "deferred")
+                      (if (= state "coalesced") "same_native_notification" "notification_pending")))
+                    (throw djReturn4Token))))
               (put record :receiver_reason (nativeGet observation "receiver_reason" nil))
               (unless (exactObservation session observation
                 (and (= busy-policy "steer") (= (nativeGet capabilities "message_during_run") "supported")))
@@ -688,10 +703,11 @@
                       (holdDelivery context record claim "blocked" "unsupported"))
                     (throw djReturn4Token)))
                 (let*
-                  ((binding (attachBinding context route session instance observation))
+                  ((identity (and event (not (= (nativeGet (nativeGet event "conversation") "kind") "resource")) (prepareIdentity context record event (nativeGet route "session_key"))))
+                  (binding (attachBinding context route session instance observation))
                     (envelope (attachConversationRules context
                       (Object/assign (js-object) session (js-object :model_selection (nativeGet observation "model_selection")))
-                      (freezeEnvelope context record event contributions agent read)))
+                      (freezeEnvelope context record event contributions agent read identity)))
                     (frame
                       (encodeAgentInput
                         (nativeGet session "tool")
@@ -733,6 +749,7 @@
                         djReturn4Value
                         (holdDelivery context record claim "blocked" "limit_exceeded"))
                       (throw djReturn4Token)))
+                  (when event (notificationState context record event (nativeGet route "session_key") "push" contributions t))
                   (let
                     (
                       (attempt
@@ -1004,7 +1021,7 @@
                   (not (= old-unknown (nativeGet route "unknown_delivery_id" nil)))
                   (not (= old-owner (nativeGet route "claim_owner" nil))))
                   (must (js-call repository :replaceProgress "routes" route)))
-                (when (= (nativeGet record "state") "accepted") (trackWorking context record))
+                (when (= (nativeGet record "state") "accepted") (activateIdentity context record) (trackWorking context record))
                 (when (and native (js-call (js-array "ended" "settled" "turn_finished" "agent_settled" "rejected") :includes kind))
                   (finishWorking context (nativeGet record "delivery_id") kind))
                 (success (projectDelivery context record))))

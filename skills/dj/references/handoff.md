@@ -32,6 +32,9 @@
 - app_id: "verified_bot_app"
 - native_account_id: "verified_bot_id"
 - identity_revision: 2
+- dispatch_context_id: "interaction_example"
+- identity_binding_id: "identity_example"
+- binding_lookup: "dispatch.context.get(context_id)"
 - event_id: "event_example"
 - delivery_id: "delivery_example"
 - native_chat_id: "chat_example"

@@ -501,7 +501,7 @@
             (put progress :dispatched (1+ (nativeGet progress "dispatched"))))
           (setq steps (1+ steps))
           (setq running (and (nativeGet result "ok")
-            (= (nativeGet (nativeGet result "data") "state") "accepted")))))
+            (js-call (js-array "accepted" "coalesced") :includes (nativeGet (nativeGet result "data") "state"))))))
       result))
   (defun queueWriteJobs
     (context route-first seen)

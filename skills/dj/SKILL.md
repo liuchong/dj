@@ -247,3 +247,10 @@ metadata:
 
 - hosts: 创建和改名优先查询 instance.get 的实际 capabilities；支持的已有宿主包括 OpenCode、Cursor、Antigravity、Codex 原生工具宿主接收端、Claude Desktop 与加载 DJ 扩展的 Pi。Claude inbox 只通知已有 CLI 会话；Pi 的空会话历史由原生首次 assistant 后保存。具体接线见 [clients.md](references/clients.md)。
 - outcome: DJ 未接通或不能满足目标时，可使用自身原生工具、其他接口或已安装的相关 Skill；无需安装特定外部工具。已受理或 unknown 的操作先核对原结果，避免重复创建或发送。
+
+## 通知归并与身份绑定
+
+- dispatch_identity: 同一原生动作经多条线路送往同一AI对话时只通知一次；来源和订阅命中仍保留，delivery.get.notification可查。不同动作、目标会话和独立组分发不合并。不要把通知归并当成独占任务或AI协作决策。
+- binding: dispatch_context提供交互ID、身份绑定ID、确定的connection_id和user/bot身份。@哪个已配置身份优先选哪个；原话题或引用链没有新指定时沿原绑定。原生重连、补收、更换AI或订阅不改变IM身份。跨AI交接须携带此引用和确定身份，不能沿本地默认账号回复。
+- transfer: dispatch.context.get使用delivery_id或context_id；仅用户明确要求转移时，dispatch.context.transfer传context_id、当前expected_binding_id、目标connection_id、explicit=true和reason。该操作不改变已提交消息；后续新消息明确@另一个已配置身份也会形成有记录的新身份选择。不能因忙、离线或发送失败自行换身份重发。
+- unknown: 同一通知已提交但结果不明时，副本保持notification_pending，先核对原投递；明确未发送才允许重新受理。coalesced表示关联原通知，没有第二次原生发送，不等于新的一次accepted。
