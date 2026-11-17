@@ -109,3 +109,11 @@ Codex 原生 send_message_to_thread 会先加载原对话；DJ 的 follower sock
 调用 session.probe 取得新鲜 live_receiver/runtime_state/receiver_reason；session.get 的缓存必须结合 stale 判断。session.send 返回 ready 只表示持久受理，不表示送达；保存 delivery_id，以 delivery.get 的 state、blocked_reason、receiver_reason、submitted_at、accepted_at 和 receipts 核对。accepted 是原生接收，busy 是当前运行观察，都不是该任务完成证明。
 
 receiver_discovery_timeout 表示本次有界探测未确认owner，不等同于会话不存在。receiver_loader_unconfigured、receiver_load_permission_denied、receiver_load_rejected、receiver_load_pending 或 receiver_load_backoff 表示加载尚未完成。调用方 AI 可以据此决定请准确的原 Codex 助手使用其 send_message_to_thread 代转，保留原任务和回复身份；DJ 不猜助手、不自动转交。原 DJ 投递仍待投时，先 delivery.cancel 取消并读回确认，再走另一发送入口；submitting/unknown 先 reconcile，禁止双路盲重发。已 accepted 的消息不再转发。查询后续原生 userMessage/轮次确认是否开始处理。
+
+## 入口失效和未加载目标
+
+- 单一MCP连接返回`incompatible`时，先用稳定安装入口`~/.dj/current/bin/dj status --json --client-profile ~/.dj/client.json`检查当前服务。新CLI正常就使用同一profile继续原操作，不因旧MCP目录状态停工。受理过的操作仍先查原operation/delivery。
+- 发送前核对准确的显示标题、工具、工作区和原生ID。相似名字的两个对话不能混用，历史列表里的长首条消息不是显示标题的可靠替代。
+- 当前为notLoaded只说明接收端尚未加载。配置了原对话加载器的DJ会在session.send受理后的投递阶段加载并重验，再发送正文；无需用户手工点击。仅probe不触发加载。
+- 外部接口的`queued`、CLI退出码0、`codex queue`入队记录，都不是原Desktop已接收的证据。尤其`could not resume`意味着自动恢复失败，不能报告“发到了”。外部队列不由DJ消费，也不能替代已存在Desktop的跨进程通知。
+- 其他入口的发送已经unknown时，先核对准确原目标的历史和原操作；不能为试验加载再发送同一正文。明确未发送或取消原待投后才换入口。

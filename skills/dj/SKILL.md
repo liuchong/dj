@@ -66,7 +66,7 @@ metadata:
 
 ## 运行时与身份
 
-- status: 先用当前主体的`dj service status --json`或MCP `dj_service_status`核对运行时、能力和目录摘要。源码或Skill存在不证明服务已启动或验收通过；服务不可达或目录不兼容时报告限制，不自建服务或假装成功。
+- status: 先用当前主体的`dj service status --json`或MCP `dj_service_status`核对运行时、能力和目录摘要。源码或Skill存在不证明服务已启动或验收通过。MCP返回incompatible只证明该入口当前不兼容；使用已安装稳定入口`~/.dj/current/bin/dj`及同一普通client profile核对服务，CLI可用就继续经CLI完成，不把一个入口失败当成整个DJ不可用。所有DJ入口均不可用时明确报告范围，并按outcome_first选择其他已授权能力，不自建替代服务或假装成功。
 - profile: 默认客户端配置为`~/.dj/client.json`。使用部署配置的普通本机AI profile；可共享给获准本机对话，不读取或借用operator或其他受限身份凭据。
 - communication: 身份认证后默认可发现、读取、订阅及收发已配置连接中平台可访问的信息，无需message或resource的逐连接／逐群grants；自己的消息操作和出站台账也可核验。订阅过滤不是读取或回复许可。仍使用真实账号、当前引用和原幂等键，平台权限、停用状态、回复身份及其他Agent控制／管理边界继续生效。
 - identity: 用`agent.whoami`核对真实主体及bound_agent_ids列表；一个主体允许登记多个准确对话，共享配置不证明当前会话身份。核对原生ID和实例，不凭标题猜会话；自行discover并register准确candidate_ref，再用返回的agent_id订阅，不要求操作员逐对话配置。只有历史而无收件口时报告限制，不用新进程替代。
@@ -79,7 +79,7 @@ metadata:
 - kimi_dsh: kimi/dsh 通过既有 Desktop Work/Web 原生接口接入，native_namespace 和实例必须精确区分；Kimi 普通 Chat/TUI 不因品牌相同就算可投递。使用、安装和配置见 [Kimi 与 DSH](references/kimi-dsh.md)。模型额度错误与原生接收分别判断，不新建 CLI 进程替代原会话。
 
 - reference: 查询、免订阅直发及已有实例内创建见[会话控制](references/control.md)，不要求订阅或已登记agent_id。
-- codex_receiver: Codex可配置原进程原对话加载；用session.probe及delivery.get区分接收端、持久受理、原生接收和实际工作，加载受阻由调用方AI决定是否找助手代转，先取消原待投避免双发。详见[会话控制](references/control.md#codex-原对话加载与送达核对)。
+- codex_receiver: Codex可配置原进程原对话加载；notLoaded或receiver_not_loaded不是必须人工点击，也不等于不可发送。核对准确目标后可经session.send持久受理，让已配置加载器加载原对话；用delivery.get确认accepted、原生消息读回确认接收，不能把ready、队列写入或CLI退出成功当作已送达。加载受阻由调用方AI决定是否另选入口，先取消原待投避免双发。详见[会话控制](references/control.md#codex-原对话加载与送达核对)。
 - selectors: tools和instance_ids筛选工具或实例；agent_id仅表示已登记的单个会话。检查覆盖和新鲜度，不把空缓存当不存在。
 - busy_input: Antigravity 的 steer 在原生下一次模型调用前输入，显式 queue 才等空闲；待投积压有界连续投出，不等模型逐条完成。accepted不等于已处理，不重发已接受或结果未知项；具体边界见[消息消费](references/delivery.md)。
 - effects: 查询不启动，发送不创建；create必须通过已有实例接口且显式获准；正式配置不接受argv启动profile，不启动Agent子进程代替原目标。session.send发给Agent，保留独立目标权限；message.send/reply发给IM，身份认证后默认开放。不要让DJ判断任务应该在哪；DJ不提供IM操作界面。
