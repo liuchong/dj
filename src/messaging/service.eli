@@ -1,4 +1,5 @@
 (module dj.messaging.service
+  (import "./echo.eli" reserveOutboundEcho settleOutboundEcho)
   (import "./recipients.eli" checkRecipients recipientContent policyOperation)
   (import "../dispatch/contexts.eli" checkReplyIdentity)
   (import "../tasks/commands.eli" taskOutboundAllowed)
@@ -1308,16 +1309,7 @@
                             (not (nativeGet parent "native_thread_id")))
                             (put parent :native_thread_id (nativeGet fact "native_thread_id"))
                             (put parent :revision (nextRevision (nativeGet parent "revision")))
-                            (must (js-call repository :replace "outbound" parent))))))
-                    (js-call
-                      (js-call
-                        (nativeGet tx "db")
-                        :query
-                        "INSERT OR IGNORE INTO echo_index(connection_id,native_message_id,outbound_id) VALUES (?,?,?)")
-                      :run
-                      (nativeGet record "connection_id")
-                      (nativeGet fact "native_message_id")
-                      (nativeGet record "outbound_id")))
+                            (must (js-call repository :replace "outbound" parent)))))))
                   ((= (nativeGet fact "definite_not_sent") t)
                     (put record :state "failed")
                     (put part :state "failed")
@@ -1338,31 +1330,8 @@
                   (= (nativeTypeOf (nativeGet fact "native_message_id")) "string"))
                 ;; A later original-attempt observation may close an echo barrier
                 ;; while the historical manual resolution remains visibly manual.
-                (put part :native_message_id (nativeGet fact "native_message_id"))
-                (js-call
-                  (js-call
-                    (nativeGet tx "db")
-                    :query
-                    "INSERT OR IGNORE INTO echo_index(connection_id,native_message_id,outbound_id) VALUES (?,?,?)")
-                  :run
-                  (nativeGet record "connection_id")
-                  (nativeGet fact "native_message_id")
-                  (nativeGet record "outbound_id")))
-              (when
-                (or
-                  (nativeGet part "native_message_id")
-                  (= (nativeGet attempt "definite_not_sent") t))
-                (js-call
-                  repository
-                  :delete
-                  "echo_gates"
-                  (js-object
-                    :connection_id
-                    (nativeGet record "connection_id")
-                    :conversation_key
-                    (nativeGet record "conversation_key")
-                    :outbound_id
-                    (nativeGet record "outbound_id"))))
+                (put part :native_message_id (nativeGet fact "native_message_id")))
+              (settleOutboundEcho context record part attempt)
               (when (and (= (nativeGet record "state") "accepted") (nativeGet record "reply_record_id"))
                 (let ((reply (js-call repository :get "reply_contexts" (nativeGet record "reply_record_id"))))
                   (when reply (finishWorking context (nativeGet reply "delivery_id") "replied"))))
@@ -1444,19 +1413,7 @@
                           (put record :attempt_id (nativeGet attempt "attempt_id"))
                           (put record :revision (nextRevision (nativeGet record "revision")))
                           (put part :state "submitting")
-                          (js-call
-                            repository
-                            :insert
-                            "echo_gates"
-                            (js-object
-                              :connection_id
-                              (nativeGet record "connection_id")
-                              :conversation_key
-                              (nativeGet record "conversation_key")
-                              :outbound_id
-                              outbound-id
-                              :created_at
-                              (utcNow context)))
+                          (reserveOutboundEcho context record (utcNow context))
                           (must (js-call repository :replace "outbound" record))
                           (must (js-call repository :replace "parts" part))
                           (success record)))

@@ -29914,6 +29914,116 @@
       "given": "Native identifiers, immutable identities and exact ingress sequence",
       "when": "Compare events, bind identity or validate explicit transfer request",
       "then": "Separate namespaces, actions and targets remain distinct; exact 64-bit ordering and identity fences hold"
+    },
+    {
+      "case_id": "T40.topic-outbound-echo-race.integration",
+      "parent_id": "T40",
+      "file": "tests/integration/echo.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "requirements": [
+        "SPEC-0032"
+      ],
+      "acceptance_ids": [
+        "ECHO01"
+      ],
+      "given": "A real SQLite Core with independent receive lines and a controllable native send port",
+      "when": "Deliver native self echoes and distinct followups around outbound receipt and restart",
+      "then": "Only exact outgoing native messages are suppressed; real followups and identical manual text continue"
+    },
+    {
+      "case_id": "T40.private-outbound-echo.integration",
+      "parent_id": "T40",
+      "file": "tests/integration/echo.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "requirements": [
+        "SPEC-0032"
+      ],
+      "acceptance_ids": [
+        "ECHO01"
+      ],
+      "given": "A real SQLite Core with independent receive lines and a controllable native send port",
+      "when": "Deliver native self echoes and distinct followups around outbound receipt and restart",
+      "then": "Only exact outgoing native messages are suppressed; real followups and identical manual text continue"
+    },
+    {
+      "case_id": "T38.topic-echo-reservation.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/echo.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 5000,
+      "resource_group": "pure",
+      "requirements": [
+        "SPEC-0032"
+      ],
+      "acceptance_ids": [
+        "ECHO02"
+      ],
+      "given": "Native outbound and receive identity snapshots",
+      "when": "Evaluate topic creation, exact receipt namespace, and independent trigger boundaries",
+      "then": "Keep exact identity guards and genuine new actions; reject nontransactional reservations"
+    },
+    {
+      "case_id": "T38.confirmed-echo-namespace.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/echo.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 5000,
+      "resource_group": "pure",
+      "requirements": [
+        "SPEC-0032"
+      ],
+      "acceptance_ids": [
+        "ECHO02"
+      ],
+      "given": "Native outbound and receive identity snapshots",
+      "when": "Evaluate topic creation, exact receipt namespace, and independent trigger boundaries",
+      "then": "Keep exact identity guards and genuine new actions; reject nontransactional reservations"
+    },
+    {
+      "case_id": "T38.echo-trigger-boundary.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/echo.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 5000,
+      "resource_group": "pure",
+      "requirements": [
+        "SPEC-0032"
+      ],
+      "acceptance_ids": [
+        "ECHO02"
+      ],
+      "given": "Native outbound and receive identity snapshots",
+      "when": "Evaluate topic creation, exact receipt namespace, and independent trigger boundaries",
+      "then": "Keep exact identity guards and genuine new actions; reject nontransactional reservations"
     }
   ],
   "source_extension_base": "c1eb7b1"

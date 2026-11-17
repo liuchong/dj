@@ -99,3 +99,5 @@ The service supports an existing Claude Code native inbox and an existing Antigr
 
 - lookup: delivery.get中的notification.owner_id是原通知，sources保留原生事件与连接、订阅命中。coalesced_into不是新的原生回执；不要重发。
 - identity: 通知中的dispatch_context是固定IM身份，调用方换工具或交接任务仍应保留。dispatch.context.get读取持续绑定；身份转移仅用显式接口或之后的新原生指定，不从到达线路推断。
+
+DJ外发的精确原生消息不会因自己进入私聊、引用或话题而再次通知AI；其历史仍可查询。调用方不用暂停订阅来防循环，真实后续回应继续按规则进入。

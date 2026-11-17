@@ -33,6 +33,8 @@
 
 ## 近期维护
 
+- [外发回声](specs/0032-outbound-echo-suppression.md)：发送前持久预留、原生回执建立精确索引；新建话题回执前按parent/root暂缓，避免thread地址尚未回填时自行触发。20项集成与12项保护检查共616条断言通过；真正后续回应和同文新消息继续触发，历史不删除。
+
 - [交互投递上下文](specs/0031-dispatch-contexts.md)：同一原生动作的多线路副本对同一准确AI目标只通知一次，分别保留来源；私聊、话题和引用链持久绑定IM身份，明确@新身份或显式API请求才转移，旧引用与unknown继续使用原快照。push/pull、组分发、不确定占位与明确未发送恢复已接通；38项定向集成及保护性检查通过，不代表已完成真实IM全矩阵。
 
 - Antigravity忙时输入改用原生NEXT_INVOCATION；待投积压按有界批次连续受理，accepted/unknown不重发。显式queue继续保留，详情见[消息消费](specs/0010-message-consumption.md)。

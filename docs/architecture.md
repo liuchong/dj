@@ -118,3 +118,5 @@ IM上下文与根引用读取归messaging/context，原生话题标识归messagi
 ## 交互投递上下文
 
 [0031](specs/0031-dispatch-contexts.md)定义通知归并及持续身份绑定：收件保留独立线路事实，订阅只匹配，交互上下文固定身份及显式转移，传输只消费已冻结目标。`src/dispatch/events.eli`判断原生事件及关系，`evidence.eli`解析当前目标事实，`contexts.eli`持久固定身份，`notifications.eli`原子管理通知占位，`service.eli`提供工具接口。连接注册、订阅和原生发送不持有这些选择规则。
+
+外发来源证据由`messaging/echo.eli`统一管理；`messaging/service.eli`只调用发送前预留与回执提交，`connections/echo.eli`组合触发判断。匹配、push/pull和重放复用同一入口，详见[0032](specs/0032-outbound-echo-suppression.md)。

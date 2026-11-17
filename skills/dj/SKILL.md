@@ -254,3 +254,8 @@ metadata:
 - binding: dispatch_context提供交互ID、身份绑定ID、确定的connection_id和user/bot身份。@哪个已配置身份优先选哪个；原话题或引用链没有新指定时沿原绑定。原生重连、补收、更换AI或订阅不改变IM身份。跨AI交接须携带此引用和确定身份，不能沿本地默认账号回复。
 - transfer: dispatch.context.get使用delivery_id或context_id；仅用户明确要求转移时，dispatch.context.transfer传context_id、当前expected_binding_id、目标connection_id、explicit=true和reason。该操作不改变已提交消息；后续新消息明确@另一个已配置身份也会形成有记录的新身份选择。不能因忙、离线或发送失败自行换身份重发。
 - unknown: 同一通知已提交但结果不明时，副本保持notification_pending，先核对原投递；明确未发送才允许重新受理。coalesced表示关联原通知，没有第二次原生发送，不等于新的一次accepted。
+
+## DJ外发回声
+
+- outgoing_echo: 通过DJ发到IM的消息被再次收取时，保留历史但自动抑制自身回声通知；不需要为每条回复临时退订。私聊、引用和话题共用发送证据，新话题回执竞态自动暂缓后复核。
+- independent_input: 别人的新回复、表情/置顶及人工自发@仍按既有规则触发。不能把整条话题或所有本人消息当回声屏蔽；其他工具外发没有DJ回执时不保证自动识别，不靠同文去重。

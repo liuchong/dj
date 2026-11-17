@@ -1,6 +1,7 @@
 (module dj.connections.echo
   (import "../core/native.eli" nativeGet NativeNumber)
   (import "./network.eli" sameReplyNetwork)
+  (import "../messaging/echo.eli" outboundEchoState)
   (defun reactionEchoState (context event)
     (let* ((repository (nativeGet context "repository")) (db (nativeGet (nativeGet context "store") "db"))
       (source (js-call repository :get "connections" (nativeGet event "connection_id")))
@@ -31,28 +32,9 @@
                 ((and (not (= state "echo")) (not (> native 0)) (Number/isFinite requested)
                   (>= stamp (- requested 1000)) (<= stamp (+ requested 15000))) (setq state "held"))))))))
       state))
-  (defun sameNativeConversation (context outgoing event &optional same-thread)
-    (let* ((repository (nativeGet context "repository"))
-      (source (js-call repository :get "connections" (nativeGet event "connection_id")))
-      (sent (js-call repository :get "connections" (nativeGet outgoing "connection_id")))
-      (address (nativeGet outgoing "destination")) (incoming (nativeGet event "conversation"))
-      (same-connection (= (nativeGet source "connection_id") (nativeGet sent "connection_id"))))
-      (and source sent address incoming
-        (= (nativeGet address "native_chat_id") (nativeGet incoming "native_chat_id"))
-        (or (not same-thread) (= (nativeGet address "native_thread_id" nil) (nativeGet incoming "native_thread_id" nil)))
-        (= (nativeGet event "identity_revision") (nativeGet source "identity_revision"))
-        (= (nativeGet outgoing "identity_revision") (nativeGet sent "identity_revision"))
-        (or same-connection
-          (sameReplyNetwork source sent)))))
   (defun echoState (context event)
-    (if (= (nativeGet event "event_kind") "message.pinned") "clear"
-    (if (= (nativeGet event "event_kind") "message.reaction.added") (reactionEchoState context event)
-    (if (= (nativeGet (nativeGet event "conversation") "kind") "resource") "clear"
-    (let* ((db (nativeGet (nativeGet context "store") "db"))
-      (chat (nativeGet (nativeGet event "conversation") "native_chat_id"))
-      (sent (js-call (js-call db :query "SELECT o.payload FROM echo_index e JOIN outbound o ON o.outbound_id=e.outbound_id WHERE e.native_message_id=? AND json_extract(o.payload,'$.destination.native_chat_id')=?")
-        :all (nativeGet event "native_message_id") chat)))
-      (if (js-call sent :some (lambda (row) (sameNativeConversation context (JSON/parse (nativeGet row "payload")) event))) "echo"
-        (let ((pending (js-call (js-call db :query "SELECT o.payload FROM echo_gates g JOIN outbound o ON o.outbound_id=g.outbound_id WHERE json_extract(o.payload,'$.destination.native_chat_id')=?") :all chat)))
-          (if (js-call pending :some (lambda (row) (sameNativeConversation context (JSON/parse (nativeGet row "payload")) event t))) "held" "clear"))))))))
-  (export echoState reactionEchoState sameNativeConversation))
+    (cond ((= (nativeGet event "event_kind") "message.pinned") "clear")
+      ((= (nativeGet event "event_kind") "message.reaction.added") (reactionEchoState context event))
+      ((= (nativeGet (nativeGet event "conversation") "kind") "resource") "clear")
+      (t (outboundEchoState context event))))
+  (export echoState reactionEchoState))

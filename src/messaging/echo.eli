@@ -1,0 +1,65 @@
+(module dj.messaging.echo
+  (import "../core/native.eli" nativeGet)
+  (import "../connections/network.eli" sameReplyNetwork)
+  ;; Outbound provenance is shared by all receive lines, never inferred from
+  ;; message text, display names, or whether a sender happens to be a bot.
+  (defun sameEchoIdentity (context outgoing event)
+    (let* ((repository (nativeGet context "repository"))
+      (source (js-call repository :get "connections" (nativeGet event "connection_id")))
+      (sent (js-call repository :get "connections" (nativeGet outgoing "connection_id"))))
+      (and (sameReplyNetwork source sent)
+        (= (nativeGet event "identity_revision") (nativeGet source "identity_revision"))
+        (= (nativeGet outgoing "identity_revision") (nativeGet sent "identity_revision")))))
+  (defun sameNativeConversation (context outgoing event &optional same-thread)
+    (let ((address (nativeGet outgoing "destination")) (incoming (nativeGet event "conversation")))
+      (and address incoming (sameEchoIdentity context outgoing event)
+        (= (nativeGet address "native_chat_id") (nativeGet incoming "native_chat_id"))
+        (or (not same-thread) (= (nativeGet address "native_thread_id" nil) (nativeGet incoming "native_thread_id" nil))))))
+  (defun pendingEchoMatches (context outgoing event)
+    (and (sameNativeConversation context outgoing event)
+      (or (sameNativeConversation context outgoing event t)
+        ;; A native reply can create the topic while its receipt is still in
+        ;; flight. Match its explicit parent/root, not the not-yet-known thread.
+        (and (nativeGet outgoing "native_reply_to")
+          (or (= (nativeGet outgoing "native_reply_to") (nativeGet (nativeGet event "reply_to") "id" nil))
+            (= (nativeGet outgoing "native_reply_to") (nativeGet event "root_message_id" nil)))))))
+  (defun confirmedEchoMatches (context outgoing event)
+    ;; The caller already matched the exact native message ID. Lark IDs identify
+    ;; one message even if private-chat views have distinct address projections.
+    ;; Other platforms keep their native conversation namespace in the check.
+    (let ((connection (js-call (nativeGet context "repository") :get "connections" (nativeGet outgoing "connection_id"))))
+      (and (sameEchoIdentity context outgoing event)
+        (or (= (nativeGet connection "platform") "lark") (sameNativeConversation context outgoing event)))))
+  (defun outboundEchoState (context event)
+    (let* ((db (nativeGet (nativeGet context "store") "db"))
+      (chat (nativeGet (nativeGet event "conversation") "native_chat_id"))
+      (sent (js-call (js-call db :query
+        "SELECT o.payload FROM echo_index e JOIN outbound o ON o.outbound_id=e.outbound_id WHERE e.native_message_id=? LIMIT 65")
+        :all (nativeGet event "native_message_id"))))
+      (cond ((> (js-length sent) 64) "held")
+        ((js-call sent :some (lambda (row) (confirmedEchoMatches context (JSON/parse (nativeGet row "payload")) event))) "echo")
+        (t (let ((pending (js-call (js-call db :query
+          "SELECT o.payload FROM echo_gates g JOIN outbound o ON o.outbound_id=g.outbound_id WHERE json_extract(o.payload,'$.destination.native_chat_id')=? LIMIT 1001") :all chat)))
+          (if (or (> (js-length pending) 1000)
+            (js-call pending :some (lambda (row) (pendingEchoMatches context (JSON/parse (nativeGet row "payload")) event)))) "held" "clear"))))))
+  (defun requireEchoTransaction (context)
+    (unless (js-call (nativeGet context "store") :inTransaction)
+      (throw (new globalThis.TypeError "outbound echo evidence requires transaction"))))
+  (defun reserveOutboundEcho (context record timestamp)
+    (requireEchoTransaction context)
+    (js-call (nativeGet context "repository") :insert "echo_gates"
+      (js-object :connection_id (nativeGet record "connection_id") :conversation_key (nativeGet record "conversation_key")
+        :outbound_id (nativeGet record "outbound_id") :created_at timestamp)))
+  (defun settleOutboundEcho (context record part attempt)
+    (requireEchoTransaction context)
+    (when (nativeGet part "native_message_id")
+      (js-call (js-call (nativeGet (nativeGet context "store") "db") :query
+        "INSERT OR IGNORE INTO echo_index(connection_id,native_message_id,outbound_id) VALUES (?,?,?)")
+        :run (nativeGet record "connection_id") (nativeGet part "native_message_id") (nativeGet record "outbound_id")))
+    ;; Unknown is not definitely-unsent: retain its durable reservation, including
+    ;; after restart. A positive late receipt records provenance before release.
+    (when (or (nativeGet part "native_message_id") (= (nativeGet attempt "definite_not_sent") t))
+      (js-call (nativeGet context "repository") :delete "echo_gates"
+        (js-object :connection_id (nativeGet record "connection_id") :conversation_key (nativeGet record "conversation_key")
+          :outbound_id (nativeGet record "outbound_id")))))
+  (export sameNativeConversation pendingEchoMatches confirmedEchoMatches outboundEchoState reserveOutboundEcho settleOutboundEcho))
