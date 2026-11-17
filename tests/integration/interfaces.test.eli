@@ -1183,4 +1183,21 @@
             (js-call (expect (nativeGet (await (js-call client :call "service.status" (js-object))) "ok")) :toBe t))
           (finally (when client (await (js-call client :close))) (rmSync root (js-object :recursive t :force t))))))
     closeProcess)
+
+  (import "../../tools/package.eli" buildPackage)
+  (withCase "T55.mcp-production-package.integration"
+    setupEntry
+    (async (p)
+      (let* ((root (resolve (nativeGet p "root") "package"))
+             (packaged (await (buildPackage (js-object :output root))))
+             (client (await (createMcpClient p "S" (resolve root "dist/src/interfaces/mcp.mjs") nil root))))
+        (try
+          (let ((status (await (js-call client :call "service.status" (js-object)))))
+            (js-call (expect (nativeGet status "ok")) :toBe t)
+            (js-call (expect (existsSync (resolve root "dist/src/interfaces/mcp-runtime.mjs"))) :toBe t)
+            (let ((api (await (js-call p :request "S" "service.status" (js-object)))))
+              (js-call (expect (nativeGet (nativeGet status "data") "operation_catalog_digest")) :toBe
+                (nativeGet (nativeGet api "data") "operation_catalog_digest"))))
+          (finally (await (js-call client :close)) (rmSync root (js-object :recursive t :force t))))))
+    closeProcess)
 )

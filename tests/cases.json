@@ -30084,6 +30084,26 @@
       "given": "Current MCP runtime and output descriptors",
       "when": "Validate malformed output or resolve a missing installation",
       "then": "Reject missing installations without falling back to a stale bundled runtime"
+    },
+    {
+      "case_id": "T55.mcp-production-package.integration",
+      "parent_id": "T55",
+      "file": "tests/integration/interfaces.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "requirements": [
+        "SPEC-0033"
+      ],
+      "acceptance_ids": [
+        "MCP03"
+      ],
+      "given": "A clean source-bound build and a running isolated Core",
+      "when": "Create the production directory bundle and start MCP with that bundle as its runtime root",
+      "then": "The bundled dynamic runtime entry exists and can execute service.status with the current service catalog"
     }
   ],
   "source_extension_base": "c1eb7b1"
