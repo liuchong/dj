@@ -757,4 +757,21 @@
           (await (funcall (createRuntimeLoader (resolve ".local/missing-mcp-install"))))
           (catch error (setq failed t)))
         (js-call (expect failed) :toBe t))))
+
+  (withUnitCase "T55.subscription-source-contract.unit"
+    (lambda (unused)
+      (let* ((descriptor (js-call operationCatalog :get "subscription.get"))
+             (result (lambda (source) (success (js-object :subscription_id "source-contract"
+               :selector (js-object :sources (js-array source) :event_kinds (js-array "message.created"))))))
+             (connection (js-object :connection_id "lark" :include_threads t))
+             (conversation (js-object :conversation_ref "conversation-ref" :include_threads false)))
+        (js-call (js-array connection conversation) :forEach (lambda (source)
+          (let ((expected (funcall result source)))
+            (js-call (expect (eq (validateResult descriptor expected) expected)) :toBe t))))
+        (js-call (js-array (js-object :connection_id 12) (js-object :conversation_ref 12)
+          (js-object :connection_id "lark" :include_threads "true")
+          (js-object :connection_id "lark" :undeclared "hidden")) :forEach (lambda (source)
+            (let ((checked (validateResult descriptor (funcall result source))))
+              (js-call (expect (nativeGet checked "ok")) :toBe false)
+              (js-call (expect (nativeGet (nativeGet checked "error") "code")) :toBe "internal_error")))))))
 )

@@ -30104,6 +30104,48 @@
       "given": "A clean source-bound build and a running isolated Core",
       "when": "Create the production directory bundle and start MCP with that bundle as its runtime root",
       "then": "The bundled dynamic runtime entry exists and can execute service.status with the current service catalog"
+    },
+    {
+      "case_id": "T55.mcp-subscription-source.integration",
+      "parent_id": "T55",
+      "file": "tests/integration/interfaces.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "requirements": [
+        "SPEC-0027",
+        "SPEC-0033"
+      ],
+      "acceptance_ids": [
+        "MCP04"
+      ],
+      "given": "One authenticated MCP proxy and a real isolated Core with a registered recipient",
+      "when": "Preview, create, get and list subscriptions scoped by connection and by conversation",
+      "then": "Both supported source forms survive strict output validation unchanged, and MCP lists the same subscriptions as API"
+    },
+    {
+      "case_id": "T55.subscription-source-contract.unit",
+      "parent_id": "T55",
+      "file": "tests/unit/contract.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 5000,
+      "resource_group": "pure",
+      "requirements": [
+        "SPEC-0027",
+        "SPEC-0033"
+      ],
+      "acceptance_ids": [
+        "MCP05"
+      ],
+      "given": "The strict subscription output descriptor",
+      "when": "Validate connection and conversation sources, wrong field types and undeclared fields",
+      "then": "Preserve both legal source forms and continue rejecting malformed or undeclared source data"
     }
   ],
   "source_extension_base": "c1eb7b1"

@@ -1200,4 +1200,45 @@
                 (nativeGet (nativeGet api "data") "operation_catalog_digest"))))
           (finally (await (js-call client :close)) (rmSync root (js-object :recursive t :force t))))))
     closeProcess)
+
+  (withCase "T55.mcp-subscription-source.integration"
+    setupEntry
+    (async (p)
+      (let* ((client (await (createMcpClient p "O")))
+             (request (async (operation args)
+               (let ((result (await (js-call client :call operation args))))
+                 (js-call (expect (nativeGet result "ok")) :toBe t)
+                 (nativeGet result "data")))))
+        (try
+          (let* ((discovered (await (js-call p :request "O" "agent.discover" (js-object :tool "opencode" :scope "live"))))
+                 (candidate (js-call (nativeGet (nativeGet discovered "data") "items") :find
+                   (lambda (item) (= (nativeGet item "native_session_id") "s1"))))
+                 (agent (await (js-call p :request "O" "agent.register" (js-object
+                   :candidate_ref (nativeGet candidate "candidate_ref") :display_name "mcp-source"
+                   :binding_mode "existing" :recipient_principal_id "A" :idempotency_key "mcp-source-register"))))
+                 (id (nativeGet (nativeGet agent "data") "agent_id"))
+                 (conversation (await (js-call p :request "O" "conversation.resolve"
+                   (js-object :connection_id "lark" :chat_id "c1" :thread_id nil))))
+                 (sources (js-array
+                   (js-object :connection_id "lark" :include_threads t)
+                   (js-object :conversation_ref (nativeGet (nativeGet conversation "data") "conversation_ref") :include_threads t))))
+            (js-call (expect (nativeGet agent "ok")) :toBe t)
+            (let ((index 0))
+              (while (< index (js-length sources))
+                (let* ((source (aref sources index))
+                       (spec (js-object :agent_id id :selector (js-object :sources (js-array source)
+                         :event_kinds (js-array "message.created"))))
+                       (preview (await (funcall request "subscription.preview" (js-object :spec spec))))
+                       (created (await (funcall request "subscription.create" (js-object
+                         :preview_id (nativeGet preview "preview_id") :idempotency_key (str "mcp-source-create-" index))))))
+                  (js-call (expect (aref (nativeGet (nativeGet created "selector") "sources") 0)) :toEqual source)
+                  (let ((read (await (funcall request "subscription.get" (js-object :subscription_id (nativeGet created "subscription_id"))))))
+                    (js-call (expect (nativeGet read "selector")) :toEqual (nativeGet created "selector"))))
+                (setq index (1+ index))))
+            (let* ((listed (await (funcall request "subscription.list" (js-object :filters (js-object :agent_id id) :limit 100))))
+                   (api (await (js-call p :request "O" "subscription.list" (js-object :filters (js-object :agent_id id) :limit 100)))))
+              (js-call (expect (js-length (nativeGet listed "items"))) :toBe 2)
+              (js-call (expect (nativeGet listed "items")) :toEqual (nativeGet (nativeGet api "data") "items"))))
+          (finally (await (js-call client :close))))))
+    closeProcess)
 )

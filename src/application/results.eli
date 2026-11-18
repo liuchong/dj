@@ -238,7 +238,7 @@
   (put
     definitions
     :source
-    (obj (js-object :conversation_ref stringSchema :include_threads boolSchema)))
+    (obj (js-object :connection_id stringSchema :conversation_ref stringSchema :include_threads boolSchema)))
   (put
     definitions
     :selector
