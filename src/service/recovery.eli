@@ -11,7 +11,7 @@
     nativeCallContext
     safeFields)
   (import "../catalog/records.eli" putSession)
-  (import "../lifecycle/gates.eli" releaseSlot)
+  (import "../lifecycle/gates.eli" releaseSlot supportsNativeEpochRefresh)
   (import "../policy/registry.eli" reconcilePrincipals)
   (import "./ownership.eli" ownerGuard)
   (defconst knownTools
@@ -385,21 +385,21 @@
                       :get
                       "instance_gates"
                       (nativeGet instance "instance_id")))
-                  (desktop (js-call (js-array "codex" "cursor") :includes (nativeGet current "tool")))
+                  (refreshable (supportsNativeEpochRefresh current))
                   (ready
                     (and
                       (= (nativeGet report "state") "ready")
                       (= (nativeGet report "evidence_level") "native_protocol")
                       (= (nativeGet report "native_namespace") (nativeGet current "native_namespace"))
                       (or
-                        desktop
+                        refreshable
                         (nativeGet current "epoch_unverified")
                         (not (nativeGet report "instance_epoch"))
                         (= (nativeGet report "instance_epoch") (nativeGet current "instance_epoch"))))))
                 (when
                   (and
                     ready
-                    (or desktop (nativeGet current "epoch_unverified"))
+                    (or refreshable (nativeGet current "epoch_unverified"))
                     (nativeGet report "instance_epoch"))
                   (put current :instance_epoch (nativeGet report "instance_epoch")))
                 (put current :epoch_unverified false)

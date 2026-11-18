@@ -30146,6 +30146,46 @@
       "given": "The strict subscription output descriptor",
       "when": "Validate connection and conversation sources, wrong field types and undeclared fields",
       "then": "Preserve both legal source forms and continue rejecting malformed or undeclared source data"
+    },
+    {
+      "case_id": "T38.opencode-process-reconnect.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/instance-reconnect.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "requirements": [
+        "SPEC-0018"
+      ],
+      "acceptance_ids": [
+        "RECOVER01"
+      ],
+      "given": "A registered original OpenCode receiver, real SQLite/Core and explicit native process observations",
+      "when": "Restart the client live, close an explicit gate, start DJ offline and reconnect, then restart DJ online",
+      "then": "Resume only the original unsent inputs after independent native verification, preserve explicit stops, bindings and subscriptions"
+    },
+    {
+      "case_id": "T38.native-epoch-refresh-scope.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/message-recovery.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 5000,
+      "resource_group": "pure",
+      "requirements": [
+        "SPEC-0018"
+      ],
+      "acceptance_ids": [
+        "RECOVER02"
+      ],
+      "given": "Native process refresh eligibility",
+      "when": "Classify supported existing adapters, managed processes and unsupported or missing targets",
+      "then": "Only existing Codex, Cursor and OpenCode instances use the observed native process refresh path"
     }
   ],
   "source_extension_base": "c1eb7b1"

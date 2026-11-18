@@ -169,7 +169,7 @@ metadata:
 ## 提交边界
 
 - cutover: 暂停或退订只阻止提交点前的贡献；submitting开始可能已送出，accepted不代表任务完成。
-- continuity: CLI与MCP换入口仍复用同一主体、目标、幂等键及操作记录。
+- continuity: CLI与MCP换入口仍复用同一主体、目标、幂等键及操作记录。Codex、Cursor、OpenCode 原实例重启后由DJ重验原接收端并续投未发送记录，不必重建订阅；显式停止不自动取消，accepted/unknown不盲重发，见[客户端恢复](references/clients.md#原生客户端重启与待投恢复)。
 
 ## 接口调用
 

@@ -2,6 +2,11 @@
   (import "../core/native.eli" nativeGet)
   (import "../core/errors.eli" success failure)
   (import "../core/types.eli" nextRevision)
+  ;; These adapters independently verify the current local process and endpoint.
+  ;; Callers still require exact session proof and preserve explicit closed gates.
+  (defun supportsNativeEpochRefresh (instance)
+    (and (= (nativeGet instance "ownership") "existing")
+      (js-call (js-array "codex" "cursor" "opencode") :includes (nativeGet instance "tool"))))
   (defun readGate
     (tx instance-id)
     (let
@@ -171,4 +176,4 @@
           (success slot))
         (catch djReturn4Error
           (if (eq djReturn4Error djReturn4Token) djReturn4Value (throw djReturn4Error))))))
-  (export assertGate closeGate releaseSlot reserveSlot readGate))
+  (export supportsNativeEpochRefresh assertGate closeGate releaseSlot reserveSlot readGate))
