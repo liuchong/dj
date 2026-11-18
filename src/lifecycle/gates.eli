@@ -6,7 +6,7 @@
   ;; Callers still require exact session proof and preserve explicit closed gates.
   (defun supportsNativeEpochRefresh (instance)
     (and (= (nativeGet instance "ownership") "existing")
-      (js-call (js-array "codex" "cursor" "opencode") :includes (nativeGet instance "tool"))))
+      (js-call (js-array "codex" "cursor" "opencode" "antigravity") :includes (nativeGet instance "tool"))))
   (defun readGate
     (tx instance-id)
     (let

@@ -1,0 +1,26 @@
+(module dj.tests.support.antigravity-receiver
+  (import "../../src/core/native.eli" nativeGet)
+  (import "node:fs" readFileSync appendFileSync)
+  (let* ((args (nativeGet globalThis.process "argv"))
+         (file (aref args 2)) (config (JSON/parse (readFileSync file "utf8")))
+         (server (Bun/serve (js-object :hostname "127.0.0.1" :port 0
+           :tls (js-object :key (readFileSync (nativeGet config "key")) :cert (readFileSync (nativeGet config "cert")))
+           :fetch (async (request)
+             (if (not (= (js-call (nativeGet request "headers") :get "x-codeium-csrf-token") (nativeGet config "token")))
+               (new globalThis.Response "denied" (js-object :status 403))
+               (let* ((url (new globalThis.URL (nativeGet request "url"))) (path (nativeGet url "pathname"))
+                      (data (cond
+                        ((js-call path :endsWith "/GetAllCascadeTrajectories")
+                          (js-object :trajectorySummaries (js-object :original (js-object
+                            :summary "Original" :status "CASCADE_RUN_STATUS_IDLE" :stepCount 1 :lastUserInputStepIndex 0
+                            :trajectoryMetadata (js-object :workspaceUris (js-array (nativeGet config "workspace")))))))
+                        ((js-call path :endsWith "/GetCascadeTrajectorySteps")
+                          (js-object :steps (js-array (js-object :userInput (js-object :userConfig
+                            (js-object :plannerConfig (js-object :planModel "fixture-model")))))))
+                        ((js-call path :endsWith "/SendUserCascadeMessage")
+                          (appendFileSync (nativeGet config "received") (str (JSON/stringify (await (js-call request :json))) "\n"))
+                          (js-object))
+                        (t (js-object)))))
+                 (globalThis.Response/json data))))))))
+    (js-call (nativeGet globalThis.process "stdout") :write
+      (str (JSON/stringify (js-object :pid (nativeGet globalThis.process "pid") :port (nativeGet server "port"))) "\n"))))

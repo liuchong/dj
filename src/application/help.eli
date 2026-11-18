@@ -58,7 +58,7 @@
       :agent.get
       "读取一个已登记目标及其绑定事实。"
       :agent.probe
-      "只读核验已登记目标当前接收口；不发送测试消息或新建进程。"
+      "核验已登记目标当前接收口并刷新本地观测/绑定。Codex/Cursor/OpenCode/Antigravity原客户端重启后，以独立实例证明和原会话身份推进epoch；不需手工rebind或重建订阅，不覆盖显式停止，不重发accepted/unknown。不发送测试消息或新建进程。"
       :agent.rebind
       "为同一 tool/namespace/native_session 更新已核验 Binding；不能改绑到其他会话。"
       :agent.unregister
@@ -154,7 +154,7 @@
       :session.resolve
       "按已知 instance_id 与原生 native_session_id 精确定位；不按标题选择。"
       :session.probe
-      "只读核验精确会话的接收口/epoch/运行状态；不登记、唤醒或创建。"
+      "核验精确会话并刷新本地epoch/绑定；支持的原生客户端重启后，独立验证实例及同一会话身份再恢复。显式停止不解除，旧引用失效后重新resolve；不创建、唤醒、重发或改订阅。"
       :session.search
       "按结构化范围与字面字段查询会话；空 items 有 cursor 时尚未扫描完。"
       :session.message.list

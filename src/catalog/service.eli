@@ -18,12 +18,15 @@
   (import "./records.eli"
     observedSession
     putSession
+    findRoute
+    attachBinding
     projectSession
     messageKey
     readVersion
     isSessionVisible
     isMessageVisible)
   (import "./snapshots.eli" openSnapshot resumeSnapshot advanceSnapshot)
+  (import "../lifecycle/native-refresh.eli" probeNativeRefresh refreshObservedSession)
   (defun scopeCovered
     (covered requested)
     (js-call
@@ -598,6 +601,10 @@
                   (native
                     (await
                       (js-call port :probe record record (nativeCallContext context)))))
+                (let ((report (await (probeNativeRefresh context record native instance port))))
+                  (must (inTransaction context (lambda (tx)
+                    (refreshObservedSession context record native report instance) (success nil)))))
+                (setq instance (js-call repository :get "instances" (nativeGet instance "instance_id")))
                 (when
                   (and
                     (nativeGet native "instance_epoch")
@@ -614,9 +621,12 @@
                     context
                     (lambda
                       (tx)
-                      (projectSession
-                        context
-                        (must (putSession context merged instance)))))))
+                      (let* ((saved (must (putSession context merged instance)))
+                             (route (findRoute context saved)))
+                        (when (and route (= (nativeGet native "live_receiver") t)
+                          (= (nativeGet native "evidence_level") "native_protocol"))
+                          (attachBinding context route saved instance native))
+                        (projectSession context saved))))))
               (catch error
                 (when (eq error djReturn6Token) (throw error))
                 (failure "unavailable")))))

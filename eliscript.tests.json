@@ -94,7 +94,9 @@
     "tests/unit/cursor-restart.test.eli",
     "tests/integration/dispatch-contexts.test.eli",
     "tests/unit/dispatch-contexts.test.eli",
-    "tests/integration/instance-reconnect.test.eli"
+    "tests/integration/instance-reconnect.test.eli",
+    "tests/integration/antigravity-reconnect.test.eli",
+    "tests/support/antigravity-receiver.eli"
   ],
   "outDir": "dist-tests"
 }

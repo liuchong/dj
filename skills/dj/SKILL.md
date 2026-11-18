@@ -66,6 +66,8 @@ metadata:
 
 ## 运行时与身份
 
+- native_restart: Codex/Cursor/OpenCode/Antigravity原客户端重启后可用agent.probe或当前引用的session.probe自动重验原实例、会话和绑定；没有待投消息也可恢复，不需改订阅或手工rebind。Antigravity同UID进程/唯一HTTPS/证书重发现由DJ适配器负责，歧义明确拒绝，凭据仅在内存。显式停止不覆盖，accepted/unknown不重发；详见[客户端恢复](references/clients.md#原生客户端重启与待投恢复)。
+
 - discover: MCP tools/list及CLI/API共享当前操作目录；service.status的visible_operations说明本主体暴露的工具，unavailable_operations列出其他已实现操作、required_action、reason和help。operator_required表示需要操作员身份，普通agent加同名grant也不能调用；grant_required表示目录权限不足。未暴露不等于未实现，可见也不保证准确资源或平台权限。更改能力后重新发现当前目录；安装副本、MCP自描述、help与文档一起更新，不能凭旧上下文断言DJ缺功能。
 
 - status: 先用当前主体的`dj service status --json`或MCP `dj_service_status`核对运行时、能力和目录摘要。源码或Skill存在不证明服务已启动或验收通过。稳定入口启动的MCP代理随安装更新刷新目录并发送tools/list_changed；首次安装此机制前启动的代理需由客户端重新连接一次。显式固定摘要不符仍返回incompatible，不自动重试发送。MCP返回incompatible只证明该入口当前不兼容；使用已安装稳定入口`~/.dj/current/bin/dj`及同一普通client profile核对服务，CLI可用就继续经CLI完成，不把一个入口失败当成整个DJ不可用。所有DJ入口均不可用时明确报告范围，并按outcome_first选择其他已授权能力，不自建替代服务或假装成功。

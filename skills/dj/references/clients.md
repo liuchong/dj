@@ -108,4 +108,9 @@ DJ外发的精确原生消息不会因自己进入私聊、引用或话题而再
 
 ## 原生客户端重启与待投恢复
 
-Codex、Cursor、OpenCode 的原实例恢复后，DJ 重验本机进程、端点及准确原会话，再更新当前进程绑定。因启动时离线而关闭的恢复门禁可自动恢复，显式停止不被覆盖。无需重建订阅或换对话；原待投消息继续投递，已 accepted 或 unknown 的旧尝试不会因重启盲重发。`instance_not_ready` 表示当前实例未就绪，`stale_reference` 表示标识不一致，不能一概解释成客户端正在停止。
+Codex、Cursor、OpenCode、Antigravity 的原实例恢复后，DJ 重验本机进程、端点及准确原会话，再更新当前进程绑定。因启动时离线而关闭的恢复门禁可自动恢复，显式停止不被覆盖。无需重建订阅或换对话；原待投消息继续投递，已 accepted 或 unknown 的旧尝试不会因重启盲重发。`instance_not_ready` 表示当前实例未就绪，`stale_reference` 表示标识不一致，不能一概解释成客户端正在停止。
+
+
+Antigravity重启后由适配器重发现现有同UID语言服务，核验可执行文件、App父进程和唯一loopback HTTPS服务，重取内存CSRF及叶证书指纹；不自动启动客户端，不把新token写入配置、SQLite或日志。多个原生实例/服务无法唯一定位时明确不可用，不猜目标。原已验证配置仍是接线范围，workspace_scope不变。
+
+运行期可直接agent.probe，或以当前session_ref调用session.probe，完成相同原会话的本地epoch及绑定刷新，不要求先有待投消息，也无需手工native configure、重启DJ、rebind或重建订阅。失效引用重新session.resolve；明确关闭的门禁仍关闭。待投路径与两个probe入口复用lifecycle/native-refresh，历史投递快照不改，accepted/unknown不重发。

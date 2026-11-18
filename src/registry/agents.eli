@@ -32,6 +32,7 @@
   (import "../catalog/snapshots.eli" openSnapshot resumeSnapshot advanceSnapshot)
   (import "../sessions/models.eli" subscriberMetadata)
   (import "./availability.eli" inspectAvailability)
+  (import "../lifecycle/native-refresh.eli" probeNativeRefresh refreshObservedSession)
   (defun sanitizePending (value)
     (cond
       ((= (nativeTypeOf value) "undefined") nil)
@@ -377,8 +378,7 @@
                   (not (= (nativeGet probe "ok") false))
                   (= (nativeGet probe "live_receiver") t)
                   (= (nativeGet probe "native_session_id") (nativeGet target "native_session_id"))
-                  (= (nativeGet probe "native_namespace") (nativeGet target "native_namespace"))
-                  (= (nativeGet probe "instance_epoch") (nativeGet instance "instance_epoch")))
+                  (= (nativeGet probe "native_namespace") (nativeGet target "native_namespace")))
                 (progn
                   (setq djReturn3Value (failure "target_offline"))
                   (throw djReturn3Token)))
@@ -386,10 +386,16 @@
                 (progn
                   (setq djReturn3Value (failure "incompatible"))
                   (throw djReturn3Token)))
+              (let ((report (await (probeNativeRefresh context target probe instance port))))
+                (must (inTransaction context (lambda (tx)
+                  (refreshObservedSession context target probe report instance)
+                  (let ((current (js-call (nativeGet context "repository") :get "instances" (nativeGet instance "instance_id"))))
+                    (if (= (nativeGet probe "instance_epoch") (nativeGet current "instance_epoch"))
+                      (success nil) (failure "target_offline")))))))
               (success probe))
             (catch error
               (when (eq error djReturn3Token) (throw error))
-              (failure "unavailable"))))
+              (or (nativeGet error "domain_result") (failure "unavailable")))))
         (catch djReturn3Error
           (if (eq djReturn3Error djReturn3Token) djReturn3Value (throw djReturn3Error))))))
   (defasync registerAgent
@@ -462,7 +468,7 @@
                           (and
                             (=
                               (nativeGet current-instance "instance_epoch")
-                              (nativeGet instance "instance_epoch"))
+                              (nativeGet (nativeGet verified "data") "instance_epoch"))
                             (targetAllowed
                               (configuredPrincipal
                                 (nativeGet (nativeGet context "config") "principals")
@@ -615,7 +621,7 @@
                             (targetAllowed recipient target)
                             (=
                               (nativeGet instance "instance_epoch")
-                              (nativeGet (nativeGet candidate "instance") "instance_epoch")))
+                              (nativeGet (nativeGet verified "data") "instance_epoch")))
                           (progn
                             (setq djReturn7Value (failure "stale_reference"))
                             (throw djReturn7Token)))
@@ -814,6 +820,7 @@
                 (verifyCandidate context (js-object :target session :instance instance)))))
           (unless (nativeGet verified "ok")
             (progn (setq djReturn11Value verified) (throw djReturn11Token)))
+          (setq instance (js-call repository :get "instances" (nativeGet instance "instance_id")))
           (inTransaction
             context
             (lambda

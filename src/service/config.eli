@@ -493,7 +493,7 @@
                                (not (nativeGet endpoint "manifest_path")) (not (nativeGet endpoint "native_api"))
                                (not (nativeGet endpoint "control_manifest_path"))
                                (if (= tool "antigravity")
-                                 (and (nativeGet endpoint "base_url") (nativeGet endpoint "credential_ref")
+                                 (and (nativeGet endpoint "base_url")
                                       (nativeGet (nativeGet endpoint "process_binding") "certificate_sha256")
                                       (not (nativeGet endpoint "socket_path")) (not (nativeGet endpoint "registry_path")))
                                  (and (nativeGet endpoint "socket_path") (nativeGet endpoint "registry_path")

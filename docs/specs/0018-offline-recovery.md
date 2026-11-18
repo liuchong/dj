@@ -46,3 +46,15 @@ DJ 的单键 history 读只选取 message_id 精确一致的唯一记录，不�
 ## 已有原生实例的进程重启
 
 Codex、Cursor 和 OpenCode 在 DJ 启动恢复及运行期间均可重验原实例的新进程标识。必须保留同一已配置实例、原生命名空间和准确会话，并取得独立实例探测与准确会话探测的原生证据；OpenCode 继续核对同 UID 服务监听进程、官方服务登记和 Desktop 接收端。启动恢复只在原生探测成功后开放恢复中的门禁；运行中续接可推进原本开放的门禁，或在实例恢复在线后开放仅因启动恢复而关闭的门禁；必须重验实例与会话，不能覆盖显式停止或其他关闭原因。旧 attempt 和 binding 快照不变，未发送消息沿原记录继续，accepted/unknown 不因进程变化重发。门禁拒绝报告实际错误，不把离线或标识过期都称作正在停止。
+
+
+## 原生客户端重启与运行期主动核验
+
+当前Codex、Cursor、OpenCode、Antigravity的existing实例支持重验epoch。Antigravity的进程/端口/证书及内存凭据重发现归agent/antigravity-endpoint；同UID、App父进程、进程出生时间、唯一loopback HTTPS与叶证书钉扎仍为必需。多个候选拒绝，新凭据不落盘，不自动启动原生客户端。
+
+lifecycle/native-refresh由投递、agent.probe及session.probe共享：独立probeInstance和精确原会话的tool/namespace/native_session/instance/workspace证明一致，在事务内复核旧epoch、所有权和门禁再更新当前观测及新绑定。自动离线恢复门禁可打开，显式停止不可覆盖。原登记、规则、订阅与历史binding/attempt不改；accepted/unknown不重发。目录/写操作仍使用准确epoch，失效引用重新resolve，不默认换目标。
+
+
+本批4项定向集成与2项保护性单测共119条断言通过。新集成使用真实本机HTTPS接收端、PID及监听端口，模拟App可执行文件/出生元数据，连续更换PID、端口、证书和token；不重配、不重启Core即可由agent.probe、session.probe或待投路径恢复。验证显式停止、多进程歧义拒绝、配置不改、凭据文件不产生及旧绑定不改；既有积压/unknown不重发与OpenCode恢复用例通过。
+
+真实已安装App另做只读核验：向新适配器传入失效进程/端口种子且不提供凭据文件，仍自动取得当前本机实例ready及原生epoch；初始化命令仅生成endpoint，不生成credential文件。此证据不是实际重启用户客户端或重新投递业务消息，没有把模拟集成冒充实际App重启验收。

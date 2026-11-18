@@ -17,7 +17,7 @@
 
   (import "../../src/lifecycle/gates.eli" supportsNativeEpochRefresh)
   (withUnitCase "T38.native-epoch-refresh-scope.unit" (lambda (ignored)
-    (js-call (js-array "codex" "cursor" "opencode") :forEach (lambda (tool)
+    (js-call (js-array "codex" "cursor" "opencode" "antigravity") :forEach (lambda (tool)
       (js-call (expect (supportsNativeEpochRefresh (js-object :tool tool :ownership "existing"))) :toBe t)
       (js-call (expect (supportsNativeEpochRefresh (js-object :tool tool :ownership "managed"))) :toBe false)))
     (js-call (js-array "pi" "unknown" "" nil) :forEach (lambda (tool)

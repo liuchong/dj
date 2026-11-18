@@ -1,0 +1,72 @@
+(module dj.lifecycle.native-refresh
+  (import "../core/native.eli" nativeGet nativeTypeOf)
+  (import "../core/types.eli" nextRevision)
+  (import "../application/context.eli" must nativeCallContext)
+  (import "../service/ownership.eli" ownerGuard)
+  (import "../catalog/records.eli" putSession)
+  (import "./gates.eli" assertGate supportsNativeEpochRefresh)
+  (defasync probeNativeRefresh (context session observation instance port)
+    (when (and port (nativeGet port "probeInstance") (supportsNativeEpochRefresh instance)
+      (= (nativeGet observation "live_receiver") t)
+      (= (nativeGet observation "evidence_level") "native_protocol")
+      (or (= (nativeGet instance "state") "offline")
+        (not (= (nativeGet observation "instance_epoch") (nativeGet instance "instance_epoch")))))
+      (try (await (js-call port :probeInstance instance (nativeCallContext context)))
+        (catch unavailable nil))))
+  (defun refreshObservedSession
+    (context session observation verified-instance expected-instance)
+    ;; Instance recovery can verify a new process without refreshing its sessions.
+    ;; Adopt fresh proof of the same target. Only an open gate or the
+    ;; automatic offline-recovery gate can advance; explicit stop stays closed.
+    (let ((identity-fields (js-array "tool" "native_namespace" "native_session_id" "instance_id" "workspace_ref")))
+      (when (and
+        (or verified-instance
+          (not (= (nativeGet session "instance_epoch") (nativeGet observation "instance_epoch"))))
+        (= (nativeGet observation "live_receiver") t)
+        (= (nativeGet observation "evidence_level") "native_protocol")
+        (= (nativeTypeOf (nativeGet observation "instance_epoch")) "string")
+        (> (js-length (nativeGet observation "instance_epoch")) 0)
+        (js-call identity-fields :every
+          (lambda (field) (= (nativeGet session field) (nativeGet observation field)))))
+        (let* ((repository (nativeGet context "repository"))
+               (current (js-call repository :get "sessions" (nativeGet session "session_key")))
+               (instance (and current (js-call repository :get "instances" (nativeGet current "instance_id")))))
+          (when (and current instance
+            (= (nativeGet instance "ownership") "existing")
+            (js-call identity-fields :every
+              (lambda (field) (= (nativeGet current field) (nativeGet observation field)))))
+            ;; A desktop can restart while DJ remains running. Recheck the same
+            ;; endpoint independently before advancing its instance fence.
+            ;; Historical attempts and their immutable binding snapshots stay put.
+            (when (and
+              (supportsNativeEpochRefresh instance)
+              (= (nativeGet (nativeGet context "runtime") "state") "ready")
+              (js-call (js-array "ready" "offline") :includes (nativeGet instance "state"))
+              (= (nativeGet instance "instance_epoch") (nativeGet expected-instance "instance_epoch"))
+              (= (nativeGet current "instance_epoch") (nativeGet session "instance_epoch"))
+              (= (nativeGet verified-instance "state") "ready")
+              (= (nativeGet verified-instance "evidence_level") "native_protocol")
+              (= (nativeGet verified-instance "native_namespace") (nativeGet instance "native_namespace"))
+              (= (nativeGet verified-instance "instance_epoch") (nativeGet observation "instance_epoch")))
+              (let ((gate (js-call repository :get "instance_gates" (nativeGet instance "instance_id"))))
+                (when (and
+                  (not (nativeGet gate "stop_lifecycle_id"))
+                  (or (= (nativeGet gate "state") "open")
+                    (and (= (nativeGet instance "state") "offline")
+                      (= (nativeGet gate "state") "closed") (= (nativeGet gate "reason") "recovery")))
+                  (= (nativeGet gate "instance_epoch") (nativeGet instance "instance_epoch")))
+                  (must (ownerGuard context))
+                  (put instance :instance_epoch (nativeGet observation "instance_epoch"))
+                  (put instance :state "ready")
+                  (put instance :revision (nextRevision (nativeGet instance "revision")))
+                  (put gate :instance_epoch (nativeGet observation "instance_epoch"))
+                  (put gate :state "open") (put gate :reason "ready")
+                  (put gate :revision (nextRevision (nativeGet gate "revision")))
+                  (must (js-call repository :replace "instances" instance))
+                  (must (js-call repository :replace "instance_gates" gate)))))
+            (when (and (= (nativeGet instance "instance_epoch") (nativeGet observation "instance_epoch"))
+              (nativeGet (assertGate (nativeGet context "store") (nativeGet instance "instance_id")
+                (nativeGet observation "instance_epoch") "open") "ok"))
+              (must (putSession context (Object/assign (js-object) current observation
+                (js-object :model_selection (nativeGet observation "model_selection"))) instance))))))))
+  (export probeNativeRefresh refreshObservedSession))
