@@ -145,6 +145,19 @@
         (js-call (expect (nativeGet (validateResult (js-call operationCatalog :get "message.recipient_policy.get")
           (js-object :ok t :data read :request_id "read" :warnings (js-array) :effect_state "none" :evidence_level "service_record")) "ok")) :toBe t)))) closeFixture)
   (withCase "T38.recipient-policy.integration" setup (async (f)
+    (let* ((actor (nativeGet f "A")) (grants (nativeGet actor "grants")))
+      ;; A matching grant cannot turn an agent into an operator. Discovery and
+      ;; execution must agree rather than advertising a permanently forbidden tool.
+      (put actor :grants (js-call grants :concat (js-array (js-object :action "connection.manage" :resources (js-array "*")))))
+      (try
+        (let* ((status (await (callOk f "A" "service.status" (js-object))))
+               (entry (js-call (nativeGet status "unavailable_operations") :find
+                 (lambda (item) (= (nativeGet item "operation") "message.recipient_policy.set")))))
+          (js-call (expect (js-call (nativeGet status "visible_operations") :includes "message.recipient_policy.set")) :toBe false)
+          (js-call (expect (nativeGet entry "reason")) :toBe "operator_required")
+          (js-call (expect (nativeGet entry "required_action")) :toBe "connection.manage")
+          (js-call (expect (code (await (js-call f :call actor "message.recipient_policy.get" (js-object :connection_id "lark"))))) :toBe "forbidden"))
+        (finally (put actor :grants grants))))
     (await (ingest f (event "hello-policy" "hello" "human-1")))
     (let ((ref (await (destination f))) (peer (nativeGet f "lark")))
       (let ((denied (await (js-call f :call (nativeGet f "A") "message.recipient_policy.set"

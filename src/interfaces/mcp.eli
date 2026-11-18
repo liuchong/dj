@@ -4,6 +4,7 @@
   (import "@modelcontextprotocol/server/stdio" serveStdio StdioServerTransport)
   (import "../core/errors.eli" success failure)
   (import "../core/limits.eli" limits)
+  (import "../application/help.eli" modelInstructions)
   (import "./client.eli" loadClientProfile)
   (import "./mcp-runtime.eli" toolsFromStatus toolName validateResult)
   (import "./mcp-runtime-loader.eli" createRuntimeLoader)
@@ -20,7 +21,7 @@
               :capabilities
               (js-object :tools (js-object :listChanged t))
               :instructions
-              "DJ performs deterministic routing. Reuse typed references, choose exact scopes, and inspect original operations after uncertain results. It does not select targets or generate answers.")))
+              modelInstructions)))
         (load-runtime (or supplied-loader (createRuntimeLoader)))
         (current nil)
         (timer nil)

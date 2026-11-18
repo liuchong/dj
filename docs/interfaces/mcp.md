@@ -50,6 +50,10 @@ Claude Channels 是可选的宿主专用推送方式：会话显式启用、插�
 
 工具列表按主体可用权限和产品能力投影，不向普通 Agent 提供 operator-only resolve。每个工具说明做什么、必需 ID 的来源、是否产生外部效果、输出 ID 用于哪项后续操作。服务返回的 conversation_ref/candidate_ref/preview_id/reply_context_id 类型不同，不让模型从字符串前缀猜参数。
 
+`dj_service_status`是当前能力和权限的发现入口：`visible_operations`列出本主体暴露的操作；`unavailable_operations`列出其他已实现操作的`operation`、`required_action`、`reason`和同源`help`。`operator_required`要求操作员身份，普通agent添加同名grant也不能解除；`grant_required`表示当前主体缺少目录所需权限。只返回公开操作元数据，不暴露别人的授权或策略。工具可见仍需按具体资源、引用和原生能力校验；工具未暴露不能被解释为产品未实现。
+
+MCP初始化instructions、工具description及CLI/GEPO帮助共用当前操作语义。部署能力变化后，稳定入口刷新运行时并发出tools/list_changed，宿主应重新发现；tools/list按调用时主体状态重建。配置权限改变后也应主动重取tools/list及service.status，不宣称模型已自动学习。读取Skill或保存session.rules文本不执行配置：触发屏蔽调用message.filter，禁止回复和自动Typing/Get调用message.recipient_policy；后者仅操作员可用。详见[收件人策略](../../skills/dj/references/recipients.md)。
+
 inputSchema 在所有嵌套业务对象上明确 additionalProperties=false；叶子值类型、枚举、非空数组与字节上限有定义，禁止把多个不完整对象组合为“猜得出来”的请求。operation.get 的两种查询模式用互斥 schema 表达；宿主不支持所需 schema 形状时报告 incompatible，不偷偷接受更宽输入。
 
 outputSchema 覆盖成功与领域失败两种 envelope，字段为统一目录规定的 data/error、effect_state、evidence_level、warnings。field_errors 使用 JSON Pointer；next_actions 来自固定代码映射，工具文本只是该结构的简短投影，不产生另一个与 JSON 冲突的解释。

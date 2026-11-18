@@ -2,10 +2,12 @@
   (import "../core/native.eli" nativeGet)
   (import "../core/limits.eli" limits)
   (import "../core/rules.eli" defaultSubscriptionPredicate)
+  (defconst modelInstructions
+    "DJ performs deterministic routing. Discover current tools with tools/list and service.status: visible_operations are exposed to this caller, unavailable_operations explain existing operations and required authority; missing tools do not prove missing product capability. Resource permissions and native capabilities are checked when called. Saving session.rules or instructions stores AI-readable text, not executable filters or outbound blocks. Use message.filter for trigger suppression and message.recipient_policy for outbound denial including automatic reactions; administrative access may be required. Read back structured policy before claiming it is active. Preserve recipient opt-outs and exact reply identity. Reuse typed references and inspect original operations after uncertain results. DJ does not select targets or generate answers.")
   (defconst summaries
     (js-object
-      :message.recipient_policy.get "管理员读取连接的出站黑白名单及收件人退订记录，after用于按recipient_id分页；不影响入站可见度。"
-      :message.recipient_policy.set "管理员替换出站黑白名单：default_action、allow/deny各含recipient_ids/chat_ids。拒绝优先；白名单不能覆盖收件人退订，AI不可自行恢复或换渠道绕过。新策略expected_revision=0。"
+      :message.recipient_policy.get "读取连接的结构化出站黑白名单及分页退订记录；需要operator身份与connection.manage，普通agent即使有该grant也不能调用。deny拦截文字及自动Typing/Get等新增表情，输入照常触发；session.rules文本不是此策略。"
+      :message.recipient_policy.set "替换连接出站策略；需要operator身份与connection.manage。先get保留既有allow/deny，添加准确recipient_ids或chat_ids，set后get读回；新策略expected_revision=0。覆盖文字和自动/手动新增表情，不屏蔽输入。不同应用身份须分别配置对应连接；deny不能被allow解除，不能修改收件人退订。保存对话规则不等于设置本策略。"
       :lark.api.read "用指定连接和identity_revision直连官方GET API；path为/open-apis/相对路径，query按原生文档填写，响应保留http_status/native_ok/response。bytes响应为base64，最多512KiB，分页显式续传原生page_token。"
       :lark.api.call "用指定连接身份调用官方POST/PUT/PATCH/DELETE API；支持JSON body或multipart form（文件含base64/filename/content_type）。必须幂等键，先落台账再调用，unknown不得重发；原生拒绝与权限详情见response。消息写入须使用message.send/reply/edit等受控操作；通用API不允许绕过收件人禁收。其他resource操作优先固定业务台账。"
       :lark.api.get "读取原生API写操作台账；accepted只表示平台受理，unknown表示结果未确定，同一幂等键不会再次执行。"
@@ -28,11 +30,11 @@
       :session.supervision.get "读取准确会话督工状态、检查时间及最近投递。未登记返回inactive；active不代表原生Goal已恢复。"
       :session.supervision.cancel "持久取消督工及尚未提交的督工通知；已越过submitting的原生输入不能撤回，不停止当前任务。"
       :service.status
-      "读取当前服务状态、可用操作、限制和获准来源；不启动工具。"
+      "发现当前服务能力与权限：visible_operations为本主体暴露的操作，unavailable_operations列出其他已实现操作的required_action、reason及help；operator_required不能仅靠增加grant解除，grant_required表示当前目录权限不足。工具可见不保证具体资源或原生平台可用。规则文本不执行过滤；禁触发用message.filter，禁发及自动表情用message.recipient_policy。"
       :message.filter.get
-      "读取服务级消息过滤规则；只限制触发动作，不改变收件或消息可见性。"
+      "读取服务级触发过滤，需要message.filter.inspect。仅限制通知AI，不改变收件、可见性或出站权限；只想禁止回复/表情而保留事件时用message.recipient_policy。"
       :message.filter.update
-      "按当前 revision 一次替换人员/字符/组合过滤规则；仅支持 suppress_trigger，不补发历史。"
+      "需要message.filter.manage，按当前revision替换完整rules/people并保留既有项；仅支持suppress_trigger，不补发历史。禁触发与禁发独立：不回复/不加自动表情但继续通知AI须配置message.recipient_policy，session.rules中的自然语言黑名单不会执行本操作。"
       :operation.get
       "按 operation_id，或原 operation+idempotency_key 查受理台账；not_found 不证明原请求不会提交。"
       :connection.list
@@ -164,7 +166,7 @@
       :session.rules.get
       "读取准确原生对话保存的完整规则原文与 SHA256；JSON 仅是接口封装，读取 text 得到原文，不把整份响应当规则或最终回复。"
       :session.rules.update
-      "完整保存本对话规则原文；建议使用易读 Markdown 标题、短列表或扁平键值与真实换行，不对正文重复 JSON 序列化。DJ 不整理、改写或替你选择回复格式；保存后 get 核对 text 与 SHA256。"
+      "完整保存本对话规则原文；建议易读Markdown与真实换行，get核对text和SHA256。文本只供AI阅读，不会设置订阅、禁触发或禁发，也不能阻止DJ自动Typing。相应机械行为须另调subscription、message.filter或message.recipient_policy接口并读回；不自动解析规则意图。"
       :session.send
       "向精确 Agent 会话输入纯文本；无需 IM/登记/订阅，不自动启动或新建，不自动回 IM。"
       :instance.start
@@ -377,4 +379,4 @@
       ((= group "search") (js-array "literal" "indexed_content"))
       ((= group "refresh") (js-array "read_only_native_catalog" "bounded_native_frame"))
       (t (js-array))))
-  (export operationHelp defaultValues limitReferences capabilityGuards referenceSources))
+  (export modelInstructions operationHelp defaultValues limitReferences capabilityGuards referenceSources))

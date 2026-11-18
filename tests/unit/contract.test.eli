@@ -737,6 +737,7 @@
   (import "../../src/interfaces/mcp-runtime.eli" toolsFromStatus validateResult toolName)
   (import "../../src/interfaces/mcp-runtime-loader.eli" createRuntimeLoader)
   (import "../../src/application/operations.eli" operationCatalog)
+  (import "../../src/application/help.eli" modelInstructions)
   (withUnitCase "T55.mcp-runtime-validation.unit"
     (lambda (unused)
       (let* ((descriptor (js-call operationCatalog :get "session.send"))
@@ -749,7 +750,19 @@
         (js-call (expect (nativeGet recorded "effect_state")) :toBe "recorded")
         (js-call (expect (nativeGet (nativeGet (nativeGet recorded "error") "details") "operation_id")) :toBe "known-operation")
         (js-call (expect (toolName "service.status")) :toBe "dj_service_status")
-        (js-call (expect (lambda () (toolsFromStatus (js-object :visible_operations (js-array "removed.operation"))))) :toThrow))))
+        (js-call (expect (lambda () (toolsFromStatus (js-object :visible_operations (js-array "removed.operation"))))) :toThrow))
+      (let* ((descriptor (js-call operationCatalog :get "service.status"))
+             (entry (js-object :operation "message.recipient_policy.set" :required_action "connection.manage"
+               :reason "operator_required" :help "Public operation metadata"))
+             (result (success (js-object :unavailable_operations (js-array entry))))
+             (tools (toolsFromStatus (js-object :visible_operations (js-array "service.status" "session.rules.update")))))
+        (js-call (expect (eq (validateResult descriptor result) result)) :toBe t)
+        (put entry :reason "unsupported")
+        (js-call (expect (nativeGet (nativeGet (validateResult descriptor result) "error") "code")) :toBe "internal_error")
+        (js-call (expect (nativeGet (aref tools 0) "description")) :toBe (nativeGet descriptor "help"))
+        (js-call (expect (js-call (nativeGet (aref tools 0) "description") :includes "unavailable_operations")) :toBe t)
+        (js-call (expect (js-call (nativeGet (aref tools 1) "description") :includes "不能阻止DJ自动Typing")) :toBe t)
+        (js-call (expect (js-call modelInstructions :includes "not executable filters or outbound blocks")) :toBe t))))
   (withUnitCase "T55.mcp-runtime-unavailable.unit"
     (async (unused)
       (let ((failed false))

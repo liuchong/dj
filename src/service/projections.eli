@@ -26,6 +26,9 @@
   (import "../messaging/service.eli" projectOutbound projectConnection)
   (import "../catalog/refresh.eli" projectRun catalogMetrics)
   (import "../lifecycle/service.eli" projectLifecycle)
+  (defun operatorRequired (descriptor)
+    (or (js-call operatorOnly :includes (nativeGet descriptor "operation"))
+      (js-call operatorOnly :includes (nativeGet descriptor "action"))))
   (defun visibleOperations
     (principal)
     (js-call
@@ -35,7 +38,7 @@
         (descriptor)
         (and
           (or
-            (not (js-call operatorOnly :includes (nativeGet descriptor "operation")))
+            (not (operatorRequired descriptor))
             (= (nativeGet principal "kind") "operator"))
           (or
             (nativeGet (authorize principal (nativeGet descriptor "action")
@@ -59,6 +62,16 @@
                     (and (= (nativeGet descriptor "operation") "agent.availability")
                       (= (nativeGet grant "action") "agent.bind")))
                   (> (js-length (nativeGet grant "resources")) 0)))))))))
+  (defun unavailableOperations (principal visible)
+    (let ((names (new globalThis.Set (js-call visible :map (lambda (descriptor) (nativeGet descriptor "operation"))))))
+      (js-call (js-call (Array/from (js-call operationCatalog :values)) :filter
+        (lambda (descriptor) (not (js-call names :has (nativeGet descriptor "operation"))))) :map
+        (lambda (descriptor)
+          (js-object :operation (nativeGet descriptor "operation")
+            :required_action (nativeGet descriptor "action")
+            :reason (if (and (operatorRequired descriptor) (not (= (nativeGet principal "kind") "operator")))
+              "operator_required" "grant_required")
+            :help (nativeGet descriptor "help"))))))
   (defun resourceProjection
     (context ref)
     (let ((djReturn1Token (js-object)) (djReturn1Value nil))
@@ -243,6 +256,7 @@
         (runtime (nativeGet context "runtime"))
         (principal (nativeGet context "principal"))
         (operator (= (nativeGet principal "kind") "operator"))
+        (visible (visibleOperations principal))
         (db (nativeGet (nativeGet context "store") "db"))
         (sources (js-array))
         (targets (js-array))
@@ -260,9 +274,11 @@
             (nativeGet runtime "state")
             :visible_operations
             (js-call
-              (visibleOperations principal)
+              visible
               :map
               (lambda (descriptor) (nativeGet descriptor "operation")))
+            :unavailable_operations
+            (unavailableOperations principal visible)
             :fixed_routes (projectFixedRoutes context)
             :ai_enabled
             false

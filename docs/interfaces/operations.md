@@ -61,6 +61,8 @@ request_id 可选，用于追踪；所有受理变更要求 idempotency_key。�
 
 各操作的必填、互斥、幂等、并发校验及结果 schema 以运行时 `--help`、MCP 工具描述和 GEPO 用法为准；[早期字段资料](../archive/operation-catalog.md)仅保留施工参考。service.status 的 operation_catalog_digest 表示公共描述符/schema/默认规则的技术身份，不含主体授权/私有实例；薄客户端不匹配则 incompatible，不能悄悄用另一套字段目录。
 
+service.status同时返回visible_operations与unavailable_operations。后者说明已实现但当前主体未暴露的操作、required_action、reason（operator_required或grant_required）及同源help，不返回私有策略。可见不等于具体资源必然获准；不可见不等于产品缺少能力。message.recipient_policy.get/set要求operator身份及connection.manage，普通agent即使有该grant也不可调用。规则文本不执行过滤；禁触发和禁发/禁表情按各自结构化接口配置、读回。
+
 agent.register 的 recipient_principal_id 仅操作员代登记时允许且必填，普通 Agent 不能传入；主体/目标约束见安全文档。rebind 不接受 tool/namespace/session 改变。unregister 关闭目标并暂停其订阅，撤销未提交的订阅贡献，保留已提交记录；不能把新 native_session_id 写进原 agent_id。它不停止原生实例、不删除共享 TargetRoute/unknown，也不取消独立直发。后续登记沿用同一 canonical route，不能通过注销/重登记绕过顺序屏障。
 
 agent.discover 继续为登记核对返回 Candidate；agent.list 只列已登记 AgentTarget。跨全部/若干工具会话列表和检索使用 session.list/search，不要求先 register。session.send 受理返回 Delivery，message.send/reply 返回 IM Outbound；启动/创建返回 LifecycleAction。operation.get.resource_refs 指明对象类型，不让调用者猜 get 操作。所有新操作沿用台账原子受理与原键重放。

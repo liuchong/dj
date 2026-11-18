@@ -1210,6 +1210,30 @@
                  (js-call (expect (nativeGet result "ok")) :toBe t)
                  (nativeGet result "data")))))
         (try
+          (let ((recipient (await (createMcpClient p "A"))))
+            (try
+              (let* ((listed (await (js-call recipient :request "tools/list" (js-object))))
+                     (status (await (js-call recipient :call "service.status" (js-object))))
+                     (api (await (js-call p :request "A" "service.status" (js-object))))
+                     (entry (js-call (nativeGet (nativeGet status "data") "unavailable_operations") :find
+                       (lambda (item) (= (nativeGet item "operation") "message.recipient_policy.set")))))
+                (js-call (expect (nativeGet status "ok")) :toBe t)
+                (js-call (expect (nativeGet (nativeGet status "data") "unavailable_operations")) :toEqual
+                  (nativeGet (nativeGet api "data") "unavailable_operations"))
+                (js-call (expect (nativeGet entry "reason")) :toBe "operator_required")
+                (js-call (expect (js-call (nativeGet entry "help") :includes "自动/手动新增表情")) :toBe t)
+                (js-call (expect (js-call (nativeGet listed "tools") :some
+                  (lambda (tool) (= (nativeGet tool "name") "dj_message_recipient_policy_set")))) :toBe false)
+                (let ((denied (await (js-call recipient :call "message.recipient_policy.get" (js-object :connection_id "lark")))))
+                  (js-call (expect (nativeGet (nativeGet denied "error") "code")) :toBe "forbidden")))
+              (finally (await (js-call recipient :close)))))
+          (let* ((status (await (funcall request "service.status" (js-object))))
+                 (listed (await (js-call client :request "tools/list" (js-object)))))
+            (js-call (expect (js-call (nativeGet status "visible_operations") :includes "message.recipient_policy.set")) :toBe t)
+            (js-call (expect (js-call (nativeGet listed "tools") :some
+              (lambda (tool) (= (nativeGet tool "name") "dj_message_recipient_policy_set")))) :toBe t)
+            (let ((policy (await (funcall request "message.recipient_policy.get" (js-object :connection_id "lark")))))
+              (js-call (expect (nativeGet policy "revision")) :toBe 0)))
           (let* ((discovered (await (js-call p :request "O" "agent.discover" (js-object :tool "opencode" :scope "live"))))
                  (candidate (js-call (nativeGet (nativeGet discovered "data") "items") :find
                    (lambda (item) (= (nativeGet item "native_session_id") "s1"))))

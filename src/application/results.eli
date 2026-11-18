@@ -939,6 +939,9 @@
             :uid integerSchema :dependencies (arr stringSchema) :effects integerSchema :error nullableString))))
           :visible_operations
           (arr stringSchema)
+          :unavailable_operations
+          (arr (obj (strings "operation required_action help" (js-object
+            :reason (js-object :type "string" :enum (js-array "operator_required" "grant_required"))))))
           :ai_enabled
           boolSchema
           :model_requests

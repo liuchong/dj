@@ -30027,6 +30027,8 @@
     },
     {
       "case_id": "T55.mcp-install-refresh.integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
       "parent_id": "T55",
       "file": "tests/integration/interfaces.test.eli",
       "suite": "integration",
@@ -30047,6 +30049,8 @@
     },
     {
       "case_id": "T55.mcp-runtime-validation.unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
       "parent_id": "T55",
       "file": "tests/unit/contract.test.eli",
       "suite": "unit",
@@ -30067,6 +30071,8 @@
     },
     {
       "case_id": "T55.mcp-runtime-unavailable.unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
       "parent_id": "T55",
       "file": "tests/unit/contract.test.eli",
       "suite": "unit",
@@ -30087,6 +30093,8 @@
     },
     {
       "case_id": "T55.mcp-production-package.integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
       "parent_id": "T55",
       "file": "tests/integration/interfaces.test.eli",
       "suite": "integration",
@@ -30107,6 +30115,8 @@
     },
     {
       "case_id": "T55.mcp-subscription-source.integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
       "parent_id": "T55",
       "file": "tests/integration/interfaces.test.eli",
       "suite": "integration",
@@ -30128,6 +30138,8 @@
     },
     {
       "case_id": "T55.subscription-source-contract.unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
       "parent_id": "T55",
       "file": "tests/unit/contract.test.eli",
       "suite": "unit",
@@ -30149,6 +30161,8 @@
     },
     {
       "case_id": "T38.opencode-process-reconnect.integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
       "parent_id": "T38",
       "file": "tests/integration/instance-reconnect.test.eli",
       "suite": "integration",
@@ -30169,6 +30183,8 @@
     },
     {
       "case_id": "T38.native-epoch-refresh-scope.unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
       "parent_id": "T38",
       "file": "tests/unit/message-recovery.test.eli",
       "suite": "unit",
