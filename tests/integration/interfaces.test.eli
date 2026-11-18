@@ -1210,6 +1210,11 @@
                  (js-call (expect (nativeGet result "ok")) :toBe t)
                  (nativeGet result "data")))))
         (try
+          (let* ((instances (await (funcall request "instance.list" (js-object))))
+                 (first (aref (nativeGet instances "items") 0))
+                 (read (await (funcall request "instance.get" (js-object :instance_id (nativeGet first "instance_id"))))))
+            (js-call (expect (nativeGet first "workspace_scope")) :toBe "directory")
+            (js-call (expect (nativeGet read "workspace_scope")) :toBe (nativeGet first "workspace_scope")))
           (let ((recipient (await (createMcpClient p "A"))))
             (try
               (let* ((listed (await (js-call recipient :request "tools/list" (js-object))))

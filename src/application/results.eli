@@ -439,8 +439,10 @@
     :instance
     (obj
       (strings
-        "instance_id tool tool_id native_namespace instance_epoch ownership profile_id state created_at checked_at"
+        "instance_id tool tool_id native_namespace instance_epoch ownership profile_id state created_at checked_at workspace_ref directory"
         (js-object
+          :workspace_scope
+          (js-object :type "string" :enum (js-array "directory" "instance"))
           :revision
           integerSchema
           :profile_revision

@@ -74,4 +74,6 @@ tools/list 从 operationCatalog 投影严格 schema，tools/call 将合法协议
 
 可选会话创建带 idempotency_key 和明确实例 epoch 约束；catalog.refresh/reconcile 也会更新台账，不标成无状态读取。正式配置没有可用的托管 Agent 启动路径，不能把 start 当成 list/search 的隐含补救。IM 收件仍只走事件/订阅规则，不增加聊天管理面。
 
-dj_session_get 的 session_ref/session_key 严格二选一；dj_session_probe 对单个精确会话只读核验，不测试发送。scope.session_keys 允许定点刷新/消息搜索；delivery 过滤允许 operation_id/session_key/origin 等已定义字段，但不跨主体扩权。search 只允许稳定键顺序，空 items + 非空 next_cursor 必须继续视为未完；outputSchema 区分稳定 key、过期短期引用、历史生命周期结果和当前实例状态。所有 origin 分支和 stopping 错误继承统一契约，不由 MCP 描述自行放宽。
+dj_session_get 的 session_ref/session_key 严格二选一；dj_session_probe 对单个精确会话核验并刷新本地观测，不测试发送。scope.session_keys 允许定点刷新/消息搜索；delivery 过滤允许 operation_id/session_key/origin 等已定义字段，但不跨主体扩权。search 只允许稳定键顺序，空 items + 非空 next_cursor 必须继续视为未完；outputSchema 区分稳定 key、过期短期引用、历史生命周期结果和当前实例状态。所有 origin 分支和 stopping 错误继承统一契约，不由 MCP 描述自行放宽。
+
+`instance.list/get`的输出schema包含`workspace_ref`、`directory`及`workspace_scope`（directory或instance），与Core投影共用同一契约。工作区范围不是隐藏字段，也不能通过放宽additionalProperties掩盖目录与结果不一致。
