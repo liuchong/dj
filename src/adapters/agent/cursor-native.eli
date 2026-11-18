@@ -6,6 +6,7 @@
   (import "../im/telegram.eli" readJson)
   (import "./electron-native.eli" electronNativeRequest electronNativeUrl)
   (import "./cursor-recovery.eli" recoverCursorEndpoint)
+  (import "./local-endpoint-resolver.eli" originalProcessGone)
 
   ;; Fixed protocol glue executes inside the existing native client, never a
   ;; new Agent process. Only the fixed operations below reach the repository.
@@ -154,11 +155,11 @@
         (catch error
           (unless (js-call (js-array "cursor_process_metadata" "desktop_target_changed") :includes (nativeGet error "code")) (throw error))
           ;; Do not turn a live wrong process or origin into a different target.
-          ;; Only definite disappearance permits ordinary read-side rebinding.
-          (let ((gone false))
-            (try (js-call globalThis.process :kill (nativeGet (nativeGet endpoint "native_api") "process_id") 0)
-              (catch missing (when (= (nativeGet missing "code") "ESRCH") (setq gone t))))
-            (unless gone (throw error)))
+          ;; Only definite disappearance or PID reuse permits read-side rebinding.
+          (let ((api (nativeGet endpoint "native_api")))
+            (unless (await (originalProcessGone (nativeGet api "process_helper_ref")
+                             (nativeGet api "process_id") (nativeGet api "process_birth") context))
+              (throw error)))
           (await (recoverCursorEndpoint endpoint context))
           (await (electronNativeRequest endpoint payload context program))))))
   (export cursorNativeRequest cursorNativeUrl cursorRenderer cursorConstructorSelector))

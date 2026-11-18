@@ -9,7 +9,7 @@
   (defconst antigravityCapabilities (Object/freeze
     (js-object :session_list "supported" :session_messages "supported" :session_probe "supported"
       :session_send "supported" :start_idle "supported" :message_during_run "supported" :max_dispatch_burst 32 :session_create "supported" :session_rename "supported" :creation_model_selection "supported"
-      :instance_start "unsupported" :instance_stop "unsupported" :native_idempotency "unsupported"
+      :instance_epoch_refresh "supported" :instance_start "unsupported" :instance_stop "unsupported" :native_idempotency "unsupported"
       :lookup_send "unsupported" :lookup_create "positive_only" :observe "unsupported" :max_input_frame_bytes 262144)))
   (defun cascadeCreationId (key)
     (let ((hex (hashValue (js-array "dj-antigravity-create" key))))
@@ -297,5 +297,5 @@
         :lookup (async (binding key ref context) (js-object :state "unknown" :evidence_level "none"))
         :observe (async (binding ref cursor budget context)
           (js-object :items (js-array) :complete t :coverage "partial" :next_cursor nil))
-        :close (async () (setq closed t)))))
+        :close (async () (setq closed t) (js-call resolve-endpoint :clear)))))
   (export createAntigravityPort cascadeMessage cascadeWorkspace cascadeState cascadeCreationId cascadeModel))

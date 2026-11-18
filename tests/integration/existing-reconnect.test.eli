@@ -1,0 +1,404 @@
+(module dj.tests.integration.existing-reconnect
+  (import "../../src/core/native.eli" nativeGet)
+  (import "../../src/core/types.eli" hashValue)
+  (import "../../src/connectors/pi.eli" activatePiReceiver)
+  (import "../../src/adapters/agent/pi-native.eli" createPiNativePort)
+  (import "../../src/adapters/agent/claude-desktop.eli" createClaudeDesktopPort)
+  (import "../../src/adapters/agent/claude-inbox.eli" createClaudeInboxPort)
+  (import "../../src/adapters/agent/kimi-dsh.eli" createKimiDshPort)
+  (import "../../src/adapters/agent/desktop-transport.eli" desktopError)
+  (import "../support/fixtures.eli" createFixture closeFixture callOk subscribe createdEvent)
+  (import "../support/process.eli" until)
+  (import "../support/case.eli" withCase)
+  (import "node:net" createServer createConnection)
+  (import "node:http" :as NodeHttp)
+  (import "node:fs" mkdirSync writeFileSync chmodSync rmSync unlinkSync existsSync readdirSync)
+  (import "node:path" resolve join)
+  (import "node:crypto" randomUUID)
+  (import "bun:sqlite" Database)
+  (import "bun:test" expect)
+
+  (defun sqliteRows (f sql &rest args)
+    (let* ((db (new Database (resolve (nativeGet f "root") "state/dj.sqlite")))
+           (query (js-call db :query sql)))
+      (try (Reflect/apply (nativeGet query "all") query args) (finally (js-call db :close)))))
+
+  (defun instancePayload (f id)
+    (JSON/parse (nativeGet (aref (sqliteRows f "SELECT payload FROM instances WHERE instance_id=?" id) 0) "payload")))
+
+  (defasync startClaudePeer (root round session-id workspace)
+    (let* ((socket-path (join root (str "c" round ".sock")))
+           (registry-path (join root (str "c" round ".json")))
+           (pid (+ 51000 round))
+           (birth (str "claude-birth-" round))
+           (received (js-array))
+           (connections (new globalThis.Set))
+           (server (createServer (lambda (socket)
+             (js-call connections :add socket)
+             (let ((buffer ""))
+               (js-call socket :on "data" (lambda (chunk)
+                 (setq buffer (str buffer (js-call chunk :toString "utf8")))
+                 (let ((nl (js-call buffer :indexOf "\n")))
+                   (while (>= nl 0)
+                     (let* ((frame (JSON/parse (js-call buffer :slice 0 nl)))
+                            (from (nativeGet frame "from" ""))
+                            (callback-path (and (js-call from :startsWith "uds:") (js-call from :slice 4)))
+                            (reply nil))
+                       (cond
+                         ((and (= (nativeGet frame "type") "control") (= (nativeGet frame "action") "notify_when_idle"))
+                           (setq reply (js-object :msgV 1 :type "control" :action "peer_idle_notice"
+                             :orig_msg_id (nativeGet frame "msg_id") :from (str "uds:" socket-path) :state "idle")))
+                         ((= (nativeGet frame "type") "user")
+                           (js-call received :push (nativeGet (nativeGet frame "message") "content"))
+                           (setq reply (js-object :msgV 1 :type "control" :action "peer_message_status"
+                             :orig_msg_id (nativeGet frame "msg_id") :msg_id (str "claude-msg-" (js-length received))
+                             :from (str "uds:" socket-path) :status "delivered"))))
+                       (when (and reply callback-path)
+                         (let ((cb nil))
+                           (setq cb (createConnection (js-object :path callback-path)
+                             (lambda () (js-call cb :end (str (JSON/stringify reply) "\n")))))
+                           (js-call cb :on "error" (lambda (ignored) nil)))))
+                     (setq buffer (js-call buffer :slice (1+ nl)) nl (js-call buffer :indexOf "\n"))))))
+               (js-call socket :on "close" (lambda () (js-call connections :delete socket))))))))
+      (await (new globalThis.Promise (lambda (done failed)
+        (js-call server :once "error" failed)
+        (js-call server :listen socket-path done))))
+      (chmodSync socket-path 384)
+      (writeFileSync registry-path (JSON/stringify (js-object
+        :pid pid :sessionId session-id :cwd workspace :name "Claude CLI Session"
+        :messagingSocketPath socket-path :peerFeatures (js-array "notify_idle"))) (js-object :mode 384))
+      (js-object :pid pid :birth birth :socket_path socket-path :registry_path registry-path
+        :received received
+        :stop (async ()
+          (js-call connections :forEach (lambda (c) (js-call c :destroy)))
+          (await (new globalThis.Promise (lambda (done) (js-call server :close done))))
+          (when (existsSync socket-path) (unlinkSync socket-path))
+          (when (existsSync registry-path) (unlinkSync registry-path))))))
+
+  (defasync startKimiWebPeer (root round token workspace session-id)
+    (let* ((pid (+ 61000 round))
+           (birth (str "kimi-birth-" round))
+           (server-id (str "kimi-srv-" round))
+           (received (js-array))
+           (server (NodeHttp/createServer (lambda (req res)
+             (let ((chunks (js-array)))
+               (js-call req :on "data" (lambda (c) (js-call chunks :push c)))
+               (js-call req :on "end" (lambda ()
+                 (if (not (= (nativeGet (nativeGet req "headers") "authorization") (str "Bearer " token)))
+                   (progn (put res :statusCode 401) (js-call res :end "{}"))
+                   (let ((url (nativeGet req "url"))
+                         (body (if (> (js-length chunks) 0)
+                                 (JSON/parse (js-call (Buffer/concat chunks) :toString "utf8")) nil))
+                         (payload nil))
+                     (cond
+                       ((= url "/api/v1/meta")
+                         (setq payload (js-object :code 0 :data (js-object :server_id server-id))))
+                       ((js-call url :startsWith "/api/v1/sessions?")
+                         (setq payload (js-object :code 0 :data (js-object :has_more false :items (js-array
+                           (js-object :id session-id :title "Kimi Session" :busy false :pending_interaction "none"
+                             :metadata (js-object :cwd workspace)))))))
+                       ((= url (str "/api/v1/sessions/" session-id "/snapshot"))
+                         (setq payload (js-object :code 0 :data (js-object :session
+                           (js-object :id session-id :title "Kimi Session" :busy false :pending_interaction "none"
+                             :metadata (js-object :cwd workspace))))))
+                       ((= url (str "/api/v1/sessions/" session-id "/prompts"))
+                         (js-call received :push (nativeGet (aref (nativeGet body "content") 0) "text"))
+                         (setq payload (js-object :code 0 :data (js-object :prompt_id (nativeGet body "prompt_id")))))
+                       (t (put res :statusCode 404) (setq payload (js-object :code 404))))
+                     (js-call res :setHeader "Content-Type" "application/json")
+                     (js-call res :end (JSON/stringify payload)))))))))))
+      (await (new globalThis.Promise (lambda (done failed)
+        (js-call server :once "error" failed)
+        (js-call server :listen 0 "127.0.0.1" done))))
+      (let ((port (nativeGet (js-call server :address) "port"))
+            (registry-path (join root "kimi-registry.json")))
+        (writeFileSync registry-path (JSON/stringify (js-object
+          :pid pid :host "127.0.0.1" :port port :server_id server-id)) (js-object :mode 384))
+        (js-object :pid pid :birth birth :port port :registry_path registry-path :received received
+          :stop (async () (await (new globalThis.Promise (lambda (done) (js-call server :close done)))))))))
+
+  (withCase "T38.existing-adapters-reconnect.integration"
+    (async ()
+      (let ((root (resolve ".local/t" (js-call (randomUUID) :slice 0 8))))
+        (mkdirSync root (js-object :recursive t :mode 448))
+        root))
+    (async (root)
+      (let* ((uid (js-call globalThis.process :getuid))
+             (helper (resolve root "h"))
+             (pi-dir (join root "p"))
+             (claude-dir (join root "c"))
+             (kimi-dir (join root "k"))
+             (workspace (join root "w"))
+             (pi-handlers (new globalThis.Map))
+             (pi-inputs (js-array))
+             (pi-context (js-object :mode "tui" :cwd workspace
+               :model (js-object :provider "fixture" :id "pi-model")
+               :modelRegistry (js-object)
+               :sessionManager (js-object :getSessionId (lambda () "pi-session-1")
+                 :getSessionName (lambda () "Pi Session") :getBranch (lambda () (js-array)))
+               :isIdle (lambda () t) :hasPendingMessages (lambda () false)))
+             (pi-host (js-object
+               :on (lambda (name fn) (js-call pi-handlers :set name fn))
+               :getThinkingLevel (lambda () "high")
+               :setSessionName (lambda (unused) nil)
+               :sendUserMessage (async (text) (js-call pi-inputs :push text))))
+             (pi-receiver nil)
+             (extra-pi-receiver nil)
+             (claude-peer nil)
+             (kimi-peer nil)
+             (desktop-state (js-object :pid 41001 :birth "desktop-birth-1" :window 1 :origin 100
+               :epoch "claude_native_one" :ambiguous false :inputs (js-array)))
+             (processes-file (resolve root "processes.json"))
+             (processes (new globalThis.Map))
+             (syncProcesses (lambda ()
+               (let ((obj (js-object)))
+                 (js-call processes :forEach (lambda (row key) (put obj (str key) row)))
+                 (writeFileSync processes-file (JSON/stringify obj) (js-object :mode 384)))))
+             (f nil))
+        (mkdirSync pi-dir (js-object :recursive t :mode 448))
+        (mkdirSync claude-dir (js-object :recursive t :mode 448))
+        (mkdirSync kimi-dir (js-object :recursive t :mode 448))
+        (mkdirSync workspace (js-object :recursive t :mode 448))
+        (writeFileSync helper (str "#!/usr/bin/env python3\nimport json,sys\nd=json.load(open("
+          (JSON/stringify processes-file) "))\nr=d.get(sys.argv[1])\nif r is None: sys.exit(1)\nprint(json.dumps(r))\n")
+          (js-object :mode 448))
+        (chmodSync helper 448)
+        (writeFileSync (join kimi-dir "server.token") "kimi-secret-token\n" (js-object :mode 384))
+        (setq pi-receiver (activatePiReceiver pi-host (js-object :root pi-dir)))
+        (try
+          (await (funcall (js-call pi-handlers :get "session_start") (js-object) pi-context))
+          (setq claude-peer (await (startClaudePeer claude-dir 1 "claude-cli-1" workspace)))
+          (setq kimi-peer (await (startKimiWebPeer kimi-dir 1 "kimi-secret-token" workspace "kimi-session-1")))
+          (js-call processes :set 41001 (js-object :pid 41001 :uid uid :birth "desktop-birth-1"
+            :caught t :executable "/Applications/Claude.app/Contents/MacOS/Claude"))
+          (js-call processes :set (nativeGet claude-peer "pid") (js-object :pid (nativeGet claude-peer "pid")
+            :uid uid :birth (nativeGet claude-peer "birth") :executable "/usr/local/bin/claude"
+            :socket (nativeGet claude-peer "socket_path")))
+          (js-call processes :set (nativeGet kimi-peer "pid") (js-object :pid (nativeGet kimi-peer "pid")
+            :uid uid :birth (nativeGet kimi-peer "birth") :executable "/usr/local/bin/kimi"
+            :port (nativeGet kimi-peer "port")))
+          (funcall syncProcesses)
+          (let* ((discovery-command (async (file args context)
+                   (cond
+                     ((= file helper)
+                       (let* ((pid (Number/parseInt (aref args 0) 10)) (row (js-call processes :get pid)))
+                         (unless row (throw (desktopError "native_process_unavailable")))
+                         (JSON/stringify row)))
+                     ((and (= file "ps") (= (aref args 0) "-axo"))
+                       (let ((lines (js-array)))
+                         (js-call processes :forEach (lambda (row)
+                           (js-call lines :push (str (nativeGet row "pid") " 1 " (nativeGet row "uid") " " (nativeGet row "executable")))))
+                         (when (nativeGet desktop-state "ambiguous")
+                           (js-call lines :push (str "41999 1 " uid " /Applications/Claude.app/Contents/MacOS/Claude")))
+                         (str (js-call lines :join "\n") "\n")))
+                     ((and (= file "lsof") (js-call args :includes "-U"))
+                       (let* ((pid (Number/parseInt (aref args (1+ (js-call args :indexOf "-p"))) 10))
+                              (row (js-call processes :get pid)))
+                         (if (and row (nativeGet row "socket")) (str "p" pid "\nn" (nativeGet row "socket") "\n") "")))
+                     ((= file "lsof")
+                       (let* ((pid (Number/parseInt (aref args (1+ (js-call args :indexOf "-p"))) 10))
+                              (row (js-call processes :get pid)))
+                         (if (and row (nativeGet row "port")) (str "p" pid "\nn127.0.0.1:" (nativeGet row "port") "\n") "")))
+                     (t (throw (desktopError "native_process_unavailable"))))))
+                 (initial-pi-manifest (join pi-dir (js-call (readdirSync pi-dir) :find
+                   (lambda (name) (js-call name :endsWith ".json")))))
+                 (pi-endpoint (js-object :tool "pi" :instance_id "pi-existing" :native_namespace "pi-local"
+                   :ownership "existing" :endpoint_ref "ep-pi" :directory workspace :workspace_ref "ws-shared"
+                   :manifest_path initial-pi-manifest :instance_epoch "pi-configured-old"))
+                 (desktop-endpoint (js-object :tool "claude" :instance_id "claude-desktop-existing"
+                   :native_namespace "claude-desktop-ns" :ownership "existing" :endpoint_ref "ep-claude-desktop"
+                   :directory workspace :workspace_ref "ws-shared" :window_id 1 :instance_epoch "desktop-configured-old"
+                   :native_api (js-object :inspector_url "http://127.0.0.1:9229/" :process_id 41001
+                     :process_birth "desktop-birth-1" :process_origin 100 :process_helper_ref helper)))
+                 (inbox-endpoint (js-object :tool "claude" :instance_id "claude-inbox-existing"
+                   :native_namespace "claude-inbox-ns" :ownership "existing" :endpoint_ref "ep-claude-inbox"
+                   :directory workspace :workspace_ref "ws-shared" :native_session_id "claude-cli-1"
+                   :registry_path (nativeGet claude-peer "registry_path") :socket_path (nativeGet claude-peer "socket_path")
+                   :instance_epoch "inbox-configured-old"
+                   :process_binding (js-object :pid (nativeGet claude-peer "pid")
+                     :process_birth (nativeGet claude-peer "birth") :process_helper_ref helper)))
+                 (kimi-endpoint (js-object :tool "kimi" :native_provider "kimi-web" :instance_id "kimi-existing"
+                   :native_namespace "kimi-ns" :ownership "existing" :endpoint_ref "ep-kimi"
+                   :directory workspace :workspace_ref "ws-shared"
+                   :base_url (str "http://127.0.0.1:" (nativeGet kimi-peer "port"))
+                   :registry_path (nativeGet kimi-peer "registry_path") :data_root kimi-dir
+                   :credential_ref (join kimi-dir "server.token") :instance_epoch "kimi-configured-old"
+                   :process_binding (js-object :pid (nativeGet kimi-peer "pid") :process_birth (nativeGet kimi-peer "birth")
+                     :executable_ref "/usr/local/bin/kimi" :process_helper_ref helper)))
+                 (host-overrides (js-object
+                   :local_discovery_command discovery-command
+                   :electron_discovery_command discovery-command
+                   :electron_inspect (async (candidate context)
+                     (unless (= (nativeGet (nativeGet candidate "native_api") "process_id") (nativeGet desktop-state "pid"))
+                       (throw (desktopError "desktop_target_changed")))
+                     (js-object :data (js-object :origin (nativeGet desktop-state "origin")
+                       :windows (js-array (js-object :id (nativeGet desktop-state "window") :url "https://claude.ai/new")))))
+                   :claude_desktop_request (async (endpoint payload context)
+                     (let ((api (nativeGet endpoint "native_api")))
+                       (unless (and (= (nativeGet api "process_id") (nativeGet desktop-state "pid"))
+                                    (= (nativeGet api "process_birth") (nativeGet desktop-state "birth"))
+                                    (= (nativeGet api "process_origin") (nativeGet desktop-state "origin"))
+                                    (= (nativeGet endpoint "window_id") (nativeGet desktop-state "window")))
+                         (throw (desktopError "desktop_target_changed")))
+                       (when (and (nativeGet context "expected_epoch")
+                                  (not (= (nativeGet context "expected_epoch") (nativeGet desktop-state "epoch"))))
+                         (throw (desktopError "desktop_target_changed")))
+                       (let ((op (nativeGet payload "operation"))
+                             (thread (js-object :id "claude-desktop-1" :title "Claude Desktop Session"
+                               :cwd workspace :status "idle" :model "claude-sonnet-4-6" :effort "high")))
+                         (cond
+                           ((= op "list") (js-object :instance_epoch (nativeGet desktop-state "epoch")
+                             :data (js-object :items (js-array thread))))
+                           ((= op "probe") (js-object :instance_epoch (nativeGet desktop-state "epoch")
+                             :data (js-object :state "ready" :thread thread)))
+                           ((= op "submit")
+                             (js-call (nativeGet desktop-state "inputs") :push (nativeGet payload "text"))
+                             (js-object :instance_epoch (nativeGet desktop-state "epoch")
+                               :data (js-object :state "accepted" :native_receipt_key (nativeGet payload "dispatch_key"))))
+                           (t (throw (desktopError "cursor_native_operation")))))))))
+                 (pi-port (createPiNativePort (js-object :endpoints (js-array pi-endpoint)) host-overrides))
+                 (desktop-port (createClaudeDesktopPort (js-object :endpoints (js-array desktop-endpoint)) host-overrides))
+                 (inbox-port (createClaudeInboxPort (js-object :endpoints (js-array inbox-endpoint)) host-overrides))
+                 (kimi-port (createKimiDshPort "kimi" (js-object :endpoints (js-array kimi-endpoint)) host-overrides)))
+            (setq f (await (createFixture "existing-reconnect" "one" (js-object :configure (lambda (config ports)
+              (put config :managed_profiles (js-array))
+              (js-call (nativeGet config "principals") :forEach (lambda (actor)
+                (when (= (nativeGet actor "principal_id") "A")
+                  (Reflect/deleteProperty actor "target_constraint"))))
+              (js-call (nativeGet config "agent_endpoints") :push pi-endpoint desktop-endpoint inbox-endpoint kimi-endpoint)
+              (js-call (nativeGet ports "agent_ports") :set "pi" pi-port)
+              (js-call (nativeGet ports "agent_ports") :set "claude-desktop-existing" desktop-port)
+              (js-call (nativeGet ports "agent_ports") :set "claude" inbox-port)
+              (js-call (nativeGet ports "agent_ports") :set "kimi" kimi-port))))))
+
+            ;; Verify startup recovery adopted live epochs for all 4 existing instances without tool-name whitelists.
+            (js-call (js-array "pi-existing" "claude-desktop-existing" "claude-inbox-existing" "kimi-existing") :forEach
+              (lambda (id)
+                (let ((inst (instancePayload f id)))
+                  (js-call (expect (nativeGet inst "state")) :toBe "ready"))))
+
+            ;; Discover, register and subscribe one session per adapter family.
+            (let* ((registerTarget (async (tool instance-id label)
+                     (let* ((discovered (await (callOk f "O" "agent.discover"
+                              (js-object :tool tool :instance_ref instance-id :scope "live"))))
+                            (agent (await (callOk f "O" "agent.register"
+                              (js-object :candidate_ref (nativeGet (aref (nativeGet discovered "items") 0) "candidate_ref")
+                                :display_name label :binding_mode "existing" :recipient_principal_id "A"
+                                :idempotency_key (str "reg-" instance-id))))))
+                       (await (subscribe f agent "lark"))
+                       agent)))
+                   (pi-agent (await (funcall registerTarget "pi" "pi-existing" "Pi Target")))
+                   (desktop-agent (await (funcall registerTarget "claude" "claude-desktop-existing" "Claude Desktop Target")))
+                   (inbox-agent (await (funcall registerTarget "claude" "claude-inbox-existing" "Claude Inbox Target")))
+                   (kimi-agent (await (funcall registerTarget "kimi" "kimi-existing" "Kimi Web Target")))
+                   (pi-epoch-1 (nativeGet (instancePayload f "pi-existing") "instance_epoch"))
+                   (desktop-epoch-1 (nativeGet (instancePayload f "claude-desktop-existing") "instance_epoch"))
+                   (inbox-epoch-1 (nativeGet (instancePayload f "claude-inbox-existing") "instance_epoch"))
+                   (kimi-epoch-1 (nativeGet (instancePayload f "kimi-existing") "instance_epoch"))
+                   (envelope (js-object :schema_version 1 :kind "external_message"
+                     :content (js-object :text "stale fence check") :allowed_actions (js-array))))
+
+              ;; Restart all 4 clients with new PIDs, sockets, manifests, ports and Electron window IDs!
+              (await (funcall (js-call pi-handlers :get "session_shutdown") (js-object) pi-context))
+              (await (funcall (js-call pi-handlers :get "session_start") (js-object) pi-context))
+
+              (js-call processes :delete 41001)
+              (Object/assign desktop-state (js-object :pid 41002 :birth "desktop-birth-2" :window 7 :origin 200 :epoch "claude_native_two"))
+              (js-call processes :set 41002 (js-object :pid 41002 :uid uid :birth "desktop-birth-2"
+                :caught t :executable "/Applications/Claude.app/Contents/MacOS/Claude"))
+
+              (js-call processes :delete (nativeGet claude-peer "pid"))
+              (await (js-call claude-peer :stop))
+              (setq claude-peer (await (startClaudePeer claude-dir 2 "claude-cli-1" workspace)))
+              (js-call processes :set (nativeGet claude-peer "pid") (js-object :pid (nativeGet claude-peer "pid")
+                :uid uid :birth (nativeGet claude-peer "birth") :executable "/usr/local/bin/claude"
+                :socket (nativeGet claude-peer "socket_path")))
+
+              (js-call processes :delete (nativeGet kimi-peer "pid"))
+              (await (js-call kimi-peer :stop))
+              (setq kimi-peer (await (startKimiWebPeer kimi-dir 2 "kimi-secret-token" workspace "kimi-session-1")))
+              (js-call processes :set (nativeGet kimi-peer "pid") (js-object :pid (nativeGet kimi-peer "pid")
+                :uid uid :birth (nativeGet kimi-peer "birth") :executable "/usr/local/bin/kimi"
+                :port (nativeGet kimi-peer "port")))
+              (funcall syncProcesses)
+
+              ;; Write operations with stale binding epochs must fail closed (definite_not_sent = true) before refresh.
+              (let ((stale-pi (await (js-call pi-port :submit
+                      (js-object :instance_id "pi-existing" :native_namespace "pi-local" :native_session_id "pi-session-1" :instance_epoch pi-epoch-1)
+                      envelope "start_idle" "stale-pi" (js-object :deadline (+ (performance/now) 3000)))))
+                    (stale-desktop (await (js-call desktop-port :submit
+                      (js-object :instance_id "claude-desktop-existing" :native_namespace "claude-desktop-ns" :native_session_id "claude-desktop-1" :instance_epoch desktop-epoch-1)
+                      envelope "steer" "stale-desktop" (js-object :deadline (+ (performance/now) 3000)))))
+                    (stale-inbox (await (js-call inbox-port :submit
+                      (js-object :instance_id "claude-inbox-existing" :native_namespace "claude-inbox-ns" :native_session_id "claude-cli-1" :instance_epoch inbox-epoch-1)
+                      envelope "steer" "stale-inbox" (js-object :deadline (+ (performance/now) 3000)))))
+                    (stale-kimi (await (js-call kimi-port :submit
+                      (js-object :instance_id "kimi-existing" :native_namespace "kimi-ns" :native_session_id "kimi-session-1" :instance_epoch kimi-epoch-1)
+                      envelope "steer" "stale-kimi" (js-object :deadline (+ (performance/now) 3000))))))
+                (js-call (expect (nativeGet stale-pi "definite_not_sent")) :toBe t)
+                (js-call (expect (nativeGet stale-desktop "definite_not_sent")) :toBe t)
+                (js-call (expect (nativeGet stale-inbox "definite_not_sent")) :toBe t)
+                (js-call (expect (nativeGet stale-kimi "definite_not_sent")) :toBe t)
+                (js-call (expect (js-length pi-inputs)) :toBe 0)
+                (js-call (expect (js-length (nativeGet desktop-state "inputs"))) :toBe 0)
+                (js-call (expect (js-length (nativeGet claude-peer "received"))) :toBe 0)
+                (js-call (expect (js-length (nativeGet kimi-peer "received"))) :toBe 0))
+
+              ;; Read-side agent.probe & session.probe refresh two of the restarted targets immediately;
+              ;; pending dispatch recovery refreshes the other two on tick!
+              (let ((probed-pi (await (callOk f "O" "agent.probe" (js-object :agent_id (nativeGet pi-agent "agent_id")))))
+                    (resolved-desktop (await (callOk f "O" "session.resolve"
+                      (js-object :instance_id "claude-desktop-existing" :native_session_id "claude-desktop-1")))))
+                (js-call (expect (nativeGet probed-pi "live_receiver")) :toBe t)
+                (let ((probed-desktop (await (callOk f "O" "session.probe"
+                        (js-object :session_ref (nativeGet resolved-desktop "session_ref"))))))
+                  (js-call (expect (nativeGet probed-desktop "live_receiver")) :toBe t)))
+
+              (let ((prior-bindings (sqliteRows f "SELECT binding_id,payload FROM bindings")))
+                (await (js-call f :ingest (createdEvent "lark" "broadcast-after-restart" "shared recovery delivery")))
+                (await (until "all four restarted existing-instance targets accept delivery" (async ()
+                  (await (js-call f :tick))
+                  (and (= (js-length pi-inputs) 1)
+                       (= (js-length (nativeGet desktop-state "inputs")) 1)
+                       (= (js-length (nativeGet claude-peer "received")) 1)
+                       (= (js-length (nativeGet kimi-peer "received")) 1))) 8000))
+                ;; Historical bindings stay immutable and configured endpoints stay untouched.
+                (js-call prior-bindings :forEach (lambda (row)
+                  (js-call (expect (nativeGet (aref (sqliteRows f "SELECT payload FROM bindings WHERE binding_id=?"
+                    (nativeGet row "binding_id")) 0) "payload")) :toBe (nativeGet row "payload")))))
+
+              (js-call (expect (= (nativeGet (instancePayload f "pi-existing") "instance_epoch") pi-epoch-1)) :toBe false)
+              (js-call (expect (= (nativeGet (instancePayload f "claude-desktop-existing") "instance_epoch") desktop-epoch-1)) :toBe false)
+              (js-call (expect (= (nativeGet (instancePayload f "claude-inbox-existing") "instance_epoch") inbox-epoch-1)) :toBe false)
+              (js-call (expect (= (nativeGet (instancePayload f "kimi-existing") "instance_epoch") kimi-epoch-1)) :toBe false)
+              (js-call (expect (nativeGet desktop-endpoint "window_id")) :toBe 1)
+              (js-call (expect (nativeGet pi-endpoint "manifest_path")) :toBe initial-pi-manifest)
+
+              ;; Ambiguity fail-closed checks: duplicate Electron main process & duplicate Pi receiver must be rejected.
+              (js-call processes :delete 41002)
+              (put desktop-state :pid 41003) (put desktop-state :ambiguous t)
+              (js-call processes :set 41003 (js-object :pid 41003 :uid uid :birth "desktop-birth-3"
+                :caught t :executable "/Applications/Claude.app/Contents/MacOS/Claude"))
+              (funcall syncProcesses)
+              (js-call (expect (nativeGet (await (js-call desktop-port :probeInstance desktop-endpoint
+                (js-object :deadline (+ (performance/now) 3000)))) "state")) :toBe "offline")
+
+              (let ((extra-handlers (new globalThis.Map)))
+                (setq extra-pi-receiver (activatePiReceiver
+                  (js-object :on (lambda (name fn) (js-call extra-handlers :set name fn))
+                    :getThinkingLevel (lambda () "high") :setSessionName (lambda (unused) nil)
+                    :sendUserMessage (async (unused) nil))
+                  (js-object :root pi-dir)))
+                (await (funcall (js-call pi-handlers :get "session_shutdown") (js-object) pi-context))
+                (await (funcall (js-call pi-handlers :get "session_start") (js-object) pi-context))
+                (await (funcall (js-call extra-handlers :get "session_start") (js-object) pi-context))
+                (js-call (expect (nativeGet (await (js-call pi-port :probeInstance pi-endpoint
+                  (js-object :deadline (+ (performance/now) 3000)))) "state")) :toBe "offline"))))
+          (finally
+            (when f (await (closeFixture f)))
+            (when extra-pi-receiver (await (js-call extra-pi-receiver :close)))
+            (when pi-receiver (await (js-call pi-receiver :close)))
+            (when claude-peer (await (js-call claude-peer :stop)))
+            (when kimi-peer (await (js-call kimi-peer :stop)))
+            (rmSync root (js-object :recursive t :force t))))))
+    (async (root) (rmSync root (js-object :recursive t :force t)))))

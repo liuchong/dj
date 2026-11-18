@@ -30200,8 +30200,30 @@
         "RECOVER02"
       ],
       "given": "Native process refresh eligibility",
-      "when": "Classify supported existing adapters, managed processes and unsupported or missing targets",
-      "then": "Only existing Codex, Cursor, OpenCode and Antigravity instances use the observed native process refresh path"
+      "when": "Classify existing-instance ports with instance and session probes, managed processes and unsupported or missing targets",
+      "then": "Any existing-instance port exposing probeInstance and probe participates in native epoch refresh without a tool-name whitelist"
+    },
+    {
+      "case_id": "T38.shared-endpoint-resolver.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/message-recovery.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 5000,
+      "resource_group": "pure",
+      "requirements": [
+        "SPEC-0018"
+      ],
+      "acceptance_ids": [
+        "RECOVER02"
+      ],
+      "given": "Shared local endpoint and Electron main-process/window rediscovery primitives",
+      "when": "Exercise seeded cache hits, concurrent stale eviction, post-discovery PID-reuse rejection, and live-vs-exited Electron rebinding",
+      "then": "Discovery deduplicates per instance, preserves input endpoint immutability, rejects PID reuse and live mismatches fail-closed, and rebinds unique replacement targets in memory"
     },
     {
       "case_id": "T38.antigravity-process-reconnect.integration",
@@ -30224,6 +30246,28 @@
       "given": "An isolated persistent Core and owned HTTPS receiver with simulated App process metadata",
       "when": "Change receiver PID, listening port, TLS certificate and CSRF without reconfiguring or restarting Core",
       "then": "Probes and pending delivery recover the same instance and session, while stop fences and historical evidence remain intact"
+    },
+    {
+      "case_id": "T38.existing-adapters-reconnect.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/existing-reconnect.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 30000,
+      "resource_group": "isolated-existing-recovery",
+      "acceptance_ids": [
+        "RECOVER02"
+      ],
+      "requirements": [
+        "SPEC-0018"
+      ],
+      "given": "Isolated Core with Pi, Claude Desktop, Claude Code inbox and Kimi Web existing-instance receivers",
+      "when": "Restart all four receivers with new PIDs, manifests, sockets, ports and Electron windows without reconfiguring Core",
+      "then": "Shared local and Electron rediscovery refreshes epochs on probe and pending delivery, rejects stale writes and ambiguous processes fail-closed, and preserves historical bindings"
     }
   ],
   "source_extension_base": "c1eb7b1"

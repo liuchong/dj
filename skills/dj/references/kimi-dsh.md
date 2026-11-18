@@ -1,7 +1,7 @@
 # Kimi / DSH
 
 - tools: 工具为 kimi、dsh；同品牌 Desktop Work 与 Web 用准确 instance_id/native_namespace 区分。不能按标题或共用历史猜归属，native accepted 不代表桌面已打开或任务完成。
-- control: 复用 session.list/get/resolve/probe/send、session.message.list/get 和显式 session.create。原始目标经授权后由已有实例接收，不使用 Agent CLI、终端或新建进程传消息。
+- control: 复用 session.list/get/resolve/probe/send、session.message.list/get 和显式 session.create。原始目标经授权后由已有实例接收，不使用 Agent CLI、终端或新建进程传消息。原客户端重启后（Kimi Work/Web 更新本地运行登记或 DSH Desktop/Web 更换同 UID 进程与唯一 loopback 端口），公用重发现层与 `agent.probe` / `session.probe` / 待投恢复会自动核验同一工作区与准确原会话并推进 `instance_epoch`，多候选歧义拒绝，无需重建订阅。
 - scope: Kimi Desktop 只覆盖 client-origin Work；普通 Chat、普通 TUI 不在已确认支持范围。DSH migration-required 或 agentAvailable=false 不自动修复/迁移；原会话和原模型保持不变。
 - busy: DSH 使用原生 steer，Kimi Web 由 prompts 接口受理；原生后续调度由目标管理。Kimi Work 忙时接口未确认，显示 busy_input_unsupported；可明确选择 queue，不取消原任务。
 - setup: 需要已部署普通AI profile；可选target_constraint只收窄范围，准确原生目标由调用方核对。共享 .agents/skills 可读取完整 DJ Skill；DSH 还支持 .dsh/skills，Kimi Code 可合并生成的 MCP mcpServers.dj 片段。自定义根及 Work/DSH 的宿主 MCP 接线以原生能力为准，不把生成配置当成已加载。

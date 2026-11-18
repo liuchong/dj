@@ -3,6 +3,7 @@
   (import "../../core/types.eli" hashValue utf8Bytes)
   (import "../../delivery/envelope.eli" renderEnvelope)
   (import "./native-local.eli" expectedEpoch)
+  (import "./existing-local.eli" createExistingLocalResolver)
   (import "./desktop-transport.eli" desktopError)
   (import "./kimi-dsh-protocol.eli" createNativeClient nativeTextParts)
   (import "node:path" resolve)
@@ -10,7 +11,7 @@
     (js-object :session_list "supported" :session_messages "supported" :session_probe "supported"
       :session_send "supported" :start_idle "supported" :session_create "supported"
       :message_during_run (if (= provider "kimi-desktop") "unsupported" "supported")
-      :instance_start "unsupported" :instance_stop "unsupported" :native_idempotency "unsupported"
+      :instance_epoch_refresh "supported" :instance_start "unsupported" :instance_stop "unsupported" :native_idempotency "unsupported"
       :lookup_send "unsupported" :lookup_create (if (js-call provider :startsWith "dsh") "supported" "unsupported")
       :observe "unsupported" :max_input_frame_bytes 262144))
   (defun nativeRuntime (provider row)
@@ -23,6 +24,7 @@
       ((= (nativeGet row "busy" (nativeGet row "running")) false) "idle") (t "unknown")))
   (defun createKimiDshPort (tool config host)
     (let ((endpoints (nativeGet config "endpoints" (js-array))) (closed false)
+      (resolve-endpoint (createExistingLocalResolver host))
       (endpointFor nil) (clientFor nil) (workspace nil) (project nil) (checked nil) (listSessions nil) (createSession nil))
       (setq endpointFor (lambda (target)
         (let ((rows (js-call endpoints :filter (lambda (endpoint)
@@ -31,7 +33,7 @@
           (unless (= (js-length rows) 1) (throw (desktopError "local_agent_exact_endpoint"))) (aref rows 0))))
       (setq clientFor (async (endpoint context)
         (when closed (throw (desktopError "local_agent_closed")))
-        (let ((client (createNativeClient endpoint context))) (await (js-call client :connect)) client)))
+        (let ((client (createNativeClient endpoint context resolve-endpoint))) (await (js-call client :connect)) client)))
       (setq workspace (lambda (endpoint row)
         (and (= (nativeTypeOf (nativeGet row "directory")) "string")
           (= (resolve (nativeGet endpoint "directory")) (resolve (nativeGet row "directory"))))))
@@ -39,7 +41,9 @@
         (let* ((provider (nativeGet endpoint "native_provider")) (state (nativeRuntime provider row)))
           (js-object :tool tool :native_namespace (nativeGet endpoint "native_namespace") :native_session_id (nativeGet row "id")
             :surface (if (js-call provider :endsWith "desktop") "desktop" "sdk")
-            :instance_id (nativeGet endpoint "instance_id") :instance_epoch epoch :workspace_ref (nativeGet endpoint "workspace_ref")
+            :instance_id (nativeGet endpoint "instance_id") :instance_epoch epoch
+            :workspace_ref (nativeGet endpoint "workspace_ref")
+            :directory (resolve (nativeGet row "directory" (nativeGet endpoint "directory")))
             :title (nativeGet row "title" tool) :runtime_state state :live_receiver (not (= state "offline"))
             :visibility (if (= state "offline") (js-array "history") (js-array "live" "history"))
             :coverage "partial" :evidence_level "native_protocol" :capabilities (nativeCapabilities provider)))))
@@ -104,7 +108,8 @@
             (catch error (js-object :state (if (nativeGet write-state "sent") "unknown" "failed")
               :native_ref (if id (js-object :native_session_id id) nil) :definite_not_sent (not (nativeGet write-state "sent")) :evidence_level "none"))))))
       (js-object :capabilities (nativeCapabilities (if (= tool "dsh") "dsh" "kimi-desktop"))
-        :initialize (lambda (context) (setq closed false)) :close (async () (setq closed t))
+        :initialize (lambda (context) (setq closed false))
+        :close (async () (setq closed t) (js-call resolve-endpoint :clear))
         :listSessions listSessions
         :discover (async (visibility page context)
           (funcall listSessions (js-object :instance_ids (js-array (nativeGet page "instance_id")))
@@ -114,8 +119,9 @@
             (js-object :state "ready" :native_namespace (nativeGet instance "native_namespace") :instance_epoch (js-call client :epoch)
               :evidence_level "native_protocol"))
             (catch error (js-object :state "offline" :reason "native_receiver_unavailable" :evidence_level "none"))))
-        :probe (async (target context)
-          (let ((result (await (funcall checked target context))))
+        :probe (async (target binding context)
+          (let ((result (await (funcall checked
+                  (Object/assign (js-object) binding target (js-object :instance_epoch nil)) context))))
             (funcall project (nativeGet result "endpoint") (nativeGet result "row") (nativeGet result "instance_epoch"))))
         :readMessages (async (session cursor budget context)
           (let* ((result (await (funcall checked session context))) (client (nativeGet result "client"))

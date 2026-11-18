@@ -96,6 +96,7 @@
     "tests/unit/dispatch-contexts.test.eli",
     "tests/integration/instance-reconnect.test.eli",
     "tests/integration/antigravity-reconnect.test.eli",
+    "tests/integration/existing-reconnect.test.eli",
     "tests/support/antigravity-receiver.eli"
   ],
   "outDir": "dist-tests"

@@ -66,7 +66,7 @@ metadata:
 
 ## 运行时与身份
 
-- native_restart: Codex/Cursor/OpenCode/Antigravity原客户端重启后可用agent.probe或当前引用的session.probe自动重验原实例、会话和绑定；没有待投消息也可恢复，不需改订阅或手工rebind。Antigravity同UID进程/唯一HTTPS/证书重发现由DJ适配器负责，歧义明确拒绝，凭据仅在内存。显式停止不覆盖，accepted/unknown不重发；详见[客户端恢复](references/clients.md#原生客户端重启与待投恢复)。
+- native_restart: 公开 `instance_epoch_refresh=supported` 的 existing 实例（Codex、Cursor、OpenCode、Antigravity、Claude Desktop/Code、Kimi、DSH、Pi 等实现活体双探针契约的适配器）在原客户端重启后，可用 `agent.probe`、当前引用的 `session.probe` 或待投调度自动重验原实例、会话和绑定；没有待投消息也可恢复，不需改订阅或手工 rebind。同 UID 进程、Electron 窗口、唯一 loopback 端口/socket/manifest 重发现与 PID 复用复核由公用重发现层完成，歧义明确 fail-closed 拒绝，临时凭据仅在内存。显式停止不覆盖，accepted/unknown 不重发；详见[客户端恢复](references/clients.md#原生客户端重启与待投恢复)。
 
 - discover: MCP tools/list及CLI/API共享当前操作目录；service.status的visible_operations说明本主体暴露的工具，unavailable_operations列出其他已实现操作、required_action、reason和help。operator_required表示需要操作员身份，普通agent加同名grant也不能调用；grant_required表示目录权限不足。未暴露不等于未实现，可见也不保证准确资源或平台权限。更改能力后重新发现当前目录；安装副本、MCP自描述、help与文档一起更新，不能凭旧上下文断言DJ缺功能。
 
@@ -175,7 +175,7 @@ metadata:
 ## 提交边界
 
 - cutover: 暂停或退订只阻止提交点前的贡献；submitting开始可能已送出，accepted不代表任务完成。
-- continuity: CLI与MCP换入口仍复用同一主体、目标、幂等键及操作记录。Codex、Cursor、OpenCode 原实例重启后由DJ重验原接收端并续投未发送记录，不必重建订阅；显式停止不自动取消，accepted/unknown不盲重发，见[客户端恢复](references/clients.md#原生客户端重启与待投恢复)。
+- continuity: CLI与MCP换入口仍复用同一主体、目标、幂等键及操作记录。支持 `instance_epoch_refresh` 的 existing 原实例重启后由 DJ 公用重发现与生命周期刷新重验原接收端并续投未发送记录，不必重建订阅；显式停止不自动取消，accepted/unknown不盲重发，见[客户端恢复](references/clients.md#原生客户端重启与待投恢复)。
 
 ## 接口调用
 

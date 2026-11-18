@@ -1,12 +1,15 @@
 (module dj.lifecycle.gates
-  (import "../core/native.eli" nativeGet)
+  (import "../core/native.eli" nativeGet nativeTypeOf)
   (import "../core/errors.eli" success failure)
   (import "../core/types.eli" nextRevision)
-  ;; These adapters independently verify the current local process and endpoint.
-  ;; Callers still require exact session proof and preserve explicit closed gates.
-  (defun supportsNativeEpochRefresh (instance)
+  ;; Existing-instance ports that implement both instance-level and exact-session
+  ;; native verification participate in epoch refresh without a tool-name list.
+  (defun supportsNativeEpochRefresh (instance port)
     (and (= (nativeGet instance "ownership") "existing")
-      (js-call (js-array "codex" "cursor" "opencode" "antigravity") :includes (nativeGet instance "tool"))))
+      (not (not port))
+      (= (nativeTypeOf (nativeGet port "probeInstance")) "function")
+      (= (nativeTypeOf (nativeGet port "probe")) "function")
+      (not (= (nativeGet (nativeGet port "capabilities") "instance_epoch_refresh") "unsupported"))))
   (defun readGate
     (tx instance-id)
     (let

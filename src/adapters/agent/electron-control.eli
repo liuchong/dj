@@ -42,7 +42,9 @@
   ))
   (defconst main (str
     "(async()=>{\n"
-    " const require=process.getBuiltinModule('module').createRequire(process.resourcesPath+'/app.asar/package.json');\n"
+    " const fs=process.getBuiltinModule('fs');\n"
+    " const pkg=fs.existsSync(process.resourcesPath+'/app.asar/package.json')?process.resourcesPath+'/app.asar/package.json':process.resourcesPath+'/app/package.json';\n"
+    " const require=process.getBuiltinModule('module').createRequire(pkg);\n"
     " const electron=require('electron');\n"
     " if(REQUEST.operation==='inspect')return {origin:performance.timeOrigin,windows:electron.webContents.getAllWebContents().filter(w=>w.getType()==='window'&&!w.isDestroyed()).map(w=>({id:w.id,url:w.getURL()}))};\n"
     " const w=electron.webContents.fromId(REQUEST.window);\n"

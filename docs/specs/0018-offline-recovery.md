@@ -43,16 +43,15 @@ DJ 的单键 history 读只选取 message_id 精确一致的唯一记录，不�
 订阅暂停／恢复不重置传输水位，也不改变 Pin 条件；恢复后的新动作仍经正常扫描、
 去重与订阅投递，不靠手工重放解决。
 
-## 已有原生实例的进程重启
+## 已有原生实例的进程重启与公用重发现契约
 
-Codex、Cursor、OpenCode 和 Antigravity 在 DJ 启动恢复及运行期间均可重验原实例的新进程标识。必须保留同一已配置实例、原生命名空间和准确会话，并取得独立实例探测与准确会话探测的原生证据；OpenCode 继续核对同 UID 服务监听进程、官方服务登记和 Desktop 接收端。启动恢复只在原生探测成功后开放恢复中的门禁；运行中续接可推进原本开放的门禁，或在实例恢复在线后开放仅因启动恢复而关闭的门禁；必须重验实例与会话，不能覆盖显式停止或其他关闭原因。旧 attempt 和 binding 快照不变，未发送消息沿原记录继续，accepted/unknown 不因进程变化重发。门禁拒绝报告实际错误，不把离线或标识过期都称作正在停止。
+所有 `ownership = "existing"` 且实现活体实例与准确原会话双探针契约（`probeInstance` + `probe`，对外公开 `capabilities.instance_epoch_refresh = "supported"`）的适配器统一接入 `service/recovery` 启动恢复与 `lifecycle/native-refresh` 运行期推进，不在 `lifecycle/gates` 硬编码工具名字名单。当前已接入的 existing-instance 适配器（Codex、Cursor、OpenCode、Antigravity、Claude Desktop、Claude Code native inbox、Kimi Work/Web、DSH Desktop/Web、Pi 接收扩展）及后续遵循同一契约的新适配器共用同一恢复规则：
 
-
-## 原生客户端重启与运行期主动核验
-
-当前Codex、Cursor、OpenCode、Antigravity的existing实例支持重验epoch。Antigravity的进程/端口/证书及内存凭据重发现归agent/antigravity-endpoint；同UID、App父进程、进程出生时间、唯一loopback HTTPS与叶证书钉扎仍为必需。多个候选拒绝，新凭据不落盘，不自动启动原生客户端。
-
-lifecycle/native-refresh由投递、agent.probe及session.probe共享：独立probeInstance和精确原会话的tool/namespace/native_session/instance/workspace证明一致，在事务内复核旧epoch、所有权和门禁再更新当前观测及新绑定。自动离线恢复门禁可打开，显式停止不可覆盖。原登记、规则、订阅与历史binding/attempt不改；accepted/unknown不重发。目录/写操作仍使用准确epoch，失效引用重新resolve，不默认换目标。
+- **读侧探测与写侧/游标栅栏统一分离**：`probe` 与 `probeInstance` 核验同一已配置实例、原生命名空间、工作区与准确 `native_session_id` 并返回当前真实 `instance_epoch`，不因旧 `binding.instance_epoch` 在探测阶段提前失败；`submit`、`create`、`lookupCreate`、`rename` 与带游标/会话栅栏的 `readMessages` 则严格校验刷新后的 `expected_epoch`。
+- **公用本机重发现基础层**：
+  - `adapters/agent/local-endpoint-resolver` 统一承载缓存核验、单飞 `pending` 去重、原进程退出或 PID 复用判定、同 UID 可执行文件/父进程/参数/私有目录 manifest/唯一 loopback 监听端口或 Unix socket 重发现，以及发现后的二次身份复核（闭合 PID 复用竞态）。刷新所得运行时端点、CSRF token 与 TLS 叶证书仅保存在端口内存，绝不回写持久配置文件、SQLite 或日志；多候选无法唯一定位时统一 fail-closed 拒绝，绝不启动新客户端进程。
+  - `adapters/agent/electron-recovery` 统一承载同 UID Electron 主进程与目标窗口重发现（Cursor 与 Claude Desktop 共用），仅在原 `(process_id, process_birth)` 已退出或被复用时重绑唯一主进程与匹配窗口，活进程窗口/origin/epoch 不一致时保持拒绝。
+- **门禁与幂等边界**：启动恢复只在原生探测成功后开放恢复门禁；运行期 `agent.probe`、`session.probe` 与待投调度可推进开放门禁，或开放仅因启动离线而关闭的 `recovery` 门禁，绝不覆盖显式停止门禁。原 Agent 登记、规则、订阅以及历史 `binding` / `attempt` 快照保持不变，未发送消息继续投递，`accepted` / `unknown` 绝不因客户端重启重发。
 
 
 本批5项定向集成与3项保护性单测共165条断言通过。新集成使用真实本机HTTPS接收端、PID及监听端口，模拟App可执行文件/出生元数据，连续更换PID、端口、证书和token；不重配、不重启Core即可由agent.probe、session.probe或待投路径恢复。验证显式停止、多进程歧义拒绝、配置不改、凭据文件不产生及旧绑定不改；既有积压/unknown不重发与OpenCode恢复用例通过。

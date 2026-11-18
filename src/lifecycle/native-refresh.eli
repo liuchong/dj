@@ -1,12 +1,12 @@
 (module dj.lifecycle.native-refresh
   (import "../core/native.eli" nativeGet nativeTypeOf)
   (import "../core/types.eli" nextRevision)
-  (import "../application/context.eli" must nativeCallContext)
+  (import "../application/context.eli" must nativeCallContext agentPort)
   (import "../service/ownership.eli" ownerGuard)
   (import "../catalog/records.eli" putSession)
   (import "./gates.eli" assertGate supportsNativeEpochRefresh)
   (defasync probeNativeRefresh (context session observation instance port)
-    (when (and port (nativeGet port "probeInstance") (supportsNativeEpochRefresh instance)
+    (when (and (supportsNativeEpochRefresh instance port)
       (= (nativeGet observation "live_receiver") t)
       (= (nativeGet observation "evidence_level") "native_protocol")
       (or (= (nativeGet instance "state") "offline")
@@ -39,7 +39,7 @@
             ;; endpoint independently before advancing its instance fence.
             ;; Historical attempts and their immutable binding snapshots stay put.
             (when (and
-              (supportsNativeEpochRefresh instance)
+              (supportsNativeEpochRefresh instance (agentPort context instance))
               (= (nativeGet (nativeGet context "runtime") "state") "ready")
               (js-call (js-array "ready" "offline") :includes (nativeGet instance "state"))
               (= (nativeGet instance "instance_epoch") (nativeGet expected-instance "instance_epoch"))

@@ -385,7 +385,7 @@
                       :get
                       "instance_gates"
                       (nativeGet instance "instance_id")))
-                  (refreshable (supportsNativeEpochRefresh current))
+                  (refreshable (supportsNativeEpochRefresh current port))
                   (ready
                     (and
                       (= (nativeGet report "state") "ready")

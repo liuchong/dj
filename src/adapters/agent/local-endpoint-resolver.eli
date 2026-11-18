@@ -1,0 +1,144 @@
+(module dj.adapters.agent.local-endpoint-resolver
+  (import "../../core/native.eli" NativeNumber nativeGet nativeTypeOf nativeBitAnd)
+  (import "./desktop-transport.eli" desktopError desktopDeadline)
+  (import "./native-local.eli" metadataCommand trustedProcessHelper)
+  (import "node:fs/promises" lstat readdir realpath)
+  (import "node:path" resolve)
+  ;; Shared existing-instance local process/listener/manifest rediscovery.
+  ;; Never launches a client, never mutates persisted endpoint config, and keeps
+  ;; ephemeral tokens/certificates only in port-local memory.
+  (defun processRows (text)
+    (let ((rows (js-array)))
+      (js-call (js-call text :split "\n") :forEach (lambda (line)
+        (let ((m (js-call line :match (new globalThis.RegExp "^\\s*(\\d+)\\s+(\\d+)\\s+(\\d+)\\s+(.+?)\\s*$"))))
+          (when m (js-call rows :push (js-object :pid (NativeNumber (aref m 1)) :ppid (NativeNumber (aref m 2))
+            :uid (NativeNumber (aref m 3)) :executable (aref m 4)))))))
+      rows))
+  (defun nativeArgument (args name)
+    (let ((m (js-call args :match (new globalThis.RegExp (str "(?:^|\\s)--" name "(?:=|\\s+)([^\\s]+)(?:\\s|$)")))))
+      (and m (aref m 1))))
+  (defun tcpListenerAddresses (text &optional ipv4-only)
+    (let ((seen (new globalThis.Set)) (items (js-array)))
+      (js-call (js-call text :split "\n") :forEach (lambda (line)
+        (let ((m (js-call line :match (if ipv4-only
+                   (new globalThis.RegExp "^n(127\\.0\\.0\\.1):(\\d+)$")
+                   (new globalThis.RegExp "^n(127\\.0\\.0\\.1|\\[::1\\]):(\\d+)$")))))
+          (when m
+            (let* ((host (aref m 1)) (port (NativeNumber (aref m 2))) (address (str host ":" port)))
+              (when (and (Number/isSafeInteger port) (> port 0) (<= port 65535) (not (js-call seen :has address)))
+                (js-call seen :add address)
+                (js-call items :push (js-object :host host :port port :address address))))))))
+      items))
+  (defun tcpListenerPorts (text)
+    (js-call (tcpListenerAddresses text t) :map (lambda (item) (nativeGet item "port"))))
+  (defun unixListenerPaths (text)
+    (let ((paths (new globalThis.Set)))
+      (js-call (js-call text :split "\n") :forEach (lambda (line)
+        (when (js-call line :startsWith "n/")
+          (js-call paths :add (js-call line :slice 1)))))
+      paths))
+  (defasync privateDirectoryJsonNames (directory &optional private-mode)
+    (let* ((resolved (resolve directory)) (info (await (lstat resolved))))
+      (unless (and (js-call info :isDirectory) (not (js-call info :isSymbolicLink))
+                   (= (await (realpath resolved)) resolved)
+                   (= (nativeGet info "uid") (js-call globalThis.process :getuid))
+                   (= (nativeBitAnd (nativeGet info "mode") (if private-mode 63 18)) 0))
+        (throw (desktopError "native_private_directory")))
+      (let ((entries (await (readdir resolved (js-object :withFileTypes t)))) (names (js-array)))
+        (when (> (js-length entries) 256) (throw (desktopError "native_directory_bound")))
+        (js-call entries :forEach (lambda (entry)
+          (when (and (js-call entry :isFile) (not (js-call entry :isSymbolicLink))
+                     (js-call (nativeGet entry "name") :endsWith ".json"))
+            (js-call names :push (nativeGet entry "name")))))
+        (js-call names :sort))))
+  (defun pidAliveState (pid)
+    (try (js-call globalThis.process :kill pid 0) "alive"
+      (catch missing (if (js-call (js-array "ESRCH" "EPERM") :includes (nativeGet missing "code")) "gone" "unknown"))))
+  (defasync originalProcessGone (helper-ref pid expected-birth context &optional command)
+    (desktopDeadline context)
+    (unless (and (Number/isSafeInteger pid) (> pid 0))
+      (throw (desktopError "native_process_helper")))
+    (let ((helper (await (trustedProcessHelper helper-ref)))
+          (run (or command (async (file args call-context) (await (metadataCommand file args call-context))))))
+      (try
+        (let ((row (JSON/parse (await (funcall run helper (js-array (str pid)) context)))))
+          ;; Only definite exit or PID reuse (birth changed) counts as gone.
+          ;; A live process with the original birth never triggers silent rebinding.
+          (not (and (= (nativeGet row "pid") pid)
+                    (= (nativeGet row "uid") (js-call globalThis.process :getuid))
+                    (= (nativeGet row "birth") expected-birth))))
+        (catch failed
+          (if command
+            (= (nativeGet failed "code") "native_process_unavailable")
+            (= (pidAliveState pid) "gone"))))))
+  (defun cloneEndpoint (endpoint)
+    (let ((copy (Object/assign (js-object) endpoint)))
+      (when (nativeGet endpoint "process_binding")
+        (put copy :process_binding (Object/assign (js-object) (nativeGet endpoint "process_binding"))))
+      (when (nativeGet endpoint "native_api")
+        (put copy :native_api (Object/assign (js-object) (nativeGet endpoint "native_api"))))
+      copy))
+  (defun createLocalEndpointResolver (spec &optional host)
+    (let* ((cached (new globalThis.Map)) (pending (new globalThis.Map))
+           (command-key (nativeGet spec "command_key" "local_discovery_command"))
+           (command (or (and host (= (nativeTypeOf (nativeGet host command-key)) "function") (nativeGet host command-key))
+                        (and host (= (nativeTypeOf (nativeGet host "local_discovery_command")) "function")
+                          (nativeGet host "local_discovery_command"))
+                        (nativeGet spec "command")
+                        (async (file args context)
+                          (await (metadataCommand file args context
+                            (if (and (= file "ps") (= (aref args 0) "-axo")) 1048576 65536))))))
+           (helpers (js-object :command command :processRows processRows :nativeArgument nativeArgument
+                      :tcpListenerAddresses tcpListenerAddresses :tcpListenerPorts tcpListenerPorts
+                      :unixListenerPaths unixListenerPaths :privateDirectoryJsonNames privateDirectoryJsonNames
+                      :cloneEndpoint cloneEndpoint
+                      :originalProcessGone (async (helper-ref pid birth context)
+                        (await (originalProcessGone helper-ref pid birth context command)))))
+           (verify (nativeGet spec "verify"))
+           (discover (nativeGet spec "discover"))
+           (seed (nativeGet spec "seed"))
+           (resolve-live nil))
+      (setq resolve-live (async (endpoint context)
+        (let* ((key (nativeGet endpoint "instance_id"))
+               (live (js-call cached :get key))
+               (verified nil) (seeded false))
+          (when (and (not live) seed)
+            (setq live (funcall seed endpoint helpers))
+            (setq seeded (not (not live))))
+          (when live
+            (try
+              (setq verified (await (funcall verify live context helpers)))
+              (when seeded (js-call cached :set key live))
+              (catch changed
+                (unless seeded (js-call cached :delete key))
+                (setq live nil verified nil))))
+          (unless live
+            (let ((work (js-call pending :get key)))
+              (unless work
+                (setq work (funcall (async ()
+                  (let* ((candidate (await (funcall discover endpoint context helpers)))
+                         ;; Recheck identity after discovery before caching credentials/endpoints.
+                         (checked (await (funcall verify candidate context helpers))))
+                    (js-object :live candidate :verified checked)))))
+                (js-call pending :set key work))
+              (try
+                (let ((outcome (await work)))
+                  (setq live (nativeGet outcome "live") verified (nativeGet outcome "verified"))
+                  (js-call cached :set key live))
+                (finally
+                  (when (eq work (js-call pending :get key)) (js-call pending :delete key))))))
+          (Object/assign (js-object) live (js-object :verified verified)))))
+      (Object/assign resolve-live
+        (js-object :resolve resolve-live
+          :invalidate (lambda (key) (js-call cached :delete key))
+          :clear (lambda () (js-call cached :clear) (js-call pending :clear))))))
+  (export
+    processRows
+    nativeArgument
+    tcpListenerAddresses
+    tcpListenerPorts
+    unixListenerPaths
+    privateDirectoryJsonNames
+    originalProcessGone
+    cloneEndpoint
+    createLocalEndpointResolver))

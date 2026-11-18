@@ -192,7 +192,7 @@
              :creation_model_selection (if (and (= tool "codex") create-enabled) "supported" "unsupported")
              :instance_restart (if (and (= tool "cursor") (> (js-length endpoints) 0)
                (js-call endpoints :every (lambda (e) (nativeGet (nativeGet e "native_api") "restart_helper_ref")))) "supported" "unsupported")
-             :session_create (if create-enabled "supported" "unsupported") :instance_start "unsupported" :instance_stop "unsupported"
+             :session_create (if create-enabled "supported" "unsupported") :instance_epoch_refresh "supported" :instance_start "unsupported" :instance_stop "unsupported"
              :native_idempotency "unsupported" :lookup_send (if (= tool "codex") "positive_only" "unsupported") :lookup_create (if create-enabled "supported" "unsupported")
              :observe "unsupported" :max_input_frame_bytes 262144))
            (endpointFor nil) (instanceScope nil) (workspaceFor nil) (sessionRecord nil) (cursorThreads nil)
