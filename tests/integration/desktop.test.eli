@@ -869,6 +869,11 @@
             (js-array "skill" "check" "--target" "agents" "--scope" "project" "--project" skill-project "--json")
             io repo-root))) :toBe 0)
           (js-call (expect (nativeGet (nativeGet (JSON/parse (aref out 3)) "data") "state")) :toBe "unchanged")
+          (js-call (expect (await (runSkillCommand
+            (js-array "skill" "config" "--target" "opencode" "--client-profile" (resolve skill-project "client.json") "--json")
+            io repo-root (resolve skill-project "current")))) :toBe 0)
+          (js-call (expect (nativeGet (nativeGet (JSON/parse (aref out 4)) "data") "cli_command"))
+            :toBe (resolve skill-project "current/bin/dj"))
           (await (writeFile (resolve skill-project ".agents/skills/dj/non-markdown.txt") "conflict"))
           (js-call (expect (await (runSkillCommand
             (js-array "skill" "install" "--target" "agents" "--scope" "project" "--project" skill-project "--update" "--json")

@@ -24,7 +24,7 @@ Kimi Work / Code Web 与 DSH Desktop / Web 的形态、既有实例接收及调�
 ## 调用身份与 MCP
 
 - profile: 部署时为获准本机AI准备普通local-ai client profile，默认~/.dj/client.json；一个profile可用于多个对话，管理profile单独保存。凭据文件保持私有。不要在 Skill、项目文件、模型正文或 MCP 参数中写 token；参数里只有 profile 路径。
-- generate: `dj skill config --target cursor --client-profile PRIVATE_PROFILE` 输出 MCP 配置片段。命令只打印，不安装配置、不读取凭据。使用目录包内的 bin/dj 路径，按本机实际路径合并 dj 项，不覆盖原文件。移动目录包后需要重新生成。
+- generate: `~/.dj/current/bin/dj skill config --target cursor --client-profile PRIVATE_PROFILE` 输出 MCP 配置片段。通过稳定软链入口调用时自动保留稳定 `bin/dj` 启动路径，不固化单次版本发布目录。命令只打印，不安装配置、不读取凭据；按本机实际路径合并 dj 项，不覆盖原文件。移动安装根后需要重新生成。
 - process: MCP 启动的只是 DJ 薄代理，连接原服务 Core；它不启动 AI 或新建对话。stdout 只用于 MCP 协议。所有接口仍重新执行 DJ 主体权限校验。
 - binding: 全局MCP配置只确定调用身份，不自动识别当前对话。agent.whoami返回bound_agent_ids；AI核对自身准确原生ID和实例，agent.discover/register后以显式agent_id订阅。一个调用身份可登记多个目标，不需操作员逐对话接线；受限profile仍遵守target_constraint，不借用其他身份。
 
@@ -33,7 +33,7 @@ Kimi Work / Code Web 与 DSH Desktop / Web 的形态、既有实例接收及调�
 | Codex | ~/.codex/config.toml 的 mcp_servers.dj；项目配置遵守原客户端信任范围 | 将 config 命令 data.config 的 TOML 合并，再查看工具目录 |
 | Cursor | .cursor/mcp.json 或 ~/.cursor/mcp.json 的 mcpServers.dj | 合并 JSON dj 项；在 Desktop 核对 dj_service_status，不用 Agent CLI 代验 |
 | Claude Code | 项目 .mcp.json 的 mcpServers.dj；用户级使用原生 MCP 设置 | 合并 JSON dj 项，保留原审批；不改 settings 权限 |
-| OpenCode | opencode.json 的 mcp.dj，type=local、command 为数组 | 使用生成的 OpenCode 配置；按实际目录查看工具名，不假设所有客户端同名 |
+| OpenCode | opencode.json 的 mcp.dj，type=local、command 为数组 | 合并生成的 OpenCode 配置；Code Mode 下在 execute 内通过 search/tools.dj.* 调用，或通过 shell 调用 ~/.dj/current/bin/dj CLI |
 | Antigravity/agy | ~/.gemini/config/mcp_config.json 或 .agents/mcp_config.json 的 mcpServers.dj | 合并 dj 项，通过原生 MCP 工具目录调用 |
 | Pi / agents | 本模块不宣称宿主有内置 MCP 配置 | 通过已授权工具调用 DJ CLI；宿主另有 MCP 扩展时按其实际接口配置 |
 

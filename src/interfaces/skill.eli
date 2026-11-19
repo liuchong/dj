@@ -155,7 +155,8 @@
         :config config :cli_command command :client_profile profile
         :instructions "Merge only the dj entry into local client configuration, preserving all other entries and approval policy. Pi/shared targets use CLI unless the host supplies an MCP client. See references/clients.md. GEPO uses the private UDS; it is not an MCP HTTP endpoint."
         :client_config_modified false :agent_started false))))
-  (defasync runSkillCommand (argv io root)
+  (defasync runSkillCommand (argv io root &optional command-root)
+    (let ((launcher-root (or command-root root)))
     (if (or (js-call argv :includes "--help") (= (js-length argv) 1))
       (progn (funcall (nativeGet io "stdout") skillHelp) 0)
       (let ((result nil))
@@ -189,7 +190,7 @@
                 ((= action "config")
                   (unless (js-call (Object/keys options) :every (lambda (k) (js-call (js-array "target" "client_profile") :includes k)))
                     (throw (new globalThis.TypeError "config accepts target and client-profile only")))
-                  (skillConfig (nativeGet options "target") (resolve root "bin/dj")
+                  (skillConfig (nativeGet options "target") (resolve launcher-root "bin/dj")
                     (if (nativeGet options "client_profile") (resolve (nativeGet options "client_profile")) nil)))
                 ((= action "hooks")
                   (unless (js-call (Object/keys options) :every
@@ -200,7 +201,7 @@
                     (progn
                       (when (nativeGet options "client_profile")
                         (put options :client_profile (resolve (nativeGet options "client_profile"))))
-                      (hookConfig options (resolve root "bin/dj")))))
+                      (hookConfig options (resolve launcher-root "bin/dj")))))
                 (t
                   (when (and (= action "check") (nativeGet options "update"))
                     (throw (new globalThis.TypeError "check does not accept --update")))
@@ -214,5 +215,5 @@
             (setq result (failure (if (or (eq (nativeGet error "constructor") globalThis.TypeError)
               (= (nativeGet error "code") "EEXIST")) "invalid_argument" "unavailable")))))
         (funcall (nativeGet io (if (nativeGet result "ok") "stdout" "stderr")) (str (JSON/stringify result) "\n"))
-        (if (nativeGet result "ok") 0 2))))
+        (if (nativeGet result "ok") 0 2)))))
   (export skillTargets skillDestination skillConfig installSkill runSkillCommand))

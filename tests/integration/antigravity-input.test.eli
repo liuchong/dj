@@ -5,7 +5,8 @@
   (import "../support/case.eli" withCase)
   (import "bun:test" expect)
   (withCase "T38.antigravity-busy.integration" (lambda () nil) (async (ignored)
-    (let* ((calls (js-array)) (status "CASCADE_RUN_STATUS_RUNNING") (fail-send false)
+    (let* ((calls (js-array)) (step-offsets (js-array)) (status "CASCADE_RUN_STATUS_RUNNING") (fail-send false)
+      (step-count 1750) (last-input 157) (turn-has-config t)
       (config (js-object :plannerConfig (js-object :planModel "native-model") :toolConfig (js-object :keep t)))
       (endpoint (js-object :instance_id "ag" :native_namespace "native" :directory "/workspace" :workspace_ref "ws" :workspace_scope "instance"))
       (binding (js-object :instance_id "ag" :native_namespace "native" :native_session_id "original" :instance_epoch "epoch"))
@@ -15,26 +16,43 @@
           (cond
             ((= method "GetAllCascadeTrajectories") (js-object :instance_epoch "epoch" :data
               (js-object :trajectorySummaries (js-object :original
-                (js-object :status status :stepCount 1 :lastUserInputStepIndex 0)))))
-            ((= method "GetCascadeTrajectorySteps") (js-object :instance_epoch "epoch" :data
-              (js-object :steps (js-array (js-object :userInput (js-object :userConfig config))))))
+                (js-object :status status :stepCount step-count :lastUserInputStepIndex last-input)))))
+            ((= method "GetTrajectoryTurns")
+              (js-call (expect (nativeGet payload "stepIndices")) :toEqual (js-array last-input))
+              (js-object :instance_epoch "epoch" :data (js-object :turns (js-array
+                (js-object :startStepIndex last-input :firstStep (js-object :userInput
+                  (if turn-has-config (js-object :userConfig config) (js-object :items (js-array)))))))))
+            ((= method "GetCascadeTrajectorySteps")
+              (js-call step-offsets :push (nativeGet payload "stepOffset"))
+              (js-object :instance_epoch "epoch" :data
+                (js-object :steps (js-array (js-object :metadata (js-object :generatorModel "MODEL_PLACEHOLDER_M427"))))))
             (t (js-call calls :push payload)
               (when fail-send (throw (new globalThis.Error "lost acknowledgement")))
               (js-object :instance_epoch "epoch" :data (js-object))))))))
       (context (js-object :deadline (+ (performance/now) 5000))))
       (try
         (js-call (expect (nativeGet (await (js-call port :submit binding envelope "steer" "one" context)) "state")) :toBe "accepted")
+        ;; Long 1500+ step turns resolve config from GetTrajectoryTurns without fetching tail steps.
+        (js-call (expect (js-length step-offsets)) :toBe 0)
         (js-call (expect (nativeGet (aref calls 0) "deliveryStrategy")) :toBe "MESSAGE_DELIVERY_STRATEGY_NEXT_INVOCATION")
         (js-call (expect (nativeGet (aref calls 0) "cascadeConfig")) :toEqual config)
         (js-call (expect (nativeGet (aref calls 0) "cascadeId")) :toBe "original")
+        ;; When lastUserInputStepIndex was submitted via RPC (no userInput.userConfig),
+        ;; submit falls back to a bounded 16-step PROD_UI tail and generatorModel.
+        (setq turn-has-config false)
+        (js-call (expect (nativeGet (await (js-call port :submit binding envelope "steer" "rpc-turn" context)) "state")) :toBe "accepted")
+        (js-call (expect step-offsets) :toEqual (js-array (- step-count 16)))
+        (js-call (expect (nativeGet (nativeGet (aref calls 1) "cascadeConfig") "plannerConfig"))
+          :toEqual (js-object :planModel "MODEL_PLACEHOLDER_M427"))
+        (setq turn-has-config t)
         (js-call (expect (nativeGet (await (js-call port :submit binding envelope "start_idle" "two" context)) "definite_not_sent")) :toBe t)
-        (js-call (expect (js-length calls)) :toBe 1)
+        (js-call (expect (js-length calls)) :toBe 2)
         (setq status "CASCADE_RUN_STATUS_IDLE")
         (js-call (expect (nativeGet (await (js-call port :submit binding envelope "start_idle" "three" context)) "state")) :toBe "accepted")
-        (js-call (expect (nativeGet (aref calls 1) "deliveryStrategy")) :toBe "MESSAGE_DELIVERY_STRATEGY_WHEN_IDLE")
+        (js-call (expect (nativeGet (aref calls 2) "deliveryStrategy")) :toBe "MESSAGE_DELIVERY_STRATEGY_WHEN_IDLE")
         (setq status "CASCADE_RUN_STATUS_UNKNOWN")
         (js-call (expect (nativeGet (await (js-call port :submit binding envelope "steer" "four" context)) "definite_not_sent")) :toBe t)
-        (js-call (expect (js-length calls)) :toBe 2)
+        (js-call (expect (js-length calls)) :toBe 3)
         (setq status "CASCADE_RUN_STATUS_RUNNING" fail-send t)
         (let ((unknown (await (js-call port :submit binding envelope "steer" "five" context))))
           (js-call (expect (nativeGet unknown "state")) :toBe "unknown")

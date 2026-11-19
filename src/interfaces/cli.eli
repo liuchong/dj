@@ -487,8 +487,10 @@
           (setq djReturn3Value (await (runHookCommand argv io)))
           (throw djReturn3Token))
         (when (= (aref argv 0) "skill")
-          (setq djReturn3Value (await (runSkillCommand argv io
-            (resolve (dirname (aref (nativeGet globalThis.process "argv") 1)) "../../.."))))
+          (let ((bundle-root (resolve (dirname (aref (nativeGet globalThis.process "argv") 1)) "../../.."))
+                (runtime-root (nativeGet (nativeGet globalThis.process "env") "DJ_RUNTIME_ROOT")))
+            (setq djReturn3Value (await (runSkillCommand argv io bundle-root
+              (if (and (= (nativeTypeOf runtime-root) "string") (> (js-length runtime-root) 0)) runtime-root bundle-root)))))
           (throw djReturn3Token))
         (let* ((parsed (parseCli argv)) (result parsed) (json t))
           (when (nativeGet parsed "ok")

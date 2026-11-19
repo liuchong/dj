@@ -14,6 +14,9 @@
                           (js-object :trajectorySummaries (js-object :original (js-object
                             :summary "Original" :status "CASCADE_RUN_STATUS_IDLE" :stepCount 1 :lastUserInputStepIndex 0
                             :trajectoryMetadata (js-object :workspaceUris (js-array (nativeGet config "workspace")))))))
+                        ((js-call path :endsWith "/GetTrajectoryTurns")
+                          (js-object :turns (js-array (js-object :startStepIndex 0 :firstStep (js-object :userInput (js-object :userConfig
+                            (js-object :plannerConfig (js-object :planModel "fixture-model"))))))))
                         ((js-call path :endsWith "/GetCascadeTrajectorySteps")
                           (js-object :steps (js-array (js-object :userInput (js-object :userConfig
                             (js-object :plannerConfig (js-object :planModel "fixture-model")))))))

@@ -179,8 +179,9 @@ metadata:
 
 ## 接口调用
 
-- cli: 操作名以空格分词，例如`dj session message search --input query.json --json`。复杂业务参数仅使用一个`--input FILE`或`--input -`的JSON对象，不与业务flags混合。
-- mcp: 工具名为dj_加操作名中的点改为下划线，例如dj_session_message_search；以tools/list的inputSchema为准。
+- cli: 操作名以空格分词，例如`~/.dj/current/bin/dj session message search --client-profile ~/.dj/client.json --input query.json --json`。复杂业务参数仅使用一个`--input FILE`或`--input -`（由stdin传入JSON对象），不能把JSON字面量直接填在`--input`后，也不与业务flags混合。
+- mcp: 标准MCP客户端工具名为`dj_`加操作名中的点改为下划线（如`dj_session_send`）；OpenCode Code Mode宿主挂载在`tools.dj.*`命名空间下（可在`execute`中`search({ query: "dj session" })`查看签名并调用`tools.dj.session_resolve`/`tools.dj.session_send`/`tools.dj.service_status`）。具体参数以宿主公开的inputSchema为准。
+- no_gui_fallback: 跨工具会话查询或发送遇到传输错误、未加载或受阻时，核对DJ `delivery.get`/`session.probe`及原生接口状态如实处理，严禁退回GUI自动化（如`kimi-cu`点击/键入或`osascript`模拟按键）。
 - gepo: 通过支持私有 Unix socket 和受保护凭据的宿主访问；GET /.gepo 发现当前主体可见目录，GET 操作路径读说明，POST 同路径提交原 arguments JSON。GEPO 不是 MCP HTTP endpoint，普通业务查询也使用 POST；详见[客户端接线](references/clients.md)。
 - pull: message.list/search/get 查询获准来源，delivery.list/get 查询原生投递；订阅待办使用 delivery_mode=pull 与 subscription.pull/ack。领取需要订阅目标对应的调用身份和 subscription.consume 授权；同主体可登记多个目标，须明确subscription_id，不借operator凭据。按[工作流](references/workflows.md)处理租约与原键，不把消费确认当作任务完成。
 - callbacks: Codex / Cursor 的可选消费回调使用各自原生事件，配置仅生成、不自动安装；按[本机回调](references/callbacks.md)核对原会话与独立主体，显式确认领取，不以回调代替 DJ 主动通知或任务完成。
