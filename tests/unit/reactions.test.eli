@@ -1,6 +1,6 @@
 (module dj.tests.unit.reactions
   (import "../../src/core/native.eli" nativeGet nativeSetTimeout)
-  (import "../../src/adapters/im/lark-reactions.eli" normalizeLarkReaction normalizePolledReaction pollLarkReactions)
+  (import "../../src/adapters/im/lark-reactions.eli" normalizeLarkReaction normalizePolledReaction pollLarkReactions reconcileReactionSourceKey)
   (import "../../src/adapters/im/lark-reaction-policy.eli" reactionPollPolicy createReactionReadBudget reactionReadBudget)
   (import "../../src/adapters/im/lark-reaction-cache.eli" createReactionObservationCache)
   (import "../../src/adapters/im/lark-http.eli" createLarkHttpTransport)
@@ -171,7 +171,54 @@
           (js-call (expect (reactionEchoState context event)) :toBe "clear")
           (put (aref marks 0) :preexisting t)
           (put (nativeGet event "reaction") :action_time "1767225600000")
-          (js-call (expect (reactionEchoState context event)) :toBe "clear")))
+          (js-call (expect (reactionEchoState context event)) :toBe "clear"))
+        ;; Cross-app Typing/Get echo: exact reaction_id, reply_routes mapping, and second-boundary ms skew (.985s vs .019s).
+        (let* ((bot-conn (js-object :connection_id "lark-bot" :platform "lark" :brand "lark" :identity "bot"
+            :identity_revision 2 :event_app_id "cli_bot" :event_subject_id "ou_bot"))
+          (user-conn (js-object :connection_id "lark-user" :platform "lark" :brand "lark" :identity "user"
+            :tenant_ref "authorized-tenant" :identity_revision 2 :event_app_id "cli_user"
+            :user_identity (js-object :app_id "cli_user" :open_id "ou_self_user")))
+          (marks (js-array (js-object :connection_id "lark-user" :identity_revision 2 :attempted_create t
+            :reaction_id "rid-typing-1" :native_action_time "1767225600985" :create_requested_at "2026-01-01T00:00:00.950Z")))
+          (rules (js-array (js-object :reply_routes (js-array
+            (js-object :source_connection_id "lark-bot" :mention_id "ou_self_in_bot" :reply_connection_id "lark-user"
+              :source_identity_revision 2 :reply_identity_revision 2)))))
+          (cross-ctx (js-object
+            :config (js-object :connections (js-array bot-conn user-conn))
+            :repository (js-object :get (lambda (table id) (if (= id "lark-bot") bot-conn user-conn)))
+            :store (js-object :db (js-object :query (lambda (sql) (js-object :all (lambda (&rest ignored)
+              (js-call (if (js-call sql :includes "session_rules") rules marks) :map
+                (lambda (item) (js-object :payload (JSON/stringify item)))))))))))
+          (bot-original (Object/assign (js-object) (createdEvent "lark-bot" "cross-msg" "body") (js-object :identity_revision 2)))
+          (ws-echo (normalizeLarkReaction bot-conn
+            (js-object :header (js-object :app_id "cli_bot" :event_id "ev-ws" :event_type "im.message.reaction.created_v1")
+              :event (js-object :message_id "cross-msg" :reaction_type (js-object :emoji_type "Typing")
+                :action_time "1767225601019" :operator_type "user" :user_id (js-object :open_id "ou_self_in_bot")))
+            bot-original))
+          (http-echo (normalizePolledReaction bot-conn bot-original
+            (js-object :reaction_id "rid-typing-1" :action_time "1767225600985"
+              :reaction_type (js-object :emoji_type "Typing")
+              :operator (js-object :operator_type "user" :operator_id "ou_unmapped")))))
+          (js-call (expect (reactionEchoState cross-ctx ws-echo)) :toBe "echo")
+          (js-call (expect (reactionEchoState cross-ctx http-echo)) :toBe "echo")
+          ;; Reconcile 34ms WS vs HTTP action_time skew on the same connection, while keeping >500ms re-add distinct.
+          (let* ((ws-pin (Object/assign (normalizeLarkReaction bot-conn
+              (js-object :header (js-object :app_id "cli_bot" :event_id "ev-pin" :event_type "im.message.reaction.created_v1")
+                :event (js-object :message_id "cross-msg" :reaction_type (js-object :emoji_type "Pin")
+                  :action_time "1767225610390" :operator_type "user" :user_id (js-object :open_id "ou_self_in_bot")))
+              bot-original) (js-object :identity_revision 2)))
+            (skew-db (js-object :query (lambda (sql) (js-object :all (lambda (&rest ignored)
+              (if (js-call sql :includes "FROM events") (js-array (js-object :payload (JSON/stringify ws-pin))) (js-array)))))))
+            (http-pin (reconcileReactionSourceKey skew-db bot-conn (normalizePolledReaction bot-conn bot-original
+              (js-object :reaction_id "rid-pin-1" :action_time "1767225610364"
+                :reaction_type (js-object :emoji_type "Pin")
+                :operator (js-object :operator_type "user" :operator_id "ou_self_in_bot")))))
+            (readded-pin (reconcileReactionSourceKey skew-db bot-conn (normalizePolledReaction bot-conn bot-original
+              (js-object :reaction_id "rid-pin-2" :action_time "1767225611500"
+                :reaction_type (js-object :emoji_type "Pin")
+                :operator (js-object :operator_type "user" :operator_id "ou_self_in_bot"))))))
+            (js-call (expect (nativeGet http-pin "source_key")) :toBe (nativeGet ws-pin "source_key"))
+            (js-call (expect (= (nativeGet readded-pin "source_key") (nativeGet ws-pin "source_key"))) :toBe false))))
       (let ((rendered (renderEnvelope (js-object :schema_version 1 :kind "external_message" :allowed_actions (js-array)
         :content (nativeGet event "content") :reaction (nativeGet event "reaction")))))
         (js-call (expect (js-call rendered :includes "原文\n正文")) :toBe t)

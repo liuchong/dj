@@ -28851,6 +28851,33 @@
       "then": "Core deduplicates each action, preserves identities and emits explicit trigger reasons without replaying old mentions"
     },
     {
+      "case_id": "T41.late-join-and-cross-app-echo.integration",
+      "parent_id": "T41",
+      "file": "tests/integration/hybrid-inbox.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {
+        "transport": "websocket-http-core"
+      },
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated",
+      "requirements": [
+        "Q01",
+        "Q03",
+        "Q07"
+      ],
+      "acceptance_ids": [
+        "A03",
+        "A05"
+      ],
+      "given": "Cross-app Lark user and bot connections sharing a tenant with mapped reply_routes",
+      "when": "Bot joins an existing group days after activation, posts Working reactions and observes skewed WS/HTTP reactions",
+      "then": "Pre-join history is not backfilled, cross-app Working echoes do not self-trigger and skewed WS/HTTP reactions coalesce once"
+    },
+    {
       "case_id": "T38.trigger-reasons.unit",
       "parent_id": "T38",
       "file": "tests/unit/reactions.test.eli",

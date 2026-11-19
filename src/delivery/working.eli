@@ -147,7 +147,7 @@
         (must (ownerGuard context)) (save context "work_marks" mark) (success nil)))))))
       (acknowledgement (= (nativeGet mark "acknowledgement") t)) (authority-ended (js-object))
       (recipient-allowed (markRecipientAllowed context mark))
-      (live nil) (found nil) (complete false) (page (nativeGet mark "page_token" nil)) (pages 0)
+      (live nil) (found nil) (complete false) (delete-failed false) (page (nativeGet mark "page_token" nil)) (pages 0)
       (parameters (js-object :message_id (nativeGet mark "native_message_id") :emoji_type (if acknowledgement (nativeGet port "acknowledgement_emoji" "Get") (nativeGet port "working_emoji" "Typing")))))
       (try
         (must (ownerGuard context))
@@ -194,9 +194,22 @@
                 (put mark :state "removing") (must (await (funcall persist)))
                 (put parameters :reaction_id (nativeGet mark "reaction_id"))
                 (let ((response (await (js-call port :reaction "delete" parameters (nativeCallContext context)))))
-                  (unless (nativeGet response "ok") (put mark :native_error (nativeGet (nativeGet response "error") "details"))))
-                ;; Confirm absence on the next sweep, including DELETE timeout/restart.
-                (put mark :next_due_at (utcNow context)))))
+                  (if (nativeGet response "ok")
+                    (progn
+                      (put mark :delete_failures 0)
+                      (put mark :native_error nil)
+                      ;; Confirm absence on the next sweep, including DELETE timeout/restart.
+                      (put mark :next_due_at (utcNow context)))
+                    (let* ((details (nativeGet (nativeGet response "error") "details"))
+                      (failures (1+ (nativeGet mark "delete_failures" 0)))
+                      (retry-after (nativeGet details "retry_after_seconds" 0))
+                      (delay (Math/min 3600 (Math/max (if (Number/isFinite retry-after) retry-after 0)
+                        (* 10 (Math/pow 2 (Math/min 9 (1- failures))))))))
+                      (setq delete-failed t)
+                      (put mark :delete_failures failures)
+                      (put mark :native_error details)
+                      (put mark :last_error "reaction_cleanup_pending")
+                      (put mark :next_due_at (addSeconds (utcNow context) delay))))))))
           ((and (or (not acknowledgement) (not recipient-allowed)) (nativeGet mark "reaction_id")) (put mark :state "done") (put mark :removed_at (utcNow context)))
           ((not recipient-allowed) (put mark :state "done") (put mark :last_error "recipient_blocked"))
           ((and (> live 0) (not (nativeGet mark "attempted_create")))
@@ -213,7 +226,7 @@
           ((nativeGet mark "attempted_create")
             (put mark :state "reconciling") (put mark :next_due_at (addSeconds (utcNow context) 30)))
           (t (put mark :state "done")))
-        (put mark :last_error nil)
+        (unless delete-failed (put mark :last_error nil))
         (catch unavailable
           (unless (eq unavailable authority-ended)
             (put mark :last_error (if acknowledgement "acknowledgement_pending" "reaction_cleanup_pending"))

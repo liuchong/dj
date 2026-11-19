@@ -35,8 +35,16 @@
   (defasync pollLarkPins (config application base checkpoint context normalize)
     (let* ((now (js-call (nativeGet (nativeGet application "ports") "clock") :utcNow))
       (db (nativeGet (nativeGet application "store") "db")) (id (nativeGet config "connection_id"))
+      (subscribed (js-call (js-call db :query
+        "SELECT 1 FROM subscription_sources i JOIN subscriptions s ON s.subscription_id=i.subscription_id AND s.revision=i.revision WHERE i.connection_id=? AND i.event_kind='message.pinned' AND s.state='active' LIMIT 1") :get id))
       (chat (nativeGet checkpoint "chat_id")) (events (js-array))
-      (pending (nativeGet checkpoint "pending_pins" (js-array))))
+      (pending (if subscribed (nativeGet checkpoint "pending_pins" (js-array)) (js-array))))
+      (if (not subscribed)
+        (progn
+          (put checkpoint :last_success_at now) (put checkpoint :native_error nil)
+          (put checkpoint :next_due_at (js-call (new globalThis.Date (+ (Date/parse now) (* 1000 (nativeGet config "pin_poll_seconds" 15)))) :toISOString))
+          events)
+        (progn
       (unless (nativeGet checkpoint "pin_window_end")
         (put checkpoint :pin_window_start (Math/max (Date/parse (nativeGet checkpoint "activation_at"))
           (- (Date/parse (nativeGet checkpoint "completed_until" (nativeGet checkpoint "activation_at"))) 120000)))
@@ -94,5 +102,5 @@
         (put checkpoint :completed_until (js-call (new globalThis.Date (nativeGet checkpoint "pin_window_end")) :toISOString))
         (put checkpoint :pin_window_end nil) (put checkpoint :pin_listed false) (put checkpoint :seen_page_tokens (js-array))
         (put checkpoint :next_due_at (js-call (new globalThis.Date (+ (Date/parse now) (* 1000 (nativeGet config "pin_poll_seconds" 15)))) :toISOString)))
-      events))
+      events))))
   (export pinEvent pollLarkPins))
