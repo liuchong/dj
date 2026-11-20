@@ -26829,7 +26829,7 @@
     {
       "case_id": "T38.all-source-subscription.integration",
       "parent_id": "T38",
-      "file": "tests/integration/context.test.eli",
+      "file": "tests/integration/subscription-scope.test.eli",
       "suite": "integration",
       "level": "integration",
       "e2e": false,
@@ -26850,7 +26850,7 @@
     {
       "case_id": "T38.explicit-source-subscription.integration",
       "parent_id": "T38",
-      "file": "tests/integration/context.test.eli",
+      "file": "tests/integration/subscription-scope.test.eli",
       "suite": "integration",
       "level": "integration",
       "e2e": false,
@@ -26911,7 +26911,7 @@
     {
       "case_id": "T38.explicit-message-recovery.integration",
       "parent_id": "T38",
-      "file": "tests/integration/working.test.eli",
+      "file": "tests/integration/message-recovery.test.eli",
       "suite": "integration",
       "level": "integration",
       "e2e": false,
