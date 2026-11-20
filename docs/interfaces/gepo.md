@@ -8,6 +8,7 @@ GEPO 0.2 与现有 JSON API 共用同一私有 HTTP-over-UDS 服务、Bearer 身
 | GET /subscription?.gepo | 当前目录与直接子路径 |
 | GET /subscription/preview | 当前操作用法、输入/结果 schema、副作用与重试要求 |
 | POST /subscription/preview | 执行 subscription.preview；JSON body 就是该操作的 arguments |
+| POST /message/attachment/get | 按 `attachment_ref` 读取附件，`corpus: "native"` 允许在缓存缺失时补取 |
 
 所有操作把点分名称映射为斜杠路径，例如 message.get 对应 /message/get。GET/HEAD 只提供说明或目录，不创建订阅、不读取 IM 正文、不触发投递；业务查询也使用 POST。无权限路径不在目录中出现，认证信息仍逐请求复核。
 

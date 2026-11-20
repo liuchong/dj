@@ -17,6 +17,7 @@ MCP 入口使用锁定的 `@modelcontextprotocol/server` 2.3.1 和 stdio 传输�
 | subscription.preview / subscription.create | dj_subscription_preview / dj_subscription_create |
 | conversation.resolve / operation.get / outbound.get | dj_conversation_resolve / dj_operation_get / dj_outbound_get |
 | message.get / message.reply | dj_message_get / dj_message_reply |
+| message.attachment.get | dj_message_attachment_get |
 | delivery.get / delivery.reconcile | dj_delivery_get / dj_delivery_reconcile |
 | session.list / session.search / session.send | dj_session_list / dj_session_search / dj_session_send |
 | session.message.search / session.create | dj_session_message_search / dj_session_create |

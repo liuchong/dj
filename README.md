@@ -19,6 +19,7 @@ DJ 负责身份核对、订阅匹配、持久受理和投递；AI 负责判断�
 - **通知原会话**：通过已有客户端的 IPC、socket 或本机 API 精确投递，不启动替代 Agent 进程。支持的接收端可在工作中继续接收输入；积压按有界批次投递，不等待模型逐条完成。工具接线与验证范围见[能力范围](docs/release-scope.md)。
 - **外发不自触发**：DJ发出的消息再次收回时只记录历史，不再次通知AI；真实后续回复和主动标记仍按规则触发。见[外发回声](docs/specs/0032-outbound-echo-suppression.md)。
 - **保留上下文**：提供历史、引用、话题和 thread；默认读取本地缓存，AI 可主动请求更多上下文。
+- **富媒体附件**：Lark 图片、音视频、文件和受支持的云文档可以随消息进入 AI 会话。附件附录提供本机文件路径或原生定位，AI 可按引用补取。见[附件读取与投递](docs/specs/0034-message-attachments.md)。
 - **固定回复位置与身份**：优先按明确 @ 目标选择账号，沿原话题或引用链持久绑定；同一消息的多条线路副本对同一 AI 只通知一次，不影响其他 AI 各自订阅。AI 显式调用回复工具提交内容。见[交互投递上下文](docs/specs/0031-dispatch-contexts.md)。
 - **消息操作**：沿原连接身份撤回、编辑已发文本，手动增删查表情；CLI、MCP、GEPO 共用接口。见[消息操作](docs/specs/0016-message-actions.md)。
 - **Lark 官方 API**：独立 Eliscript [Lark 包](packages/lark/README.md)提供鉴权、JSON、上传下载及 WebSocket 帧编解码；DJ 的通用入口沿指定连接调用办公 API，与 IM 分发分层。

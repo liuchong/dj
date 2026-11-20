@@ -19,6 +19,8 @@ operation 的每一段点号映射为命令词，例如 subscription.create → 
 | --timeout-seconds | 默认 30，1–300；超时不取消已受理后台工作 |
 | --endpoint | 配置中的 DJ 服务引用，不是任意目标工具 URL |
 
+从通知或消息查询拿到附件引用后，可用 `dj message attachment get --input FILE` 读取。输入为 `{"attachment_ref":"…"}`，缓存缺失时显式增加 `"corpus":"native"` 即可沿原身份补取。
+
 不提供自由文本 dj do/自然语言 execute 或自动参数纠错。人类命令写错也必须给明确错误，不能悄悄映射到另一个对象。模型优先使用完整 JSON 输入，服务返回的句柄直接复用，不用 shell 拼接原始消息正文。
 
 JSON 成功 envelope 写 stdout，失败写 stderr，日志只在 stderr；调用者须同时读取退出码和对应 envelope。代理不得把诊断拼进协议 JSON。退出码：0=查询成功/变更已受理，2=参数/票据失效，3=认证/授权，4=可证未受理/未发送的依赖失败，5=结果未知，6=revision/幂等/重复提交冲突，7=不支持/版本不兼容，8=内部或存储错误。

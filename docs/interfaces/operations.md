@@ -45,6 +45,7 @@ request_id 可选，用于追踪；所有受理变更要求 idempotency_key。�
 | message.list | conversation_ref、time_range?、corpus?、limit?、cursor? | 事件摘要及读取引用 | read |
 | message.search | conversation_ref、query、time_range?、corpus?、limit?、cursor? | 匹配摘要、语料来源与完整性 | search；字面检索 |
 | message.get | event_id 或 message_ref（二选一）、offset_bytes?、max_bytes? | 元数据、正文分页、附件引用 | read |
+| message.attachment.get | attachment_ref、corpus? | 附件状态、原生定位、就绪文件路径 | read；缓存未命中时显式选择 native 才补取 |
 | message.context | event_id/message_ref/context_ref之一、before?、after?、reference_depth?、max_bytes?、corpus? | 锚点、前后文、引用链及context_ref | read；默认DJ缓存 |
 | message.history | context_ref/conversation_ref之一、limit?、cursor?、order?、time_range?、max_bytes?、corpus? | 同会话历史分页 | read；默认DJ缓存 |
 | message.send | destination_ref、content、force_send? | Outbound、state、revision、force_send | send；创建出站意图，强制仅限用户明确要求的本条 |
@@ -106,7 +107,7 @@ content 必须为 {type:"text",text:string}，非空且 UTF-8 最多 16384 字�
 
 message.list/search的corpus缺省local，仅查询已入库事件。上下文历史通过message.context/history默认读本地；显式corpus=native时由具备能力的连接补取，形成独立只读上下文缓存/context_ref，不创建实时Event、不消耗ingress_seq，也不占用源入库去重键；稍后真正到达的 live 事件仍按自己的规则处理。message.get 接收 event_id 或 message_ref 两种互斥参数，不能混用。time_range 为 {from,to}，端点 RFC3339；query 是非空字面子串，不分词、不推理。查询不标记平台消息已读，也不加入群。
 
-message.get 的 offset_bytes 默认 0，必须在 UTF-8 边界；max_bytes 默认 16384，上限 32768。返回 next_offset_bytes，内容删除/过期返回明确状态。附件首轮仅元数据，没有未定义的“自动获取附件”操作。引用包含值不代表永远有权读取。
+message.get 的 offset_bytes 默认 0，必须在 UTF-8 边界；max_bytes 默认 16384，上限 32768。返回 next_offset_bytes，内容删除/过期返回明确状态。通知以及消息查询返回的 `attachment_ref` 可用于 `message.attachment.get`。默认读取本地缓存，显式指定 `corpus: "native"` 时才在缓存缺失后沿原 Lark 连接和身份补取。响应 `state: "ready"` 时附可读的 `local_path`。使用引用时仍核验当前消息权限。
 
 ## 查询、核对与人工解除
 
