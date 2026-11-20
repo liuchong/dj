@@ -92,6 +92,10 @@ OpenCode 使用当前 `/api/*` 本机服务协议；现有运行中服务由原�
 
 ## 创建并发送首条消息
 
+用户指明由某个本机工具接手，已有精确接收会话就用 session.send；只给工具且需要独立接手时，调用方可在已有原生实例直接 session.create，一次携带实际交接正文。先查一次目标实例和已知工作区，不扫描全历史、不先发给另一个助手代建。正文保留已有统一 Identity、任务、工作目录、当前进度与必要约束；Identity 已给出日志入口。
+
+Codex 的 instance.ready 和 session_create=supported 表示已有桌面进程与已配置能力。创建受理前 DJ 还会探测同代次原生创建接收端；入口过期、宿主退出或原生工具不可用时返回 unavailable，details.reason=native_creation_receiver_unavailable，未记录 lifecycle、未提交首条。此时可以修复原入口，或按授权用原生 Codex App Tools/已接通的 Agent Control 管理入口一次直接创建。命令返回 recorded 后须查原 lifecycle；unknown 仍按同一创建键或原生项目定点读回，不另建或换路重发。
+
 ```json
 {"instance_id":"inst_example","expected_instance_epoch":"epoch_example","workspace_ref":"wsp_example","title":"issue-123","content":{"type":"text","text":"请调查这个明确的问题。"},"idempotency_key":"create-with-input-example"}
 ```

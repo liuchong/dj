@@ -95,7 +95,7 @@
       (nextId context "lifecycle_dispatch")
       :launch_token
       (nativeGet instance "launch_token" nil)))
-  (defun acceptLifecycle
+  (defasync acceptLifecycle
     (context operation args)
     (let ((djReturn1Token (js-object)) (djReturn1Value nil))
       (try
@@ -297,7 +297,16 @@
                       (not (= (nativeGet (nativeGet port "capabilities") "creation_model_selection") "supported")))
                       (setq djReturn1Value (failure "unsupported" (js-object :details
                         (js-object :reason "creation_model_selection_unsupported"))))
-                      (throw djReturn1Token))))
+                      (throw djReturn1Token))
+                    (when (nativeGet port "probeCreate")
+                      (unless (= (nativeGet instance "instance_epoch") (nativeGet args "expected_instance_epoch"))
+                        (setq djReturn1Value (failure "stale_reference"))
+                        (throw djReturn1Token))
+                      (unless (try (await (js-call port :probeCreate instance (nativeCallContext context)))
+                                (catch unavailable false))
+                        (setq djReturn1Value (failure "unavailable" (js-object :details
+                          (js-object :reason "native_creation_receiver_unavailable"))))
+                        (throw djReturn1Token)))))
                 (when
                   (and
                     (= operation "instance.stop")

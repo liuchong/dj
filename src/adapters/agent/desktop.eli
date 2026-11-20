@@ -607,6 +607,10 @@
                                    (= (nativeGet row "title") title)) (throw (desktopError "desktop_rename_unconfirmed")))
                       (js-object :state "ready" :session (funcall sessionRecord endpoint (nativeGet row "id") title
                         (if (= tool "codex") (nativeGet row "runtime_state" "unknown") (cursorRuntime row)) (nativeGet response "instance_epoch") nil (nativeGet row "cwd" (nativeGet endpoint "directory"))) :evidence_level "native_protocol"))))
+        :probeCreate (when (and (= tool "codex") create-enabled)
+          (async (instance context)
+            (let ((probe (await (funcall nativeControl instance (js-object :operation "probe") context))))
+              (= (nativeGet (nativeGet probe "data") "state") "ready"))))
         :create (when create-enabled (async (instance workspace key context)
                     (await (funcall createSession instance workspace key context false))))
         :lookupCreate (when create-enabled (async (instance key ref context)

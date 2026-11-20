@@ -36,6 +36,8 @@ DJ 独立提供会话发现、创建、读取、定位及投递。它直接调�
 
 不支持的创建在持久动作受理前返回 `unsupported`，带原因 `native_session_create_unavailable`。不支持的模型覆盖同样在受理前拒绝，原因 `creation_model_selection_unsupported`，不悄悄使用其他模型。Antigravity 模型使用明确的原生 enum，不按展示名称猜测；显式初始模型只用于首次输入，不冒充之后的实时模型选择。
 
+Codex 在权限、工作区与目标 epoch 核对后，创建动作受理前只读探测已配置的原生工具宿主接收端。探测失败为 unavailable，details.reason 为 native_creation_receiver_unavailable；未保留创建动作或提交输入。桌面 follower 在线不代表创建接收端在线。通过后仍沿既有事务重检；受理后才失联继续按未知结果核对。
+
 ## 不确定结果与验收
 
 持久 lifecycle 绑定精确目标与创建键。原生调用前失败为明确未创建；请求可能已写出后失败为 unknown，保留原生 ID。Antigravity、Cursor 的创建键派生确定性原生 ID，恢复只查原 ID，不因查不到再创建；OpenCode 原生结果缺 ID 时保持 unknown，不按标题猜测。
