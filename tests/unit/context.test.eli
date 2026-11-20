@@ -45,13 +45,9 @@
         (let ((second (projectMessage (js-object) message 4 (nativeGet first "next_offset_bytes"))))
           (js-call (expect (nativeGet (nativeGet second "content") "text")) :toBe "中")
           (js-call (expect (nativeGet second "next_offset_bytes")) :toBe 7)))
-      (let ((merged (policyFor (js-array
-        (js-object :context_policy (js-object :mode "recent" :max_events 10 :max_bytes 16384))
-        (js-object :context_policy (js-object :mode "recent" :max_events 4 :max_bytes 2048))))))
-        (js-call (expect (nativeGet merged "before")) :toBe 3)
-        (js-call (expect (nativeGet merged "max_bytes")) :toBe 2048))
-      (js-call (expect (nativeGet (policyFor (js-array
-        (js-object :context_policy (js-object :mode "recent" :max_events 10))
-        (js-object :context_policy (js-object :mode "current" :max_events 1)))) "before")) :toBe 0)
+      (let ((recent-policy (policyFor (js-object :mode "recent" :max_events 4 :max_bytes 2048))))
+        (js-call (expect (nativeGet recent-policy "before")) :toBe 3)
+        (js-call (expect (nativeGet recent-policy "max_bytes")) :toBe 2048))
+      (js-call (expect (nativeGet (policyFor (js-object :mode "current" :max_events 1 :max_bytes 4096)) "before")) :toBe 0)
       (js-call (expect (lambda () (projectMessage (js-object) message 4 1))) :toThrow))) (lambda (x) nil))
 )

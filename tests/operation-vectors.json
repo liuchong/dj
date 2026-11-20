@@ -175,26 +175,31 @@
     {
       "operation": "subscription.preview",
       "required_contract": "spec:SubscriptionSpec",
-      "optional_contract": "sample_event_ids:`Array<Id>`、subscription_id:Id、expected_revision",
+      "optional_contract": "expected_revision、sample_event_ids:`Array<Id>`",
       "key_contract": "—",
-      "output_contract": "固定 normalized_spec/resolved_sources/target、warnings/issues；无阻断才发 preview_id；更新模式 ID/R 成对",
+      "output_contract": "固定 target_key/expected_revision/normalized_spec/resolved_sources/rule_sources/target、warnings/issues；无阻断才发 preview_id",
       "valid_arguments": {
+        "expected_revision": 0,
         "spec": {
           "agent_id": "agt_test",
-          "selector": {
-            "sources": [
-              {
-                "conversation_ref": "cvr_test",
-                "include_threads": false
+          "rules": [
+            {
+              "id": "r1",
+              "enabled": true,
+              "sources": [
+                {
+                  "conversation_ref": "cvr_test",
+                  "include_threads": false
+                }
+              ],
+              "event_kinds": [
+                "message.created"
+              ],
+              "predicate": {
+                "all": []
               }
-            ],
-            "event_kinds": [
-              "message.created"
-            ]
-          },
-          "predicate": {
-            "all": []
-          },
+            }
+          ],
           "context_policy": {
             "mode": "current",
             "max_events": 1,
@@ -211,13 +216,14 @@
       "exclusive_fields": []
     },
     {
-      "operation": "subscription.create",
-      "required_contract": "preview_id:Ref",
+      "operation": "subscription.set",
+      "required_contract": "preview_id:Ref、expected_revision",
       "optional_contract": "无",
-      "key_contract": "K",
-      "output_contract": "Subscription/start_seq/revision；不接受第二份 spec",
+      "key_contract": "K/R",
+      "output_contract": "单目标唯一槽位 Subscription/target_key/start_seq/revision；expected_revision=0 创槽或 current.revision 原子替换",
       "valid_arguments": {
         "preview_id": "prv_test",
+        "expected_revision": 0,
         "idempotency_key": "test-key"
       },
       "exclusive_fields": []
@@ -227,73 +233,71 @@
       "required_contract": "无",
       "optional_contract": "filters、P",
       "key_contract": "—",
-      "output_contract": "`Page<SubscriptionProjection>`；filters.agent_id/state",
+      "output_contract": "`Page<SubscriptionProjection>`；filters.agent_id/group_id/state",
       "valid_arguments": {},
       "exclusive_fields": []
     },
     {
       "operation": "subscription.get",
-      "required_contract": "subscription_id:Id",
+      "required_contract": "agent_id:Id XOR group_id:Id",
       "optional_contract": "无",
       "key_contract": "—",
-      "output_contract": "当前 Subscription/解析范围及 revision",
+      "output_contract": "当前目标槽位 Subscription/target_key/解析范围及 revision",
       "valid_arguments": {
-        "subscription_id": "sub_test"
+        "agent_id": "agt_test"
       },
-      "exclusive_fields": []
-    },
-    {
-      "operation": "subscription.update",
-      "required_contract": "subscription_id:Id、preview_id:Ref",
-      "optional_contract": "无",
-      "key_contract": "K/R",
-      "output_contract": "同对象/revision 的票据与新版本/cutover_seq；agent_id 不可变",
-      "valid_arguments": {
-        "preview_id": "prv_test",
-        "subscription_id": "sub_test",
-        "idempotency_key": "test-key",
-        "expected_revision": 1
-      },
-      "exclusive_fields": []
+      "exclusive_fields": [
+        "agent_id",
+        "group_id"
+      ]
     },
     {
       "operation": "subscription.pause",
-      "required_contract": "subscription_id:Id",
+      "required_contract": "agent_id:Id XOR group_id:Id",
       "optional_contract": "无",
       "key_contract": "K/R",
-      "output_contract": "paused/revision/cutover_seq/已提交数量；不撤回已提交事实",
+      "output_contract": "paused/revision/cutover_seq；不撤回已提交事实",
       "valid_arguments": {
-        "subscription_id": "sub_test",
+        "agent_id": "agt_test",
         "idempotency_key": "test-key",
         "expected_revision": 1
       },
-      "exclusive_fields": []
+      "exclusive_fields": [
+        "agent_id",
+        "group_id"
+      ]
     },
     {
       "operation": "subscription.resume",
-      "required_contract": "subscription_id:Id",
+      "required_contract": "agent_id:Id XOR group_id:Id",
       "optional_contract": "无",
       "key_contract": "K/R",
-      "output_contract": "active/新 start_seq；不复活旧贡献或补暂停期；stopping 拒绝",
+      "output_contract": "active/新 start_seq；不补暂停期；stopping 拒绝",
       "valid_arguments": {
-        "subscription_id": "sub_test",
+        "agent_id": "agt_test",
         "idempotency_key": "test-key",
         "expected_revision": 1
       },
-      "exclusive_fields": []
+      "exclusive_fields": [
+        "agent_id",
+        "group_id"
+      ]
     },
     {
       "operation": "subscription.delete",
-      "required_contract": "subscription_id:Id",
+      "required_contract": "agent_id:Id XOR group_id:Id",
       "optional_contract": "无",
       "key_contract": "K/R",
       "output_contract": "deleted/revision/cutover_seq；独立 direct 保留",
       "valid_arguments": {
-        "subscription_id": "sub_test",
+        "agent_id": "agt_test",
         "idempotency_key": "test-key",
         "expected_revision": 1
       },
-      "exclusive_fields": []
+      "exclusive_fields": [
+        "agent_id",
+        "group_id"
+      ]
     },
     {
       "operation": "message.list",

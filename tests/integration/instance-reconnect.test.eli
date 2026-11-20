@@ -75,6 +75,6 @@
         (js-call (expect (nativeGet (instance f) "instance_epoch")) :toBe "process-four")
         (await (receive f "after-dj-restart" 5))
         (js-call (expect (nativeGet (await (callOk f "A" "subscription.get"
-          (js-object :subscription_id (nativeGet sub "subscription_id")))) "state")) :toBe "active")
+          (js-object :agent_id (nativeGet sub "agent_id")))) "state")) :toBe "active")
         (js-call (expect (nativeGet (aref (nativeGet (nativeGet f "opencode") "inputs") 4) "binding")) :toBeDefined)))
     closeFixture))

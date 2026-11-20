@@ -1,0 +1,261 @@
+(module dj.triggers.rules
+  (import "../core/native.eli" nativeNullish nativeTypeOf nativeGet)
+  (import "../core/types.eli" isObject sourceContainer stableJson)
+  (import "../core/limits.eli" limits)
+  (import "../core/errors.eli" success failure invalidField)
+  (import "../core/instructions.eli" validateInstructionPolicy)
+  (import "../application/context.eli" must)
+  (import "../ingestion/visibility.eli" eventContentAvailable)
+  (import "../people/registry.eli" validatePersonReferences)
+  (import "./predicate.eli"
+    defaultEventKinds
+    defaultSubscriptionPredicate
+    defaultSubscriptionRules
+    countPredicateLeaves
+    validatePredicate
+    predicateUsesPerson)
+  (import "./sources.eli" matchesSource normalizeRuleSources resolveSources checkSources)
+  (import "./suppression.eli" readFilterPolicy evaluatePredicateWithPeople)
+  (defconst supportedEventKinds
+    (Object/freeze (js-array "message.created" "message.pinned" "message.reaction.added" "resource.changed")))
+  (defun normalizeContextPolicy (policy)
+    (let ((mode (if (and policy (= (nativeGet policy "mode") "current")) "current" "recent")))
+      (Object/assign
+        (js-object
+          :mode mode
+          :max_events (if (= mode "current") 1 10)
+          :max_bytes (nativeGet limits "text_bytes"))
+        policy)))
+  (defun validateSubscriptionRules (rules)
+    (if (nativeNullish rules)
+      (success nil)
+      (let ((ids (new globalThis.Set)) (total-leaves 0) (problem nil) (index 0))
+        (unless (and (Array/isArray rules)
+                     (> (js-length rules) 0)
+                     (<= (js-length rules) (nativeGet limits "subscription_rules")))
+          (setq problem (invalidField "/spec/rules" "1..64 subscription rule branches")))
+        (while (and (not problem) (< index (js-length rules)))
+          (let* ((rule (aref rules index))
+                 (id (and (isObject rule) (nativeGet rule "id")))
+                 (enabled (and (isObject rule) (nativeGet rule "enabled")))
+                 (predicate (and (isObject rule) (nativeGet rule "predicate"))))
+            (cond
+              ((not (and (isObject rule)
+                         (= (nativeTypeOf id) "string")
+                         (> (js-length id) 0)
+                         (<= (js-length id) 128)
+                         (not (js-call ids :has id))
+                         (= (nativeTypeOf enabled) "boolean")))
+                (setq problem (invalidField (str "/spec/rules/" index)
+                  "unique id (1..128 chars), boolean enabled and valid predicate")))
+              (t
+                (let ((checked-predicate (validatePredicate predicate (str "/spec/rules/" index "/predicate"))))
+                  (if (not (nativeGet checked-predicate "ok"))
+                    (setq problem checked-predicate)
+                    (progn
+                      (setq total-leaves (+ total-leaves (countPredicateLeaves predicate)))
+                      (if (> total-leaves (nativeGet limits "subscription_rule_leaves"))
+                        (setq problem (invalidField (str "/spec/rules/" index "/predicate")
+                          "at most 256 total predicate leaves across subscription rules"))
+                        (let ((checked-instruction (validateInstructionPolicy
+                                (nativeGet rule "instruction_policy")
+                                (str "/spec/rules/" index "/instruction_policy"))))
+                          (if (not (nativeGet checked-instruction "ok"))
+                            (setq problem checked-instruction)
+                            (js-call ids :add id))))))))))
+          (setq index (1+ index)))
+        (or problem (success rules)))))
+  (defun normalizeSubscriptionSpec (spec normalize-delivery-policy)
+    (unless (object-has? spec :start) (put spec :start "now"))
+    (unless (object-has? spec :delivery_mode) (put spec :delivery_mode "push"))
+    (put spec :context_policy (normalizeContextPolicy (nativeGet spec "context_policy")))
+    (put spec :delivery_policy (funcall normalize-delivery-policy (nativeGet spec "delivery_policy")))
+    (let ((raw-rules (if (object-has? spec :rules) (nativeGet spec "rules") (defaultSubscriptionRules))))
+      (put spec :rules
+        (js-call raw-rules :map (lambda (rule)
+          (let ((normalized
+                  (js-object
+                    :id (nativeGet rule "id")
+                    :enabled (= (nativeGet rule "enabled") t)
+                    :sources (normalizeRuleSources (nativeGet rule "sources" (js-array)))
+                    :event_kinds
+                    (js-call
+                      (Array/from (new globalThis.Set
+                        (if (object-has? rule :event_kinds)
+                          (nativeGet rule "event_kinds")
+                          defaultEventKinds)))
+                      :sort)
+                    :predicate (nativeGet rule "predicate"))))
+            (when (object-has? rule :context_policy)
+              (put normalized :context_policy (normalizeContextPolicy (nativeGet rule "context_policy"))))
+            (when (object-has? rule :instruction_policy)
+              (put normalized :instruction_policy (nativeGet rule "instruction_policy")))
+            normalized)))))
+    spec)
+  (defun rulesUsePerson (rules)
+    (js-call (or rules (js-array)) :some
+      (lambda (rule)
+        (and (= (nativeGet rule "enabled") t)
+             (predicateUsesPerson (nativeGet rule "predicate"))))))
+  (defun resolveSubscriptionRules (context spec recipient)
+    (let ((djReturn1Token (js-object)) (djReturn1Value nil))
+      (try
+        (let ((rules (nativeGet spec "rules"))
+              (people (nativeGet (readFilterPolicy context) "people" (js-array))))
+          (unless (and (= (nativeGet spec "start") "now")
+                       (js-call (js-array "current" "recent") :includes (nativeGet (nativeGet spec "context_policy") "mode"))
+                       (js-call (js-array "steer" "queue") :includes (nativeGet (nativeGet spec "delivery_policy") "busy"))
+                       (js-call rules :every (lambda (rule)
+                         (and (or (not (nativeGet rule "context_policy"))
+                                  (js-call (js-array "current" "recent") :includes (nativeGet (nativeGet rule "context_policy") "mode")))
+                              (js-call (nativeGet rule "event_kinds") :every
+                                (lambda (kind) (js-call supportedEventKinds :includes kind)))))))
+            (progn (setq djReturn1Value (failure "unsupported")) (throw djReturn1Token)))
+          (when (js-call rules :some (lambda (rule) (predicateUsesPerson (nativeGet rule "predicate"))))
+            (must (validatePersonReferences rules people)))
+          (let ((resolved-rules (js-array))
+                (rule-sources (js-array))
+                (union-map (new globalThis.Map))
+                (index 0))
+            (while (< index (js-length rules))
+              (let* ((rule (aref rules index))
+                     (resolved (resolveSources context (nativeGet rule "sources") recipient (str "/spec/rules/" index "/sources"))))
+                (unless (nativeGet resolved "ok")
+                  (progn (setq djReturn1Value resolved) (throw djReturn1Token)))
+                (let ((sources (nativeGet resolved "data")))
+                  (js-call sources :forEach (lambda (src)
+                    (let ((key (stableJson src)))
+                      (unless (js-call union-map :has key)
+                        (js-call union-map :set key src)))))
+                  (js-call rule-sources :push (js-object :rule_id (nativeGet rule "id") :sources sources))
+                  (js-call resolved-rules :push
+                    (Object/assign (js-object) rule (js-object :resolved_sources sources)))))
+              (setq index (1+ index)))
+            (success (js-object
+              :resolved_rules resolved-rules
+              :resolved_sources (Array/from (js-call union-map :values))
+              :rule_sources rule-sources))))
+        (catch djReturn1Error
+          (if (eq djReturn1Error djReturn1Token) djReturn1Value (throw djReturn1Error))))))
+  (defun checkSubscriptionRules (context resolved-rules recipient)
+    (let ((djReturn2Token (js-object)) (djReturn2Value nil))
+      (try
+        (let ((index 0))
+          (while (< index (js-length (or resolved-rules (js-array))))
+            (let ((checked (checkSources context (nativeGet (aref resolved-rules index) "resolved_sources" (js-array)) recipient)))
+              (unless (nativeGet checked "ok")
+                (progn (setq djReturn2Value checked) (throw djReturn2Token))))
+            (setq index (1+ index)))
+          (success nil))
+        (catch djReturn2Error
+          (if (eq djReturn2Error djReturn2Token) djReturn2Value (throw djReturn2Error))))))
+  (defun subscriptionIndexEntries (target-key revision resolved-rules)
+    (let ((merged (new globalThis.Map)))
+      (js-call (or resolved-rules (js-array)) :forEach (lambda (rule)
+        (when (= (nativeGet rule "enabled") t)
+          (js-call (nativeGet rule "resolved_sources" (js-array)) :forEach (lambda (source)
+            (js-call (nativeGet rule "event_kinds" (js-array)) :forEach (lambda (kind)
+              (let* ((container (sourceContainer source))
+                     (thread-key (stableJson (nativeGet source "native_thread_id" nil)))
+                     (include-threads (if (nativeGet source "include_threads") 1 0))
+                     (key (stableJson (js-array (nativeGet source "connection_id") container thread-key kind)))
+                     (existing (js-call merged :get key)))
+                (if existing
+                  (when (> include-threads (nativeGet existing "include_threads"))
+                    (put existing :include_threads include-threads))
+                  (js-call merged :set key
+                    (js-object
+                      :connection_id (nativeGet source "connection_id")
+                      :native_chat_id container
+                      :thread_key thread-key
+                      :event_kind kind
+                      :target_key target-key
+                      :revision revision
+                      :include_threads include-threads)))))))))))
+      (Array/from (js-call merged :values))))
+  (defun effectiveContextPolicy (default-policy matched-rules)
+    (let ((recent false) (max-events 1) (max-bytes 1))
+      (js-call matched-rules :forEach (lambda (rule)
+        (let ((policy (or (nativeGet rule "context_policy") default-policy)))
+          (when (= (nativeGet policy "mode") "recent")
+            (setq recent t)
+            (setq max-events (Math/max max-events (nativeGet policy "max_events" 10))))
+          (setq max-bytes (Math/max max-bytes (nativeGet policy "max_bytes" 16384))))))
+      (js-object
+        :mode (if recent "recent" "current")
+        :max_events (if recent max-events 1)
+        :max_bytes max-bytes)))
+  (defun effectiveInstructionPolicies (version matched-rules)
+    (let ((items (js-array))
+          (target-key (nativeGet version "target_key"))
+          (revision (nativeGet version "revision")))
+      (when (nativeGet version "instruction_policy")
+        (js-call items :push
+          (js-object
+            :target_key target-key
+            :revision revision
+            :scope "subscription"
+            :rule_id nil
+            :policy (nativeGet version "instruction_policy"))))
+      (js-call matched-rules :forEach (lambda (rule)
+        (when (nativeGet rule "instruction_policy")
+          (js-call items :push
+            (js-object
+              :target_key target-key
+              :revision revision
+              :scope "rule"
+              :rule_id (nativeGet rule "id")
+              :policy (nativeGet rule "instruction_policy"))))))
+      items))
+  (defun evaluateSubscriptionRules (context version event &optional connection memo budget)
+    (let* ((rules (nativeGet version "resolved_rules" (js-array)))
+           (candidate-rules
+             (js-call rules :filter (lambda (rule)
+               (and (= (nativeGet rule "enabled") t)
+                    (js-call (nativeGet rule "event_kinds" (js-array)) :includes (nativeGet event "event_kind"))
+                    (js-call (nativeGet rule "resolved_sources" (js-array)) :some
+                      (lambda (source) (matchesSource source (nativeGet source "include_threads") event))))))))
+      (cond
+        ((= (js-length candidate-rules) 0)
+          (js-object :result "no_match" :matched_rule_ids (js-array) :context_policy nil :instruction_policies (js-array)))
+        ((not (eventContentAvailable context event connection))
+          (js-object :result "indeterminate" :matched_rule_ids (js-array) :context_policy nil :instruction_policies (js-array)))
+        (t
+          (let ((matched-rules (js-array))
+                (matched-ids (js-array))
+                (indeterminate false)
+                (index 0))
+            (while (< index (js-length candidate-rules))
+              (let* ((rule (aref candidate-rules index))
+                     (answer (evaluatePredicateWithPeople context (nativeGet rule "predicate") event memo budget)))
+                (cond
+                  ((= answer "true")
+                    (js-call matched-rules :push rule)
+                    (js-call matched-ids :push (nativeGet rule "id")))
+                  ((= answer "indeterminate")
+                    (setq indeterminate t))))
+              (setq index (1+ index)))
+            (cond
+              ((> (js-length matched-rules) 0)
+                (js-object
+                  :result "match"
+                  :matched_rule_ids matched-ids
+                  :context_policy (effectiveContextPolicy (nativeGet version "context_policy") matched-rules)
+                  :instruction_policies (effectiveInstructionPolicies version matched-rules)))
+              (indeterminate
+                (js-object :result "indeterminate" :matched_rule_ids (js-array) :context_policy nil :instruction_policies (js-array)))
+              (t
+                (js-object :result "no_match" :matched_rule_ids (js-array) :context_policy nil :instruction_policies (js-array)))))))))
+  (export
+    defaultEventKinds
+    supportedEventKinds
+    defaultSubscriptionRules
+    validateSubscriptionRules
+    normalizeSubscriptionSpec
+    rulesUsePerson
+    resolveSubscriptionRules
+    checkSubscriptionRules
+    subscriptionIndexEntries
+    effectiveContextPolicy
+    effectiveInstructionPolicies
+    evaluateSubscriptionRules))

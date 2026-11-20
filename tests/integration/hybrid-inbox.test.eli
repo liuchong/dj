@@ -184,11 +184,13 @@
       (db (new Database (resolve (nativeGet f "root") "state/dj.sqlite") (js-object :readonly t)))
       (inputs (nativeGet (nativeGet f "opencode") "inputs")))
       (try
-        (let ((preview (await (callOk f "A" "subscription.preview" (js-object :spec (js-object
-          :agent_id (nativeGet agent "agent_id") :selector (js-object :event_kinds (js-array "message.created"))
-          :predicate (js-object :any (js-array (js-object :field "addressed_self" :op "eq" :value t)
-            (js-object :field "chat_type" :op "eq" :value "p2p")))))))))
-          (await (callOk f "A" "subscription.create" (js-object :preview_id (nativeGet preview "preview_id") :idempotency_key "hybrid-subscribe"))))
+        (let ((preview (await (callOk f "A" "subscription.preview" (js-object :expected_revision 0 :spec (js-object
+          :agent_id (nativeGet agent "agent_id")
+          :rules (js-array (js-object :id "default" :enabled t
+            :event_kinds (js-array "message.created")
+            :predicate (js-object :any (js-array (js-object :field "addressed_self" :op "eq" :value t)
+              (js-object :field "chat_type" :op "eq" :value "p2p")))))))))))
+          (await (callOk f "A" "subscription.set" (js-object :preview_id (nativeGet preview "preview_id") :expected_revision 0 :idempotency_key "hybrid-subscribe"))))
         (let ((policy (await (callOk f "O" "message.filter.get" (js-object)))))
           (await (callOk f "O" "message.filter.update" (js-object :expected_revision (nativeGet policy "revision")
             :idempotency_key "hybrid-filter" :rules (js-array (js-object :id "blocked-author" :enabled t
@@ -299,15 +301,17 @@
       (db (new Database (resolve (nativeGet f "root") "state/dj.sqlite") (js-object :readonly t)))
       (inputs (nativeGet (nativeGet f "opencode") "inputs")) (subscription nil))
       (try
-        (let ((preview (await (callOk f "A" "subscription.preview" (js-object :spec (js-object
-          :agent_id (nativeGet agent "agent_id") :selector (js-object :event_kinds (js-array "message.reaction.added"))
-          :predicate (js-object :all (js-array
-            (js-object :field "connection_id" :op "eq" :value "lark")
-            (js-object :field "reaction.emoji_type" :op "eq" :value "Pin")))))))))
-          (setq subscription (await (callOk f "A" "subscription.create"
-            (js-object :preview_id (nativeGet preview "preview_id") :idempotency_key "forward-pin-create")))))
+        (let ((preview (await (callOk f "A" "subscription.preview" (js-object :expected_revision 0 :spec (js-object
+          :agent_id (nativeGet agent "agent_id")
+          :rules (js-array (js-object :id "default" :enabled t
+            :event_kinds (js-array "message.reaction.added")
+            :predicate (js-object :all (js-array
+              (js-object :field "connection_id" :op "eq" :value "lark")
+              (js-object :field "reaction.emoji_type" :op "eq" :value "Pin")))))))))))
+          (setq subscription (await (callOk f "A" "subscription.set"
+            (js-object :preview_id (nativeGet preview "preview_id") :expected_revision 0 :idempotency_key "forward-pin-create")))))
         (setq subscription (await (callOk f "A" "subscription.pause" (js-object
-          :subscription_id (nativeGet subscription "subscription_id") :expected_revision (nativeGet subscription "revision")
+          :agent_id (nativeGet subscription "agent_id") :expected_revision (nativeGet subscription "revision")
           :idempotency_key "forward-pin-pause"))))
         (let* ((stamp (str (Date/parse (js-call (nativeGet f "clock") :utcNow))))
           (message (lambda (id chat) (js-object :message_id id :chat_id chat :create_time stamp :msg_type "text"
@@ -328,7 +332,7 @@
           "SELECT COUNT(*) AS n FROM events WHERE native_message_id='embedded-only'") :get) "n")) :toBe 0)
         (js-call (expect (js-length inputs)) :toBe 0)
         (setq subscription (await (callOk f "A" "subscription.resume" (js-object
-          :subscription_id (nativeGet subscription "subscription_id") :expected_revision (nativeGet subscription "revision")
+          :agent_id (nativeGet subscription "agent_id") :expected_revision (nativeGet subscription "revision")
           :idempotency_key "forward-pin-resume"))))
         (js-call (nativeGet f "marks") :set "user:after-forward" (js-object :reaction_id "new-pin"
           :reaction_type (js-object :emoji_type "Pin")
@@ -352,11 +356,12 @@
         :operator_id actor :operator_id_type type :create_time (str stamp))))
       (stamp (lambda () (Date/parse (js-call clock :utcNow)))))
       (try
-        (let ((ticket (await (callOk f "A" "subscription.preview" (js-object :spec
+        (let ((ticket (await (callOk f "A" "subscription.preview" (js-object :expected_revision 0 :spec
           (js-object :agent_id (nativeGet agent "agent_id")
-            :selector (js-object :event_kinds (js-array "message.pinned"))
-            :predicate (js-object :all (js-array))))))))
-          (await (callOk f "A" "subscription.create" (js-object :preview_id (nativeGet ticket "preview_id") :idempotency_key "chat-pins-sub"))))
+            :rules (js-array (js-object :id "default" :enabled t
+              :event_kinds (js-array "message.pinned")
+              :predicate (js-object :all (js-array))))))))))
+          (await (callOk f "A" "subscription.set" (js-object :preview_id (nativeGet ticket "preview_id") :expected_revision 0 :idempotency_key "chat-pins-sub"))))
         (let ((policy (await (callOk f "O" "message.filter.get" (js-object)))))
           (await (callOk f "O" "message.filter.update" (js-object :expected_revision (nativeGet policy "revision")
             :idempotency_key "chat-pins-robots" :rules (js-array (js-object :id "robots" :enabled t :effect "suppress_trigger"
@@ -451,24 +456,25 @@
                 (js-object :source_connection_id "lark-bot" :mention_id "ou_bot" :reply_connection_id "lark-bot")
                 (js-object :source_connection_id "lark" :mention_id "ou_self" :reply_connection_id "lark"))
               :idempotency_key "cross-app-rules"))))
-          (let ((preview (await (callOk f "A" "subscription.preview" (js-object :spec (js-object
+          (let ((preview (await (callOk f "A" "subscription.preview" (js-object :expected_revision 0 :spec (js-object
             :agent_id (nativeGet agent "agent_id")
-            :selector (js-object :event_kinds (js-array "message.created" "message.reaction.added" "message.pinned"))
-            :predicate (js-object :any (js-array
-              (js-object :all (js-array
-                (js-object :field "event_kind" :op "eq" :value "message.created")
-                (js-object :any (js-array
-                  (js-object :field "mentions.id" :op "in" :value (js-array "ou_self" "ou_self_in_bot" "ou_bot"))
-                  (js-object :field "addressed_self" :op "eq" :value t)))))
-              (js-object :all (js-array
-                (js-object :field "event_kind" :op "eq" :value "message.reaction.added")
-                (js-object :any (js-array
-                  (js-object :field "reaction.emoji_type" :op "in" :value (js-array "Pin"))
-                  (js-object :all (js-array
-                    (js-object :field "connection_id" :op "eq" :value "lark-bot")
-                    (js-object :field "interaction.target_id" :op "eq" :value "ou_self_in_bot")))))))
-              (js-object :field "event_kind" :op "eq" :value "message.pinned")))))))))
-            (await (callOk f "A" "subscription.create" (js-object :preview_id (nativeGet preview "preview_id") :idempotency_key "cross-app-sub"))))
+            :rules (js-array (js-object :id "default" :enabled t
+              :event_kinds (js-array "message.created" "message.reaction.added" "message.pinned")
+              :predicate (js-object :any (js-array
+                (js-object :all (js-array
+                  (js-object :field "event_kind" :op "eq" :value "message.created")
+                  (js-object :any (js-array
+                    (js-object :field "mentions.id" :op "in" :value (js-array "ou_self" "ou_self_in_bot" "ou_bot"))
+                    (js-object :field "addressed_self" :op "eq" :value t)))))
+                (js-object :all (js-array
+                  (js-object :field "event_kind" :op "eq" :value "message.reaction.added")
+                  (js-object :any (js-array
+                    (js-object :field "reaction.emoji_type" :op "in" :value (js-array "Pin"))
+                    (js-object :all (js-array
+                      (js-object :field "connection_id" :op "eq" :value "lark-bot")
+                      (js-object :field "interaction.target_id" :op "eq" :value "ou_self_in_bot")))))))
+                (js-object :field "event_kind" :op "eq" :value "message.pinned")))))))))))
+            (await (callOk f "A" "subscription.set" (js-object :preview_id (nativeGet preview "preview_id") :expected_revision 0 :idempotency_key "cross-app-sub"))))
           (put state :enabled t)
           ;; Simulate 3 days of normal online operation: existing pollers are caught up to day 3,
           ;; while "joined-later" already has 1-day-old history/pins/reactions on Lark before bot joins it.

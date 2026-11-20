@@ -19,8 +19,8 @@
       "connection_id"
       :--agent
       "agent_id"
-      :--subscription
-      "subscription_id"
+      :--group
+      "group_id"
       :--delivery
       "delivery_id"
       :--outbound

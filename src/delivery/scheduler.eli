@@ -30,7 +30,7 @@
     safeFields)
   (import "../application/write-batch.eli" enqueueWrite)
   (import "../service/ownership.eli" ownerGuard)
-  (import "../filtering/policy.eli" evaluateTriggerFilters)
+  (import "../triggers/suppression.eli" evaluateTriggerFilters)
   (import "../policy/principals.eli" configuredPrincipal)
   (import "../policy/authorize.eli" authorize)
   (import "../policy/handles.eli" issueHandle)
@@ -41,8 +41,7 @@
   (import "./envelope.eli" encodeAgentInput renderEnvelope)
   (import "../registry/availability.eli" noteAvailabilityFailure)
   (import "./snapshot.eli" packEnvelope unpackEnvelope)
-  (import "./service.eli" isContributionEffective projectDelivery queueCapacity)
-  (import "./read-scope.eli" withContributionReads)
+  (import "./service.eli" isSubscriptionDeliveryEffective projectDelivery queueCapacity)
   (defconst queuedStates (js-array "ready" "deferred" "blocked"))
   (defun attemptBinding (context attempt)
     (if (nativeGet attempt "binding_id")
@@ -178,81 +177,6 @@
       (nativeGet
         (authorize principal action resource (nativeGet principal "authorization_revision"))
         "allowed")))
-  (defun effectiveContributions
-    (context record event agent &optional route known-read)
-    (let ((work (lambda (read)
-    (let*
-      ((repository (nativeGet context "repository"))
-        (rows
-          (js-call
-            (js-call
-              (nativeGet (nativeGet context "store") "db")
-              :query
-              "SELECT c.payload,c.subscription_id AS contribution_subscription_id,s.subscription_id AS current_subscription_id,s.owner_principal_id AS current_owner_principal_id,s.state AS current_state,s.revision AS current_revision FROM contributions c LEFT JOIN subscriptions s ON s.subscription_id=c.subscription_id WHERE c.delivery_id=? ORDER BY c.subscription_id,c.revision")
-            :iterate
-            (nativeGet record "delivery_id")))
-        (effective (js-array))
-        (matched-bytes 0)
-        (done false))
-      (try
-        (while (not done)
-          (let ((next (js-call rows :next)))
-            (setq done (nativeGet next "done"))
-            (unless done
-              (let* ((row (nativeGet next "value"))
-                (item (JSON/parse (nativeGet row "payload")))
-                (subscription (unless (nativeNullish (nativeGet row "current_subscription_id"))
-                  (Object/freeze (js-object
-                    :subscription_id (nativeGet row "current_subscription_id")
-                    :owner_principal_id (nativeGet row "current_owner_principal_id")
-                    :state (nativeGet row "current_state")
-                    :revision (nativeGet row "current_revision")))))
-                (item-read (lambda (table key)
-                  (if (and (= table "subscriptions")
-                    (= key (nativeGet row "contribution_subscription_id")))
-                    subscription
-                    (funcall read table key)))))
-                (if (isContributionEffective context item event agent item-read route)
-                  (progn
-                    (setq
-                      matched-bytes
-                      (+
-                        matched-bytes
-                        (utf8Bytes
-                          (JSON/stringify
-                            (js-object
-                              :subscription_id
-                              (nativeGet item "subscription_id")
-                              :subscription_revision
-                              (nativeGet item "revision")
-                              :result
-                              "match")))))
-                    ;; This is a lower bound on the final encoded frame. Never
-                    ;; submit a prefix of the effective contribution set.
-                    (when (> matched-bytes (nativeGet limits "native_frame_max_bytes"))
-                      (put effective :overflow t)
-                      (setq done t))
-                    (unless done (js-call effective :push item)))
-                  (when
-                    (js-call
-                      (js-array "active" "effective")
-                      :includes
-                      (nativeGet item "state"))
-                    (put
-                      item
-                      :state
-                      (if
-                        (<=
-                          (Date/parse (nativeGet item "expires_at"))
-                          (Date/parse (utcNow context)))
-                        "expired"
-                        "revoked"))
-                    (must (js-call repository :replace "contributions" item))))))))
-        (finally (when (nativeGet rows "return") (js-call rows :return))))
-      effective))))
-      (if known-read
-        (funcall work known-read)
-        (withContributionReads context work t))))
   (defun replyContext
     (context record event recipient &optional read selected)
     (let ((djReturn3Token (js-object)) (djReturn3Value nil))
@@ -339,7 +263,7 @@
         (catch djReturn3Error
           (if (eq djReturn3Error djReturn3Token) djReturn3Value (throw djReturn3Error))))))
   (defun freezeEnvelope
-    (context record event contributions &optional known-agent read selection)
+    (context record event &optional known-agent read selection)
     (if (= (nativeGet record "origin") "direct")
       (let
         (
@@ -376,25 +300,16 @@
           :allowed_actions
           (js-array)))
       (let*
-        ((budget (nativeGet limits "text_bytes"))
-          (matches (js-array))
-          (text (nativeGet (nativeGet event "content") "text")))
-        (js-call
-          contributions
-          :forEach
-          (lambda
-            (item)
-            (setq budget (Math/min budget (nativeGet (nativeGet item "context_policy") "max_bytes")))
-            (js-call
-              matches
-              :push
-              (js-object
-                :subscription_id
-                (nativeGet item "subscription_id")
-                :subscription_revision
-                (nativeGet item "revision")
-                :result
-                "match"))))
+        ((context-policy
+            (or (nativeGet record "context_policy")
+                (js-object :mode "recent" :max_events 10 :max_bytes (nativeGet limits "text_bytes"))))
+          (budget (Math/min (nativeGet limits "text_bytes") (nativeGet context-policy "max_bytes" (nativeGet limits "text_bytes"))))
+          (text (nativeGet (nativeGet event "content") "text"))
+          (matched
+            (js-object
+              :target_key (nativeGet record "target_key")
+              :subscription_revision (nativeGet record "subscription_revision")
+              :rule_ids (nativeGet record "matched_rule_ids" (js-array)))))
         (let*
           ((body (nativeGet (sliceUtf8 text 0 budget) "text"))
             (agent (or known-agent
@@ -453,11 +368,8 @@
               (nativeGet event "conversation"))
             :sender
             (nativeGet event "sender")
-            :group_dispatches (js-call (js-call contributions :filter (lambda (c) (nativeGet c "group_id"))) :map
-              (lambda (c) (js-object :group_id (nativeGet c "group_id") :subscription_id (nativeGet c "subscription_id")
-                :selected_agent_id (nativeGet agent "agent_id"))))
             :matched
-            matches
+            matched
             :content
             content
             :attachments
@@ -466,7 +378,13 @@
             (if reply (nativeGet reply "public_ref") nil)
             :allowed_actions
             (if reply (js-array "reply") (js-array))))
-                 (instructions (composeInstructions contributions event body)))
+                 (instructions (composeInstructions (nativeGet record "instruction_policies" (js-array)) event body)))
+            (when (nativeGet record "group_id")
+              (put envelope :group_dispatch
+                (js-object
+                  :group_id (nativeGet record "group_id")
+                  :target_key (nativeGet record "target_key")
+                  :selected_agent_id (nativeGet agent "agent_id"))))
             (when (nativeGet selected "identity_binding_id")
               (put envelope :dispatch_context (js-object :context_id (nativeGet selected "dispatch_context_id")
                 :identity_binding_id (nativeGet selected "identity_binding_id") :connection_id (nativeGet selected "connection_id")
@@ -480,7 +398,7 @@
                 (put envelope :resource resource)
                 (put envelope :context (js-object :resource resource :external_data t :query_available t :as_of (utcNow context)
                   :messages (js-array) :references (js-array) :coverage_complete false :truncated (nativeGet content "truncated"))))
-              (put envelope :context (envelopeContext context recipient event contributions)))
+              (put envelope :context (envelopeContext context recipient event context-policy)))
             (when (nativeGet event "people") (put envelope :people (nativeGet event "people")))
             (when (object-has? event :mentions) (put envelope :mentions (nativeGet event "mentions")))
             (when (nativeGet event "interaction") (put envelope :interaction (nativeGet event "interaction")))
@@ -522,7 +440,6 @@
       context
       (lambda
         (tx)
-        (withContributionReads context (lambda (read)
         (let ((djReturn4Token (js-object)) (djReturn4Value nil))
           (try
             (let*
@@ -533,7 +450,7 @@
                 (session
                   (and
                     route
-                    (funcall read "sessions" (nativeGet route "session_key"))))
+                    (js-call repository :get "sessions" (nativeGet route "session_key"))))
                 (instance
                   (and
                     session
@@ -543,8 +460,7 @@
                 (capabilities (nativeGet observation "capabilities" (nativeGet port "capabilities")))
                 (head (and route (selectDispatchHead context (nativeGet route "route_id"))))
                 (event nil)
-                (agent nil)
-                (contributions (js-array)))
+                (agent nil))
               (unless
                 (and
                   record
@@ -632,35 +548,15 @@
                   (when (nativeGet (evaluateTriggerFilters context event) "suppressed")
                     (setq djReturn4Value (holdDelivery context record claim "cancelled" "trigger_suppressed"))
                     (throw djReturn4Token))
-                  (setq agent (funcall read "agents" (nativeGet record "agent_id")))
-                  (setq
-                    contributions
-                    (effectiveContributions
-                      context
-                      record
-                      event
-                      agent
-                      route
-                      read))
-                  (when (nativeGet contributions "overflow")
-                    (progn
-                      (setq
-                        djReturn4Value
-                        (holdDelivery context record claim "blocked" "limit_exceeded"))
-                      (throw djReturn4Token)))
-                  (unless (> (js-length contributions) 0)
-                    (progn
-                      (setq
-                        djReturn4Value
-                        (holdDelivery
-                          context
-                          record
-                          claim
-                          "expired"
-                          "no_effective_contributions"))
-                      (throw djReturn4Token)))))
+                  (when (<= (Date/parse (nativeGet record "expires_at")) (Date/parse (utcNow context)))
+                    (setq djReturn4Value (holdDelivery context record claim "expired" "ttl_expired"))
+                    (throw djReturn4Token))
+                  (setq agent (js-call repository :get "agents" (nativeGet record "agent_id")))
+                  (unless (isSubscriptionDeliveryEffective context record event agent nil route)
+                    (setq djReturn4Value (holdDelivery context record claim "cancelled" "subscription_inactive"))
+                    (throw djReturn4Token))))
               (when event
-                (let ((state (notificationState context record event (nativeGet route "session_key") "push" contributions)))
+                (let ((state (notificationState context record event (nativeGet route "session_key") "push")))
                   (when (js-call (js-array "coalesced" "pending") :includes state)
                     (setq djReturn4Value (holdDelivery context record claim
                       (if (= state "coalesced") "coalesced" "deferred")
@@ -702,7 +598,7 @@
                   (binding (attachBinding context route session instance observation))
                     (envelope (attachConversationRules context
                       (Object/assign (js-object) session (js-object :model_selection (nativeGet observation "model_selection")))
-                      (freezeEnvelope context record event contributions agent read identity)))
+                      (freezeEnvelope context record event agent nil identity)))
                     (frame
                       (encodeAgentInput
                         (nativeGet session "tool")
@@ -744,7 +640,7 @@
                         djReturn4Value
                         (holdDelivery context record claim "blocked" "limit_exceeded"))
                       (throw djReturn4Token)))
-                  (when event (notificationState context record event (nativeGet route "session_key") "push" contributions t))
+                  (when event (notificationState context record event (nativeGet route "session_key") "push" t))
                   (let
                     (
                       (attempt
@@ -779,15 +675,6 @@
                     (put record :submitted_at (utcNow context))
                     (put record :reply_context_id (nativeGet envelope "reply_context_id"))
                     (put record :allowed_actions (nativeGet envelope "allowed_actions"))
-                    (put
-                      record
-                      :frozen_contributions
-                      (js-call
-                        contributions
-                        :map
-                        (lambda
-                          (item)
-                          (str (nativeGet item "subscription_id") ":" (nativeGet item "revision")))))
                     (put record :revision (nextRevision (nativeGet record "revision")))
                     (must (js-call repository :replaceProgress "deliveries" record))
                     (success
@@ -808,8 +695,7 @@
             (catch djReturn4Error
               (if (eq djReturn4Error djReturn4Token)
                 djReturn4Value
-                (throw djReturn4Error))))))
-          t))))
+                (throw djReturn4Error))))))))
   (defun observationFact
     (tool observation)
     (let
@@ -1113,10 +999,8 @@
         (record (js-call repository :get "deliveries" delivery-id)))
         (if (and record (= (nativeGet record "state") "failed")
           (= (nativeGet record "definite_not_sent") t) (= (nativeGet record "retryable") t)
-          ;; Group-only retries belong to the persisted group selector. A merged
-          ;; ordinary contribution keeps its own established retry semantics.
-          (not (js-call (js-call (nativeGet (nativeGet context "store") "db") :query
-            "SELECT 1 FROM contributions c JOIN subscriptions s ON s.subscription_id=c.subscription_id WHERE c.delivery_id=? AND c.state IN ('active','effective') AND json_extract(s.payload,'$.group_id') IS NOT NULL AND NOT EXISTS(SELECT 1 FROM contributions o JOIN subscriptions os ON os.subscription_id=o.subscription_id WHERE o.delivery_id=c.delivery_id AND o.state IN ('active','effective') AND json_extract(os.payload,'$.group_id') IS NULL) LIMIT 1") :get delivery-id))
+          ;; Group retries belong to the persisted group selector.
+          (not (nativeGet record "group_id"))
           (<= (Date/parse (nativeGet record "next_retry_at" (utcNow context))) (Date/parse (utcNow context))))
           (progn
             (if (<= (Date/parse (nativeGet record "expires_at")) (Date/parse (utcNow context)))

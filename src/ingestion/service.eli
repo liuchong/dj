@@ -370,7 +370,7 @@
                               sequence
                               :state
                               (if command "done" (if backpressure "blocked" "ready"))
-                              :last_subscription_id
+                              :last_target_key
                               nil
                               :last_revision
                               nil

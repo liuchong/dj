@@ -233,29 +233,33 @@
           (js-call (expect (nativeGet (validateInstructionPolicy policy) "ok")) :toBe false)))
       (let* ((event (js-object :event_id "event-id" :sender (js-object :id "sender-id")
                       :conversation (js-object :native_chat_id "chat-id" :native_thread_id nil)))
-             (contribution (js-object :subscription_id "sub-id" :revision 7
+             (item (js-object :target_key "session:s1" :revision 7 :scope "rule" :rule_id "r1"
                :instruction_policy (js-object :prompt "literal {{unknown}}" :task_template "task={{message.text}}")))
              (body "external {{event.id}}")
-             (items (composeInstructions (js-array contribution) event body)))
+             (items (composeInstructions (js-array item) event body)))
+        (js-call (expect (nativeGet (validateInstructionPolicy (js-object :task_template "{{subscription.id}}")) "ok")) :toBe false)
         (js-call (expect (nativeGet (aref items 0) "prompt")) :toBe "literal {{unknown}}")
         (js-call (expect (nativeGet (aref items 0) "task")) :toBe "task=external {{event.id}}")
-        (js-call (expect (nativeGet (renderTask "{{source.chat_id}}/{{source.thread_id}}/{{sender.id}}/{{subscription.id}}"
-          event contribution body) "text")) :toBe "chat-id//sender-id/sub-id")
+        (js-call (expect (nativeGet (aref items 0) "target_key")) :toBe "session:s1")
+        (js-call (expect (nativeGet (aref items 0) "rule_id")) :toBe "r1")
+        (js-call (expect (nativeGet (renderTask "{{source.chat_id}}/{{source.thread_id}}/{{sender.id}}/{{subscription.target_key}}/{{rule.id}}"
+          event item body) "text")) :toBe "chat-id//sender-id/session:s1/r1")
         (js-call (expect (nativeGet (renderTask (js-call "{{message.text}}" :repeat 32)
-          event contribution (js-call "x" :repeat 1024)) "overflow")) :toBe false)
+          event item (js-call "x" :repeat 1024)) "overflow")) :toBe false)
         (js-call (expect (nativeGet (renderTask (js-call "{{message.text}}" :repeat 32)
-          event contribution (js-call "x" :repeat 1025)) "overflow")) :toBe t)
+          event item (js-call "x" :repeat 1025)) "overflow")) :toBe t)
         (let* ((high (String/fromCharCode 55357)) (low (String/fromCharCode 56832))
                (rendered (renderTask (str (js-call "x" :repeat 32764) high "{{message.text}}")
-                           event contribution low)))
+                           event item low)))
           (js-call (expect (nativeGet rendered "overflow")) :toBe false)
           (js-call (expect (Buffer/byteLength (nativeGet rendered "text") "utf8")) :toBe 32768))
         (js-call (expect (js-length (composeInstructions (js-array (js-object)) event body))) :toBe 0)
         (let ((envelope (js-object :schema_version 1 :kind "external_message"
                 :allowed_actions (js-array) :content (js-object :text body) :instructions items)))
           (js-call (expect (nativeGet (unpackEnvelope (packEnvelope envelope)) "instructions")) :toEqual items)))
-      (let ((spec (js-object :agent_id "agent" :selector (js-object :sources
-              (js-array (js-object :conversation_ref "source")))
+      (let ((spec (js-object :agent_id "agent" :rules (js-array
+              (js-object :id "r1" :enabled t :sources (js-array (js-object :conversation_ref "source"))
+                :predicate (js-object :all (js-array))))
               :instruction_policy (js-object :prompt "trusted"))))
         (js-call (expect (nativeGet (validateRequest "subscription.preview" (js-object :spec spec)) "ok")) :toBe t)
         (put spec :instruction_policy (js-object :task_template "{{unknown}}"))
@@ -397,10 +401,14 @@
           "2026-01-01T00:00:00.000Z") "ok")) :toBe false))
       (js-call (js-array 0 301 1.5 "60") :forEach (lambda (seconds)
         (js-call (expect (nativeGet (validateRequest "subscription.pull"
-          (js-object :subscription_id "sub" :lease_seconds seconds :idempotency_key "pull")) "ok")) :toBe false)))
+          (js-object :agent_id "agent-1" :lease_seconds seconds :idempotency_key "pull")) "ok")) :toBe false)))
       (js-call (js-array 1 300) :forEach (lambda (seconds)
         (js-call (expect (nativeGet (validateRequest "subscription.pull"
-          (js-object :subscription_id "sub" :lease_seconds seconds :idempotency_key "pull")) "ok")) :toBe t)))
+          (js-object :agent_id "agent-1" :lease_seconds seconds :idempotency_key "pull")) "ok")) :toBe t)))
+      (js-call (expect (nativeGet (validateRequest "subscription.pull"
+        (js-object :agent_id "agent-1" :group_id "group-1" :idempotency_key "pull")) "ok")) :toBe t)
+      (js-call (expect (nativeGet (validateRequest "subscription.pull"
+        (js-object :group_id "group-1" :idempotency_key "pull")) "ok")) :toBe false)
       (js-call (expect (nativeGet (validateRequest "subscription.ack"
         (js-object :claim_ref "claim" :disposition "done" :idempotency_key "ack")) "ok")) :toBe false)
       (js-call (expect (nativeGet (validateRequest "subscription.ack"
@@ -480,8 +488,8 @@
         (expect
           (nativeGet
             (validateRequest
-              "subscription.create"
-              (js-object :preview_id "r1" :spec (js-object) :idempotency_key "k1"))
+              "subscription.set"
+              (js-object :preview_id "r1" :expected_revision 0 :spec (js-object) :idempotency_key "k1"))
             "ok"))
         :toBe
         false)))
@@ -785,8 +793,11 @@
   (withUnitCase "T55.subscription-source-contract.unit"
     (lambda (unused)
       (let* ((descriptor (js-call operationCatalog :get "subscription.get"))
-             (result (lambda (source) (success (js-object :subscription_id "source-contract"
-               :selector (js-object :sources (js-array source) :event_kinds (js-array "message.created"))))))
+             (result (lambda (source) (success (js-object :target_key "session:source-contract"
+               :rules (js-array (js-object :id "r1" :enabled t
+                 :sources (js-array source)
+                 :event_kinds (js-array "message.created")
+                 :predicate (js-object :all (js-array))))))))
              (connection (js-object :connection_id "lark" :include_threads t))
              (conversation (js-object :conversation_ref "conversation-ref" :include_threads false)))
         (js-call (js-array connection conversation) :forEach (lambda (source)

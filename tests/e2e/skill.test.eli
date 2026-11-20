@@ -37,14 +37,14 @@
               (expect (nativeGet (nativeGet observation "preview_call") "native_tool_call_id"))
               :toBeDefined)
             (js-call
-              (expect (nativeGet (nativeGet observation "create_call") "operation"))
+              (expect (nativeGet (nativeGet observation "set_call") "operation"))
               :toBe
-              "subscription.create")
+              "subscription.set")
             (js-call
-              (expect (nativeGet (nativeGet (nativeGet observation "create_call") "arguments") "preview_id"))
+              (expect (nativeGet (nativeGet (nativeGet observation "set_call") "arguments") "preview_id"))
               :toBe
               (nativeGet observation "actual_preview_id"))
-            (js-call (expect (nativeGet observation "actual_subscription_id")) :toBeDefined)
+            (js-call (expect (nativeGet observation "actual_target_key")) :toBeDefined)
             (js-call (expect (nativeGet who "tool")) :toBe tool)
             (let
               (
@@ -55,8 +55,12 @@
                       :ok
                       "subscription.get"
                       (js-object
-                        :subscription_id
-                        (nativeGet observation "actual_subscription_id"))))))
+                        :agent_id
+                        (nativeGet observation "agent_id"))))))
+              (js-call
+                (expect (nativeGet subscription "target_key"))
+                :toBe
+                (nativeGet observation "actual_target_key"))
               (js-call
                 (expect (nativeGet subscription "agent_id"))
                 :toBe

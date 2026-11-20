@@ -313,7 +313,7 @@
           (expect (nativeGet status "operation_catalog_digest"))
           :toMatch
           (new globalThis.RegExp "^[a-f0-9]{64}$"))
-        (js-call (expect (js-length (nativeGet status "visible_operations"))) :toBe 61)))
+        (js-call (expect (js-length (nativeGet status "visible_operations"))) :toBe 108)))
     closeFixture)
   (import "../support/process.eli" spawnFixture closeProcess until)
   (import "../support/entries.eli" callCli createMcpClient)
@@ -665,7 +665,7 @@
           (nativeGet (nativeGet (nativeGet (nativeGet cursor-config "config") "mcpServers") "dj") "args"))
         (js-call (expect (existsSync profile)) :toBe false)
         (js-call (expect (existsSync (resolve project ".cursor/mcp.json"))) :toBe false)
-        (let* ((options (js-array "--client-profile" profile "--agent" "agent-local" "--subscription" "sub-local"))
+        (let* ((options (js-array "--client-profile" profile "--agent" "agent-local" "--group" "group-local"))
                (codex-hooks (nativeGet (nativeGet (await (skillCliTest
                  (js-call (js-array "hooks" "--target" "codex") :concat options))) "result") "data"))
                (cursor-hooks (nativeGet (nativeGet (await (skillCliTest
@@ -722,12 +722,14 @@
                    (agent (await (callOk f "O" "agent.register" (js-object :candidate_ref (nativeGet candidate "candidate_ref")
                      :binding_mode "existing" :recipient_principal_id "A" :display_name "hook target" :idempotency_key "hook-agent"))))
                    (source (await (callOk f "A" "conversation.resolve" (js-object :connection_id "lark" :chat_id "c1" :thread_id nil))))
-                   (preview (await (callOk f "A" "subscription.preview" (js-object :spec
+                   (preview (await (callOk f "A" "subscription.preview" (js-object :expected_revision 0 :spec
                      (js-object :agent_id (nativeGet agent "agent_id") :delivery_mode "pull"
-                       :instruction_policy (js-object :prompt "authorized hook work")
-                       :selector (js-object :sources (js-array (js-object :conversation_ref (nativeGet source "conversation_ref")))))))))
-                   (subscription (await (callOk f "A" "subscription.create"
-                     (js-object :preview_id (nativeGet preview "preview_id") :idempotency_key "hook-sub"))))
+                       :rules (js-array (js-object :id "default" :enabled t
+                         :sources (js-array (js-object :conversation_ref (nativeGet source "conversation_ref")))
+                         :predicate (js-object :all (js-array))
+                         :instruction_policy (js-object :prompt "authorized hook work"))))))))
+                   (subscription (await (callOk f "A" "subscription.set"
+                     (js-object :preview_id (nativeGet preview "preview_id") :expected_revision 0 :idempotency_key "hook-sub"))))
                    (p (js-object :root (nativeGet f "root") :credentials (nativeGet f "credentials")))
                    (profile (await (writeClientProfile p "A")))
                    (profile-data (JSON/parse (readFileSync profile "utf8")))
@@ -735,8 +737,7 @@
                      (js-object :hook_event_name "stop" :conversation_id "hook-session" :generation_id "turn-1" :status "completed" :loop_count 0)))
                    (run (async (event)
                      (let* ((child (Bun/spawn (js-array (nativeGet globalThis.process "execPath") "dist/src/interfaces/cli.mjs"
-                               "hook" "pull" "--target" tool "--client-profile" profile "--agent" (nativeGet agent "agent_id")
-                               "--subscription" (nativeGet subscription "subscription_id"))
+                               "hook" "pull" "--target" tool "--client-profile" profile "--agent" (nativeGet subscription "agent_id"))
                                (js-object :stdin (new globalThis.Blob (js-array (JSON/stringify event))) :stdout "pipe" :stderr "pipe")))
                             (out (await (Promise/all (js-array (js-call (new globalThis.Response (nativeGet child "stdout")) :text)
                               (js-call (new globalThis.Response (nativeGet child "stderr")) :text) (nativeGet child "exited"))))))
@@ -877,16 +878,18 @@
                        (source (nativeGet (await (js-call p :request "A" "conversation.resolve"
                          (js-object :connection_id "lark" :chat_id "c1" :thread_id nil))) "data"))
                        (preview (await (js-call recipient :call "subscription.preview"
-                         (js-object :spec (js-object :agent_id (nativeGet agent "agent_id") :delivery_mode "pull"
-                           :instruction_policy (js-object :task_template "process {{message.text}}")
-                           :selector (js-object :sources (js-array (js-object :conversation_ref (nativeGet source "conversation_ref")))))))))
-                       (subscription (await (js-call recipient :call "subscription.create"
-                         (js-object :preview_id (nativeGet (nativeGet preview "data") "preview_id") :idempotency_key "entry-pull-sub")))))
+                         (js-object :expected_revision 0 :spec (js-object :agent_id (nativeGet agent "agent_id") :delivery_mode "pull"
+                           :rules (js-array (js-object :id "default" :enabled t
+                             :sources (js-array (js-object :conversation_ref (nativeGet source "conversation_ref")))
+                             :predicate (js-object :all (js-array))
+                             :instruction_policy (js-object :task_template "process {{message.text}}"))))))))
+                       (subscription (await (js-call recipient :call "subscription.set"
+                         (js-object :preview_id (nativeGet (nativeGet preview "data") "preview_id") :expected_revision 0 :idempotency_key "entry-pull-sub")))))
                   (js-call (expect (nativeGet preview "ok")) :toBe t)
                   (js-call (expect (nativeGet subscription "ok")) :toBe t)
                   (await (js-call p :control (js-object :kind "ingest" :event (createdEvent "lark" "entry-pull-event" "pull message"))))
                   (await (js-call p :control (js-object :kind "tick")))
-                  (let* ((args (js-object :subscription_id (nativeGet (nativeGet subscription "data") "subscription_id")
+                  (let* ((args (js-object :agent_id (nativeGet (nativeGet subscription "data") "agent_id")
                                  :idempotency_key "entry-pull-claim"))
                          (claimed (await (js-call recipient :call "subscription.pull" args)))
                          (claim (nativeGet (nativeGet (nativeGet claimed "data") "item") "claim_ref"))
@@ -932,7 +935,7 @@
                       "dj_session_search"
                       :arguments
                       (js-object :query "business error inside valid protocol shell"))))))
-            (js-call (expect (js-length tools)) :toBe 61)
+            (js-call (expect (js-length tools)) :toBe 108)
             (js-call (expect (nativeGet (nativeGet read "annotations") "readOnlyHint")) :toBe t)
             (js-call (expect (nativeGet (nativeGet send "annotations") "readOnlyHint")) :toBe false)
             (js-call (expect (nativeGet (nativeGet send "annotations") "idempotentHint")) :toBe t)
@@ -1252,21 +1255,25 @@
                    (js-object :connection_id "lark" :include_threads t)
                    (js-object :conversation_ref (nativeGet (nativeGet conversation "data") "conversation_ref") :include_threads t))))
             (js-call (expect (nativeGet agent "ok")) :toBe t)
-            (let ((index 0))
+            (let ((index 0) (expected-rev 0))
               (while (< index (js-length sources))
                 (let* ((source (aref sources index))
-                       (spec (js-object :agent_id id :selector (js-object :sources (js-array source)
-                         :event_kinds (js-array "message.created"))))
-                       (preview (await (funcall request "subscription.preview" (js-object :spec spec))))
-                       (created (await (funcall request "subscription.create" (js-object
-                         :preview_id (nativeGet preview "preview_id") :idempotency_key (str "mcp-source-create-" index))))))
-                  (js-call (expect (aref (nativeGet (nativeGet created "selector") "sources") 0)) :toEqual source)
-                  (let ((read (await (funcall request "subscription.get" (js-object :subscription_id (nativeGet created "subscription_id"))))))
-                    (js-call (expect (nativeGet read "selector")) :toEqual (nativeGet created "selector"))))
+                       (spec (js-object :agent_id id
+                         :rules (js-array (js-object :id "default" :enabled t
+                           :sources (js-array source)
+                           :event_kinds (js-array "message.created")
+                           :predicate (js-object :all (js-array))))))
+                       (preview (await (funcall request "subscription.preview" (js-object :expected_revision expected-rev :spec spec))))
+                       (saved (await (funcall request "subscription.set" (js-object
+                         :preview_id (nativeGet preview "preview_id") :expected_revision expected-rev :idempotency_key (str "mcp-source-set-" index))))))
+                  (setq expected-rev (nativeGet saved "revision"))
+                  (js-call (expect (aref (nativeGet (aref (nativeGet saved "rules") 0) "sources") 0)) :toEqual source)
+                  (let ((read (await (funcall request "subscription.get" (js-object :agent_id id)))))
+                    (js-call (expect (nativeGet read "rules")) :toEqual (nativeGet saved "rules"))))
                 (setq index (1+ index))))
             (let* ((listed (await (funcall request "subscription.list" (js-object :filters (js-object :agent_id id) :limit 100))))
                    (api (await (js-call p :request "O" "subscription.list" (js-object :filters (js-object :agent_id id) :limit 100)))))
-              (js-call (expect (js-length (nativeGet listed "items"))) :toBe 2)
+              (js-call (expect (js-length (nativeGet listed "items"))) :toBe 1)
               (js-call (expect (nativeGet listed "items")) :toEqual (nativeGet (nativeGet api "data") "items"))))
           (finally (await (js-call client :close))))))
     closeProcess)

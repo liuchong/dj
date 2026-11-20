@@ -22,9 +22,8 @@
       (view (Object/assign (js-object) event (js-object :connection_id "user" :event_id "event-b" :received_at "later"
         :content (js-object :text "different view formatting")))))
       (js-call (expect (nativeGet (eventIdentity context event) "event_key")) :toBe (nativeGet (eventIdentity context view) "event_key"))
-      (js-call (expect (notificationKey context (js-object) event "session-a" "push")) :toBe (notificationKey context (js-object) view "session-a" "push"))
-      (js-call (nativeGet (expect (notificationKey context (js-object) event "session-a" "push")) "not") :toBe (notificationKey context (js-object) view "session-b" "push"))
-      (js-call (nativeGet (expect (notificationKey context (js-object) event "session-a" "push")) "not") :toBe (notificationKey context (js-object) view "session-a" "pull"))
+      (js-call (expect (notificationKey context event "session-a")) :toBe (notificationKey context view "session-a"))
+      (js-call (nativeGet (expect (notificationKey context event "session-a")) "not") :toBe (notificationKey context view "session-b"))
       (put view :connection_id "other")
       (js-call (nativeGet (expect (nativeGet (eventIdentity context event) "event_key")) "not") :toBe (nativeGet (eventIdentity context view) "event_key"))
       (put view :connection_id "user") (put view :event_kind "message.reaction.added") (put view :source_key "reaction-one")

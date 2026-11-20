@@ -1,6 +1,8 @@
 (module dj.tests.integration.composable-subscriptions
   (import "../../src/core/native.eli" nativeGet)
+  (import "../../src/core/errors.eli" success)
   (import "../../src/adapters/im/lark-events.eli" flattenLarkEvent normalizeLarkEvent)
+  (import "../../src/adapters/im/lark-resource-events.eli" normalizeResourceEvents)
   (import "../support/case.eli" withCase)
   (import "../support/fixtures.eli" createFixture closeFixture callOk bindRecipient createdEvent)
   (import "bun:sqlite" Database)
@@ -15,13 +17,25 @@
       (js-object :tool "opencode" :native_namespace "ns-opencode" :native_session_id "s2"))
     (put (aref (nativeGet config "agent_endpoints") 0) :instance_epoch "epoch-1"))))))
   (defun leaf (field op value) (js-object :field field :op op :value value))
-  (defun spec (agent predicate)
-    (js-object :agent_id (nativeGet agent "agent_id") :selector (js-object) :predicate predicate
-      :context_policy (js-object :mode "recent" :max_events 8 :max_bytes 16384)))
+  (defun ruleBranch (id predicate &optional options)
+    (Object/assign
+      (js-object :id id :enabled t :predicate predicate)
+      (or options (js-object))))
+  (defun spec (agent rules &optional options)
+    (Object/assign
+      (js-object :agent_id (nativeGet agent "agent_id") :rules rules)
+      (or options (js-object))))
+  (defasync setSubscription (f actor agent expected-revision rules &optional options)
+    (let ((preview (await (callOk f actor "subscription.preview"
+      (js-object :expected_revision expected-revision :spec (spec agent rules options))))))
+      (await (callOk f actor "subscription.set"
+        (js-object :preview_id (nativeGet preview "preview_id")
+          :expected_revision expected-revision
+          :idempotency_key (str "subscribe-" (randomUUID)))))))
   (defasync subscribe (f actor agent predicate)
-    (let ((preview (await (callOk f actor "subscription.preview" (js-object :spec (spec agent predicate))))))
-      (await (callOk f actor "subscription.create" (js-object :preview_id (nativeGet preview "preview_id")
-        :idempotency_key (str "subscribe-" (randomUUID)))))))
+    (await (setSubscription f actor agent 0
+      (js-array (ruleBranch "default" predicate
+        (js-object :context_policy (js-object :mode "recent" :max_events 8 :max_bytes 16384)))))))
   (defasync secondAgent (f)
     (let* ((items (nativeGet (await (callOk f "O" "agent.discover" (js-object :tool "opencode" :scope "live"))) "items"))
       (candidate (js-call items :find (lambda (item) (= (nativeGet item "native_session_id") "s2")))))
@@ -49,19 +63,38 @@
         (js-object :not (leaf "conversation.native_chat_id" "eq" "excluded-chat"))
         (js-object :not (leaf "thread.id" "eq" "excluded-thread")))))
       (keyword-rule (leaf "text" "contains" "ship"))
-      (first (await (subscribe f "A" a human-rule)))
-      (second (await (subscribe f "A" a keyword-rule)))
-      (third (await (subscribe f "B" b keyword-rule)))
-      (bot-line (await (subscribe f "B" b (js-object :all (js-array
-        (leaf "sender.kind" "eq" "bot") (leaf "sender.id" "eq" "bot-watch"))))))
+      (bot-predicate (js-object :all (js-array
+        (leaf "sender.kind" "eq" "bot") (leaf "sender.id" "eq" "bot-watch"))))
+      (sub-a (await (setSubscription f "A" a 0
+        (js-array
+          (ruleBranch "human" human-rule
+            (js-object :context_policy (js-object :mode "current" :max_events 1 :max_bytes 4096)
+              :instruction_policy (js-object :prompt "Human branch" :task_template "Handle {{rule.id}} on {{subscription.target_key}}")))
+          (ruleBranch "keyword" keyword-rule
+            (js-object :context_policy (js-object :mode "recent" :max_events 8 :max_bytes 16384)))))))
+      (sub-b (await (setSubscription f "B" b 0
+        (js-array
+          (ruleBranch "keyword" keyword-rule
+            (js-object :context_policy (js-object :mode "recent" :max_events 8 :max_bytes 16384)))
+          (ruleBranch "bot-watch" bot-predicate)))))
       (db (new Database (resolve (nativeGet f "root") "state/dj.sqlite") (js-object :readonly t))))
       (try
-        ;; Matching subscriptions merge for the same target, independently fan out to another target.
+        ;; Multiple matching rule branches in a target's single subscription coalesce into one delivery with matched rule_ids.
         (await (js-call f :ingest (event "overlap" "human" "person-a" "c1" false t "ship it")))
         (await (js-call f :tick))
         (js-call (expect (js-length (nativeGet (nativeGet f "opencode") "inputs"))) :toBe 2)
-        (js-call (expect (countSql db "SELECT count(*) AS n FROM contributions c JOIN events e ON e.event_id=(SELECT event_id FROM deliveries WHERE delivery_id=c.delivery_id) WHERE e.native_message_id='overlap'")) :toBe 3)
+        (js-call (expect (countSql db "SELECT count(*) AS n FROM sqlite_master WHERE type='table' AND name='contributions'")) :toBe 0)
         (js-call (expect (countSql db "SELECT count(*) AS n FROM deliveries d JOIN events e ON e.event_id=d.event_id WHERE e.native_message_id='overlap'")) :toBe 2)
+        (let* ((inputs (nativeGet (nativeGet f "opencode") "inputs"))
+          (for-a (js-call inputs :find (lambda (item) (= (nativeGet (nativeGet item "binding") "native_session_id") "s1"))))
+          (env-a (nativeGet for-a "envelope"))
+          (matched-a (nativeGet env-a "matched"))
+          (instr-a (aref (nativeGet env-a "instructions") 0)))
+          (js-call (expect (nativeGet matched-a "target_key")) :toBe (nativeGet sub-a "target_key"))
+          (js-call (expect (nativeGet matched-a "subscription_revision")) :toBe 1)
+          (js-call (expect (nativeGet matched-a "rule_ids")) :toEqual (js-array "human" "keyword"))
+          (js-call (expect (nativeGet instr-a "rule_id")) :toBe "human")
+          (js-call (expect (nativeGet instr-a "task")) :toBe (str "Handle human on " (nativeGet sub-a "target_key"))))
         (await (js-call f :ingest (event "dm" "human" "person-a" "c1" t false "hello")))
         (await (js-call f :ingest (event "excluded-kind" "bot" "bot-other" "c1" t t "robot reply")))
         (await (js-call f :ingest (event "excluded-word" "human" "person-a" "c1" t t "IGNORE")))
@@ -78,8 +111,10 @@
         (await (js-call f :tick))
         (js-call (expect (js-length (nativeGet (nativeGet f "opencode") "inputs"))) :toBe 4)
         (let* ((row (js-call (js-call db :query "SELECT event_id FROM events WHERE native_message_id='globally-blocked'") :get))
-          (preview (await (callOk f "B" "subscription.preview" (js-object :spec (spec b keyword-rule)
-            :sample_event_ids (js-array (nativeGet row "event_id"))))))
+          (preview (await (callOk f "B" "subscription.preview"
+            (js-object :expected_revision (nativeGet sub-b "revision")
+              :spec (spec b (js-array (ruleBranch "keyword" keyword-rule)))
+              :sample_event_ids (js-array (nativeGet row "event_id"))))))
           (sample (aref (nativeGet preview "samples") 0)))
           (js-call (expect (nativeGet sample "result")) :toBe "true")
           (js-call (expect (nativeGet sample "reason_codes")) :toEqual (js-array "trigger_suppressed")))
@@ -87,14 +122,77 @@
           (items (nativeGet (await (callOk f "A" "message.list" (js-object :conversation_ref (nativeGet address "conversation_ref")))) "items")))
           (js-call (expect (js-call items :some (lambda (item) (= (nativeGet item "native_message_id") "globally-blocked")))) :toBe t))
         (js-call (expect (countSql db "SELECT count(*) AS n FROM events")) :toBe 8)
-        ;; A subscriber can pause just one line without cancelling another subscriber's line.
-        (await (callOk f "A" "subscription.pause" (js-object :subscription_id (nativeGet second "subscription_id")
-          :expected_revision (nativeGet second "revision") :idempotency_key "pause-keyword-a")))
+        ;; A subscriber can disable one rule branch in its single subscription without affecting other rules or another subscriber.
+        (await (setSubscription f "A" a (nativeGet sub-a "revision")
+          (js-array
+            (ruleBranch "human" human-rule)
+            (ruleBranch "keyword" keyword-rule (js-object :enabled false)))))
         (await (js-call f :ingest (event "only-second-target" "human" "person-a" "c1" false false "ship")))
         (await (js-call f :tick))
         (js-call (expect (countSql db "SELECT count(*) AS n FROM deliveries d JOIN events e ON e.event_id=d.event_id WHERE e.native_message_id='only-second-target'")) :toBe 1)
         (js-call (expect (js-length (nativeGet (nativeGet f "opencode") "inputs"))) :toBe 5)
         (finally (js-call db :close))))) closeFixture)
+  (withCase "T38.single-slot-multi-kind-and-rebind.integration" setup (async (f)
+    (put (js-call (nativeGet (nativeGet f "ports") "im_ports") :get "lark") :resource
+      (async (command args context)
+        (if (= command "resolve")
+          (success (js-object :node (js-object :obj_type "bitable" :obj_token "app_bug_table" :title "Bugs")))
+          (success (js-object)))))
+    (let* ((a (await (bindRecipient f)))
+      (board (await (callOk f "A" "resource.resolve"
+        (js-object :connection_id "lark" :url "https://test.larksuite.com/wiki/wikiBugs" :corpus "native"))))
+      (sub-1 (await (setSubscription f "A" a 0
+        (js-array
+          (ruleBranch "im-mentions" (leaf "addressed_self" "eq" t)
+            (js-object :sources (js-array (js-object :connection_id "lark"))
+              :event_kinds (js-array "message.created")))
+          (ruleBranch "bitable-bugs"
+            (js-object :all (js-array
+              (leaf "resource.kind" "eq" "bitable")
+              (leaf "people.id" "eq" "ou_bug_owner")))
+            (js-object :sources (js-array (js-object :conversation_ref (nativeGet board "conversation_ref") :include_threads t))
+              :event_kinds (js-array "resource.changed")))))))
+      (slot-key (nativeGet sub-1 "target_key")))
+      (js-call (expect (js-call slot-key :startsWith "session:")) :toBe t)
+      ;; Stale expected_revision: 0 is rejected once the single slot exists.
+      (let ((conflict (await (js-call f :call (nativeGet f "A") "subscription.preview"
+        (js-object :expected_revision 0 :spec (spec a (js-array (ruleBranch "dup" (leaf "addressed_self" "eq" t)))))))))
+        (js-call (expect (nativeGet (nativeGet conflict "error") "code")) :toBe "revision_conflict"))
+      ;; Ingest both IM mention and bitable resource.changed; each hits only its matching branch on the same slot.
+      (let ((im-hit (event "im-1" "human" "person-1" "c1" false t "ping")))
+        (put im-hit :addressed_self t)
+        (await (js-call f :ingest im-hit)))
+      (let* ((wire (js-object
+               :header (js-object :event_type "drive.file.bitable_record_changed_v1" :app_id "cli_test" :event_id "bitable-change-1" :create_time "1767225600000")
+               :event (js-object :file_token "app_bug_table" :file_type "bitable" :table_id "tbl_bugs" :operator_id (js-object :open_id "ou_editor")
+                 :action_list (js-array (js-object :record_id "rec_bug_1" :action "record_edited" :after_value (js-array
+                   (js-object :field_id "owner" :field_value "[{\"id\":\"ou_bug_owner\",\"name\":\"Owner\"}]")))))))
+             (res-hit (aref (normalizeResourceEvents (js-object :connection_id "lark" :event_app_id "cli_test") wire) 0)))
+        (await (js-call f :ingest res-hit)))
+      (await (js-call f :tick))
+      (let ((inputs (nativeGet (nativeGet f "opencode") "inputs")))
+        (js-call (expect (js-length inputs)) :toBe 2)
+        (js-call (expect (nativeGet (nativeGet (nativeGet (aref inputs 0) "envelope") "matched") "rule_ids"))
+          :toEqual (js-array "im-mentions"))
+        (js-call (expect (nativeGet (nativeGet (nativeGet (aref inputs 1) "envelope") "matched") "rule_ids"))
+          :toEqual (js-array "bitable-bugs")))
+      ;; Unregistering closes the agent and pauses its slot; re-registering the same native session reuses the exact session:<session_key> slot.
+      (let* ((closed (await (callOk f "O" "agent.unregister"
+          (js-object :agent_id (nativeGet a "agent_id") :expected_revision (nativeGet a "revision") :idempotency_key "unreg-s1"))))
+        (items (nativeGet (await (callOk f "O" "agent.discover" (js-object :tool "opencode" :scope "live"))) "items"))
+        (candidate (js-call items :find (lambda (x) (= (nativeGet x "native_session_id") "s1"))))
+        (a2 (await (callOk f "O" "agent.register"
+          (js-object :candidate_ref (nativeGet candidate "candidate_ref")
+            :display_name "same-rebound" :binding_mode "existing" :recipient_principal_id "A" :idempotency_key "rereg-s1"))))
+        (current (await (callOk f "A" "subscription.get" (js-object :agent_id (nativeGet a2 "agent_id")))))
+        (sub-2 (await (setSubscription f "A" a2 (nativeGet current "revision")
+          (js-array (ruleBranch "im-mentions" (leaf "addressed_self" "eq" t)))))))
+        (js-call (expect (nativeGet closed "state")) :toBe "closed")
+        (js-call (expect (nativeGet current "target_key")) :toBe slot-key)
+        (js-call (expect (nativeGet current "state")) :toBe "paused")
+        (js-call (expect (nativeGet sub-2 "target_key")) :toBe slot-key)
+        (js-call (expect (nativeGet sub-2 "agent_id")) :toBe (nativeGet a2 "agent_id"))
+        (js-call (expect (nativeGet sub-2 "state")) :toBe "active")))) closeFixture)
   (withCase "T38.person-subscriptions.integration" setup (async (f)
     (let* ((agent (await (bindRecipient f)))
       (alias (js-object :platform "lark" :scope "app:cli_test:open_id" :id "ou_person_a"))
@@ -103,7 +201,7 @@
       (await (setPolicy f (js-array) people))
       (await (subscribe f "A" agent predicate))
       (let ((bad (await (js-call f :call (nativeGet f "A") "subscription.preview"
-        (js-object :spec (spec agent (leaf "sender.person_id" "eq" "not-registered")))))))
+        (js-object :expected_revision 1 :spec (spec agent (js-array (ruleBranch "bad" (leaf "sender.person_id" "eq" "not-registered")))))))))
         (js-call (expect (nativeGet bad "ok")) :toBe false))
       (await (js-call f :ingest (event "person-match" "human" "ou_person_a" "c1" t false "hello")))
       (await (js-call f :ingest (event "different-person" "human" "ou_other" "c1" t false "hello")))

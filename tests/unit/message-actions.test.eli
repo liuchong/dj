@@ -1,6 +1,6 @@
 (module dj.tests.unit.message-actions
   (import "../../src/core/native.eli" nativeGet)
-  (import "../../src/core/rules.eli" evaluatePredicate defaultSubscriptionPredicate)
+  (import "../../src/triggers/predicate.eli" evaluatePredicate defaultSubscriptionPredicate)
   (import "../../src/adapters/im/lark-reactions.eli" classifyReactionResponse)
   (import "../../src/messaging/actions.eli" reactionPage)
   (import "../../src/application/operations.eli" operationCatalog)

@@ -1,6 +1,6 @@
 (module dj.tests.unit.filters
   (import "../../src/core/native.eli" nativeGet)
-  (import "../../src/filtering/policy.eli" validateFilterRules evaluateTriggerFilters)
+  (import "../../src/triggers/suppression.eli" validateFilterRules evaluateTriggerFilters)
   (import "../../src/people/registry.eli" validatePeople resolvePerson validatePersonReferences)
   (import "../../src/connections/manager.eli" createConnectionManager)
   (import "../support/case.eli" withUnitCase)

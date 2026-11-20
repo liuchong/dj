@@ -4,7 +4,7 @@
 | --- | --- |
 | wrong reference / invalid_argument | 依据 field_errors 的字段路径重新使用正确类型引用，不猜 ID |
 | 多个候选 / complete=false | 继续只读筛选或取得下一页；意图仍不明才询问，DJ 不会自行选择 |
-| preview_stale/expired | 重读对象后重新预览；不把另一份规则塞进 create |
+| preview_stale/expired | 重读对象当前 `revision` 后重新预览；不把另一份规则塞进 `set` |
 | already_committed / idempotency_conflict | 查原 operation_id；冲突请求停止，不换键消除告警 |
 | 只有历史/无 live_receiver | 查 receiver_reason；已配置的 Codex 原进程加载器可在实际投递时加载原对话；仍受阻时由 AI 决定代转，不新开替代会话 |
 | offline / busy / permission_pending | 由 DJ 按策略等待；不创建拉取任务或绕过原生审批 |

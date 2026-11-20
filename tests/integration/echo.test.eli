@@ -17,11 +17,20 @@
   (defasync turns (f n) (let ((i 0)) (while (< i n) (await (js-call f :tick)) (setq i (1+ i)))))
   (defasync subscribeThreads (f agent connection)
     (let* ((address (await (callOk f "A" "conversation.resolve" (js-object :connection_id connection :chat_id "c1" :thread_id nil))))
-      (preview (await (callOk f "A" "subscription.preview" (js-object :spec (js-object
-        :agent_id (nativeGet agent "agent_id") :start "now"
-        :selector (js-object :sources (js-array (js-object :conversation_ref (nativeGet address "conversation_ref") :include_threads t))
-          :event_kinds (js-array "message.created")) :predicate (js-object :all (js-array))))))))
-      (await (callOk f "A" "subscription.create" (js-object :preview_id (nativeGet preview "preview_id") :idempotency_key (str "threads-" connection))))))
+      (current-res (await (js-call f :call (nativeGet f "A") "subscription.get" (js-object :agent_id (nativeGet agent "agent_id")))))
+      (current (if (= (nativeGet current-res "ok") t) (nativeGet current-res "data") nil))
+      (expected-rev (if current (nativeGet current "revision") 0))
+      (rules (if current (js-call (nativeGet current "rules") :slice) (js-array)))
+      (next-rule (js-object :id (str "threads-" connection) :enabled t
+        :sources (js-array (js-object :conversation_ref (nativeGet address "conversation_ref") :include_threads t))
+        :event_kinds (js-array "message.created")
+        :predicate (js-object :all (js-array)))))
+      (js-call rules :push next-rule)
+      (let ((preview (await (callOk f "A" "subscription.preview"
+        (js-object :expected_revision expected-rev
+          :spec (js-object :agent_id (nativeGet agent "agent_id") :start "now" :rules rules))))))
+        (await (callOk f "A" "subscription.set"
+          (js-object :preview_id (nativeGet preview "preview_id") :expected_revision expected-rev :idempotency_key (str "threads-" connection)))))))
   (defun inputs (f) (nativeGet (nativeGet f "opencode") "inputs"))
   (defun back (id text)
     (let ((event (createdEvent "lark-alt" id text)))
@@ -41,8 +50,8 @@
           (echo (js-call (js-call db :query "SELECT w.payload,e.event_id FROM routing_work w JOIN events e ON e.event_id=w.event_id WHERE e.connection_id='lark-alt' AND e.native_message_id='lark-reply-1'") :get)))
           (js-call (expect (nativeGet (JSON/parse (nativeGet echo "payload")) "reason")) :toBe "own_echo")
           (js-call db :close)
-          (let ((replay (await (js-call f :call (nativeGet f "A") "subscription.replay" (js-object :subscription_id (nativeGet sub "subscription_id")
-            :event_ids (js-array (nativeGet echo "event_id")) :expected_revision 1 :idempotency_key "no-echo-replay")))))
+          (let ((replay (await (js-call f :call (nativeGet f "A") "subscription.replay" (js-object :agent_id (nativeGet sub "agent_id")
+            :event_ids (js-array (nativeGet echo "event_id")) :expected_revision (nativeGet sub "revision") :idempotency_key "no-echo-replay")))))
             (js-call (expect (nativeGet replay "ok")) :toBe false)))
         ;; If proof arrives after matching, submission still cancels the exact echo.
         (put (aref (nativeGet (nativeGet f "opencode") "sessions") 0) :runtime_state "busy")

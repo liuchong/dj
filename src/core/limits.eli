@@ -44,6 +44,10 @@
         64
         :rule_in_values
         64
+        :subscription_rules
+        64
+        :subscription_rule_leaves
+        256
         :sources
         100
         :event_kinds

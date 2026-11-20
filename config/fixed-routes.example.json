@@ -5,16 +5,29 @@
       "owner_principal_id": "operator",
       "recipient_principal_id": "recipient-codex",
       "target": {"instance_id": "codex-desktop", "native_session_id": "replace-codex-thread-id"},
-      "sources": [{"connection_id": "lark-support"}]
+      "rules": [
+        {
+          "id": "default",
+          "enabled": true,
+          "sources": [{"connection_id": "lark-support"}],
+          "predicate": {"any": [{"field": "addressed_self", "op": "eq", "value": true}, {"all": [{"field": "event_kind", "op": "eq", "value": "message.created"}, {"field": "chat_type", "op": "eq", "value": "p2p"}]}]}
+        }
+      ]
     },
     {
       "id": "development-to-cursor",
       "owner_principal_id": "operator",
       "recipient_principal_id": "recipient-cursor",
       "target": {"instance_id": "cursor-desktop", "native_session_id": "replace-cursor-thread-id"},
-      "sources": [{"connection_id": "lark-development", "native_chat_id": "replace-chat-id", "include_threads": true}],
-      "predicate": {"all": [{"field": "mentions.any", "op": "eq", "value": true}]},
-      "delivery_policy": {"busy": "steer", "offline": "hold", "ttl_seconds": 86400}
+      "delivery_policy": {"busy": "steer", "offline": "hold", "ttl_seconds": 86400},
+      "rules": [
+        {
+          "id": "mentions",
+          "enabled": true,
+          "sources": [{"connection_id": "lark-development", "native_chat_id": "replace-chat-id", "include_threads": true}],
+          "predicate": {"all": [{"field": "mentions.any", "op": "eq", "value": true}]}
+        }
+      ]
     }
   ]
 }

@@ -1,7 +1,7 @@
 (module dj.application.help
   (import "../core/native.eli" nativeGet)
   (import "../core/limits.eli" limits)
-  (import "../core/rules.eli" defaultSubscriptionPredicate)
+  (import "../triggers/predicate.eli" defaultSubscriptionRules)
   (defconst modelInstructions
     "DJ performs deterministic routing. Discover current tools with tools/list and service.status: visible_operations are exposed to this caller, unavailable_operations explain existing operations and required authority; missing tools do not prove missing product capability. Resource permissions and native capabilities are checked when called. Saving session.rules or instructions stores AI-readable text, not executable filters or outbound blocks. Use message.filter for trigger suppression and message.recipient_policy for outbound denial including automatic reactions; administrative access may be required. Read back structured policy before claiming it is active. Preserve recipient opt-outs and exact reply identity. Reuse typed references and inspect original operations after uncertain results. DJ does not select targets or generate answers.")
   (defconst summaries
@@ -20,7 +20,7 @@
       :task.tree "展示原 IM 消息、准确 AI 会话与登记的子对话；未知关联明确标注。"
       :task.link "为已接收投递登记明确父子会话关系；未原生核验，不猜任务归属。"
       :subscription.group.create "创建成员组，members为准确agent_id，最多32个；priority越小越优先。组仅保存成员，不复制订阅。"
-      :subscription.group.dispatches "按subscription_id查询组分发台账：selected为已选，accepted为原生受理，unknown不改投，waiting_member保留待投。after_id/limit续扫。"
+      :subscription.group.dispatches "按group_id查询该组唯一订阅槽位的组分发台账：selected为已选，accepted为原生受理，coalesced为已被单对话订阅先行占有并归并，unknown不改投，waiting_member保留待投。after_id/limit续扫。"
       :subscription.group.get "读取组成员、状态和并发校验计数。"
       :subscription.group.list "按group_id顺序列可管理组，after_id/limit续扫，返回next_after。"
       :subscription.group.update "整体更新name/members，需expected_revision；不会改投已经accepted/unknown的消息。"
@@ -62,23 +62,27 @@
       :agent.rebind
       "为同一 tool/namespace/native_session 更新已核验 Binding；不能改绑到其他会话。"
       :agent.unregister
-      "关闭登记并撤销未提交订阅贡献；保留共享 route、unknown 和独立直发。"
+      "关闭登记并暂停该会话槽位的在用订阅、取消提交点前待投项；保留共享 route、unknown 和独立直发。"
       :subscription.preview
-      "按 all/any/not 任意多条件组合事件类型、提及、私聊、作者、机器人、会话、话题及全文/首行/逐行字面文本（text、text.first_line、text.lines 配合 eq/in/contains/prefix/suffix）；预览返回固定 preview_id，样例只读并标明全局触发屏蔽，不生成投递。"
-      :subscription.create
-      "提交固定 preview_id；不接收第二份 spec，从 start_seq 起处理新事件。"
+      "为目标（agent_id 或 group_id 二选一）预览唯一订阅逻辑线：spec.rules 支持 1..64 条分支（各带 id、enabled、sources、event_kinds、predicate 及可选 context_policy/instruction_policy；all/any/not 任意多条件组合及 text、text.first_line、text.lines 配合 eq/in/contains/prefix/suffix）。目标尚无订阅时 expected_revision 省略或传 0，已有订阅时传当前 revision；返回固定 preview_id、rule_sources 与样例命中分支 matched_rule_ids。"
+      :subscription.set
+      "凭固定 preview_id 与 expected_revision（首次为 0，更新为当前 revision）原子创建或替换该目标的唯一订阅槽位（session:<session_key> 或 group:<group_id>），旧 revision 未提交待投项自动取消。"
       :subscription.list
-      "列出当前获准管理的订阅。"
+      "列出当前获准管理的目标唯一订阅。"
       :subscription.get
-      "读取订阅当前 revision、规则、来源和目标。"
-      :subscription.update
-      "用该对象/旧 revision 的固定票据切换规则版本；agent_id 不可变。"
+      "按 agent_id 或 group_id（严格二选一）读取该目标唯一订阅的当前 revision、rules、来源和状态。"
       :subscription.pause
-      "暂停新贡献并撤销本订阅未提交贡献；不撤回已提交原生输入。"
+      "按 agent_id 或 group_id 暂停该目标唯一订阅并取消提交点前待投项；不撤回已提交原生输入。"
       :subscription.resume
-      "以新 start_seq 恢复订阅；不补暂停期、不复活旧贡献。"
+      "按 agent_id 或 group_id 以新 start_seq 恢复该目标唯一订阅；不补暂停期消息。"
       :subscription.delete
-      "删除订阅并撤销其未提交贡献；其他订阅和直发保持各自生命周期。"
+      "按 agent_id 或 group_id 删除该目标唯一订阅并取消提交点前待投项；直发与已提交项保持原生命周期。"
+      :subscription.replay
+      "按 agent_id 或 group_id、当前 expected_revision 与最多 16 个 event_ids 显式重放匹配该目标当前订阅规则。"
+      :subscription.pull
+      "按 agent_id（组订阅时另传 group_id）主动领取一条 pull 模式待办并返回短期 claim_ref。"
+      :subscription.ack
+      "凭 claim_ref 显式确认 pull 领取项（consumed 消费或 retry 释放）。"
       :message.list
       "读取获准 IM 对话的本地 created 事件；仅返回有界正文预览，native corpus 未启用。"
       :message.search
@@ -124,13 +128,13 @@
       :delivery.list
       "按 origin/route/session/operation 等精确字段列举获准投递；两 origin 共用顺序。"
       :delivery.get
-      "读取当前可见投递、独立贡献、原生回执及可用回复引用。"
+      "读取当前可见投递、命中订阅摘要（matched）、原生回执及可用回复引用。"
       :delivery.reconcile
       "核对原目标、原 attempt 和原关联键；不靠对话文本猜测、不重发。"
       :delivery.retry
       "只对已证未送达且 retryable 的失败投递重试；沿原 route/序号重检当前权限。"
       :delivery.cancel
-      "取消自己的提交前直发或订阅贡献；不能越主体取消其他贡献。"
+      "取消自己的提交前直发或订阅投递；不能越主体取消其他主体拥有的订阅投递。"
       :delivery.resolve
       "仅操作员可对 unknown 不重发结案；后续输入仍须重新证明目标 idle。"
       :tool.list
@@ -199,8 +203,10 @@
       "external_message/delivery.get，绑定 recipient 与原话题"
       :agent_id
       "agent.register/list/get，代表单会话"
-      :subscription_id
-      "subscription.create/list/get"
+      :group_id
+      "subscription.group.create/list/get，代表显式分发组"
+      :target_key
+      "subscription.set/list/get，唯一目标槽位（session:<session_key> 或 group:<group_id>）"
       :delivery_id
       "session.send/delivery.list/get"
       :outbound_id
@@ -280,10 +286,12 @@
           defaults
           :spec
           (js-object
-            :predicate
-            (defaultSubscriptionPredicate)
+            :rules
+            (defaultSubscriptionRules)
             :start
             "now"
+            :delivery_mode
+            "push"
             :context_policy
             (js-object
               :mode
@@ -299,9 +307,7 @@
               :offline
               "hold"
               :ttl_seconds
-              (nativeGet limits "ttl_default_seconds"))
-            :selector
-            (js-object :event_kinds (js-array "message.created" "message.reaction.added" "message.pinned")))))
+              (nativeGet limits "ttl_default_seconds")))))
       defaults))
   (defun limitReferences
     (properties)
@@ -333,6 +339,8 @@
         (js-call
           names
           :push
+          "subscription_rules"
+          "subscription_rule_leaves"
           "rule_depth"
           "rule_leaves"
           "rule_in_values"

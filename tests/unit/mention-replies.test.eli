@@ -3,7 +3,7 @@
   (import "../../src/connections/replies.eli" normalizeReplyRoutes)
   (import "../../src/dispatch/evidence.eli" selectReplyRoute)
   (import "../../src/adapters/im/lark-events.eli" flattenLarkEvent normalizeLarkEvent)
-  (import "../../src/core/rules.eli" validatePredicate evaluatePredicate)
+  (import "../../src/triggers/predicate.eli" validatePredicate evaluatePredicate)
   (import "../support/case.eli" withUnitCase)
   (import "bun:test" expect)
   (withUnitCase "T38.mention-replies.unit" (async (unused)

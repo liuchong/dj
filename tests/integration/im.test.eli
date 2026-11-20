@@ -320,17 +320,26 @@
                 (nativeGet f "A")
                 "subscription.preview"
                 (js-object
+                  :expected_revision
+                  0
                   :spec
                   (js-object
                     :agent_id
                     (nativeGet agent "agent_id")
-                    :selector
-                    (js-object
-                      :sources
-                      (js-array
-                        (js-object :conversation_ref (nativeGet address "conversation_ref")))
-                      :event_kinds
-                      (js-array "message.edited"))
+                    :rules
+                    (js-array
+                      (js-object
+                        :id
+                        "default"
+                        :enabled
+                        t
+                        :sources
+                        (js-array
+                          (js-object :conversation_ref (nativeGet address "conversation_ref")))
+                        :event_kinds
+                        (js-array "message.edited")
+                        :predicate
+                        (js-object :all (js-array))))
                     :start
                     "now"))))))
         (js-call (expect (nativeGet result "ok")) :toBe false)
@@ -826,25 +835,32 @@
                 "A"
                 "subscription.preview"
                 (js-object
+                  :expected_revision
+                  0
                   :spec
                   (js-object
                     :agent_id
                     (nativeGet agent "agent_id")
-                    :selector
-                    (js-object
-                      :sources
-                      (js-array
-                        (js-object
-                          :conversation_ref
-                          (nativeGet address "conversation_ref")
-                          :include_threads
-                          false))
-                      :event_kinds
-                      (js-array "message.created"))
-                    :predicate
-                    (js-object :all (js-array))
-                    :context_policy
-                    (js-object :mode "current" :max_events 1 :max_bytes 16384)
+                    :rules
+                    (js-array
+                      (js-object
+                        :id
+                        "default"
+                        :enabled
+                        t
+                        :sources
+                        (js-array
+                          (js-object
+                            :conversation_ref
+                            (nativeGet address "conversation_ref")
+                            :include_threads
+                            false))
+                        :event_kinds
+                        (js-array "message.created")
+                        :predicate
+                        (js-object :all (js-array))
+                        :context_policy
+                        (js-object :mode "current" :max_events 1 :max_bytes 16384)))
                     :delivery_policy
                     (js-object :busy "queue" :offline "hold" :ttl_seconds 60)
                     :start
@@ -853,10 +869,12 @@
           (callOk
             f
             "A"
-            "subscription.create"
+            "subscription.set"
             (js-object
               :preview_id
               (nativeGet preview "preview_id")
+              :expected_revision
+              0
               :idempotency_key
               "tg-topic-sub")))
         (js-call
@@ -1230,15 +1248,17 @@
       (let* ((agent (await (bindRecipient f)))
         (status (await (callOk f "X" "service.status" (js-object))))
         (connections (await (callOk f "X" "connection.list" (js-object))))
-        (preview (await (callOk f "A" "subscription.preview" (js-object :spec (js-object
-          :agent_id (nativeGet agent "agent_id") :selector (js-object :event_kinds (js-array "message.created"))
-          :predicate (js-object :all (js-array)))))))
+        (preview (await (callOk f "A" "subscription.preview" (js-object :expected_revision 0 :spec (js-object
+          :agent_id (nativeGet agent "agent_id")
+          :rules (js-array (js-object :id "default" :enabled t
+            :event_kinds (js-array "message.created")
+            :predicate (js-object :all (js-array)))))))))
         (outbound-ids (js-array)) (i 0))
         (js-call (expect (js-call (nativeGet status "visible_operations") :includes "message.send")) :toBe t)
         (js-call (expect (js-call (nativeGet status "visible_operations") :includes "resource.watch")) :toBe t)
         (js-call (expect (js-call (nativeGet status "visible_operations") :includes "outbound.get")) :toBe t)
         (js-call (expect (js-length (nativeGet connections "items"))) :toBe 2)
-        (await (callOk f "A" "subscription.create" (js-object :preview_id (nativeGet preview "preview_id") :idempotency_key "free-subscribe")))
+        (await (callOk f "A" "subscription.set" (js-object :preview_id (nativeGet preview "preview_id") :expected_revision 0 :idempotency_key "free-subscribe")))
         (let ((policy (await (callOk f "O" "message.filter.get" (js-object)))))
           (await (callOk f "O" "message.filter.update" (js-object :expected_revision (nativeGet policy "revision")
             :idempotency_key "free-filter" :rules (js-array (js-object :id "silent-text" :enabled t

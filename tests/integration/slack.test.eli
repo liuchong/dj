@@ -193,11 +193,15 @@
         (await (js-call port :close))))) closeFixture)
   (withCase "T27.slack.routing.integration" setup (async (f)
     (let* ((state (nativeGet f "slack_state")) (agent (await (bindRecipient f)))
-      (preview (await (callOk f "A" "subscription.preview" (js-object :spec (js-object
-        :agent_id (nativeGet agent "agent_id") :selector (js-object :sources (js-array (js-object :connection_id "slack-user")) :event_kinds (js-array "message.created"))
-        :predicate (js-object :op "contains" :field "text" :value "work") :context_policy (js-object :mode "current" :max_events 1 :max_bytes 16384)
+      (preview (await (callOk f "A" "subscription.preview" (js-object :expected_revision 0 :spec (js-object
+        :agent_id (nativeGet agent "agent_id")
+        :rules (js-array (js-object :id "default" :enabled t
+          :sources (js-array (js-object :connection_id "slack-user"))
+          :event_kinds (js-array "message.created")
+          :predicate (js-object :op "contains" :field "text" :value "work")
+          :context_policy (js-object :mode "current" :max_events 1 :max_bytes 16384)))
         :delivery_policy (js-object :busy "queue" :offline "hold" :ttl_seconds 86400) :start "now"))))))
-      (await (callOk f "A" "subscription.create" (js-object :preview_id (nativeGet preview "preview_id") :idempotency_key "slack-subscribe")))
+      (await (callOk f "A" "subscription.set" (js-object :preview_id (nativeGet preview "preview_id") :expected_revision 0 :idempotency_key "slack-subscribe")))
       (emit f "evt-route" (newMessage "1793400000.000004" "<@UOWNER> work"))
       (await (until (lambda () (= (js-length (nativeGet state "acks")) 1))))
       (await (steps f 10))

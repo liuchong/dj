@@ -4,6 +4,7 @@
     stableSessionKey
     canonicalTargetKey
     nextRevision
+    nextSeq
     addSeconds)
   (import "../core/errors.eli" success failure invalidField)
   (import "../application/context.eli"
@@ -683,41 +684,35 @@
                         (throw djReturn9Token)))
                     (when (configurationUsesAgent context current)
                       (setq djReturn9Value (failure "forbidden")) (throw djReturn9Token))
-                    (when
-                      (js-call
-                        (js-call
-                          db
-                          :query
-                          "SELECT subscription_id FROM subscriptions WHERE agent_id=? AND revision>=9007199254740991 LIMIT 1")
-                        :get
-                        (nativeGet agent "agent_id"))
-                      (progn
-                        (setq djReturn9Value (failure "limit_exceeded"))
-                        (throw djReturn9Token)))
-                    (js-call
-                      (js-call
-                        db
-                        :query
-                        "UPDATE contributions SET state='revoked',payload=json_set(payload,'$.state','revoked') WHERE subscription_id IN (SELECT subscription_id FROM subscriptions WHERE agent_id=?) AND state IN ('active','effective') AND delivery_id IN (SELECT delivery_id FROM deliveries WHERE state IN ('ready','deferred','blocked'))")
-                      :run
-                      (nativeGet agent "agent_id"))
-                    (js-call
-                      (js-call
-                        db
-                        :query
-                        "UPDATE subscription_versions SET cutover_seq=?,payload=json_set(payload,'$.cutover_seq',?) WHERE subscription_id IN (SELECT subscription_id FROM subscriptions WHERE agent_id=?) AND cutover_seq IS NULL")
-                      :run
-                      sequence
-                      sequence
-                      (nativeGet agent "agent_id"))
-                    (js-call
-                      (js-call
-                        db
-                        :query
-                        "UPDATE subscriptions SET state='paused',revision=revision+1,payload=json_set(payload,'$.state','paused','$.revision',revision+1,'$.cutover_seq',?) WHERE agent_id=? AND state='active'")
-                      :run
-                      sequence
-                      (nativeGet agent "agent_id"))
+                    (let* ((route-row (js-call repository :get "routes" (nativeGet current "route_id")))
+                           (target-key (and route-row (str "session:" (nativeGet route-row "session_key"))))
+                           (sub (and target-key (js-call repository :get "subscriptions" target-key))))
+                      (when (and sub
+                                 (= (nativeGet sub "agent_id") (nativeGet agent "agent_id"))
+                                 (>= (nativeGet sub "revision") 9007199254740991))
+                        (progn
+                          (setq djReturn9Value (failure "limit_exceeded"))
+                          (throw djReturn9Token)))
+                      (when (and sub
+                                 (= (nativeGet sub "agent_id") (nativeGet agent "agent_id"))
+                                 (= (nativeGet sub "state") "active"))
+                        (let ((old-rev (nativeGet sub "revision")))
+                          (js-call (js-call db :query
+                            "UPDATE subscription_versions SET cutover_seq=?,payload=json_set(payload,'$.cutover_seq',?) WHERE target_key=? AND revision=? AND cutover_seq IS NULL")
+                            :run sequence sequence target-key old-rev)
+                          (js-call (js-call db :query
+                            "UPDATE deliveries SET state='cancelled',revision=revision+1,payload=json_set(payload,'$.state','cancelled','$.revision',revision+1) WHERE origin='subscription_event' AND state IN ('ready','deferred','blocked') AND json_extract(payload,'$.target_key')=? AND json_extract(payload,'$.subscription_revision')=?")
+                            :run target-key old-rev)
+                          (js-call (js-call db :query
+                            "UPDATE inbox_entries SET state='revoked',payload=json_set(payload,'$.state','revoked') WHERE target_key=? AND revision=? AND state='ready'")
+                            :run target-key old-rev)
+                          (put sub :state "paused")
+                          (put sub :revision (nextRevision old-rev))
+                          (put sub :cutover_seq sequence)
+                          (put sub :start_seq (nextSeq sequence))
+                          (must (js-call repository :replace "subscriptions" sub old-rev))
+                          (js-call repository :insert "subscription_versions"
+                            (Object/assign (js-object) sub (js-object :cutover_seq nil))))))
                     (put current :state "closed")
                     (put current :revision (nextRevision (nativeGet current "revision")))
                     (must

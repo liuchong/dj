@@ -119,7 +119,7 @@
           (let ((db (new Database (resolve (nativeGet f "root") "state/dj.sqlite"))))
             (try (js-call (expect (nativeGet (js-call (js-call db :query "SELECT payload FROM bindings WHERE binding_id=?") :get (nativeGet row "binding_id")) "payload"))
               :toBe (nativeGet row "payload")) (finally (js-call db :close)))))))
-      (js-call (expect (nativeGet (await (callOk f "A" "subscription.get" (js-object :subscription_id (nativeGet sub "subscription_id")))) "state")) :toBe "active")
+      (js-call (expect (nativeGet (await (callOk f "A" "subscription.get" (js-object :agent_id (nativeGet sub "agent_id")))) "state")) :toBe "active")
       (let ((previous (nativeGet (currentInstance f) "instance_epoch")))
         (rows f "UPDATE instance_gates SET state='closed',payload=json_set(payload,'$.state','closed','$.reason','instance_stop') WHERE instance_id='ag-existing'")
         (await (startReceiver state 5))

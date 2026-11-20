@@ -90,25 +90,21 @@
               (finally (await (closeFixture f)))))
           (setq index (1+ index)))))
     (async (unused) nil))
-  (defasync instructionSubscription (f agent source actor key policy &optional old delivery-mode)
-    (let* ((resolved-source (await (callOk f actor "conversation.resolve"
-              (js-object :connection_id "lark" :chat_id "c1" :thread_id nil))))
-           (spec (js-object :agent_id (nativeGet agent "agent_id")
-             :selector (js-object :sources (js-array (js-object :conversation_ref (nativeGet resolved-source "conversation_ref")
-               :include_threads t)))
+  (defasync instructionSubscription (f agent source actor key policy &optional old delivery-mode extra-rules)
+    (let* ((resolved-source (or source (await (callOk f actor "conversation.resolve"
+              (js-object :connection_id "lark" :chat_id "c1" :thread_id nil)))))
+           (rule (js-object :id "default" :enabled t
+             :sources (js-array (js-object :conversation_ref (nativeGet resolved-source "conversation_ref") :include_threads t))
              :predicate (js-object :field "text" :op "contains" :value "issue")))
-           (args (js-object :spec spec)))
-      (when policy (put spec :instruction_policy policy))
+           (rules (if extra-rules extra-rules (js-array rule)))
+           (expected-rev (if old (nativeGet old "revision") 0))
+           (spec (js-object :agent_id (nativeGet agent "agent_id") :rules rules))
+           (args (js-object :expected_revision expected-rev :spec spec)))
+      (when (and policy (not extra-rules)) (put rule :instruction_policy policy))
       (when delivery-mode (put spec :delivery_mode delivery-mode))
-      (when old
-        (put args :subscription_id (nativeGet old "subscription_id"))
-        (put args :expected_revision (nativeGet old "revision")))
       (let* ((preview (await (callOk f actor "subscription.preview" args)))
-             (commit (js-object :preview_id (nativeGet preview "preview_id") :idempotency_key key)))
-        (when old
-          (put commit :subscription_id (nativeGet old "subscription_id"))
-          (put commit :expected_revision (nativeGet old "revision")))
-        (await (callOk f actor (if old "subscription.update" "subscription.create") commit)))))
+             (commit (js-object :preview_id (nativeGet preview "preview_id") :expected_revision expected-rev :idempotency_key key)))
+        (await (callOk f actor "subscription.set" commit)))))
   (withCase "T12.subscription-pull.sqlite"
     (async () (await (createFixture "subscription-pull" "one"
       (js-object :configure (lambda (config ports)
@@ -118,10 +114,10 @@
     (async (f)
       (await (getSession f "s1"))
       (let* ((agent (await (bindRecipient f)))
+             (agent-id (nativeGet agent "agent_id"))
              (subscription (await (instructionSubscription f agent nil "A" "pull-subscription"
                (js-object :prompt "pull prompt" :task_template "task={{message.text}}") nil "pull")))
-             (id (nativeGet subscription "subscription_id"))
-             (pull-args (js-object :subscription_id id :lease_seconds 2 :idempotency_key "empty-pull"))
+             (pull-args (js-object :agent_id agent-id :lease_seconds 2 :idempotency_key "empty-pull"))
              (empty (await (callOk f "A" "subscription.pull" pull-args)))
              (peer (nativeGet f "opencode")) (lark (nativeGet f "lark")))
         (js-call (expect (nativeGet subscription "delivery_mode")) :toBe "pull")
@@ -130,7 +126,7 @@
         (await (js-call f :tick))
         (js-call (expect (js-length (nativeGet peer "inputs"))) :toBe 0)
         (js-call (expect (nativeGet (await (callOk f "A" "subscription.pull" pull-args)) "empty")) :toBe t)
-        (let* ((args (js-object :subscription_id id :lease_seconds 2 :idempotency_key "claim-first"))
+        (let* ((args (js-object :agent_id agent-id :lease_seconds 2 :idempotency_key "claim-first"))
                (first (await (callOk f "A" "subscription.pull" args)))
                (item (nativeGet first "item")) (claim (nativeGet item "claim_ref"))
                (envelope (nativeGet item "envelope")) (reply (nativeGet envelope "reply_context_id")))
@@ -139,9 +135,9 @@
           (js-call (expect (nativeGet envelope "inbox_id")) :toBe (nativeGet item "inbox_id"))
           (js-call (expect (nativeGet (aref (nativeGet envelope "instructions") 0) "task")) :toBe "task=issue pull")
           (js-call (expect (nativeGet (await (callOk f "A" "subscription.pull"
-            (js-object :subscription_id id :idempotency_key "concurrent-pull"))) "empty")) :toBe t)
+            (js-object :agent_id agent-id :idempotency_key "concurrent-pull"))) "empty")) :toBe t)
           (js-call (expect (nativeGet (await (js-call f :call (nativeGet f "O") "subscription.pull"
-            (js-object :subscription_id id :idempotency_key "operator-not-recipient"))) "ok")) :toBe false)
+            (js-object :agent_id agent-id :idempotency_key "operator-not-recipient"))) "ok")) :toBe false)
           (js-call (expect (nativeGet (await (js-call f :call (nativeGet f "X") "subscription.ack"
             (js-object :claim_ref claim :disposition "consumed" :idempotency_key "foreign-ack"))) "ok")) :toBe false)
           (await (js-call f :restart))
@@ -159,7 +155,7 @@
           (js-call (expect (nativeGet (await (js-call f :call (nativeGet f "A") "subscription.ack"
             (js-object :claim_ref claim :disposition "consumed" :idempotency_key "expired-ack"))) "ok")) :toBe false)
           (let* ((second (await (callOk f "A" "subscription.pull"
-                    (js-object :subscription_id id :idempotency_key "reclaim-first"))))
+                    (js-object :agent_id agent-id :idempotency_key "reclaim-first"))))
                  (next (nativeGet second "item")) (next-claim (nativeGet next "claim_ref"))
                  (ack (js-object :claim_ref next-claim :disposition "consumed" :idempotency_key "consume-first")))
             (js-call (expect (nativeGet next "inbox_id")) :toBe (nativeGet item "inbox_id"))
@@ -179,15 +175,15 @@
         (await (js-call f :ingest (createdEvent "lark" "pull-second" "issue retry")))
         (await (js-call f :tick))
         (let* ((one (nativeGet (await (callOk f "A" "subscription.pull"
-                      (js-object :subscription_id id :idempotency_key "claim-second"))) "item"))
+                      (js-object :agent_id agent-id :idempotency_key "claim-second"))) "item"))
                (old-claim (nativeGet one "claim_ref")))
           (js-call (expect (nativeGet (await (callOk f "A" "subscription.ack"
             (js-object :claim_ref old-claim :disposition "retry" :idempotency_key "release-second"))) "state")) :toBe "ready")
           (let* ((two (nativeGet (await (callOk f "A" "subscription.pull"
-                        (js-object :subscription_id id :idempotency_key "reclaim-second"))) "item")))
+                        (js-object :agent_id agent-id :idempotency_key "reclaim-second"))) "item")))
             (js-call (expect (nativeGet two "inbox_id")) :toBe (nativeGet one "inbox_id"))
             (js-call (nativeGet (expect (nativeGet two "claim_ref")) "not") :toBe old-claim)
-            (await (callOk f "A" "subscription.pause" (js-object :subscription_id id
+            (await (callOk f "A" "subscription.pause" (js-object :agent_id agent-id
               :expected_revision (nativeGet subscription "revision") :idempotency_key "pause-pull")))
             (js-call (expect (nativeGet (await (js-call f :call (nativeGet f "A") "subscription.ack"
               (js-object :claim_ref (nativeGet two "claim_ref") :disposition "consumed" :idempotency_key "paused-ack"))) "ok")) :toBe false)))
@@ -205,17 +201,21 @@
       (await (getSession f "s1"))
       (let* ((agent (await (bindRecipient f)))
              (source (await (callOk f "A" "conversation.resolve" (js-object :connection_id "lark" :chat_id "c1" :thread_id nil))))
-             (one (await (instructionSubscription f agent source "A" "instruction-one"
-               (js-object :prompt "trusted-v1" :task_template "{{subscription.id}}/{{event.id}}: {{message.text}}"))))
-             (two (await (instructionSubscription f agent source "O" "instruction-two"
-               (js-object :prompt "operator-prompt" :task_template "sender={{sender.id}}; thread={{source.thread_id}}"))))
-             (legacy (await (instructionSubscription f agent source "A" "instruction-legacy" nil)))
+             (src-entry (js-object :conversation_ref (nativeGet source "conversation_ref") :include_threads t))
+             (pred (js-object :field "text" :op "contains" :value "issue"))
+             (one (await (instructionSubscription f agent source "A" "instruction-one" nil nil nil
+               (js-array
+                 (js-object :id "branch-one" :enabled t :sources (js-array src-entry) :predicate pred
+                   :instruction_policy (js-object :prompt "trusted-v1" :task_template "{{subscription.target_key}}/{{rule.id}}/{{event.id}}: {{message.text}}"))
+                 (js-object :id "branch-two" :enabled t :sources (js-array src-entry) :predicate pred
+                   :instruction_policy (js-object :prompt "operator-prompt" :task_template "sender={{sender.id}}; thread={{source.thread_id}}"))
+                 (js-object :id "branch-plain" :enabled t :sources (js-array src-entry) :predicate pred)))))
              (peer (nativeGet f "opencode")) (inputs (nativeGet peer "inputs"))
              (original-snapshot nil))
-        (js-call (expect (nativeGet (nativeGet one "instruction_policy") "prompt")) :toBe "trusted-v1")
+        (js-call (expect (nativeGet (nativeGet (aref (nativeGet one "rules") 0) "instruction_policy") "prompt")) :toBe "trusted-v1")
         (js-call (expect (nativeGet (await (callOk f "A" "subscription.get"
-          (js-object :subscription_id (nativeGet one "subscription_id")))) "instruction_policy")) :toEqual
-          (nativeGet one "instruction_policy"))
+          (js-object :agent_id (nativeGet agent "agent_id")))) "rules")) :toEqual
+          (nativeGet one "rules"))
         (await (js-call f :ingest (createdEvent "lark" "instruction-filtered" "no hit")))
         (await (js-call f :tick))
         (js-call (expect (js-length inputs)) :toBe 0)
@@ -225,13 +225,15 @@
         (js-call (expect (js-length inputs)) :toBe 1)
         (let* ((envelope (nativeGet (aref inputs 0) "envelope"))
                (instructions (nativeGet envelope "instructions"))
-               (item (js-call instructions :find (lambda (i) (= (nativeGet i "subscription_id") (nativeGet one "subscription_id"))))))
-          (js-call (expect (js-length (nativeGet envelope "matched"))) :toBe 3)
+               (item (js-call instructions :find (lambda (i) (= (nativeGet i "rule_id") "branch-one")))))
+          (js-call (expect (nativeGet (nativeGet envelope "matched") "target_key")) :toBe (nativeGet one "target_key"))
+          (js-call (expect (nativeGet (nativeGet envelope "matched") "rule_ids"))
+            :toEqual (js-array "branch-one" "branch-two" "branch-plain"))
           (js-call (expect (js-length instructions)) :toBe 2)
           (js-call (expect (nativeGet item "subscription_revision")) :toBe 1)
           (js-call (expect (nativeGet item "prompt")) :toBe "trusted-v1")
           (js-call (expect (nativeGet item "task")) :toBe
-            (str (nativeGet one "subscription_id") "/" (nativeGet envelope "event_id") ": "
+            (str (nativeGet one "target_key") "/branch-one/" (nativeGet envelope "event_id") ": "
               (nativeGet (nativeGet envelope "content") "text")))
           (js-call (expect (js-call (nativeGet item "task") :includes "{{sender.id}}")) :toBe t)
           (js-call (expect (nativeGet (nativeGet envelope "content") "truncated")) :toBe t)
@@ -242,18 +244,12 @@
                   :get (nativeGet envelope "delivery_id")) "payload")) "envelope_snapshot"))
               (js-call (expect (unpackEnvelope original-snapshot)) :toEqual envelope)
               (finally (js-call db :close)))))
-        ;; Prepare old contributions while busy; a new revision may not replace
-        ;; their instructions retroactively. Pausing the other owners removes
-        ;; all remaining contributions before submission.
+        ;; Prepare queued delivery on old revision while busy; setting a new revision revokes the obsolete queued delivery before submission.
         (put (aref (nativeGet peer "sessions") 0) :runtime_state "busy")
         (await (js-call f :ingest (createdEvent "lark" "instruction-stale" "issue queued")))
         (await (js-call f :tick))
         (setq one (await (instructionSubscription f agent source "A" "instruction-update"
           (js-object :prompt "trusted-v2" :task_template "new={{message.text}}") one)))
-        (setq two (await (callOk f "O" "subscription.pause" (js-object :subscription_id (nativeGet two "subscription_id")
-          :expected_revision (nativeGet two "revision") :idempotency_key "pause-other-owner"))))
-        (setq legacy (await (callOk f "A" "subscription.pause" (js-object :subscription_id (nativeGet legacy "subscription_id")
-          :expected_revision (nativeGet legacy "revision") :idempotency_key "pause-legacy"))))
         (put (aref (nativeGet peer "sessions") 0) :runtime_state "idle")
         (await (js-call f :tick))
         (js-call (expect (js-length inputs)) :toBe 1)
@@ -265,18 +261,13 @@
           (js-call (expect (nativeGet instruction "subscription_revision")) :toBe 2)
           (js-call (expect (nativeGet instruction "task")) :toBe "new=issue current"))
         (js-call (expect (nativeGet (aref (nativeGet (unpackEnvelope original-snapshot) "instructions") 0) "prompt")) :toBeDefined)
-        (setq one (await (callOk f "A" "subscription.pause" (js-object :subscription_id (nativeGet one "subscription_id")
-          :expected_revision (nativeGet one "revision") :idempotency_key "pause-instructions"))))
-        (setq legacy (await (callOk f "A" "subscription.resume" (js-object :subscription_id (nativeGet legacy "subscription_id")
-          :expected_revision (nativeGet legacy "revision") :idempotency_key "resume-legacy"))))
+        (setq one (await (instructionSubscription f agent source "A" "instruction-plain" nil one)))
         (await (js-call f :ingest (createdEvent "lark" "instruction-none" "issue legacy")))
         (await (js-call f :tick))
         (js-call (expect (js-length inputs)) :toBe 3)
         (js-call (expect (object-has? (nativeGet (aref inputs 2) "envelope") :instructions)) :toBe false)
         (setq one (await (instructionSubscription f agent source "A" "instruction-overflow-update"
           (js-object :task_template (js-call "{{message.text}}" :repeat 32)) one)))
-        (setq one (await (callOk f "A" "subscription.resume" (js-object :subscription_id (nativeGet one "subscription_id")
-          :expected_revision (nativeGet one "revision") :idempotency_key "resume-overflow"))))
         (await (js-call f :ingest (createdEvent "lark" "instruction-overflow" (str "issue " (js-call "x" :repeat 2000)))))
         (await (js-call f :tick))
         (js-call (expect (js-length inputs)) :toBe 3)
@@ -388,25 +379,30 @@
                 (await
                   (callOk fixture "O" "subscription.preview"
                     (js-object
+                      :expected_revision 0
                       :spec
                       (js-object
                         :agent_id (nativeGet entry "agent_id")
-                        :selector
-                        (js-object
-                          :sources
-                          (js-array
-                            (js-object
-                              :conversation_ref (nativeGet source "conversation_ref")
-                              :include_threads false))
-                          :event_kinds (js-array "message.created"))
-                        :predicate (js-object :op "contains" :field "text" :value token)
-                        :context_policy (js-object :mode "current" :max_events 1 :max_bytes 16384)
+                        :rules
+                        (js-array
+                          (js-object
+                            :id "default"
+                            :enabled t
+                            :sources
+                            (js-array
+                              (js-object
+                                :conversation_ref (nativeGet source "conversation_ref")
+                                :include_threads false))
+                            :event_kinds (js-array "message.created")
+                            :predicate (js-object :op "contains" :field "text" :value token)
+                            :context_policy (js-object :mode "current" :max_events 1 :max_bytes 16384)))
                         :delivery_policy
                         (js-object :busy "queue" :offline "hold" :ttl_seconds 3600)
                         :start "now"))))))
             (await
-              (callOk fixture "O" "subscription.create"
+              (callOk fixture "O" "subscription.set"
                 (js-object :preview_id (nativeGet preview "preview_id")
+                  :expected_revision 0
                   :idempotency_key (str "n-subscribe-" i))))
             (put entry :token token))
           (setq i (1+ i))))
@@ -504,7 +500,7 @@
           (js-call (expect (nativeGet delivery "event_id")) :toBe nil)
           (js-call (expect (nativeGet delivery "agent_id")) :toBe nil)
           (js-call (expect (nativeGet delivery "reply_context_id")) :toBe nil)
-          (js-call (expect (js-length (nativeGet delivery "contributions"))) :toBe 0))
+          (js-call (expect (nativeGet delivery "matched")) :toBeUndefined))
         (js-call (expect (js-length (nativeGet (nativeGet f "opencode") "inputs"))) :toBe 1)
         (js-call
           (expect
@@ -526,7 +522,8 @@
           ((page (await (callOk f "O" "delivery.list" (js-object))))
             (delivery (aref (nativeGet page "items") 0)))
           (js-call (expect (js-length (nativeGet page "items"))) :toBe 1)
-          (js-call (expect (js-length (nativeGet delivery "contributions"))) :toBe 2)
+          (js-call (expect (nativeGet (nativeGet delivery "matched") "state")) :toBe "effective")
+          (js-call (expect (js-length (nativeGet (nativeGet delivery "matched") "rule_ids"))) :toBe 2)
           (js-call (expect (js-length (nativeGet (nativeGet f "opencode") "inputs"))) :toBe 1))))
     closeFixture)
   (withCase
@@ -543,10 +540,12 @@
                 f
                 :call
                 (nativeGet f "A")
-                "subscription.create"
+                "subscription.set"
                 (js-object
                   :preview_id
                   "untrusted"
+                  :expected_revision
+                  (nativeGet sub "revision")
                   :spec
                   (js-object :agent_id "other")
                   :idempotency_key
@@ -572,8 +571,8 @@
             "A"
             "subscription.pause"
             (js-object
-              :subscription_id
-              (nativeGet sub "subscription_id")
+              :agent_id
+              (nativeGet agent "agent_id")
               :expected_revision
               (nativeGet sub "revision")
               :idempotency_key
@@ -588,15 +587,15 @@
                   f
                   "A"
                   "subscription.get"
-                  (js-object :subscription_id (nativeGet sub "subscription_id"))))))
+                  (js-object :agent_id (nativeGet agent "agent_id"))))))
           (await
             (callOk
               f
               "A"
               "subscription.resume"
               (js-object
-                :subscription_id
-                (nativeGet sub "subscription_id")
+                :agent_id
+                (nativeGet agent "agent_id")
                 :expected_revision
                 (nativeGet paused "revision")
                 :idempotency_key
@@ -735,16 +734,9 @@
         (put (aref (nativeGet peer "sessions") 0) :runtime_state "idle")
         (await (js-call f :tick))
         (js-call (expect (js-length (nativeGet peer "inputs"))) :toBe 1)
-        (let*
-          (
-            (record
-              (aref (nativeGet (await (callOk f "O" "delivery.list" (js-object))) "items") 0))
-            (effective
-              (js-call
-                (nativeGet record "contributions")
-                :filter
-                (lambda (c) (= (nativeGet c "state") "effective")))))
-          (js-call (expect (js-length effective)) :toBe 1))))
+        (let
+          ((record (aref (nativeGet (await (callOk f "O" "delivery.list" (js-object))) "items") 0)))
+          (js-call (expect (nativeGet (nativeGet record "matched") "state")) :toBe "effective"))))
     closeFixture)
   (withCase
     "T14.queue-limit.sqlite"
@@ -1050,25 +1042,32 @@
           "A"
           "subscription.preview"
           (js-object
+            :expected_revision
+            0
             :spec
             (js-object
               :agent_id
               (nativeGet agent "agent_id")
-              :selector
-              (js-object
-                :sources
-                (js-array
-                  (js-object
-                    :conversation_ref
-                    (nativeGet source "conversation_ref")
-                    :include_threads
-                    false))
-                :event_kinds
-                (js-array "message.created"))
-              :predicate
-              (js-object :all (js-array))
-              :context_policy
-              (js-object :mode "current" :max_events 1 :max_bytes 16384)
+              :rules
+              (js-array
+                (js-object
+                  :id
+                  "default"
+                  :enabled
+                  t
+                  :sources
+                  (js-array
+                    (js-object
+                      :conversation_ref
+                      (nativeGet source "conversation_ref")
+                      :include_threads
+                      false))
+                  :event_kinds
+                  (js-array "message.created")
+                  :predicate
+                  (js-object :all (js-array))
+                  :context_policy
+                  (js-object :mode "current" :max_events 1 :max_bytes 16384)))
               :delivery_policy
               (js-object :busy "queue" :offline "hold" :ttl_seconds (or ttl 60))
               :start
@@ -1085,26 +1084,30 @@
             (js-object
               :preview_id
               (nativeGet ticket "preview_id")
+              :expected_revision
+              0
               :idempotency_key
               "ticket-once"))
-          (first (await (callOk f "A" "subscription.create" args)))
-          (replay (await (callOk f "A" "subscription.create" args)))
+          (first (await (callOk f "A" "subscription.set" args)))
+          (replay (await (callOk f "A" "subscription.set" args)))
           (different
             (await
               (js-call
                 f
                 :call
                 (nativeGet f "A")
-                "subscription.create"
+                "subscription.set"
                 (js-object
                   :preview_id
                   (nativeGet ticket "preview_id")
+                  :expected_revision
+                  0
                   :idempotency_key
                   "ticket-different")))))
         (js-call
-          (expect (nativeGet replay "subscription_id"))
+          (expect (nativeGet replay "target_key"))
           :toBe
-          (nativeGet first "subscription_id"))
+          (nativeGet first "target_key"))
         (js-call (expect (nativeGet different "ok")) :toBe false)
         (js-call (expect (nativeGet (nativeGet different "error") "code")) :toBe "already_committed")
         (js-call
@@ -1129,10 +1132,12 @@
                   f
                   :call
                   (nativeGet f "A")
-                  "subscription.create"
+                  "subscription.set"
                   (js-object
                     :preview_id
                     (nativeGet ticket "preview_id")
+                    :expected_revision
+                    0
                     :idempotency_key
                     "expired-ticket")))))
           (js-call (expect (nativeGet expired "ok")) :toBe false)
@@ -1171,10 +1176,12 @@
                   f
                   :call
                   (nativeGet f "A")
-                  "subscription.create"
+                  "subscription.set"
                   (js-object
                     :preview_id
                     (nativeGet ticket "preview_id")
+                    :expected_revision
+                    0
                     :idempotency_key
                     "stale-target-ticket")))))
           (js-call (expect (nativeGet stale "ok")) :toBe false)
@@ -1245,8 +1252,8 @@
               "A"
               "subscription.pause"
               (js-object
-                :subscription_id
-                (nativeGet sub "subscription_id")
+                :agent_id
+                (nativeGet agent "agent_id")
                 :expected_revision
                 (nativeGet sub "revision")
                 :idempotency_key
@@ -1355,8 +1362,8 @@
                           "A"
                           (str "subscription." action)
                           (js-object
-                            :subscription_id
-                            (nativeGet sub "subscription_id")
+                            :agent_id
+                            (nativeGet agent "agent_id")
                             :expected_revision
                             (nativeGet sub "revision")
                             :idempotency_key
@@ -1472,7 +1479,7 @@
                   (unless injected
                     (setq injected t)
                     (js-call (js-call writer :query
-                      "UPDATE routing_work SET payload=json_set(payload,'$.last_subscription_id','n-injected-seen') WHERE event_id=?")
+                      "UPDATE routing_work SET payload=json_set(payload,'$.last_target_key','n-injected-seen') WHERE event_id=?")
                       :run target)))))
             (put (nativeGet Database "prototype") :query
               (nWrapQuery original-db-query
@@ -2095,7 +2102,7 @@
                 (when (and (not injected) (= (nativeGet work "event_id") target))
                   (setq injected t)
                   (js-call (js-call writer :query
-                    "UPDATE routing_work SET payload=json_set(payload,'$.last_subscription_id','n-injected-inner') WHERE event_id=?")
+                    "UPDATE routing_work SET payload=json_set(payload,'$.last_target_key','n-injected-inner') WHERE event_id=?")
                     :run target))))
             (put (nativeGet Database "prototype") :query
               (nWrapQuery original-db-query
@@ -2112,7 +2119,6 @@
             (js-call (expect (await (nCount fx "SELECT COUNT(*) AS n FROM deliveries WHERE state='accepted'"))) :toBe 17)
             (js-call (expect (await (nCount fx (str "SELECT COUNT(*) AS n FROM deliveries WHERE event_id='" target "'")))) :toBe 0)
             (js-call (expect (await (nCount fx (str "SELECT COUNT(*) AS n FROM match_decisions WHERE event_id='" target "'")))) :toBe 0)
-            (js-call (expect (await (nCount fx (str "SELECT COUNT(*) AS n FROM contributions c JOIN deliveries d ON d.delivery_id=c.delivery_id WHERE d.event_id='" target "'")))) :toBe 0)
             (js-call (js-call writer :query "UPDATE routing_work SET payload=? WHERE event_id=?")
               :run orig-payload target)
             (await (js-call fx :tick))
@@ -3389,7 +3395,10 @@
     "T12.update-cutover.sqlite"
     (async () (await (createFixture "update-cutover" "one" (js-object :configure (lambda (config ports)
       (put config :managed_profiles (js-array))
-      (put (aref (nativeGet config "agent_endpoints") 0) :instance_epoch "epoch-1"))))))
+      (put (aref (nativeGet config "agent_endpoints") 0) :instance_epoch "epoch-1")
+      (let ((sessions (nativeGet (js-call (nativeGet ports "agent_ports") :get "opencode") "sessions")))
+        (js-call sessions :push
+          (Object/assign (js-object) (aref sessions 0) (js-object :native_session_id "s3")))))))))
     (async
       (f)
       (let*
@@ -3419,50 +3428,67 @@
                   "A"
                   "subscription.preview"
                   (js-object
-                    :subscription_id
-                    (nativeGet sub "subscription_id")
                     :expected_revision
                     (nativeGet sub "revision")
                     :spec
                     (js-object
                       :agent_id
                       (nativeGet agent "agent_id")
-                      :selector
-                      (js-object
-                        :sources
-                        (js-array
-                          (js-object
-                            :conversation_ref
-                            (nativeGet source "conversation_ref")
-                            :include_threads
-                            false))
-                        :event_kinds
-                        (js-array "message.created"))
-                      :predicate
-                      (js-object :all (js-array))
-                      :context_policy
-                      (js-object :mode "current" :max_events 1 :max_bytes 16384)
+                      :rules
+                      (js-array
+                        (js-object
+                          :id
+                          "r1"
+                          :enabled
+                          t
+                          :sources
+                          (js-array
+                            (js-object
+                              :conversation_ref
+                              (nativeGet source "conversation_ref")
+                              :include_threads
+                              false))
+                          :event_kinds
+                          (js-array "message.created")
+                          :predicate
+                          (js-object :all (js-array))
+                          :context_policy
+                          (js-object :mode "current" :max_events 1 :max_bytes 16384))
+                        (js-object
+                          :id
+                          "r2"
+                          :enabled
+                          t
+                          :sources
+                          (js-array
+                            (js-object
+                              :conversation_ref
+                              (nativeGet source "conversation_ref")
+                              :include_threads
+                              false))
+                          :event_kinds
+                          (js-array "message.created")
+                          :predicate
+                          (js-object :all (js-array))))
                       :delivery_policy
                       (js-object :busy "queue" :offline "hold" :ttl_seconds 120)
                       :start
                       "now")))))
             (args
               (js-object
-                :subscription_id
-                (nativeGet sub "subscription_id")
                 :expected_revision
                 (nativeGet sub "revision")
                 :preview_id
                 (nativeGet ticket "preview_id")
                 :idempotency_key
                 "update-fixed-version"))
-            (updated (await (callOk f "A" "subscription.update" args)))
-            (replayed (await (callOk f "A" "subscription.update" args))))
+            (updated (await (callOk f "A" "subscription.set" args)))
+            (replayed (await (callOk f "A" "subscription.set" args))))
           (js-call (expect (nativeGet updated "revision")) :toBe (1+ (nativeGet sub "revision")))
           (js-call
-            (expect (nativeGet replayed "subscription_id"))
+            (expect (nativeGet replayed "target_key"))
             :toBe
-            (nativeGet sub "subscription_id"))
+            (nativeGet sub "target_key"))
           (await
             (js-call
               f
@@ -3486,25 +3512,15 @@
               :toBe
               (nativeGet current "delivery_id"))
             (js-call
-              (nativeGet current "contributions")
-              :forEach
-              (lambda
-                (c)
-                (js-call
-                  (expect (nativeGet c "subscription_revision"))
-                  :toBe
-                  (nativeGet updated "revision")))))
-          ;; Verify same-route delivery_seq monotonic allocation across multi-subscription/multi-event matchBatch,
-          ;; and cross-transaction fresh reads in effectiveContributions (subscription pause + grant revocation).
-          (let* ((sub2-ticket (await (preview f agent 120)))
-            (sub2 (await (callOk f "A" "subscription.create"
-              (js-object :preview_id (nativeGet sub2-ticket "preview_id") :idempotency_key "sub2-same-route")))))
+              (expect (nativeGet (nativeGet current "matched") "subscription_revision"))
+              :toBe
+              (nativeGet updated "revision")))
+          ;; Verify same-route delivery_seq monotonic allocation across multi-event matchBatch,
+          ;; and cross-transaction fresh reads in beginSubmission / matchBatch (subscription pause + grant revocation).
+          (progn
             (put (aref (nativeGet peer "sessions") 0) :runtime_state "busy")
             (await (js-call f :ingest (createdEvent "lark" "seq-event-1" "same route event 1")))
             (await (js-call f :ingest (createdEvent "lark" "seq-event-2" "same route event 2")))
-            ;; Out-of-order prepare in routeEvents/matchTurn: delay seq-event-1 in routing.before_checkpoint_commit
-            ;; so seq-event-2 prepares first, and verify delivery_seq still commits strictly in ingress_seq order.
-            ;; Also verify prepare throw restores routing_after so the group is retried on the next tick.
             (let ((throw-on-tick-1 t) (prepare-completed (js-array)))
               (js-call (nativeGet f "faults") :install "routing.before_checkpoint_commit" (async (work)
                 (when throw-on-tick-1
@@ -3513,10 +3529,8 @@
                   (js-call prepare-completed :push "first-entered")
                   (await (new globalThis.Promise (lambda (resolve reject) (nativeSetTimeout resolve 10)))))
                 (js-call prepare-completed :push (nativeGet work "event_id"))))
-              ;; Tick 1: prepare failure leaves 0 writes for seq-event-1/2 and restores routing_after.
               (await (js-call f :tick))
               (setq throw-on-tick-1 false)
-              ;; Tick 2: retried group prepares out-of-order (event 2 finishes before event 1) and commits in order.
               (await (js-call f :tick))
               (js-call (nativeGet f "faults") :install "routing.before_checkpoint_commit" nil)
               (let* ((listed (nativeGet (await (callOk f "O" "delivery.list" (js-object))) "items"))
@@ -3529,15 +3543,10 @@
                 (js-call (expect (nativeGet d2 "state")) :toBe "ready")
                 (js-call (expect (nativeGet d1 "revision")) :toBe 3)
                 (js-call (expect (nativeGet d2 "revision")) :toBe 2)
-                (js-call (expect (js-length (nativeGet d1 "contributions"))) :toBe 2)
-                (js-call (expect (js-length (nativeGet d2 "contributions"))) :toBe 2)
+                (js-call (expect (nativeGet (nativeGet d1 "matched") "target_key")) :toBe (nativeGet sub "target_key"))
+                (js-call (expect (nativeGet (nativeGet d2 "matched") "target_key")) :toBe (nativeGet sub "target_key"))
                 (js-call (expect (= (NativeBigInt (nativeGet d2 "delivery_seq"))
                   (+ (NativeBigInt (nativeGet d1 "delivery_seq")) (NativeBigInt 1)))) :toBe t)
-                ;; Pause sub2 before beginSubmission runs in the next transaction: effectiveContributions must read fresh paused state.
-                (await (callOk f "A" "subscription.pause"
-                  (js-object :subscription_id (nativeGet sub2 "subscription_id")
-                    :expected_revision (nativeGet sub2 "revision")
-                    :idempotency_key "pause-sub2-before-submit")))
                 (put (aref (nativeGet peer "sessions") 0) :runtime_state "idle")
                 (await (js-call f :tick))
                 (await (js-call f :tick))
@@ -3554,12 +3563,12 @@
                   (js-call (expect (nativeGet env2 "delivery_id")) :toBe (nativeGet d2 "delivery_id"))
                   (js-call (expect (nativeGet (nativeGet env1 "content") "text")) :toBe "same route event 1")
                   (js-call (expect (nativeGet (nativeGet env2 "content") "text")) :toBe "same route event 2")
-                  (js-call (expect (js-length (nativeGet env1 "matched"))) :toBe 1)
-                  (js-call (expect (js-length (nativeGet env2 "matched"))) :toBe 1)
-                  (js-call (expect (nativeGet (aref (nativeGet env1 "matched") 0) "subscription_id"))
-                    :toBe (nativeGet updated "subscription_id"))
-                  (js-call (expect (nativeGet (aref (nativeGet env2 "matched") 0) "subscription_id"))
-                    :toBe (nativeGet updated "subscription_id"))
+                  (js-call (expect (nativeGet (nativeGet env1 "matched") "target_key"))
+                    :toBe (nativeGet sub "target_key"))
+                  (js-call (expect (nativeGet (nativeGet env2 "matched") "target_key"))
+                    :toBe (nativeGet sub "target_key"))
+                  (js-call (expect (nativeGet (nativeGet env1 "matched") "rule_ids"))
+                    :toEqual (js-array "r1" "r2"))
                   (js-call (expect (not (nativeNullish (nativeGet env1 "reply_context_id")))) :toBe t)
                   (js-call (expect (not (nativeNullish (nativeGet env2 "reply_context_id")))) :toBe t)
                   (js-call (expect (nativeGet env1 "allowed_actions")) :toEqual (js-array "reply"))
@@ -3581,29 +3590,24 @@
                         (js-call (expect (nativeGet r-row "epoch")) :toBe (nativeGet r-row "j_epoch")))
                       (finally (js-call reader :close)))))
                 ;; Disable A during routing.before_checkpoint_commit (after prepare evaluated predicate):
-                ;; commit-time isContributionEffective must recheck current principal state and not use stale prepare conclusion.
+                ;; commit-time isSubscriptionDeliveryEffective must recheck current principal state and not use stale prepare conclusion.
                 (let ((saved-a-disabled (nativeGet (nativeGet f "A") "disabled" false)))
                   (js-call (nativeGet f "faults") :install "routing.before_checkpoint_commit" (async (work)
                     (put (nativeGet f "A") :disabled t)
                     (put (nativeGet f "A") :authorization_revision (1+ (nativeGet (nativeGet f "A") "authorization_revision")))))
                   (await (js-call f :ingest (createdEvent "lark" "after-revoke" "disabled principal must not deliver")))
                   (await (js-call f :tick))
-                  ;; Restore A and pause updated subscription during routing.before_checkpoint_commit (after prepare & subscription-ids extraction):
-                  ;; K2a batch getSubscriptionStates inside the write tx must read the fresh paused/revision state and create 0 deliveries/contributions.
                   (put (nativeGet f "A") :disabled saved-a-disabled)
                   (put (nativeGet f "A") :authorization_revision (1+ (nativeGet (nativeGet f "A") "authorization_revision")))
                   (js-call (nativeGet f "faults") :install "routing.before_checkpoint_commit" (async (work)
                     (await (callOk f "A" "subscription.pause"
-                      (js-object :subscription_id (nativeGet updated "subscription_id")
+                      (js-object :agent_id (nativeGet agent "agent_id")
                         :expected_revision (nativeGet updated "revision")
                         :idempotency_key "pause-updated-after-prepare")))))
                   (await (js-call f :ingest (createdEvent "lark" "after-prepare-pause" "paused after prepare must not deliver")))
                   (await (js-call f :tick))
                   (js-call (nativeGet f "faults") :install "routing.before_checkpoint_commit" nil))
                 (js-call (expect (js-length (nativeGet peer "inputs"))) :toBe 3)
-                ;; W1-W3 + K2a: verify match_decisions and contributions persisted by single-event batch flush across seq-event-1, seq-event-2,
-                ;; after-revoke, and after-prepare-pause (where prepare matched updated subscription so 1 match_decision each is written, while commit-time
-                ;; batch getSubscriptionStates + isContributionEffective rejected disabled principal / post-prepare pause so 0 deliveries and 0 contributions are written):
                 (let ((reader (new Database (resolve (nativeGet f "root") "state/dj.sqlite") (js-object :readonly t))))
                   (try
                     (let* ((ev-revoke (js-call (js-call reader :query
@@ -3620,46 +3624,39 @@
                           "SELECT COUNT(*) AS n FROM match_decisions WHERE event_id=? AND result='match'") :get (nativeGet d1 "event_id")) "n"))
                       (md-2 (nativeGet (js-call (js-call reader :query
                           "SELECT COUNT(*) AS n FROM match_decisions WHERE event_id=? AND result='match'") :get (nativeGet d2 "event_id")) "n"))
-                      (c-1 (nativeGet (js-call (js-call reader :query
-                          "SELECT COUNT(*) AS n FROM contributions WHERE delivery_id=?") :get (nativeGet d1 "delivery_id")) "n"))
-                      (c-2 (nativeGet (js-call (js-call reader :query
-                          "SELECT COUNT(*) AS n FROM contributions WHERE delivery_id=?") :get (nativeGet d2 "delivery_id")) "n"))
                       (md-revoke (js-call (js-call reader :query
-                          "SELECT subscription_id, revision, result FROM match_decisions WHERE event_id=?") :all revoke-id))
+                          "SELECT target_key, revision, result FROM match_decisions WHERE event_id=?") :all revoke-id))
                       (del-revoke (nativeGet (js-call (js-call reader :query
                           "SELECT COUNT(*) AS n FROM deliveries WHERE event_id=?") :get revoke-id) "n"))
                       (md-pause (js-call (js-call reader :query
-                          "SELECT subscription_id, revision, result FROM match_decisions WHERE event_id=?") :all pause-id))
+                          "SELECT target_key, revision, result FROM match_decisions WHERE event_id=?") :all pause-id))
                       (del-pause (nativeGet (js-call (js-call reader :query
                           "SELECT COUNT(*) AS n FROM deliveries WHERE event_id=?") :get pause-id) "n")))
-                      (js-call (expect md-1) :toBe 2)
-                      (js-call (expect md-2) :toBe 2)
-                      (js-call (expect c-1) :toBe 2)
-                      (js-call (expect c-2) :toBe 2)
+                      (js-call (expect md-1) :toBe 1)
+                      (js-call (expect md-2) :toBe 1)
                       (js-call (expect (nativeGet rw-revoke "state")) :toBe "done")
                       (js-call (expect (js-length md-revoke)) :toBe 1)
-                      (js-call (expect (nativeGet (aref md-revoke 0) "subscription_id")) :toBe (nativeGet updated "subscription_id"))
+                      (js-call (expect (nativeGet (aref md-revoke 0) "target_key")) :toBe (nativeGet updated "target_key"))
                       (js-call (expect (nativeGet (aref md-revoke 0) "result")) :toBe "match")
                       (js-call (expect del-revoke) :toBe 0)
                       (js-call (expect (nativeGet rw-pause "state")) :toBe "done")
                       (js-call (expect (js-length md-pause)) :toBe 1)
-                      (js-call (expect (nativeGet (aref md-pause 0) "subscription_id")) :toBe (nativeGet updated "subscription_id"))
+                      (js-call (expect (nativeGet (aref md-pause 0) "target_key")) :toBe (nativeGet updated "target_key"))
                       (js-call (expect (nativeGet (aref md-pause 0) "result")) :toBe "match")
                       (js-call (expect del-pause) :toBe 0))
                     (finally (js-call reader :close))))
-                ;; L2 + L3 (L-A5 & L-A7): single-event multi-route buffered deliveries insertMany BEFORE match_decisions/contributions,
-                ;; independent per-subscription owner/revision/TTL recheck on the same route (pausing A's subscription after prepare does not
-                ;; suppress O's active subscription on the same route), and dispatch uses narrow claimRoute head SQL + narrow SELECT state FROM routing_work WHERE event_id=?:
+                ;; L2 + L3: single-event multi-route buffered deliveries insertMany BEFORE match_decisions,
+                ;; independent per-slot owner/revision recheck (pausing A's slot s1 after prepare does not suppress O's slots s2 & s3):
                 (let* ((paused-updated (await (callOk f "A" "subscription.get"
-                      (js-object :subscription_id (nativeGet updated "subscription_id")))))
-                  (resumed-updated (await (callOk f "A" "subscription.resume"
-                      (js-object :subscription_id (nativeGet updated "subscription_id")
+                      (js-object :agent_id (nativeGet agent "agent_id")))))
+                  (_resumed-updated (await (callOk f "A" "subscription.resume"
+                      (js-object :agent_id (nativeGet agent "agent_id")
                         :expected_revision (nativeGet paused-updated "revision")
                         :idempotency_key "resume-updated-for-l-a5"))))
-                  (sub-o-r1 (await (subscribe f agent "lark" 120 "O")))
                   (candidates (nativeGet (await (callOk f "O" "agent.discover"
                         (js-object :tool "opencode" :scope "live"))) "items"))
                   (cand-s2 (js-call candidates :find (lambda (x) (= (nativeGet x "native_session_id") "s2"))))
+                  (cand-s3 (js-call candidates :find (lambda (x) (= (nativeGet x "native_session_id") "s3"))))
                   (_bind-b (put (nativeGet f "B") :target_constraint
                       (js-object :tool "opencode" :native_namespace "ns-opencode" :native_session_id "s2")))
                   (agent2 (await (callOk f "O" "agent.register"
@@ -3668,7 +3665,14 @@
                         :binding_mode "existing"
                         :recipient_principal_id "B"
                         :idempotency_key "register-agent-s2-l-a5"))))
+                  (agent3 (await (callOk f "O" "agent.register"
+                      (js-object :candidate_ref (nativeGet cand-s3 "candidate_ref")
+                        :display_name "third-route-agent"
+                        :binding_mode "existing"
+                        :recipient_principal_id "O"
+                        :idempotency_key "register-agent-s3-l-a5"))))
                   (sub-o-r2 (await (subscribe f agent2 "lark" 120 "O")))
+                  (sub-o-r3 (await (subscribe f agent3 "lark" 120 "O")))
                   (original-db-query (nativeGet (nativeGet Database "prototype") "query"))
                   (wrap-db-query (lambda (orig on-sql)
                     (funcall (new globalThis.Function "orig" "onSql" "return function(sql) { if (typeof sql === 'string') onSql(sql); return orig.call(this, sql); };") orig on-sql)))
@@ -3679,11 +3683,12 @@
                   (dispatch-rw-payload-sqls 0))
                   (put (aref (nativeGet peer "sessions") 0) :runtime_state "busy")
                   (put (aref (nativeGet peer "sessions") 1) :runtime_state "busy")
+                  (put (aref (nativeGet peer "sessions") 2) :runtime_state "busy")
                   (js-call (nativeGet f "faults") :install "routing.before_checkpoint_commit" (async (work)
                     (let ((cur-u (await (callOk f "A" "subscription.get"
-                          (js-object :subscription_id (nativeGet updated "subscription_id"))))))
+                          (js-object :agent_id (nativeGet agent "agent_id"))))))
                       (await (callOk f "A" "subscription.pause"
-                        (js-object :subscription_id (nativeGet updated "subscription_id")
+                        (js-object :agent_id (nativeGet agent "agent_id")
                           :expected_revision (nativeGet cur-u "revision")
                           :idempotency_key "pause-updated-in-l-a5-commit"))))))
                   (await (js-call f :ingest (createdEvent "lark" "l-multi-route-event" "multi-route buffered delivery batch")))
@@ -3692,14 +3697,12 @@
                       (when (js-call sql :startsWith "INSERT INTO deliveries(")
                         (js-call routing-sql-order :push (if (js-call sql :includes "),(") "deliveries_multi" "deliveries_single")))
                       (when (js-call sql :startsWith "INSERT INTO match_decisions(")
-                        (js-call routing-sql-order :push "match_decisions"))
-                      (when (js-call sql :startsWith "INSERT INTO contributions(")
-                        (js-call routing-sql-order :push "contributions")))))
+                        (js-call routing-sql-order :push "match_decisions")))))
                     (await (js-call f :tick))
                     (finally
                       (put (nativeGet Database "prototype") :query original-db-query)
                       (js-call (nativeGet f "faults") :install "routing.before_checkpoint_commit" nil)))
-                  (js-call (expect routing-sql-order) :toEqual (js-array "deliveries_multi" "match_decisions" "contributions"))
+                  (js-call (expect routing-sql-order) :toEqual (js-array "deliveries_multi" "match_decisions"))
                   (let ((reader (new Database (resolve (nativeGet f "root") "state/dj.sqlite") (js-object :readonly t))))
                     (try
                       (let* ((ev-l5 (js-call (js-call reader :query
@@ -3710,22 +3713,18 @@
                         (md-l5 (nativeGet (js-call (js-call reader :query
                             "SELECT COUNT(*) AS n FROM match_decisions WHERE event_id=? AND result='match'") :get l5-id) "n"))
                         (dels-l5 (js-call (js-call reader :query
-                            "SELECT delivery_id, route_id, agent_id, state, revision FROM deliveries WHERE event_id=? ORDER BY agent_id") :all l5-id))
-                        (contribs-l5 (js-call (js-call reader :query
-                            "SELECT c.delivery_id, c.subscription_id FROM contributions c JOIN deliveries d ON d.delivery_id=c.delivery_id WHERE d.event_id=? ORDER BY c.subscription_id") :all l5-id)))
+                            "SELECT delivery_id, route_id, agent_id, state, revision FROM deliveries WHERE event_id=? ORDER BY agent_id") :all l5-id)))
                         (js-call (expect (nativeGet rw-l5 "state")) :toBe "done")
                         (js-call (expect md-l5) :toBe 3)
                         (js-call (expect (js-length dels-l5)) :toBe 2)
                         (js-call (expect (nativeGet (aref dels-l5 0) "state")) :toBe "deferred")
                         (js-call (expect (nativeGet (aref dels-l5 0) "revision")) :toBe 3)
                         (js-call (expect (nativeGet (aref dels-l5 1) "state")) :toBe "deferred")
-                        (js-call (expect (nativeGet (aref dels-l5 1) "revision")) :toBe 3)
-                        (js-call (expect (js-length contribs-l5)) :toBe 2)
-                        (js-call (expect (js-call contribs-l5 :map (lambda (c) (nativeGet c "subscription_id"))))
-                          :toEqual (js-call (js-array (nativeGet sub-o-r1 "subscription_id") (nativeGet sub-o-r2 "subscription_id")) :sort)))
+                        (js-call (expect (nativeGet (aref dels-l5 1) "revision")) :toBe 3))
                       (finally (js-call reader :close))))
                   (put (aref (nativeGet peer "sessions") 0) :runtime_state "idle")
                   (put (aref (nativeGet peer "sessions") 1) :runtime_state "idle")
+                  (put (aref (nativeGet peer "sessions") 2) :runtime_state "idle")
                   (try
                     (put (nativeGet Database "prototype") :query (funcall wrap-db-query original-db-query (lambda (sql)
                       (when (and (js-call sql :startsWith "SELECT delivery_id,state,")
@@ -3747,14 +3746,12 @@
                   (js-call (expect (js-length (nativeGet peer "inputs"))) :toBe 5)
                   (let* ((inp-3 (aref (nativeGet peer "inputs") 3))
                     (inp-4 (aref (nativeGet peer "inputs") 4))
-                    (s1-inp (if (= (nativeGet (nativeGet inp-3 "binding") "native_session_id") "s1") inp-3 inp-4))
                     (s2-inp (if (= (nativeGet (nativeGet inp-3 "binding") "native_session_id") "s2") inp-3 inp-4))
-                    (s1-matched (nativeGet (nativeGet s1-inp "envelope") "matched"))
-                    (s2-matched (nativeGet (nativeGet s2-inp "envelope") "matched")))
-                    (js-call (expect (js-length s1-matched)) :toBe 1)
-                    (js-call (expect (nativeGet (aref s1-matched 0) "subscription_id")) :toBe (nativeGet sub-o-r1 "subscription_id"))
-                    (js-call (expect (js-length s2-matched)) :toBe 1)
-                    (js-call (expect (nativeGet (aref s2-matched 0) "subscription_id")) :toBe (nativeGet sub-o-r2 "subscription_id"))))))))))
+                    (s3-inp (if (= (nativeGet (nativeGet inp-3 "binding") "native_session_id") "s3") inp-3 inp-4))
+                    (s2-matched (nativeGet (nativeGet s2-inp "envelope") "matched"))
+                    (s3-matched (nativeGet (nativeGet s3-inp "envelope") "matched")))
+                    (js-call (expect (nativeGet s2-matched "target_key")) :toBe (nativeGet sub-o-r2 "target_key"))
+                    (js-call (expect (nativeGet s3-matched "target_key")) :toBe (nativeGet sub-o-r3 "target_key"))))))))))
     closeFixture)
   (withCase
     "T14.global-queue-limit.sqlite"

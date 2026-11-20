@@ -3,7 +3,7 @@
   (import "../core/errors.eli" success failure)
   (import "../application/context.eli" must)
   (import "../core/limits.eli" limits)
-  (import "../filtering/policy.eli" evaluateTriggerFilters)
+  (import "../triggers/suppression.eli" evaluateTriggerFilters)
   ;; Mutable working records belong to this event and this synchronous write item.
   ;; They never enter the read-only contribution cache or survive a SAVEPOINT.
   (defun withEventPlans (context event work &optional complete-in-one-turn buffer-deliveries capacity-state)

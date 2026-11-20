@@ -136,7 +136,7 @@
       (lane (nativeGet checkpoint "reaction_lane" "archive")) (policy (reactionPollPolicy config))
       (row nil) (active-message (and observations (= lane "engaged") (js-call observations :nextActive))))
       (when (js-call (js-call db :query
-        "SELECT 1 FROM subscription_sources i JOIN subscriptions s ON s.subscription_id=i.subscription_id AND s.revision=i.revision WHERE i.connection_id=? AND i.event_kind='message.reaction.added' AND s.state='active' LIMIT 1") :get id)
+        "SELECT 1 FROM subscription_sources i JOIN subscriptions s ON s.target_key=i.target_key AND s.revision=i.revision WHERE i.connection_id=? AND i.event_kind='message.reaction.added' AND s.state='active' LIMIT 1") :get id)
         (setq row (cond
           (pending (js-call (js-call db :query "SELECT CAST(ingress_seq AS TEXT) AS seq,native_message_id AS message_id,payload FROM events WHERE connection_id=? AND native_message_id=? AND event_kind='message.created' AND tombstone=0 AND json_extract(payload,'$.identity_revision')=? AND body_expires_at>? LIMIT 1") :get id pending (nativeGet config "identity_revision") now))
           ((= lane "engaged") (and active-message (js-call (js-call db :query

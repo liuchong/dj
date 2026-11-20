@@ -4,12 +4,13 @@
   (import "node:path" resolve dirname relative isAbsolute)
   (import "node:os" homedir)
   (import "../core/errors.eli" success failure invalidField)
-  (import "../core/types.eli" isObject hashValue utf8Bytes)
+  (import "../core/types.eli" isObject hashValue utf8Bytes stableSessionKey)
   (import "../core/limits.eli" limits)
+  (import "../core/instructions.eli" instructionPolicySchema)
   (import "../policy/principals.eli" credentialDigest)
   (import "../adapters/agent/cursor-native.eli" cursorNativeUrl)
   (import "../people/registry.eli" identityKey)
-  (import "../application/operations.eli" specSchema predicateSchema distributionSchema)
+  (import "../application/operations.eli" specSchema predicateSchema distributionSchema contextPolicySchema ruleEventKindsSchema)
   (import "../application/schema.eli" validateRequest)
   (import "../policy/authorize.eli" targetAllowed)
   (defconst id
@@ -265,17 +266,34 @@
         :endpoint
         managedEndpointSchema)
       (js-array "profile_id" "tool" "revision" "argv" "workspace_refs")))
+  (defconst fixedRouteRuleSchema
+    (obj
+      (js-object
+        :id (js-object :type "string" :minLength 1 :maxLength 128 :pattern "^[^\\u0000]+$")
+        :enabled (js-object :type "boolean")
+        :sources (arr (obj (js-object :connection_id id :native_chat_id id :native_thread_id nullableId
+          :include_threads (js-object :type "boolean")) (js-array "connection_id")) 100 0)
+        :event_kinds ruleEventKindsSchema
+        :predicate (js-object :$ref "#/$defs/predicate")
+        :context_policy contextPolicySchema
+        :instruction_policy instructionPolicySchema)
+      (js-array "id" "enabled" "predicate")))
   (defconst fixedRouteSchema
-    (obj (Object/assign (js-object
-      :id id :owner_principal_id id :recipient_principal_id id :group_id id :distribution distributionSchema
-      :event_kinds (nativeGet (nativeGet (nativeGet (nativeGet specSchema "properties") "selector") "properties") "event_kinds") :enabled (js-object :type "boolean")
-      :target (obj (js-object :instance_id id :native_session_id id) (js-array "instance_id" "native_session_id"))
-      :sources (arr (obj (js-object :connection_id id :native_chat_id id :native_thread_id nullableId
-        :include_threads (js-object :type "boolean")) (js-array "connection_id")) 100 1))
-      (let ((fields (js-object)))
-        (js-call (js-array "predicate" "context_policy" "delivery_policy" "instruction_policy") :forEach
-          (lambda (key) (put fields key (nativeGet (nativeGet specSchema "properties") key)))) fields))
-      (js-array "id" "owner_principal_id" "recipient_principal_id" "sources")))
+    (obj
+      (js-object
+        :id id
+        :owner_principal_id id
+        :recipient_principal_id id
+        :group_id id
+        :distribution distributionSchema
+        :enabled (js-object :type "boolean")
+        :target (obj (js-object :instance_id id :native_session_id id) (js-array "instance_id" "native_session_id"))
+        :delivery_mode (enumOf "push" "pull")
+        :context_policy contextPolicySchema
+        :delivery_policy (nativeGet (nativeGet specSchema "properties") "delivery_policy")
+        :instruction_policy instructionPolicySchema
+        :rules (arr fixedRouteRuleSchema 64 1))
+      (js-array "id" "owner_principal_id" "recipient_principal_id" "rules")))
   (defun fixedRouteTarget (config route)
     (if (nativeGet route "group_id") (js-object :group_id (nativeGet route "group_id"))
     (let ((endpoint (js-call (nativeGet config "agent_endpoints" (js-array)) :find
@@ -283,36 +301,60 @@
       (when endpoint (js-object :tool (nativeGet endpoint "tool") :native_namespace (nativeGet endpoint "native_namespace")
         :instance_id (nativeGet endpoint "instance_id") :native_session_id (nativeGet (nativeGet route "target") "native_session_id")
         :workspace_ref (nativeGet endpoint "workspace_ref" nil))))))
+  (defun fixedRouteSlotKey (route target)
+    (if (nativeGet route "group_id")
+      (str "group:" (nativeGet route "group_id"))
+      (and target (str "session:" (stableSessionKey target)))))
   (defun validateFixedRoutes (config)
-    (let ((seen (new globalThis.Set)))
+    (let ((seen (new globalThis.Set))
+          (seen-slots (new globalThis.Set))
+          (enabled-connections (js-call (nativeGet config "connections" (js-array)) :filter
+            (lambda (connection) (not (nativeGet connection "disabled"))))))
       (js-call (nativeGet config "fixed_routes" (js-array)) :forEach (lambda (route)
-        (let* ((key (nativeGet route "id")) (owner (js-call (nativeGet config "principals") :find
-          (lambda (item) (= (nativeGet item "principal_id") (nativeGet route "owner_principal_id")))))
-          (recipient (js-call (nativeGet config "principals") :find
-            (lambda (item) (= (nativeGet item "principal_id") (nativeGet route "recipient_principal_id")))))
-          (target (fixedRouteTarget config route)))
-          (unless (and (not (js-call seen :has key)) owner (= (nativeGet owner "kind") "operator") (not (nativeGet owner "disabled"))
-            recipient (= (nativeGet recipient "kind") "agent") (not (nativeGet recipient "disabled"))
-            target (not (= (object-has? route :group_id) (object-has? route :target)))
-            (or (nativeGet route "group_id") (targetAllowed recipient target)))
-            (throw (new globalThis.TypeError "invalid fixed route identity or target")))
+        (let* ((key (nativeGet route "id"))
+               (owner (js-call (nativeGet config "principals") :find
+                 (lambda (item) (= (nativeGet item "principal_id") (nativeGet route "owner_principal_id")))))
+               (recipient (js-call (nativeGet config "principals") :find
+                 (lambda (item) (= (nativeGet item "principal_id") (nativeGet route "recipient_principal_id")))))
+               (target (fixedRouteTarget config route))
+               (slot-key (fixedRouteSlotKey route target)))
+          (unless (and (not (js-call seen :has key))
+                       slot-key
+                       (not (js-call seen-slots :has slot-key))
+                       owner (= (nativeGet owner "kind") "operator") (not (nativeGet owner "disabled"))
+                       recipient (= (nativeGet recipient "kind") "agent") (not (nativeGet recipient "disabled"))
+                       target (not (= (object-has? route :group_id) (object-has? route :target)))
+                       (or (nativeGet route "group_id") (targetAllowed recipient target)))
+            (throw (new globalThis.TypeError "invalid or duplicate fixed route identity or target")))
           (js-call seen :add key)
-          (js-call (nativeGet route "sources") :forEach (lambda (source)
-            (unless (and
-              (js-call (nativeGet config "connections" (js-array)) :some (lambda (connection)
-                (and (= (nativeGet connection "connection_id") (nativeGet source "connection_id")) (not (nativeGet connection "disabled")))))
-              (or (not (object-has? source :native_thread_id)) (nativeGet source "native_chat_id"))
-              (not (and (nativeGet source "native_thread_id") (= (nativeGet source "include_threads") t))))
-              (throw (new globalThis.TypeError "invalid fixed route source")))))
-          (let* ((spec (js-object :agent_id "configuration-validation" :selector (js-object :sources
-            (js-call (nativeGet route "sources") :map (lambda (source) (js-object :connection_id (nativeGet source "connection_id")))))))
-            (args (js-object :spec spec)))
+          (js-call seen-slots :add slot-key)
+          (js-call (nativeGet route "rules") :forEach (lambda (rule)
+            (let ((sources (nativeGet rule "sources" (js-array))))
+              (when (and (= (js-length sources) 0) (= (js-length enabled-connections) 0))
+                (throw (new globalThis.TypeError "fixed route rule requires an enabled connection")))
+              (js-call sources :forEach (lambda (source)
+                (unless (and
+                  (js-call enabled-connections :some (lambda (connection)
+                    (= (nativeGet connection "connection_id") (nativeGet source "connection_id"))))
+                  (or (not (object-has? source :native_thread_id)) (nativeGet source "native_chat_id"))
+                  (not (and (nativeGet source "native_thread_id") (= (nativeGet source "include_threads") t))))
+                  (throw (new globalThis.TypeError "invalid fixed route source"))))))))
+          (let* ((spec (js-object
+                         :agent_id "configuration-validation"
+                         :rules
+                         (js-call (nativeGet route "rules") :map (lambda (rule)
+                           (let ((mapped (Object/assign (js-object) rule)))
+                             (put mapped :sources
+                               (js-call (nativeGet rule "sources" (js-array)) :map
+                                 (lambda (source) (js-object :connection_id (nativeGet source "connection_id")))))
+                             mapped)))))
+                 (args (js-object :spec spec)))
             (when (nativeGet route "group_id")
-              (Reflect/deleteProperty spec "agent_id") (put spec :group_id (nativeGet route "group_id")))
+              (Reflect/deleteProperty spec "agent_id")
+              (put spec :group_id (nativeGet route "group_id")))
             (when (nativeGet route "distribution") (put spec :distribution (nativeGet route "distribution")))
-            (when (nativeGet route "event_kinds") (put (nativeGet spec "selector") :event_kinds (nativeGet route "event_kinds")))
-            (js-call (js-array "predicate" "context_policy" "delivery_policy" "instruction_policy") :forEach
-              (lambda (key) (when (object-has? route key) (put spec key (nativeGet route key)))))
+            (js-call (js-array "delivery_mode" "context_policy" "delivery_policy" "instruction_policy") :forEach
+              (lambda (field) (when (object-has? route field) (put spec field (nativeGet route field)))))
             (unless (nativeGet (validateRequest "subscription.preview" args) "ok")
               (throw (new globalThis.TypeError "invalid fixed route subscription policy")))))))
       (success nil)))
@@ -831,4 +873,5 @@
     ensurePrivateDirectory
     ensurePrivateDescendant
     fixedRouteTarget
+    fixedRouteSlotKey
     serviceConfigSchema))

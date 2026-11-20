@@ -681,51 +681,92 @@
     (f agent connection &optional ttl actor)
     (let*
       (
+        (who (or actor "A"))
         (source
           (await
             (callOk
               f
-              (or actor "A")
+              who
               "conversation.resolve"
               (js-object :connection_id connection :chat_id "c1" :thread_id nil))))
+        (current-res
+          (await
+            (js-call
+              f
+              :call
+              (nativeGet f who)
+              "subscription.get"
+              (js-object :agent_id (nativeGet agent "agent_id")))))
+        (current
+          (if (= (nativeGet current-res "ok") t)
+            (nativeGet current-res "data")
+            nil))
+        (expected-revision
+          (if current (nativeGet current "revision") 0))
+        (existing-rules
+          (if current
+            (js-call (nativeGet current "rules") :slice)
+            (js-array)))
+        (rule-id
+          (if (= (js-length existing-rules) 0)
+            "default"
+            (str connection "-" (+ (js-length existing-rules) 1))))
+        (next-rule
+          (js-object
+            :id
+            rule-id
+            :enabled
+            t
+            :sources
+            (js-array
+              (js-object
+                :conversation_ref
+                (nativeGet source "conversation_ref")
+                :include_threads
+                false))
+            :event_kinds
+            (js-array "message.created")
+            :predicate
+            (js-object :all (js-array))
+            :context_policy
+            (js-object :mode "current" :max_events 1 :max_bytes 16384)))
+        (rules
+          (let ((out (js-call existing-rules :slice)))
+            (js-call out :push next-rule)
+            out))
+        (existing-ttl
+          (if current
+            (nativeGet (nativeGet current "delivery_policy" (js-object)) "ttl_seconds")
+            nil))
         (preview
           (await
             (callOk
               f
-              (or actor "A")
+              who
               "subscription.preview"
               (js-object
+                :expected_revision
+                expected-revision
                 :spec
                 (js-object
                   :agent_id
                   (nativeGet agent "agent_id")
-                  :selector
-                  (js-object
-                    :sources
-                    (js-array
-                      (js-object
-                        :conversation_ref
-                        (nativeGet source "conversation_ref")
-                        :include_threads
-                        false))
-                    :event_kinds
-                    (js-array "message.created"))
-                  :predicate
-                  (js-object :all (js-array))
-                  :context_policy
-                  (js-object :mode "current" :max_events 1 :max_bytes 16384)
+                  :rules
+                  rules
                   :delivery_policy
-                  (js-object :busy "queue" :offline "hold" :ttl_seconds (or ttl 86400))
+                  (js-object :busy "queue" :offline "hold" :ttl_seconds (or ttl existing-ttl 86400))
                   :start
                   "now"))))))
       (await
         (callOk
           f
-          (or actor "A")
-          "subscription.create"
+          who
+          "subscription.set"
           (js-object
             :preview_id
             (nativeGet preview "preview_id")
+            :expected_revision
+            expected-revision
             :idempotency_key
             (str "subscribe-" (randomUUID)))))))
   (export

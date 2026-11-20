@@ -2,7 +2,8 @@
   (import "../../src/core/native.eli" nativeGet)
   (import "bun:test" expect)
   (import "../support/case.eli" withUnitCase)
-  (import "../../src/core/rules.eli" evaluatePredicate validatePredicate matchesSource)
+  (import "../../src/triggers/predicate.eli" evaluatePredicate validatePredicate)
+  (import "../../src/triggers/sources.eli" matchesSource)
   (defconst event
     (js-object
       :event_kind

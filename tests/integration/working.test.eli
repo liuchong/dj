@@ -44,7 +44,7 @@
       (let* ((sub (await (subscribe f agent "lark")))
         (db (new Database (resolve (nativeGet f "root") "state/dj.sqlite") (js-object :readonly t)))
         (event-id (nativeGet (js-call (js-call db :query "SELECT event_id FROM events WHERE native_message_id='missed-before-subscribe'") :get) "event_id"))
-        (args (js-object :subscription_id (nativeGet sub "subscription_id") :expected_revision 1 :event_ids (js-array event-id) :idempotency_key "recover-one")))
+        (args (js-object :agent_id (nativeGet sub "agent_id") :expected_revision (nativeGet sub "revision") :event_ids (js-array event-id) :idempotency_key "recover-one")))
         (js-call db :close)
         (await (callOk f "A" "subscription.replay" args)) (await (callOk f "A" "subscription.replay" args))
         (await (turns f 4))

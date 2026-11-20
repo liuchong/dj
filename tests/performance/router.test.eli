@@ -217,9 +217,10 @@
                       (str "R-" ordinal)
                       :idempotency_key
                       (str "load-agent-" ordinal)))))
+              (rules (js-array))
               (slot 0))
             (while (< slot 10)
-              (let*
+              (let
                 (
                   (address
                     (await
@@ -233,46 +234,60 @@
                           :chat_id
                           (if (or large-fanout (< slot 5)) "c1" "c2")
                           :thread_id
-                          nil))))
-                  (preview
-                    (await
-                      (callOk
-                        f
-                        "O"
-                        "subscription.preview"
+                          nil)))))
+                (js-call
+                  rules
+                  :push
+                  (js-object
+                    :id
+                    (str "rule-" slot)
+                    :enabled
+                    t
+                    :sources
+                    (js-array
+                      (js-object
+                        :conversation_ref
+                        (nativeGet address "conversation_ref")))
+                    :event_kinds
+                    (js-array "message.created")
+                    :predicate
+                    (js-object :all (js-array))
+                    :context_policy
+                    (js-object :mode "current" :max_events 1 :max_bytes 16384))))
+              (setq slot (1+ slot)))
+            (let
+              (
+                (preview
+                  (await
+                    (callOk
+                      f
+                      "O"
+                      "subscription.preview"
+                      (js-object
+                        :expected_revision
+                        0
+                        :spec
                         (js-object
-                          :spec
-                          (js-object
-                            :agent_id
-                            (nativeGet agent "agent_id")
-                            :selector
-                            (js-object
-                              :sources
-                              (js-array
-                                (js-object
-                                  :conversation_ref
-                                  (nativeGet address "conversation_ref")))
-                              :event_kinds
-                              (js-array "message.created"))
-                            :predicate
-                            (js-object :all (js-array))
-                            :context_policy
-                            (js-object :mode "current" :max_events 1 :max_bytes 16384)
-                            :delivery_policy
-                            (js-object :busy "queue" :offline "hold" :ttl_seconds 86400)
-                            :start
-                            "now"))))))
-                (await
-                  (callOk
-                    f
-                    "O"
-                    "subscription.create"
-                    (js-object
-                      :preview_id
-                      (nativeGet preview "preview_id")
-                      :idempotency_key
-                      (str "load-sub-" ordinal "-" slot)))))
-              (setq slot (1+ slot))))
+                          :agent_id
+                          (nativeGet agent "agent_id")
+                          :rules
+                          rules
+                          :delivery_policy
+                          (js-object :busy "queue" :offline "hold" :ttl_seconds 86400)
+                          :start
+                          "now"))))))
+              (await
+                (callOk
+                  f
+                  "O"
+                  "subscription.set"
+                  (js-object
+                    :preview_id
+                    (nativeGet preview "preview_id")
+                    :expected_revision
+                    0
+                    :idempotency_key
+                    (str "load-sub-" ordinal))))))
           (setq index (1+ index)))))
     f))
   (withCase

@@ -426,25 +426,32 @@
                 "A"
                 "subscription.preview"
                 (js-object
+                  :expected_revision
+                  0
                   :spec
                   (js-object
                     :agent_id
                     (nativeGet agent "agent_id")
-                    :selector
-                    (js-object
-                      :sources
-                      (js-array
-                        (js-object
-                          :conversation_ref
-                          (nativeGet source "conversation_ref")
-                          :include_threads
-                          false))
-                      :event_kinds
-                      (js-array "message.created"))
-                    :predicate
-                    (js-object :all (js-array))
-                    :context_policy
-                    (js-object :mode "current" :max_events 1 :max_bytes 16384)
+                    :rules
+                    (js-array
+                      (js-object
+                        :id
+                        "default"
+                        :enabled
+                        t
+                        :sources
+                        (js-array
+                          (js-object
+                            :conversation_ref
+                            (nativeGet source "conversation_ref")
+                            :include_threads
+                            false))
+                        :event_kinds
+                        (js-array "message.created")
+                        :predicate
+                        (js-object :all (js-array))
+                        :context_policy
+                        (js-object :mode "current" :max_events 1 :max_bytes 16384)))
                     :delivery_policy
                     (js-object :busy "queue" :offline "hold" :ttl_seconds 60)
                     :start
@@ -455,10 +462,12 @@
             p
             :request
             "A"
-            "subscription.create"
+            "subscription.set"
             (js-object
               :preview_id
               (nativeGet ticket "preview_id")
+              :expected_revision
+              0
               :idempotency_key
               "routing-subscription"))))))
   (withCase
@@ -508,7 +517,7 @@
                 (nativeGet (await (api reopened "delivery.list" (js-object))) "items")))
             (js-call (expect (js-length deliveries)) :toBe 1)
             (js-call
-              (expect (js-length (nativeGet (aref deliveries 0) "contributions")))
+              (expect (nativeGet (nativeGet (aref deliveries 0) "matched") "subscription_revision"))
               :toBe
               1))
           (let

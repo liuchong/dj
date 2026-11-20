@@ -22,7 +22,7 @@
     :antigravity (js-object :user ".gemini/config/skills" :project ".agents/skills")
     :agy (js-object :user ".gemini/antigravity-cli/skills" :project ".agents/skills"))))
   (defconst skillHelp
-    "dj skill targets\ndj skill install|check --target TOOL --scope user|project [--project DIRECTORY] [--update] [--dry-run]\ndj skill config --target TOOL --client-profile FILE\ndj skill hooks --target codex|cursor --client-profile FILE --agent ID --subscription ID\nTargets: dj (shared Skill directory), agents, codex, cursor, claude, opencode, pi, kimi, dsh, antigravity, agy.\nCopies the complete bundled dj Skill. Different existing files or links are conflicts unless install --update explicitly refreshes an existing Markdown Skill directory. Config/hooks print snippets only; no client configuration changes or Agent starts.\n")
+    "dj skill targets\ndj skill install|check --target TOOL --scope user|project [--project DIRECTORY] [--update] [--dry-run]\ndj skill config --target TOOL --client-profile FILE\ndj skill hooks --target codex|cursor --client-profile FILE --agent ID [--group ID]\nTargets: dj (shared Skill directory), agents, codex, cursor, claude, opencode, pi, kimi, dsh, antigravity, agy.\nCopies the complete bundled dj Skill. Different existing files or links are conflicts unless install --update explicitly refreshes an existing Markdown Skill directory. Config/hooks print snippets only; no client configuration changes or Agent starts.\n")
   (defasync fileInfo (path)
     (try (await (lstat path))
       (catch error (if (= (nativeGet error "code") "ENOENT") nil (throw error)))))
@@ -174,7 +174,7 @@
                   ((= flag "--update")
                     (when (object-has? options :update) (throw (new globalThis.TypeError "missing or repeated Skill option")))
                     (put options :update t))
-                  ((js-call (js-array "--target" "--scope" "--project" "--client-profile" "--agent" "--subscription") :includes flag)
+                  ((js-call (js-array "--target" "--scope" "--project" "--client-profile" "--agent" "--group") :includes flag)
                     (let ((key (js-call (js-call flag :slice 2) :replaceAll "-" "_")))
                       (when (or (object-has? options key) (>= (1+ i) (js-length argv))
                         (js-call (aref argv (1+ i)) :startsWith "--"))
@@ -194,8 +194,8 @@
                     (if (nativeGet options "client_profile") (resolve (nativeGet options "client_profile")) nil)))
                 ((= action "hooks")
                   (unless (js-call (Object/keys options) :every
-                    (lambda (k) (js-call (js-array "target" "client_profile" "agent" "subscription") :includes k)))
-                    (throw (new globalThis.TypeError "hooks accepts target/profile/agent/subscription only")))
+                    (lambda (k) (js-call (js-array "target" "client_profile" "agent" "group") :includes k)))
+                    (throw (new globalThis.TypeError "hooks accepts target/profile/agent/group only")))
                   (if (not (js-call (js-array "codex" "cursor") :includes (nativeGet options "target")))
                     (failure "unsupported")
                     (progn
@@ -205,7 +205,7 @@
                 (t
                   (when (and (= action "check") (nativeGet options "update"))
                     (throw (new globalThis.TypeError "check does not accept --update")))
-                  (when (or (nativeGet options "agent") (nativeGet options "subscription"))
+                  (when (or (nativeGet options "agent") (nativeGet options "group"))
                     (throw (new globalThis.TypeError "install/check do not accept callback binding")))
                   (when (nativeGet options "client_profile") (throw (new globalThis.TypeError "install/check do not read profiles")))
                   (put options :action action)

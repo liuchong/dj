@@ -27,7 +27,7 @@
       (js-call (expect (quotaEligible "require_available" "available")) :toBe t)
       (js-call (expect (quotaEligible "ignore" "exhausted")) :toBe t)
       (js-call (expect (nativeGet (validateRequest "subscription.preview" (js-object :spec
-        (js-object :agent_id "a" :group_id "g" :selector (js-object)))) "ok")) :toBe false))))
+        (js-object :agent_id "a" :group_id "g"))) "ok")) :toBe false))))
   (withUnitCase "T33.group-quota-evidence.unit" (lambda ()
     (let* ((session (js-object :instance_id "app" :instance_epoch "epoch" :native_namespace "local"
         :native_session_id "one" :model_selection (js-object :provider_id "p" :model_id "m" :observed_at "earlier")))

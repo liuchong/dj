@@ -9,7 +9,7 @@
     (while (<= count 16)
       (js-call placeholders :push "?")
       (js-call subscriptionStateSql :push
-        (str "SELECT subscription_id,owner_principal_id,state,revision,json_extract(payload,'$.group_id') AS group_id FROM subscriptions WHERE subscription_id IN ("
+        (str "SELECT target_key,owner_principal_id,agent_id,group_id,state,revision FROM subscriptions WHERE target_key IN ("
           (js-call placeholders :join ",") ")"))
       (setq count (1+ count))))
   (defun defineTable
@@ -38,7 +38,7 @@
           :concat (js-array "payload=?")) :join ",")
         " WHERE " where
         (js-call (js-call progress-invariants :map (lambda (column) (str " AND " column " IS ?"))) :join ""))))
-      (batch-insert-sql (and (js-call (js-array "match_decisions" "contributions") :includes table)
+      (batch-insert-sql (and (= table "match_decisions")
         (js-array nil)))
       (strict-batch-insert-sql (and (= table "deliveries") (js-array nil))))
       (when batch-insert-sql
@@ -72,8 +72,8 @@
         :progress_revision_sql (and progress-sql (str progress-sql " AND revision=?"))
         :delete_sql (str "DELETE FROM " table " WHERE " where)))))
   (defineTable "subscription_groups" "group_id" "group_id owner_principal_id state revision")
-  (defineTable "group_dispatches" "subscription_id event_id" "subscription_id event_id state next_check_at")
-  (defineTable "group_cursors" "subscription_id" "subscription_id")
+  (defineTable "group_dispatches" "target_key event_id" "target_key event_id state next_check_at")
+  (defineTable "group_cursors" "target_key" "target_key")
   (defineTable "agent_availability" "scope_key" "scope_key valid_until")
   (defineTable "session_supervisions" "session_key" "session_key principal_id state next_check_at revision")
   (defineTable "recipient_policies" "connection_id" "connection_id revision")
@@ -149,34 +149,30 @@
     "event_id connection_id source_key conversation_key native_message_id event_kind ingress_seq received_at body_expires_at tombstone")
   (defineTable
     "subscriptions"
-    "subscription_id"
-    "subscription_id owner_principal_id agent_id state revision")
+    "target_key"
+    "target_key owner_principal_id agent_id group_id state revision")
   (defineTable
     "subscription_versions"
-    "subscription_id revision"
-    "subscription_id revision start_seq cutover_seq state")
+    "target_key revision"
+    "target_key revision start_seq cutover_seq state")
   (defineTable "inbox_entries" "inbox_id"
-    "inbox_id subscription_id revision event_id agent_id state expires_at lease_until claim_principal_id claim_ref")
+    "inbox_id target_key revision event_id agent_id state expires_at lease_until claim_principal_id claim_ref")
   (defineTable "work_items" "delivery_id" "delivery_id state expires_at")
   (defineTable "work_marks" "mark_id" "mark_id revision state next_due_at")
-  (defineTable "inbox_pulls" "pull_id" "pull_id subscription_id principal_id")
+  (defineTable "inbox_pulls" "pull_id" "pull_id target_key principal_id")
   (defineTable "inbox_reply_contexts" "reply_context_id" "reply_context_id inbox_id recipient_principal_id expires_at")
   (defineTable
     "routing_work"
     "event_id"
-    "event_id ingress_seq state last_subscription_id last_revision")
+    "event_id ingress_seq state last_target_key last_revision")
   (defineTable
     "match_decisions"
-    "event_id subscription_id revision"
-    "event_id subscription_id revision result")
+    "event_id target_key revision"
+    "event_id target_key revision result")
   (defineTable
     "deliveries"
     "delivery_id"
     "delivery_id route_id origin principal_id operation_id agent_id event_id delivery_seq state revision expires_at")
-  (defineTable
-    "contributions"
-    "delivery_id subscription_id revision"
-    "delivery_id subscription_id revision state expires_at")
   (defineTable
     "outbound"
     "outbound_id"
@@ -288,13 +284,13 @@
               (when row (JSON/parse (nativeGet row "payload"))))))
         (setq
           getSubscriptionState
-          (lambda (subscription-id)
-            (unless (and (= (nativeTypeOf subscription-id) "string")
-              (> (js-length subscription-id) 0))
-              (throw (new globalThis.TypeError "subscription state requires a nonempty identifier")))
+          (lambda (target-key)
+            (unless (and (= (nativeTypeOf target-key) "string")
+              (> (js-length target-key) 0))
+              (throw (new globalThis.TypeError "subscription state requires a nonempty target_key")))
             (or (js-call (js-call db :query
-              "SELECT subscription_id,owner_principal_id,state,revision,json_extract(payload,'$.group_id') AS group_id FROM subscriptions WHERE subscription_id=?")
-              :get subscription-id) nil)))
+              "SELECT target_key,owner_principal_id,agent_id,group_id,state,revision FROM subscriptions WHERE target_key=?")
+              :get target-key) nil)))
         (setq
           getSubscriptionStates
           (lambda (ids)
@@ -335,7 +331,7 @@
           (lambda
             (table record)
             (assertTransaction)
-            (unless (js-call (js-array "match_decisions" "contributions" "group_dispatches") :includes table)
+            (unless (js-call (js-array "match_decisions" "group_dispatches") :includes table)
               (throw (new globalThis.TypeError "unsupported insert-if-absent table")))
             (let* ((info (tableInfo table))
               (values (js-call (nativeGet info "columns") :map
@@ -385,7 +381,7 @@
           (lambda (table records)
             (assertTransaction)
             (unless (and
-              (js-call (js-array "match_decisions" "contributions") :includes table)
+              (= table "match_decisions")
               (Array/isArray records)
               (<= (js-length records) 128))
               (throw (new globalThis.TypeError "invalid bounded insert batch")))

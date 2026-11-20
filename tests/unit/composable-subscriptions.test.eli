@@ -1,7 +1,11 @@
 (module dj.tests.unit.composable-subscriptions
   (import "../../src/core/native.eli" nativeGet)
-  (import "../../src/core/rules.eli" validatePredicate evaluatePredicate predicateUsesPerson)
-  (import "../../src/filtering/policy.eli" evaluateSubscriptionPredicate)
+  (import "../../src/triggers/predicate.eli" validatePredicate evaluatePredicate predicateUsesPerson)
+  (import "../../src/triggers/rules.eli"
+    validateSubscriptionRules
+    subscriptionIndexEntries
+    evaluateSubscriptionRules)
+  (import "../../src/triggers/suppression.eli" evaluatePredicateWithPeople)
   (import "../../src/application/schema.eli" validateRequest)
   (import "../../packages/lark/src/messages.eli" extractLarkMessageText)
   (import "../support/case.eli" withUnitCase)
@@ -39,9 +43,9 @@
         (memo (new globalThis.Map)))
         (put (nativeGet event "sender") :identities (js-array alias))
         (js-call (expect (predicateUsesPerson predicate)) :toBe t)
-        (js-call (expect (evaluateSubscriptionPredicate context predicate event memo)) :toBe "true")
+        (js-call (expect (evaluatePredicateWithPeople context predicate event memo)) :toBe "true")
         (put policy :people (js-array))
-        (js-call (expect (evaluateSubscriptionPredicate context predicate event memo)) :toBe "false")
+        (js-call (expect (evaluatePredicateWithPeople context predicate event memo)) :toBe "false")
         (js-call (expect (nativeGet memo "size")) :toBe 0)
         (js-call (expect (nativeGet (nativeGet event "sender") "person_id")) :toBeUndefined))
       ;; Multi-condition N-ary all/any/not, line-scoped fields, suffix, budget and Lark post normalization.
@@ -59,7 +63,8 @@
           :content (js-object :text "[P0] 订单服务炸了！\r\n影响面：支付链路，请立即处理\r附日志" :truncated false))))
         (js-call (expect (nativeGet (validatePredicate six-way) "ok")) :toBe t)
         (js-call (expect (nativeGet (validateRequest "subscription.preview"
-          (js-object :spec (js-object :agent_id "agent-1" :selector (js-object) :predicate six-way))) "ok")) :toBe t)
+          (js-object :spec (js-object :agent_id "agent-1"
+            :rules (js-array (js-object :id "r1" :enabled t :predicate six-way))))) "ok")) :toBe t)
         (js-call (expect (nativeGet (validatePredicate (cmp "text.first_line" "eq" "")) "ok")) :toBe t)
         (js-call (expect (nativeGet (validatePredicate (cmp "text.first_line" "contains" "")) "ok")) :toBe false)
         (js-call (expect (nativeGet (validatePredicate (cmp "text" "suffix" "")) "ok")) :toBe false)
@@ -69,6 +74,90 @@
         (put (nativeGet fire-event "content") :text "\n[P0] 订单服务炸了！\n请立即处理")
         (js-call (expect (evaluatePredicate (cmp "text.first_line" "eq" "") fire-event)) :toBe "true")
         (js-call (expect (evaluatePredicate six-way fire-event)) :toBe "false"))
+      ;; Single-line rules[] boundaries, index merge, and multi-branch evaluation semantics (0035):
+      (js-call (expect (nativeGet (validateSubscriptionRules (js-array)) "ok")) :toBe false)
+      (js-call (expect (nativeGet (validateSubscriptionRules
+        (js-array (js-object :id "dup" :enabled t :predicate (leaf "addressed_self" t))
+                  (js-object :id "dup" :enabled false :predicate (leaf "addressed_self" t)))) "ok")) :toBe false)
+      (let ((sixty-five (js-array)) (sixty-four (js-array)) (i 0))
+        (while (< i 65)
+          (let ((r (js-object :id (str "r-" i) :enabled t :predicate (leaf "addressed_self" t))))
+            (js-call sixty-five :push r)
+            (when (< i 64) (js-call sixty-four :push r)))
+          (setq i (1+ i)))
+        (js-call (expect (nativeGet (validateSubscriptionRules sixty-four) "ok")) :toBe t)
+        (js-call (expect (nativeGet (validateSubscriptionRules sixty-five) "ok")) :toBe false))
+      (let ((too-many-leaves (js-array)) (ri 0))
+        (while (< ri 33)
+          (let ((eight (js-array)) (li 0))
+            (while (< li 8)
+              (js-call eight :push (leaf "sender.id" (str "u-" ri "-" li)))
+              (setq li (1+ li)))
+            (js-call too-many-leaves :push (js-object :id (str "leaf-" ri) :enabled t :predicate (js-object :any eight))))
+          (setq ri (1+ ri)))
+        ;; 33 * 8 = 264 > 256 total predicate leaves across rules[] -> rejected:
+        (js-call (expect (nativeGet (validateSubscriptionRules too-many-leaves) "ok")) :toBe false)
+        ;; 32 * 8 = 256 leaves -> accepted:
+        (js-call (expect (nativeGet (validateSubscriptionRules (js-call too-many-leaves :slice 0 32)) "ok")) :toBe t))
+      (let ((idx-entries (subscriptionIndexEntries "session:s1" 3 (js-array
+              (js-object :id "r-main" :enabled t :event_kinds (js-array "message.created")
+                :resolved_sources (js-array (js-object :connection_id "lark" :native_chat_id "c1" :include_threads false)))
+              (js-object :id "r-threads" :enabled t :event_kinds (js-array "message.created")
+                :resolved_sources (js-array (js-object :connection_id "lark" :native_chat_id "c1" :include_threads t)))
+              (js-object :id "r-disabled" :enabled false :event_kinds (js-array "resource.changed")
+                :resolved_sources (js-array (js-object :connection_id "lark" :native_chat_id "c1" :include_threads t)))))))
+        (js-call (expect (js-length idx-entries)) :toBe 1)
+        (js-call (expect (nativeGet (aref idx-entries 0) "target_key")) :toBe "session:s1")
+        (js-call (expect (nativeGet (aref idx-entries 0) "include_threads")) :toBe 1))
+      (let* ((eval-ctx (js-object
+               :ports (js-object :clock (js-object :utcNow (lambda () "2026-01-01T00:00:00.000Z")))
+               :repository (js-object :get (lambda (table id) nil))))
+             (conn (js-object :connection_id "lark" :platform "lark" :watches (js-array (js-object :chat_id "c1"))
+               :state "online" :revision 1 :identity_revision 1))
+             (version (js-object
+               :target_key "session:s1"
+               :revision 2
+               :context_policy (js-object :mode "current" :max_events 1 :max_bytes 4096)
+               :instruction_policy (js-object :prompt "line-level")
+               :resolved_rules (js-array
+                 (js-object :id "r-hit-1" :enabled t :event_kinds (js-array "message.created")
+                   :resolved_sources (js-array (js-object :connection_id "lark" :scope "connection" :include_threads t))
+                   :predicate (cmp "text.first_line" "prefix" "[P0]")
+                   :context_policy (js-object :mode "current" :max_events 1 :max_bytes 8192)
+                   :instruction_policy (js-object :prompt "branch-1"))
+                 (js-object :id "r-miss" :enabled t :event_kinds (js-array "message.created")
+                   :resolved_sources (js-array (js-object :connection_id "lark" :scope "connection" :include_threads t))
+                   :predicate (cmp "text" "contains" "never-matches")
+                   :instruction_policy (js-object :prompt "should-skip"))
+                 (js-object :id "r-hit-2" :enabled t :event_kinds (js-array "message.created")
+                   :resolved_sources (js-array (js-object :connection_id "lark" :scope "connection" :include_threads t))
+                   :predicate (cmp "text.lines" "suffix" "立即处理")
+                   :context_policy (js-object :mode "recent" :max_events 12 :max_bytes 16384)
+                   :instruction_policy (js-object :prompt "branch-2"))
+                 (js-object :id "r-off" :enabled false :event_kinds (js-array "message.created")
+                   :resolved_sources (js-array (js-object :connection_id "lark" :scope "connection" :include_threads t))
+                   :predicate (js-object :all (js-array))
+                   :instruction_policy (js-object :prompt "disabled")))))
+             (ev (js-object :connection_id "lark" :event_kind "message.created" :identity_revision 1 :tombstone false
+               :body_expires_at "2099-01-01T00:00:00.000Z" :conversation (js-object :connection_id "lark" :native_chat_id "c1")
+               :sender (js-object :id "u1" :kind "human")
+               :content (js-object :text "[P0] 告警\n请立即处理" :truncated false)))
+             (matched (evaluateSubscriptionRules eval-ctx version ev conn)))
+        (js-call (expect (nativeGet matched "result")) :toBe "match")
+        (js-call (expect (nativeGet matched "matched_rule_ids")) :toEqual (js-array "r-hit-1" "r-hit-2"))
+        (js-call (expect (nativeGet matched "context_policy")) :toEqual
+          (js-object :mode "recent" :max_events 12 :max_bytes 16384))
+        (js-call (expect (js-call (nativeGet matched "instruction_policies") :map
+          (lambda (item) (str (nativeGet item "scope") ":" (or (nativeGet item "rule_id") "line")))))
+          :toEqual (js-array "subscription:line" "rule:r-hit-1" "rule:r-hit-2"))
+        ;; Truncated body without positive match -> indeterminate when negation depends on full text:
+        (let* ((indet-version (Object/assign (js-object) version (js-object :resolved_rules (js-array
+                 (js-object :id "r-neg" :enabled t :event_kinds (js-array "message.created")
+                   :resolved_sources (js-array (js-object :connection_id "lark" :scope "connection" :include_threads t))
+                   :predicate (js-object :not (cmp "text" "contains" "tail-only")))))))
+               (trunc-ev (Object/assign (js-object) ev (js-object :content (js-object :text "prefix" :truncated t)))))
+          (js-call (expect (nativeGet (evaluateSubscriptionRules eval-ctx indet-version trunc-ev conn) "result"))
+            :toBe "indeterminate")))
       (let* ((post-with-title (JSON/stringify (js-object :zh_cn (js-object :title "[P0] 网关炸了！"
           :content (js-array
             (js-array (js-object :tag "text" :text "第一段 ") (js-object :tag "at" :user_name "张三") (js-object :tag "emotion" :emoji_type "FIRE"))

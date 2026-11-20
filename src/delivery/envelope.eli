@@ -14,7 +14,7 @@
       "sender"
       "recipient"
       "subscriber_hints"
-      "group_dispatches"
+      "group_dispatch"
       "matched"
       "instructions"
       "conversation_rules"

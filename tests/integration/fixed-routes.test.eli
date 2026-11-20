@@ -7,10 +7,13 @@
   (import "bun:test" expect)
   (import "bun:sqlite" Database)
   (import "node:path" resolve)
+  (defun defaultPred () (js-object :field "addressed_self" :op "eq" :value t))
   (defun route (id recipient instance session &rest connections)
     (js-object :id id :owner_principal_id "O" :recipient_principal_id recipient
       :target (js-object :instance_id instance :native_session_id session)
-      :sources (js-call connections :map (lambda (connection) (js-object :connection_id connection)))))
+      :rules (js-array
+        (js-object :id "default" :enabled t :predicate (defaultPred)
+          :sources (js-call connections :map (lambda (connection) (js-object :connection_id connection)))))))
   (defun query (f sql &rest values)
     (let* ((db (new Database (resolve (nativeGet f "root") "state/dj.sqlite"))) (statement (js-call db :query sql)))
       (try (Reflect/apply (nativeGet statement "all") statement values)
@@ -60,22 +63,32 @@
       (js-call (expect (nativeGet (validateResult (js-call operationCatalog :get "service.status")
         (js-object :ok t :data probe :warnings (js-array) :request_id "fixed-status" :evidence_level "service_record" :effect_state "none")) "ok")) :toBe t)
       (js-call (expect (js-length (await (status f "A")))) :toBe 1)
-      (js-call (expect (nativeGet (await (callOk f "A" "subscription.get" (js-object :subscription_id (nativeGet a "subscription_id")))) "configuration_id")) :toBe "bot-a")
+      (js-call (expect (nativeGet (await (callOk f "A" "subscription.get" (js-object :agent_id (nativeGet a "agent_id")))) "configuration_id")) :toBe "bot-a")
       (js-call (expect (js-length (nativeGet (await (callOk f "A" "subscription.list" (js-object))) "items"))) :toBe 1)
       (js-call (expect (js-length (await (status f "X")))) :toBe 0)
       (await (message f "lark" "only-a")) (await (message f "lark-b" "only-b")) (await (turns f))
       (js-call (expect (countInputs f "opencode")) :toBe 1) (js-call (expect (countInputs f "pi")) :toBe 1)
       (js-call (expect (nativeGet (nativeGet (aref (nativeGet (nativeGet f "opencode") "inputs") 0) "binding") "native_session_id")) :toBe "s1")
-      ;; One connection can fan out, and a line can accept several connections.
+      ;; Duplicate fixed_routes targeting the same native session slot are rejected; multi-source branches live inside one route's rules[].
+      (let ((dup-routes (JSON/parse (JSON/stringify (nativeGet (nativeGet f "config") "fixed_routes"))))
+            (dup-config (JSON/parse (JSON/stringify (nativeGet f "config")))))
+        (js-call dup-routes :push (route "dup-to-a" "A" "oc-existing" "s1" "lark-b"))
+        (put dup-config :fixed_routes dup-routes)
+        (js-call (expect (nativeGet (await (js-call (nativeGet f "core") :reloadConfig dup-config)) "ok")) :toBe false))
       (let ((routes (JSON/parse (JSON/stringify (nativeGet (nativeGet f "config") "fixed_routes")))))
-        (js-call routes :push (route "both-to-a" "A" "oc-existing" "s1" "lark" "lark-b"))
+        (put (aref routes 0) :rules
+          (js-array
+            (js-object :id "from-lark" :enabled t :predicate (defaultPred) :sources (js-array (js-object :connection_id "lark")))
+            (js-object :id "from-lark-b" :enabled t :predicate (defaultPred) :sources (js-array (js-object :connection_id "lark-b")))))
         (await (reload f routes)) (await (turns f))
         (await (message f "lark-b" "fanout")) (await (turns f))
         (js-call (expect (countInputs f "opencode")) :toBe 2) (js-call (expect (countInputs f "pi")) :toBe 2)
         (await (message f "lark" "merged")) (await (turns f))
         (js-call (expect (countInputs f "opencode")) :toBe 3)
-        (js-call (expect (nativeGet (aref (query f "SELECT count(*) AS n FROM contributions WHERE delivery_id=(SELECT d.delivery_id FROM deliveries d JOIN events e ON e.event_id=d.event_id WHERE e.native_message_id='merged')") 0) "n")) :toBe 2)
-        (put (aref routes 1) :sources (js-array (js-object :connection_id "lark-b" :native_chat_id "c1" :native_thread_id "exact-thread")))
+        (js-call (expect (nativeGet (aref (query f "SELECT count(*) AS n FROM subscriptions WHERE agent_id=?" (nativeGet a "agent_id")) 0) "n")) :toBe 1)
+        (put (aref routes 1) :rules
+          (js-array (js-object :id "default" :enabled t :predicate (defaultPred)
+            :sources (js-array (js-object :connection_id "lark-b" :native_chat_id "c1" :native_thread_id "exact-thread")))))
         (await (reload f routes)) (await (turns f))
         (js-call (expect (nativeGet (aref (await (status f)) 1) "state")) :toBe "active")
         (await (message f "lark-b" "exact-thread-hit" nil "exact-thread"))
@@ -83,15 +96,29 @@
         (js-call (expect (countInputs f "pi")) :toBe 3)))) closeFixture)
   (withCase "T38.fixed-routes-reload.integration" setup (async (f)
     (await (turns f))
-    (let* ((a (aref (await (status f)) 0)) (id (nativeGet a "subscription_id"))
-      (sub (await (callOk f "O" "subscription.get" (js-object :subscription_id id))))
-      (preview (await (callOk f "A" "subscription.preview" (js-object :spec
-        (js-object :agent_id (nativeGet a "agent_id") :selector (js-object :sources (js-array (js-object :connection_id "lark")))
-          :predicate (js-object :field "text" :op "contains" :value "manual-only"))))))
-      (manual (await (callOk f "A" "subscription.create" (js-object :preview_id (nativeGet preview "preview_id") :idempotency_key "manual-sub"))))
+    (let* ((a (aref (await (status f)) 0)) (agent-id (nativeGet a "agent_id"))
+      (sub (await (callOk f "O" "subscription.get" (js-object :agent_id agent-id))))
+      (discovered-s2 (await (callOk f "O" "agent.discover" (js-object :tool "opencode" :scope "live"))))
+      (cand-s2 (js-call (nativeGet discovered-s2 "items") :find (lambda (item) (= (nativeGet item "native_session_id") "s2"))))
+      (manual-agent (await (callOk f "O" "agent.register"
+        (js-object :candidate_ref (nativeGet cand-s2 "candidate_ref")
+          :display_name "manual-s2" :binding_mode "existing" :recipient_principal_id "O" :idempotency_key "reg-manual-s2"))))
+      (preview (await (callOk f "O" "subscription.preview" (js-object :expected_revision 0 :spec
+        (js-object :agent_id (nativeGet manual-agent "agent_id")
+          :rules (js-array (js-object :id "manual" :enabled t
+            :sources (js-array (js-object :connection_id "lark"))
+            :predicate (js-object :field "text" :op "contains" :value "manual-only"))))))))
+      (manual (await (callOk f "O" "subscription.set"
+        (js-object :preview_id (nativeGet preview "preview_id") :expected_revision 0 :idempotency_key "manual-sub"))))
       (routes (JSON/parse (JSON/stringify (nativeGet (nativeGet f "config") "fixed_routes")))))
       (js-call (expect (nativeGet sub "configuration_id")) :toBe "bot-a")
-      (let* ((agent (await (callOk f "O" "agent.get" (js-object :agent_id (nativeGet a "agent_id")))))
+      ;; AI caller cannot overwrite the admin-owned fixed_route subscription slot.
+      (let ((denied-overwrite (await (js-call f :call (nativeGet f "A") "subscription.preview"
+        (js-object :expected_revision (nativeGet sub "revision")
+          :spec (js-object :agent_id agent-id
+            :rules (js-array (js-object :id "hijack" :enabled t :predicate (defaultPred) :sources (js-array (js-object :connection_id "lark"))))))))))
+        (js-call (expect (nativeGet (nativeGet denied-overwrite "error") "code")) :toBe "forbidden"))
+      (let* ((agent (await (callOk f "O" "agent.get" (js-object :agent_id agent-id))))
         (discovered (await (callOk f "O" "agent.discover" (js-object :tool "opencode" :scope "live"))))
         (candidate (js-call (nativeGet discovered "items") :find (lambda (item) (= (nativeGet item "native_session_id") "s1")))))
         (js-call (expect (nativeGet (nativeGet (await (js-call f :call (nativeGet f "O") "agent.rebind"
@@ -102,13 +129,16 @@
             :idempotency_key "fixed-cannot-unregister"))) "error") "code")) :toBe "forbidden")
         (js-call (expect (nativeGet (await (callOk f "O" "agent.get" (js-object :agent_id (nativeGet agent "agent_id")))) "revision")) :toBe (nativeGet agent "revision")))
       (await (reload f routes)) (await (turns f))
-      (js-call (expect (nativeGet (await (callOk f "O" "subscription.get" (js-object :subscription_id id))) "start_seq")) :toBe (nativeGet sub "start_seq"))
+      (js-call (expect (nativeGet (await (callOk f "O" "subscription.get" (js-object :agent_id agent-id))) "start_seq")) :toBe (nativeGet sub "start_seq"))
       (let ((denied (await (js-call f :call (nativeGet f "O") "subscription.pause"
-        (js-object :subscription_id id :expected_revision (nativeGet sub "revision") :idempotency_key "cannot-pause-fixed")))))
+        (js-object :agent_id agent-id :expected_revision (nativeGet sub "revision") :idempotency_key "cannot-pause-fixed")))))
         (js-call (expect (nativeGet (nativeGet denied "error") "code")) :toBe "forbidden"))
-      (put (aref routes 0) :predicate (js-object :field "text" :op "contains" :value "new-rule"))
-      (put (aref routes 0) :instruction_policy (js-object :prompt "Configured guidance" :task_template "处理 {{message.text}}"))
-      (put (aref routes 0) :sources (js-array (js-object :connection_id "lark" :native_chat_id "c1")))
+      (put (aref routes 0) :rules
+        (js-array
+          (js-object :id "default" :enabled t
+            :sources (js-array (js-object :connection_id "lark" :native_chat_id "c1"))
+            :predicate (js-object :field "text" :op "contains" :value "new-rule")
+            :instruction_policy (js-object :prompt "Configured guidance" :task_template "处理 {{message.text}}"))))
       (await (reload f routes)) (await (turns f))
       (await (message f "lark" "no-match")) (await (message f "lark" "matches" "new-rule" "thread-one"))
       (await (message f "lark" "other-chat" "new-rule" nil "other-chat")) (await (turns f))
@@ -126,11 +156,11 @@
       (js-call (expect (countInputs f "opencode")) :toBe 2)
       (await (reload f (js-array (aref routes 1)))) (await (turns f))
       (js-call (expect (js-length (await (status f)))) :toBe 1)
-      (js-call (expect (nativeGet (await (callOk f "A" "subscription.get" (js-object :subscription_id (nativeGet manual "subscription_id")))) "state")) :toBe "active")
-      (js-call (expect (nativeGet (await (callOk f "O" "subscription.get" (js-object :subscription_id id))) "state")) :toBe "paused")
-      (let ((stable (query f "SELECT subscription_id,revision,payload FROM subscriptions ORDER BY subscription_id")))
+      (js-call (expect (nativeGet (await (callOk f "O" "subscription.get" (js-object :agent_id (nativeGet manual "agent_id")))) "state")) :toBe "active")
+      (js-call (expect (nativeGet (await (callOk f "O" "subscription.get" (js-object :agent_id agent-id))) "state")) :toBe "paused")
+      (let ((stable (query f "SELECT target_key,revision,payload FROM subscriptions ORDER BY target_key")))
         (await (js-call f :restart)) (await (turns f))
-        (js-call (expect (query f "SELECT subscription_id,revision,payload FROM subscriptions ORDER BY subscription_id")) :toEqual stable)))) closeFixture)
+        (js-call (expect (query f "SELECT target_key,revision,payload FROM subscriptions ORDER BY target_key")) :toEqual stable)))) closeFixture)
   (defasync offlineSetup ()
     (await (setup (lambda (config ports)
       (let* ((peer (js-call (nativeGet ports "agent_ports") :get "opencode")) (probe (nativeGet peer "probe")))
@@ -159,7 +189,7 @@
       (await (reload f (js-array)))
       (put peer :probe original) (funcall release nil) (await (turns f))
       (js-call (expect (js-length (await (status f)))) :toBe 0)
-      (js-call (expect (js-length (query f "SELECT subscription_id FROM subscriptions WHERE state='active'"))) :toBe 0)
+      (js-call (expect (js-length (query f "SELECT target_key FROM subscriptions WHERE state='active'"))) :toBe 0)
       (js-call (expect (js-length (nativeGet peer "inputs"))) :toBe 0))) closeFixture)
   (withCase "T38.fixed-routes-conflict.integration" raceSetup (async (f)
     (let* ((discovered (await (callOk f "A" "agent.discover" (js-object :tool "opencode" :scope "live"))))
@@ -172,7 +202,26 @@
       (js-call (expect (nativeGet (aref (await (status f)) 0) "state")) :toBe "blocked")
       (js-call (expect (nativeGet (aref (await (status f)) 0) "last_error")) :toBe "target_unbound")
       (js-call (expect (nativeGet (await (callOk f "A" "agent.get" (js-object :agent_id id))) "state")) :toBe "registered")
-      (js-call (expect (js-length (query f "SELECT subscription_id FROM subscriptions"))) :toBe 0)
+      (js-call (expect (js-length (query f "SELECT target_key FROM subscriptions"))) :toBe 0)
+      ;; Even when an agent is operator-registered, fixed_routes refuses to overwrite an existing non-configured subscription slot.
+      (let* ((all-live (await (callOk f "O" "agent.discover" (js-object :tool "pi" :scope "live"))))
+        (cand-pi (js-call (nativeGet all-live "items") :find (lambda (item) (= (nativeGet item "native_session_id") "s1"))))
+        (op-pi (await (callOk f "O" "agent.register"
+          (js-object :candidate_ref (nativeGet cand-pi "candidate_ref")
+            :binding_mode "existing" :display_name "same" :recipient_principal_id "B" :idempotency_key "op-pi"))))
+        (prev-pi (await (callOk f "O" "subscription.preview"
+          (js-object :expected_revision 0 :spec (js-object :agent_id (nativeGet op-pi "agent_id")
+            :rules (js-array (js-object :id "manual-pi" :enabled t :predicate (defaultPred) :sources (js-array (js-object :connection_id "lark-b")))))))))
+        (sub-pi (await (callOk f "O" "subscription.set"
+          (js-object :preview_id (nativeGet prev-pi "preview_id") :expected_revision 0 :idempotency_key "set-manual-pi")))))
+        (await (reload f (js-array (route "conflict-sub" "B" "pi-existing" "s1" "lark-b"))))
+        (await (turns f))
+        (js-call (expect (nativeGet (aref (await (status f)) 0) "state")) :toBe "blocked")
+        (js-call (expect (nativeGet (aref (await (status f)) 0) "last_error")) :toBe "forbidden")
+        (js-call (expect (nativeGet (await (callOk f "O" "subscription.get" (js-object :agent_id (nativeGet op-pi "agent_id")))) "revision"))
+          :toBe (nativeGet sub-pi "revision"))
+        (await (callOk f "O" "subscription.delete"
+          (js-object :agent_id (nativeGet op-pi "agent_id") :expected_revision (nativeGet sub-pi "revision") :idempotency_key "del-manual-pi"))))
       ;; Lack of management permission blocks only this fixed route, and restoring
       ;; the configured authority retries through the same domain operations.
       (let* ((config (JSON/parse (JSON/stringify (nativeGet f "config"))))

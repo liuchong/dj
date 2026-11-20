@@ -763,7 +763,7 @@
         "A19"
       ],
       "given": "F10；integration/interfaces",
-      "when": "合法协议壳内给错字段/类型/互斥/超限，参数化61操作",
+      "when": "合法协议壳内给错字段/类型/互斥/超限，参数化60操作",
       "then": "共享业务 code/field_errors/effect_state=none，无受理/外部写；A03/A04/A19"
     },
     {
@@ -1425,7 +1425,7 @@
         "A19"
       ],
       "given": "F10；integration/interfaces",
-      "when": "同主体对61操作分别走API/CLI/MCP；合法壳内业务错参/超时",
+      "when": "同主体对60操作分别走API/CLI/MCP；合法壳内业务错参/超时",
       "then": "schema/错误/权限/幂等相同；protocol壳错误独立，不能提前丢业务envelope；A19"
     },
     {
@@ -5933,7 +5933,7 @@
       "then": "same authority, operation schema, error/effect envelope and idempotent resource"
     },
     {
-      "case_id": "T26.subscription.create.unknown-field.integration",
+      "case_id": "T26.subscription.set.unknown-field.integration",
       "parent_id": "T26",
       "file": "tests/integration/interfaces.test.eli",
       "suite": "integration",
@@ -5941,7 +5941,7 @@
       "e2e": false,
       "applicability": "required-rejection",
       "parameters": {
-        "operation": "subscription.create",
+        "operation": "subscription.set",
         "kind": "unknown-field"
       },
       "required_profile": null,
@@ -5960,7 +5960,7 @@
       "then": "invalid_argument/effect_state none, no business record or native I/O"
     },
     {
-      "case_id": "T26.subscription.create.root-null.integration",
+      "case_id": "T26.subscription.set.root-null.integration",
       "parent_id": "T26",
       "file": "tests/integration/interfaces.test.eli",
       "suite": "integration",
@@ -5968,7 +5968,7 @@
       "e2e": false,
       "applicability": "required-rejection",
       "parameters": {
-        "operation": "subscription.create",
+        "operation": "subscription.set",
         "kind": "root-type",
         "value": null
       },
@@ -5988,7 +5988,7 @@
       "then": "invalid_argument/effect_state none, no business record or native I/O"
     },
     {
-      "case_id": "T26.subscription.create.root-array.integration",
+      "case_id": "T26.subscription.set.root-array.integration",
       "parent_id": "T26",
       "file": "tests/integration/interfaces.test.eli",
       "suite": "integration",
@@ -5996,7 +5996,7 @@
       "e2e": false,
       "applicability": "required-rejection",
       "parameters": {
-        "operation": "subscription.create",
+        "operation": "subscription.set",
         "kind": "root-type",
         "value": []
       },
@@ -6016,7 +6016,7 @@
       "then": "invalid_argument/effect_state none, no business record or native I/O"
     },
     {
-      "case_id": "T26.subscription.create.root-string.integration",
+      "case_id": "T26.subscription.set.root-string.integration",
       "parent_id": "T26",
       "file": "tests/integration/interfaces.test.eli",
       "suite": "integration",
@@ -6024,7 +6024,7 @@
       "e2e": false,
       "applicability": "required-rejection",
       "parameters": {
-        "operation": "subscription.create",
+        "operation": "subscription.set",
         "kind": "root-type",
         "value": "invalid"
       },
@@ -6044,7 +6044,7 @@
       "then": "invalid_argument/effect_state none, no business record or native I/O"
     },
     {
-      "case_id": "T26.subscription.create.missing-preview_id.integration",
+      "case_id": "T26.subscription.set.missing-preview_id.integration",
       "parent_id": "T26",
       "file": "tests/integration/interfaces.test.eli",
       "suite": "integration",
@@ -6052,7 +6052,7 @@
       "e2e": false,
       "applicability": "required-rejection",
       "parameters": {
-        "operation": "subscription.create",
+        "operation": "subscription.set",
         "kind": "missing-field",
         "field": "preview_id"
       },
@@ -6072,7 +6072,7 @@
       "then": "invalid_argument/effect_state none, no business record or native I/O"
     },
     {
-      "case_id": "T26.subscription.create.missing-idempotency_key.integration",
+      "case_id": "T26.subscription.set.missing-expected_revision.integration",
       "parent_id": "T26",
       "file": "tests/integration/interfaces.test.eli",
       "suite": "integration",
@@ -6080,7 +6080,35 @@
       "e2e": false,
       "applicability": "required-rejection",
       "parameters": {
-        "operation": "subscription.create",
+        "operation": "subscription.set",
+        "kind": "missing-field",
+        "field": "expected_revision"
+      },
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-integration",
+      "requirements": [
+        "Q11",
+        "Q18"
+      ],
+      "acceptance_ids": [
+        "A03",
+        "A19"
+      ],
+      "given": "known operation and authorized principal",
+      "when": "invalid arguments via authoritative service",
+      "then": "invalid_argument/effect_state none, no business record or native I/O"
+    },
+    {
+      "case_id": "T26.subscription.set.missing-idempotency_key.integration",
+      "parent_id": "T26",
+      "file": "tests/integration/interfaces.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "required-rejection",
+      "parameters": {
+        "operation": "subscription.set",
         "kind": "missing-field",
         "field": "idempotency_key"
       },
@@ -6100,7 +6128,7 @@
       "then": "invalid_argument/effect_state none, no business record or native I/O"
     },
     {
-      "case_id": "T55.subscription.create.api.integration",
+      "case_id": "T55.subscription.set.api.integration",
       "parent_id": "T55",
       "file": "tests/integration/interfaces.test.eli",
       "suite": "integration",
@@ -6108,7 +6136,7 @@
       "e2e": false,
       "applicability": "enabled-positive",
       "parameters": {
-        "operation": "subscription.create",
+        "operation": "subscription.set",
         "entry": "api"
       },
       "required_profile": null,
@@ -6125,7 +6153,7 @@
       "then": "same authority, operation schema, error/effect envelope and idempotent resource"
     },
     {
-      "case_id": "T55.subscription.create.cli.integration",
+      "case_id": "T55.subscription.set.cli.integration",
       "parent_id": "T55",
       "file": "tests/integration/interfaces.test.eli",
       "suite": "integration",
@@ -6133,7 +6161,7 @@
       "e2e": false,
       "applicability": "enabled-positive",
       "parameters": {
-        "operation": "subscription.create",
+        "operation": "subscription.set",
         "entry": "cli"
       },
       "required_profile": null,
@@ -6150,7 +6178,7 @@
       "then": "same authority, operation schema, error/effect envelope and idempotent resource"
     },
     {
-      "case_id": "T55.subscription.create.mcp.integration",
+      "case_id": "T55.subscription.set.mcp.integration",
       "parent_id": "T55",
       "file": "tests/integration/interfaces.test.eli",
       "suite": "integration",
@@ -6158,7 +6186,7 @@
       "e2e": false,
       "applicability": "enabled-positive",
       "parameters": {
-        "operation": "subscription.create",
+        "operation": "subscription.set",
         "entry": "mcp"
       },
       "required_profile": null,
@@ -6472,7 +6500,7 @@
       "then": "invalid_argument/effect_state none, no business record or native I/O"
     },
     {
-      "case_id": "T26.subscription.get.missing-subscription_id.integration",
+      "case_id": "T26.subscription.get.missing-agent_id.integration",
       "parent_id": "T26",
       "file": "tests/integration/interfaces.test.eli",
       "suite": "integration",
@@ -6482,7 +6510,89 @@
       "parameters": {
         "operation": "subscription.get",
         "kind": "missing-field",
-        "field": "subscription_id"
+        "field": "agent_id"
+      },
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-integration",
+      "requirements": [
+        "Q11",
+        "Q18"
+      ],
+      "acceptance_ids": [
+        "A03",
+        "A19"
+      ],
+      "given": "known operation and authorized principal",
+      "when": "invalid arguments via authoritative service",
+      "then": "invalid_argument/effect_state none, no business record or native I/O"
+    },
+    {
+      "case_id": "T26.subscription.get.missing-group_id.integration",
+      "parent_id": "T26",
+      "file": "tests/integration/interfaces.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "required-rejection",
+      "parameters": {
+        "operation": "subscription.get",
+        "kind": "missing-field",
+        "field": "group_id"
+      },
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-integration",
+      "requirements": [
+        "Q11",
+        "Q18"
+      ],
+      "acceptance_ids": [
+        "A03",
+        "A19"
+      ],
+      "given": "known operation and authorized principal",
+      "when": "invalid arguments via authoritative service",
+      "then": "invalid_argument/effect_state none, no business record or native I/O"
+    },
+    {
+      "case_id": "T26.subscription.get.xor-none.integration",
+      "parent_id": "T26",
+      "file": "tests/integration/interfaces.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "required-rejection",
+      "parameters": {
+        "operation": "subscription.get",
+        "kind": "xor-none"
+      },
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-integration",
+      "requirements": [
+        "Q11",
+        "Q18"
+      ],
+      "acceptance_ids": [
+        "A03",
+        "A19"
+      ],
+      "given": "known operation and authorized principal",
+      "when": "invalid arguments via authoritative service",
+      "then": "invalid_argument/effect_state none, no business record or native I/O"
+    },
+    {
+      "case_id": "T26.subscription.get.xor-both.integration",
+      "parent_id": "T26",
+      "file": "tests/integration/interfaces.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "required-rejection",
+      "parameters": {
+        "operation": "subscription.get",
+        "kind": "xor-both"
       },
       "required_profile": null,
       "timeout_ms": 15000,
@@ -6559,304 +6669,6 @@
       "applicability": "enabled-positive",
       "parameters": {
         "operation": "subscription.get",
-        "entry": "mcp"
-      },
-      "required_profile": null,
-      "timeout_ms": 15000,
-      "resource_group": "isolated-integration",
-      "requirements": [
-        "Q18"
-      ],
-      "acceptance_ids": [
-        "A19"
-      ],
-      "given": "same principal, operation and normalized arguments",
-      "when": "execute via mcp",
-      "then": "same authority, operation schema, error/effect envelope and idempotent resource"
-    },
-    {
-      "case_id": "T26.subscription.update.unknown-field.integration",
-      "parent_id": "T26",
-      "file": "tests/integration/interfaces.test.eli",
-      "suite": "integration",
-      "level": "integration",
-      "e2e": false,
-      "applicability": "required-rejection",
-      "parameters": {
-        "operation": "subscription.update",
-        "kind": "unknown-field"
-      },
-      "required_profile": null,
-      "timeout_ms": 15000,
-      "resource_group": "isolated-integration",
-      "requirements": [
-        "Q11",
-        "Q18"
-      ],
-      "acceptance_ids": [
-        "A03",
-        "A19"
-      ],
-      "given": "known operation and authorized principal",
-      "when": "invalid arguments via authoritative service",
-      "then": "invalid_argument/effect_state none, no business record or native I/O"
-    },
-    {
-      "case_id": "T26.subscription.update.root-null.integration",
-      "parent_id": "T26",
-      "file": "tests/integration/interfaces.test.eli",
-      "suite": "integration",
-      "level": "integration",
-      "e2e": false,
-      "applicability": "required-rejection",
-      "parameters": {
-        "operation": "subscription.update",
-        "kind": "root-type",
-        "value": null
-      },
-      "required_profile": null,
-      "timeout_ms": 15000,
-      "resource_group": "isolated-integration",
-      "requirements": [
-        "Q11",
-        "Q18"
-      ],
-      "acceptance_ids": [
-        "A03",
-        "A19"
-      ],
-      "given": "known operation and authorized principal",
-      "when": "invalid arguments via authoritative service",
-      "then": "invalid_argument/effect_state none, no business record or native I/O"
-    },
-    {
-      "case_id": "T26.subscription.update.root-array.integration",
-      "parent_id": "T26",
-      "file": "tests/integration/interfaces.test.eli",
-      "suite": "integration",
-      "level": "integration",
-      "e2e": false,
-      "applicability": "required-rejection",
-      "parameters": {
-        "operation": "subscription.update",
-        "kind": "root-type",
-        "value": []
-      },
-      "required_profile": null,
-      "timeout_ms": 15000,
-      "resource_group": "isolated-integration",
-      "requirements": [
-        "Q11",
-        "Q18"
-      ],
-      "acceptance_ids": [
-        "A03",
-        "A19"
-      ],
-      "given": "known operation and authorized principal",
-      "when": "invalid arguments via authoritative service",
-      "then": "invalid_argument/effect_state none, no business record or native I/O"
-    },
-    {
-      "case_id": "T26.subscription.update.root-string.integration",
-      "parent_id": "T26",
-      "file": "tests/integration/interfaces.test.eli",
-      "suite": "integration",
-      "level": "integration",
-      "e2e": false,
-      "applicability": "required-rejection",
-      "parameters": {
-        "operation": "subscription.update",
-        "kind": "root-type",
-        "value": "invalid"
-      },
-      "required_profile": null,
-      "timeout_ms": 15000,
-      "resource_group": "isolated-integration",
-      "requirements": [
-        "Q11",
-        "Q18"
-      ],
-      "acceptance_ids": [
-        "A03",
-        "A19"
-      ],
-      "given": "known operation and authorized principal",
-      "when": "invalid arguments via authoritative service",
-      "then": "invalid_argument/effect_state none, no business record or native I/O"
-    },
-    {
-      "case_id": "T26.subscription.update.missing-subscription_id.integration",
-      "parent_id": "T26",
-      "file": "tests/integration/interfaces.test.eli",
-      "suite": "integration",
-      "level": "integration",
-      "e2e": false,
-      "applicability": "required-rejection",
-      "parameters": {
-        "operation": "subscription.update",
-        "kind": "missing-field",
-        "field": "subscription_id"
-      },
-      "required_profile": null,
-      "timeout_ms": 15000,
-      "resource_group": "isolated-integration",
-      "requirements": [
-        "Q11",
-        "Q18"
-      ],
-      "acceptance_ids": [
-        "A03",
-        "A19"
-      ],
-      "given": "known operation and authorized principal",
-      "when": "invalid arguments via authoritative service",
-      "then": "invalid_argument/effect_state none, no business record or native I/O"
-    },
-    {
-      "case_id": "T26.subscription.update.missing-preview_id.integration",
-      "parent_id": "T26",
-      "file": "tests/integration/interfaces.test.eli",
-      "suite": "integration",
-      "level": "integration",
-      "e2e": false,
-      "applicability": "required-rejection",
-      "parameters": {
-        "operation": "subscription.update",
-        "kind": "missing-field",
-        "field": "preview_id"
-      },
-      "required_profile": null,
-      "timeout_ms": 15000,
-      "resource_group": "isolated-integration",
-      "requirements": [
-        "Q11",
-        "Q18"
-      ],
-      "acceptance_ids": [
-        "A03",
-        "A19"
-      ],
-      "given": "known operation and authorized principal",
-      "when": "invalid arguments via authoritative service",
-      "then": "invalid_argument/effect_state none, no business record or native I/O"
-    },
-    {
-      "case_id": "T26.subscription.update.missing-idempotency_key.integration",
-      "parent_id": "T26",
-      "file": "tests/integration/interfaces.test.eli",
-      "suite": "integration",
-      "level": "integration",
-      "e2e": false,
-      "applicability": "required-rejection",
-      "parameters": {
-        "operation": "subscription.update",
-        "kind": "missing-field",
-        "field": "idempotency_key"
-      },
-      "required_profile": null,
-      "timeout_ms": 15000,
-      "resource_group": "isolated-integration",
-      "requirements": [
-        "Q11",
-        "Q18"
-      ],
-      "acceptance_ids": [
-        "A03",
-        "A19"
-      ],
-      "given": "known operation and authorized principal",
-      "when": "invalid arguments via authoritative service",
-      "then": "invalid_argument/effect_state none, no business record or native I/O"
-    },
-    {
-      "case_id": "T26.subscription.update.missing-expected_revision.integration",
-      "parent_id": "T26",
-      "file": "tests/integration/interfaces.test.eli",
-      "suite": "integration",
-      "level": "integration",
-      "e2e": false,
-      "applicability": "required-rejection",
-      "parameters": {
-        "operation": "subscription.update",
-        "kind": "missing-field",
-        "field": "expected_revision"
-      },
-      "required_profile": null,
-      "timeout_ms": 15000,
-      "resource_group": "isolated-integration",
-      "requirements": [
-        "Q11",
-        "Q18"
-      ],
-      "acceptance_ids": [
-        "A03",
-        "A19"
-      ],
-      "given": "known operation and authorized principal",
-      "when": "invalid arguments via authoritative service",
-      "then": "invalid_argument/effect_state none, no business record or native I/O"
-    },
-    {
-      "case_id": "T55.subscription.update.api.integration",
-      "parent_id": "T55",
-      "file": "tests/integration/interfaces.test.eli",
-      "suite": "integration",
-      "level": "integration",
-      "e2e": false,
-      "applicability": "enabled-positive",
-      "parameters": {
-        "operation": "subscription.update",
-        "entry": "api"
-      },
-      "required_profile": null,
-      "timeout_ms": 15000,
-      "resource_group": "isolated-integration",
-      "requirements": [
-        "Q18"
-      ],
-      "acceptance_ids": [
-        "A19"
-      ],
-      "given": "same principal, operation and normalized arguments",
-      "when": "execute via api",
-      "then": "same authority, operation schema, error/effect envelope and idempotent resource"
-    },
-    {
-      "case_id": "T55.subscription.update.cli.integration",
-      "parent_id": "T55",
-      "file": "tests/integration/interfaces.test.eli",
-      "suite": "integration",
-      "level": "integration",
-      "e2e": false,
-      "applicability": "enabled-positive",
-      "parameters": {
-        "operation": "subscription.update",
-        "entry": "cli"
-      },
-      "required_profile": null,
-      "timeout_ms": 15000,
-      "resource_group": "isolated-integration",
-      "requirements": [
-        "Q18"
-      ],
-      "acceptance_ids": [
-        "A19"
-      ],
-      "given": "same principal, operation and normalized arguments",
-      "when": "execute via cli",
-      "then": "same authority, operation schema, error/effect envelope and idempotent resource"
-    },
-    {
-      "case_id": "T55.subscription.update.mcp.integration",
-      "parent_id": "T55",
-      "file": "tests/integration/interfaces.test.eli",
-      "suite": "integration",
-      "level": "integration",
-      "e2e": false,
-      "applicability": "enabled-positive",
-      "parameters": {
-        "operation": "subscription.update",
         "entry": "mcp"
       },
       "required_profile": null,
@@ -6984,7 +6796,7 @@
       "then": "invalid_argument/effect_state none, no business record or native I/O"
     },
     {
-      "case_id": "T26.subscription.pause.missing-subscription_id.integration",
+      "case_id": "T26.subscription.pause.missing-agent_id.integration",
       "parent_id": "T26",
       "file": "tests/integration/interfaces.test.eli",
       "suite": "integration",
@@ -6994,7 +6806,89 @@
       "parameters": {
         "operation": "subscription.pause",
         "kind": "missing-field",
-        "field": "subscription_id"
+        "field": "agent_id"
+      },
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-integration",
+      "requirements": [
+        "Q11",
+        "Q18"
+      ],
+      "acceptance_ids": [
+        "A03",
+        "A19"
+      ],
+      "given": "known operation and authorized principal",
+      "when": "invalid arguments via authoritative service",
+      "then": "invalid_argument/effect_state none, no business record or native I/O"
+    },
+    {
+      "case_id": "T26.subscription.pause.missing-group_id.integration",
+      "parent_id": "T26",
+      "file": "tests/integration/interfaces.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "required-rejection",
+      "parameters": {
+        "operation": "subscription.pause",
+        "kind": "missing-field",
+        "field": "group_id"
+      },
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-integration",
+      "requirements": [
+        "Q11",
+        "Q18"
+      ],
+      "acceptance_ids": [
+        "A03",
+        "A19"
+      ],
+      "given": "known operation and authorized principal",
+      "when": "invalid arguments via authoritative service",
+      "then": "invalid_argument/effect_state none, no business record or native I/O"
+    },
+    {
+      "case_id": "T26.subscription.pause.xor-none.integration",
+      "parent_id": "T26",
+      "file": "tests/integration/interfaces.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "required-rejection",
+      "parameters": {
+        "operation": "subscription.pause",
+        "kind": "xor-none"
+      },
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-integration",
+      "requirements": [
+        "Q11",
+        "Q18"
+      ],
+      "acceptance_ids": [
+        "A03",
+        "A19"
+      ],
+      "given": "known operation and authorized principal",
+      "when": "invalid arguments via authoritative service",
+      "then": "invalid_argument/effect_state none, no business record or native I/O"
+    },
+    {
+      "case_id": "T26.subscription.pause.xor-both.integration",
+      "parent_id": "T26",
+      "file": "tests/integration/interfaces.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "required-rejection",
+      "parameters": {
+        "operation": "subscription.pause",
+        "kind": "xor-both"
       },
       "required_profile": null,
       "timeout_ms": 15000,
@@ -7254,7 +7148,7 @@
       "then": "invalid_argument/effect_state none, no business record or native I/O"
     },
     {
-      "case_id": "T26.subscription.resume.missing-subscription_id.integration",
+      "case_id": "T26.subscription.resume.missing-agent_id.integration",
       "parent_id": "T26",
       "file": "tests/integration/interfaces.test.eli",
       "suite": "integration",
@@ -7264,7 +7158,89 @@
       "parameters": {
         "operation": "subscription.resume",
         "kind": "missing-field",
-        "field": "subscription_id"
+        "field": "agent_id"
+      },
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-integration",
+      "requirements": [
+        "Q11",
+        "Q18"
+      ],
+      "acceptance_ids": [
+        "A03",
+        "A19"
+      ],
+      "given": "known operation and authorized principal",
+      "when": "invalid arguments via authoritative service",
+      "then": "invalid_argument/effect_state none, no business record or native I/O"
+    },
+    {
+      "case_id": "T26.subscription.resume.missing-group_id.integration",
+      "parent_id": "T26",
+      "file": "tests/integration/interfaces.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "required-rejection",
+      "parameters": {
+        "operation": "subscription.resume",
+        "kind": "missing-field",
+        "field": "group_id"
+      },
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-integration",
+      "requirements": [
+        "Q11",
+        "Q18"
+      ],
+      "acceptance_ids": [
+        "A03",
+        "A19"
+      ],
+      "given": "known operation and authorized principal",
+      "when": "invalid arguments via authoritative service",
+      "then": "invalid_argument/effect_state none, no business record or native I/O"
+    },
+    {
+      "case_id": "T26.subscription.resume.xor-none.integration",
+      "parent_id": "T26",
+      "file": "tests/integration/interfaces.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "required-rejection",
+      "parameters": {
+        "operation": "subscription.resume",
+        "kind": "xor-none"
+      },
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-integration",
+      "requirements": [
+        "Q11",
+        "Q18"
+      ],
+      "acceptance_ids": [
+        "A03",
+        "A19"
+      ],
+      "given": "known operation and authorized principal",
+      "when": "invalid arguments via authoritative service",
+      "then": "invalid_argument/effect_state none, no business record or native I/O"
+    },
+    {
+      "case_id": "T26.subscription.resume.xor-both.integration",
+      "parent_id": "T26",
+      "file": "tests/integration/interfaces.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "required-rejection",
+      "parameters": {
+        "operation": "subscription.resume",
+        "kind": "xor-both"
       },
       "required_profile": null,
       "timeout_ms": 15000,
@@ -7524,7 +7500,7 @@
       "then": "invalid_argument/effect_state none, no business record or native I/O"
     },
     {
-      "case_id": "T26.subscription.delete.missing-subscription_id.integration",
+      "case_id": "T26.subscription.delete.missing-agent_id.integration",
       "parent_id": "T26",
       "file": "tests/integration/interfaces.test.eli",
       "suite": "integration",
@@ -7534,7 +7510,89 @@
       "parameters": {
         "operation": "subscription.delete",
         "kind": "missing-field",
-        "field": "subscription_id"
+        "field": "agent_id"
+      },
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-integration",
+      "requirements": [
+        "Q11",
+        "Q18"
+      ],
+      "acceptance_ids": [
+        "A03",
+        "A19"
+      ],
+      "given": "known operation and authorized principal",
+      "when": "invalid arguments via authoritative service",
+      "then": "invalid_argument/effect_state none, no business record or native I/O"
+    },
+    {
+      "case_id": "T26.subscription.delete.missing-group_id.integration",
+      "parent_id": "T26",
+      "file": "tests/integration/interfaces.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "required-rejection",
+      "parameters": {
+        "operation": "subscription.delete",
+        "kind": "missing-field",
+        "field": "group_id"
+      },
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-integration",
+      "requirements": [
+        "Q11",
+        "Q18"
+      ],
+      "acceptance_ids": [
+        "A03",
+        "A19"
+      ],
+      "given": "known operation and authorized principal",
+      "when": "invalid arguments via authoritative service",
+      "then": "invalid_argument/effect_state none, no business record or native I/O"
+    },
+    {
+      "case_id": "T26.subscription.delete.xor-none.integration",
+      "parent_id": "T26",
+      "file": "tests/integration/interfaces.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "required-rejection",
+      "parameters": {
+        "operation": "subscription.delete",
+        "kind": "xor-none"
+      },
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-integration",
+      "requirements": [
+        "Q11",
+        "Q18"
+      ],
+      "acceptance_ids": [
+        "A03",
+        "A19"
+      ],
+      "given": "known operation and authorized principal",
+      "when": "invalid arguments via authoritative service",
+      "then": "invalid_argument/effect_state none, no business record or native I/O"
+    },
+    {
+      "case_id": "T26.subscription.delete.xor-both.integration",
+      "parent_id": "T26",
+      "file": "tests/integration/interfaces.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "required-rejection",
+      "parameters": {
+        "operation": "subscription.delete",
+        "kind": "xor-both"
       },
       "required_profile": null,
       "timeout_ms": 15000,
@@ -18995,7 +19053,7 @@
       "then": "invalid_argument/effect_state none and no native I/O"
     },
     {
-      "case_id": "T26.subscription.create.wrong-type-preview_id.integration",
+      "case_id": "T26.subscription.preview.wrong-type-expected_revision.integration",
       "parent_id": "T26",
       "file": "tests/integration/interfaces.test.eli",
       "suite": "integration",
@@ -19003,181 +19061,7 @@
       "e2e": false,
       "applicability": "required-rejection",
       "parameters": {
-        "operation": "subscription.create",
-        "kind": "wrong-field-type",
-        "field": "preview_id",
-        "value": 123
-      },
-      "required_profile": null,
-      "timeout_ms": 15000,
-      "resource_group": "isolated-integration",
-      "requirements": [
-        "Q11",
-        "Q18"
-      ],
-      "acceptance_ids": [
-        "A03",
-        "A19"
-      ],
-      "given": "structurally valid typed baseline from operation-vectors",
-      "when": "mutate only the named field",
-      "then": "invalid_argument/effect_state none and no native I/O"
-    },
-    {
-      "case_id": "T26.subscription.create.wrong-type-idempotency_key.integration",
-      "parent_id": "T26",
-      "file": "tests/integration/interfaces.test.eli",
-      "suite": "integration",
-      "level": "integration",
-      "e2e": false,
-      "applicability": "required-rejection",
-      "parameters": {
-        "operation": "subscription.create",
-        "kind": "wrong-field-type",
-        "field": "idempotency_key",
-        "value": 123
-      },
-      "required_profile": null,
-      "timeout_ms": 15000,
-      "resource_group": "isolated-integration",
-      "requirements": [
-        "Q11",
-        "Q18"
-      ],
-      "acceptance_ids": [
-        "A03",
-        "A19"
-      ],
-      "given": "structurally valid typed baseline from operation-vectors",
-      "when": "mutate only the named field",
-      "then": "invalid_argument/effect_state none and no native I/O"
-    },
-    {
-      "case_id": "T26.subscription.get.wrong-type-subscription_id.integration",
-      "parent_id": "T26",
-      "file": "tests/integration/interfaces.test.eli",
-      "suite": "integration",
-      "level": "integration",
-      "e2e": false,
-      "applicability": "required-rejection",
-      "parameters": {
-        "operation": "subscription.get",
-        "kind": "wrong-field-type",
-        "field": "subscription_id",
-        "value": 123
-      },
-      "required_profile": null,
-      "timeout_ms": 15000,
-      "resource_group": "isolated-integration",
-      "requirements": [
-        "Q11",
-        "Q18"
-      ],
-      "acceptance_ids": [
-        "A03",
-        "A19"
-      ],
-      "given": "structurally valid typed baseline from operation-vectors",
-      "when": "mutate only the named field",
-      "then": "invalid_argument/effect_state none and no native I/O"
-    },
-    {
-      "case_id": "T26.subscription.update.wrong-type-preview_id.integration",
-      "parent_id": "T26",
-      "file": "tests/integration/interfaces.test.eli",
-      "suite": "integration",
-      "level": "integration",
-      "e2e": false,
-      "applicability": "required-rejection",
-      "parameters": {
-        "operation": "subscription.update",
-        "kind": "wrong-field-type",
-        "field": "preview_id",
-        "value": 123
-      },
-      "required_profile": null,
-      "timeout_ms": 15000,
-      "resource_group": "isolated-integration",
-      "requirements": [
-        "Q11",
-        "Q18"
-      ],
-      "acceptance_ids": [
-        "A03",
-        "A19"
-      ],
-      "given": "structurally valid typed baseline from operation-vectors",
-      "when": "mutate only the named field",
-      "then": "invalid_argument/effect_state none and no native I/O"
-    },
-    {
-      "case_id": "T26.subscription.update.wrong-type-subscription_id.integration",
-      "parent_id": "T26",
-      "file": "tests/integration/interfaces.test.eli",
-      "suite": "integration",
-      "level": "integration",
-      "e2e": false,
-      "applicability": "required-rejection",
-      "parameters": {
-        "operation": "subscription.update",
-        "kind": "wrong-field-type",
-        "field": "subscription_id",
-        "value": 123
-      },
-      "required_profile": null,
-      "timeout_ms": 15000,
-      "resource_group": "isolated-integration",
-      "requirements": [
-        "Q11",
-        "Q18"
-      ],
-      "acceptance_ids": [
-        "A03",
-        "A19"
-      ],
-      "given": "structurally valid typed baseline from operation-vectors",
-      "when": "mutate only the named field",
-      "then": "invalid_argument/effect_state none and no native I/O"
-    },
-    {
-      "case_id": "T26.subscription.update.wrong-type-idempotency_key.integration",
-      "parent_id": "T26",
-      "file": "tests/integration/interfaces.test.eli",
-      "suite": "integration",
-      "level": "integration",
-      "e2e": false,
-      "applicability": "required-rejection",
-      "parameters": {
-        "operation": "subscription.update",
-        "kind": "wrong-field-type",
-        "field": "idempotency_key",
-        "value": 123
-      },
-      "required_profile": null,
-      "timeout_ms": 15000,
-      "resource_group": "isolated-integration",
-      "requirements": [
-        "Q11",
-        "Q18"
-      ],
-      "acceptance_ids": [
-        "A03",
-        "A19"
-      ],
-      "given": "structurally valid typed baseline from operation-vectors",
-      "when": "mutate only the named field",
-      "then": "invalid_argument/effect_state none and no native I/O"
-    },
-    {
-      "case_id": "T26.subscription.update.wrong-type-expected_revision.integration",
-      "parent_id": "T26",
-      "file": "tests/integration/interfaces.test.eli",
-      "suite": "integration",
-      "level": "integration",
-      "e2e": false,
-      "applicability": "required-rejection",
-      "parameters": {
-        "operation": "subscription.update",
+        "operation": "subscription.preview",
         "kind": "wrong-field-type",
         "field": "expected_revision",
         "value": "not-a-int"
@@ -19198,7 +19082,7 @@
       "then": "invalid_argument/effect_state none and no native I/O"
     },
     {
-      "case_id": "T26.subscription.update.revision-zero.integration",
+      "case_id": "T26.subscription.preview.revision-negative.integration",
       "parent_id": "T26",
       "file": "tests/integration/interfaces.test.eli",
       "suite": "integration",
@@ -19206,10 +19090,10 @@
       "e2e": false,
       "applicability": "required-rejection",
       "parameters": {
-        "operation": "subscription.update",
+        "operation": "subscription.preview",
         "kind": "wrong-field-type",
         "field": "expected_revision",
-        "value": 0
+        "value": -1
       },
       "required_profile": null,
       "timeout_ms": 15000,
@@ -19227,7 +19111,7 @@
       "then": "invalid_argument/effect_state none and no native I/O"
     },
     {
-      "case_id": "T26.subscription.update.revision-unsafe.integration",
+      "case_id": "T26.subscription.set.wrong-type-preview_id.integration",
       "parent_id": "T26",
       "file": "tests/integration/interfaces.test.eli",
       "suite": "integration",
@@ -19235,7 +19119,123 @@
       "e2e": false,
       "applicability": "required-rejection",
       "parameters": {
-        "operation": "subscription.update",
+        "operation": "subscription.set",
+        "kind": "wrong-field-type",
+        "field": "preview_id",
+        "value": 123
+      },
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-integration",
+      "requirements": [
+        "Q11",
+        "Q18"
+      ],
+      "acceptance_ids": [
+        "A03",
+        "A19"
+      ],
+      "given": "structurally valid typed baseline from operation-vectors",
+      "when": "mutate only the named field",
+      "then": "invalid_argument/effect_state none and no native I/O"
+    },
+    {
+      "case_id": "T26.subscription.set.wrong-type-idempotency_key.integration",
+      "parent_id": "T26",
+      "file": "tests/integration/interfaces.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "required-rejection",
+      "parameters": {
+        "operation": "subscription.set",
+        "kind": "wrong-field-type",
+        "field": "idempotency_key",
+        "value": 123
+      },
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-integration",
+      "requirements": [
+        "Q11",
+        "Q18"
+      ],
+      "acceptance_ids": [
+        "A03",
+        "A19"
+      ],
+      "given": "structurally valid typed baseline from operation-vectors",
+      "when": "mutate only the named field",
+      "then": "invalid_argument/effect_state none and no native I/O"
+    },
+    {
+      "case_id": "T26.subscription.set.wrong-type-expected_revision.integration",
+      "parent_id": "T26",
+      "file": "tests/integration/interfaces.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "required-rejection",
+      "parameters": {
+        "operation": "subscription.set",
+        "kind": "wrong-field-type",
+        "field": "expected_revision",
+        "value": "not-a-int"
+      },
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-integration",
+      "requirements": [
+        "Q11",
+        "Q18"
+      ],
+      "acceptance_ids": [
+        "A03",
+        "A19"
+      ],
+      "given": "structurally valid typed baseline from operation-vectors",
+      "when": "mutate only the named field",
+      "then": "invalid_argument/effect_state none and no native I/O"
+    },
+    {
+      "case_id": "T26.subscription.set.revision-negative.integration",
+      "parent_id": "T26",
+      "file": "tests/integration/interfaces.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "required-rejection",
+      "parameters": {
+        "operation": "subscription.set",
+        "kind": "wrong-field-type",
+        "field": "expected_revision",
+        "value": -1
+      },
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-integration",
+      "requirements": [
+        "Q11",
+        "Q18"
+      ],
+      "acceptance_ids": [
+        "A03",
+        "A19"
+      ],
+      "given": "structurally valid typed baseline from operation-vectors",
+      "when": "mutate only the named field",
+      "then": "invalid_argument/effect_state none and no native I/O"
+    },
+    {
+      "case_id": "T26.subscription.set.revision-unsafe.integration",
+      "parent_id": "T26",
+      "file": "tests/integration/interfaces.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "required-rejection",
+      "parameters": {
+        "operation": "subscription.set",
         "kind": "wrong-field-type",
         "field": "expected_revision",
         "value": 9007199254740992
@@ -19256,7 +19256,7 @@
       "then": "invalid_argument/effect_state none and no native I/O"
     },
     {
-      "case_id": "T26.subscription.update.revision-fractional.integration",
+      "case_id": "T26.subscription.set.revision-fractional.integration",
       "parent_id": "T26",
       "file": "tests/integration/interfaces.test.eli",
       "suite": "integration",
@@ -19264,7 +19264,7 @@
       "e2e": false,
       "applicability": "required-rejection",
       "parameters": {
-        "operation": "subscription.update",
+        "operation": "subscription.set",
         "kind": "wrong-field-type",
         "field": "expected_revision",
         "value": 1.5
@@ -19285,7 +19285,36 @@
       "then": "invalid_argument/effect_state none and no native I/O"
     },
     {
-      "case_id": "T26.subscription.pause.wrong-type-subscription_id.integration",
+      "case_id": "T26.subscription.get.wrong-type-agent_id.integration",
+      "parent_id": "T26",
+      "file": "tests/integration/interfaces.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "required-rejection",
+      "parameters": {
+        "operation": "subscription.get",
+        "kind": "wrong-field-type",
+        "field": "agent_id",
+        "value": 123
+      },
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-integration",
+      "requirements": [
+        "Q11",
+        "Q18"
+      ],
+      "acceptance_ids": [
+        "A03",
+        "A19"
+      ],
+      "given": "structurally valid typed baseline from operation-vectors",
+      "when": "mutate only the named field",
+      "then": "invalid_argument/effect_state none and no native I/O"
+    },
+    {
+      "case_id": "T26.subscription.pause.wrong-type-agent_id.integration",
       "parent_id": "T26",
       "file": "tests/integration/interfaces.test.eli",
       "suite": "integration",
@@ -19295,7 +19324,7 @@
       "parameters": {
         "operation": "subscription.pause",
         "kind": "wrong-field-type",
-        "field": "subscription_id",
+        "field": "agent_id",
         "value": 123
       },
       "required_profile": null,
@@ -19459,7 +19488,7 @@
       "then": "invalid_argument/effect_state none and no native I/O"
     },
     {
-      "case_id": "T26.subscription.resume.wrong-type-subscription_id.integration",
+      "case_id": "T26.subscription.resume.wrong-type-agent_id.integration",
       "parent_id": "T26",
       "file": "tests/integration/interfaces.test.eli",
       "suite": "integration",
@@ -19469,7 +19498,7 @@
       "parameters": {
         "operation": "subscription.resume",
         "kind": "wrong-field-type",
-        "field": "subscription_id",
+        "field": "agent_id",
         "value": 123
       },
       "required_profile": null,
@@ -19633,7 +19662,7 @@
       "then": "invalid_argument/effect_state none and no native I/O"
     },
     {
-      "case_id": "T26.subscription.delete.wrong-type-subscription_id.integration",
+      "case_id": "T26.subscription.delete.wrong-type-agent_id.integration",
       "parent_id": "T26",
       "file": "tests/integration/interfaces.test.eli",
       "suite": "integration",
@@ -19643,7 +19672,7 @@
       "parameters": {
         "operation": "subscription.delete",
         "kind": "wrong-field-type",
-        "field": "subscription_id",
+        "field": "agent_id",
         "value": 123
       },
       "required_profile": null,
@@ -24519,7 +24548,7 @@
       ],
       "given": "F01/F02/F03/F04/F08/F10；隔离真实SQLite/UDS/自有测试进程及受控协议对端，无真实账号或模型",
       "when": "tools/list及合法tools/call壳内错业务参数，再未知协议method",
-      "then": "61工具同schema/annotations，业务错误structuredContent+isError，协议错保持-32601"
+      "then": "60工具同schema/annotations，业务错误structuredContent+isError，协议错保持-32601"
     },
     {
       "case_id": "T29.transport-loss.integration.before",
@@ -30317,6 +30346,29 @@
       "given": "Isolated Core with Pi, Claude Desktop, Claude Code inbox and Kimi Web existing-instance receivers",
       "when": "Restart all four receivers with new PIDs, manifests, sockets, ports and Electron windows without reconfiguring Core",
       "then": "Shared local and Electron rediscovery refreshes epochs on probe and pending delivery, rejects stale writes and ambiguous processes fail-closed, and preserves historical bindings"
+    },
+    {
+      "case_id": "T38.single-slot-multi-kind-and-rebind.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/composable-subscriptions.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 20000,
+      "resource_group": "isolated-sqlite",
+      "acceptance_ids": [
+        "A01",
+        "A03"
+      ],
+      "requirements": [
+        "SPEC-0035"
+      ],
+      "given": "Single registered agent slot with multi-branch IM and resource.changed rules",
+      "when": "Exercise expected_revision=0 conflict, rule disable toggle, resource+IM routing, and agent unregister/re-register on same session_key",
+      "then": "Single target_key=session:<session_key> slot persists across rule edits and re-registration without duplicate subscriptions"
     }
   ],
   "source_extension_base": "c1eb7b1"

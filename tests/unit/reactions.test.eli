@@ -5,7 +5,7 @@
   (import "../../src/adapters/im/lark-reaction-cache.eli" createReactionObservationCache)
   (import "../../src/adapters/im/lark-http.eli" createLarkHttpTransport)
   (import "../../src/service/config.eli" validateStructure)
-  (import "../../src/core/rules.eli" validatePredicate evaluatePredicate)
+  (import "../../src/triggers/predicate.eli" validatePredicate evaluatePredicate)
   (import "../../src/dispatch/evidence.eli" selectReplyRoute)
   (import "../../src/connections/echo.eli" reactionEchoState echoState)
   (import "../../src/delivery/envelope.eli" renderEnvelope)

@@ -212,19 +212,13 @@
           boolSchema))))
   (put
     definitions
-    :contribution
+    :matched_summary
     (obj
-      (strings
-        "delivery_id subscription_id expires_at state"
-        (js-object
-          :revision
-          integerSchema
-          :subscription_revision
-          integerSchema
-          :context_policy
-          (ref "context_policy")
-          :delivery_policy
-          (ref "delivery_policy")))))
+      (js-object
+        :target_key stringSchema
+        :subscription_revision integerSchema
+        :rule_ids (arr stringSchema)
+        :state stringSchema)))
   (put
     definitions
     :context_policy
@@ -241,8 +235,23 @@
     (obj (js-object :connection_id stringSchema :conversation_ref stringSchema :include_threads boolSchema)))
   (put
     definitions
-    :selector
-    (obj (js-object :sources (arr (ref "source")) :event_kinds (arr stringSchema))))
+    :subscription_rule
+    (obj
+      (js-object
+        :id stringSchema
+        :enabled boolSchema
+        :sources (arr (ref "source"))
+        :event_kinds (arr stringSchema)
+        :predicate (ref "predicate")
+        :context_policy (ref "context_policy")
+        :instruction_policy instructionPolicySchema)
+      (js-array "id" "enabled" "predicate")))
+  (put
+    definitions
+    :rule_source
+    (obj
+      (js-object :rule_id stringSchema :sources (arr (ref "address")))
+      (js-array "rule_id" "sources")))
   (put
     definitions
     :predicate
@@ -318,10 +327,8 @@
         :subscriber_model (ref "subscriber_model")
         :agent_id
         stringSchema
-        :selector
-        (ref "selector")
-        :predicate
-        (ref "predicate")
+        :rules
+        (arr (ref "subscription_rule"))
         :context_policy
         (ref "context_policy")
         :delivery_policy
@@ -335,7 +342,7 @@
   (put
     definitions
     :sample
-    (obj (strings "event_id result" (js-object :reason_codes (arr stringSchema)))))
+    (obj (strings "event_id result" (js-object :matched_rule_ids (arr stringSchema) :reason_codes (arr stringSchema)))))
   (put
     definitions
     :refresh_budget
@@ -487,7 +494,7 @@
           (arr stringSchema)))))
   (put definitions :fixed_route
     (obj (strings "id state owner_principal_id recipient_principal_id next_attempt_at"
-      (js-object :agent_id nullableString :subscription_id nullableString :last_error nullableString :attempts integerSchema
+      (js-object :agent_id nullableString :target_key nullableString :last_error nullableString :attempts integerSchema
         :target (obj (strings "tool native_namespace native_session_id instance_id group_id" (js-object :workspace_ref nullableString)))))))
   (put definitions :event_receipt
     (obj (strings "event_id event_type state received_at next_attempt_at"
@@ -559,36 +566,28 @@
           :live_receiver
           boolSchema
           :closed
-          boolSchema
-          :revoked_contributions
-          integerSchema
-          :paused_subscriptions
-          integerSchema))))
+          boolSchema))))
   (put
     definitions
     :subscription
     (obj
       (strings
-        "subscription_id configuration_id owner_principal_id agent_id start_seq state"
-        (js-object :subscriber (ref "subscriber") :subscriber_model (ref "subscriber_model")
+        "target_key configuration_id owner_principal_id start_seq state"
+        (js-object
+          :agent_id nullableString
+          :group_id nullableString
+          :subscriber (nullable (ref "subscriber"))
+          :subscriber_model (ref "subscriber_model")
           :cutover_seq nullableString
-          :revision
-          integerSchema
-          :selector
-          (ref "selector")
-          :resolved_sources
-          (arr (ref "address"))
-          :predicate
-          (ref "predicate")
-          :context_policy
-          (ref "context_policy")
-          :delivery_policy
-          (ref "delivery_policy")
-          :instruction_policy
-          instructionPolicySchema
+          :revision integerSchema
+          :rules (arr (ref "subscription_rule"))
+          :resolved_sources (arr (ref "address"))
+          :rule_sources (arr (ref "rule_source"))
+          :context_policy (ref "context_policy")
+          :delivery_policy (ref "delivery_policy")
+          :instruction_policy instructionPolicySchema
           :delivery_mode stringSchema
-          :submitted_count
-          integerSchema))))
+          :submitted_count integerSchema))))
   (put definitions :message_recovery (obj (strings "recovery_id connection_id" (js-object :identity_revision integerSchema
     :event_ids (arr stringSchema) :native_message_ids (arr stringSchema) :created_count integerSchema :recovered_count integerSchema :realtime boolSchema))))
   (put definitions :lark_resource (obj (strings "connection_id kind token node_token space_id title url resource_ref conversation_ref event_type action recipient_id comment_id"
@@ -615,24 +614,27 @@
     :delivery_id nullableString :inbox_id stringSchema :event_id stringSchema
     :source (ref "delivery_source") :sender (ref "sender") :content (ref "content")
     :attachments (arr (ref "attachment")) :reply_context_id nullableString :allowed_actions (arr stringSchema)
-    :matched (arr (obj (js-object :subscription_id stringSchema :subscription_revision integerSchema :result stringSchema)))
+    :matched (ref "matched_summary")
+    :group_dispatch (obj (strings "group_id target_key selected_agent_id"))
+    :dispatch_context (obj (strings "context_id identity_binding_id connection_id identity basis"))
     :subscriber_hints (obj (js-object :basis stringSchema :has_more boolSchema :instruction stringSchema
       :subscribers (arr (obj (Object/assign (js-object) (nativeGet (nativeGet definitions "subscriber") "properties")
         (js-object :agent_id stringSchema :display_name stringSchema))))))
     :recipient (ref "subscriber") :conversation_rules (ref "conversation_rules") :people (arr (ref "mention")) :mentions (arr (ref "mention")) :reaction (ref "reaction") :pin (ref "pin") :trigger_reasons (arr (ref "trigger_reason")) :interaction (ref "interaction") :reply_route (ref "reply_route")
     :resource (ref "lark_resource") :context (ref "message_context") :topic (ref "topic") :ingress_evidence (ref "ingress_evidence")
-    :instructions (arr (obj (js-object :subscription_id stringSchema :subscription_revision integerSchema
+    :instructions (arr (obj (js-object :target_key stringSchema :subscription_revision integerSchema
+      :scope stringSchema :rule_id nullableString
       :prompt stringSchema :task_template stringSchema :task stringSchema))))))
-  (put definitions :inbox (obj (strings "operation_id inbox_id subscription_id event_id state expires_at claim_ref lease_until"
-    (js-object :envelope (ref "inbox_envelope")))))
-  (put definitions :inbox_pull (obj (strings "operation_id state pull_id subscription_id"
+  (put definitions :inbox (obj (strings "operation_id inbox_id target_key event_id state expires_at claim_ref lease_until"
+    (js-object :subscription_revision integerSchema :matched_rule_ids (arr stringSchema) :envelope (ref "inbox_envelope")))))
+  (put definitions :inbox_pull (obj (strings "operation_id state pull_id target_key agent_id"
     (js-object :empty boolSchema :more boolSchema :item (ref "inbox")))))
   (put
     definitions
     :preview
     (obj
       (strings
-        "preview_id expires_at subscription_id spec_hash"
+        "preview_id target_key expires_at spec_hash"
         (js-object
           :expected_revision
           integerSchema
@@ -640,6 +642,8 @@
           (ref "spec")
           :resolved_sources
           (arr (ref "address"))
+          :rule_sources
+          (arr (ref "rule_source"))
           :target
           (ref "agent")
           :warnings
@@ -701,12 +705,20 @@
           :dispatch_context_id nullableString
           :identity_binding_id nullableString
           :notification (obj (strings "notification_key owner_id" (js-object :has_more_sources boolSchema
-            :sources (arr (obj (strings "event_id connection_id" (js-object :delivery_id nullableString :inbox_id nullableString :subscription_ids (arr stringSchema))))))))
+            :sources (arr (obj (strings "event_id connection_id" (js-object :delivery_id nullableString :inbox_id nullableString :target_key nullableString)))))))
           :blocked_reason nullableString :receiver_reason nullableString
           :submitted_at nullableString :accepted_at nullableString
           :operation_id nullableString :principal_id nullableString
           :agent_id
           nullableString
+          :group_id
+          nullableString
+          :target_key
+          nullableString
+          :subscription_revision
+          integerSchema
+          :matched_rule_ids
+          (arr stringSchema)
           :event_id
           nullableString
           :session_key
@@ -719,8 +731,10 @@
           nullableString
           :allowed_actions
           (arr stringSchema)
-          :contributions
-          (arr (ref "contribution"))
+          :matched
+          (ref "matched_summary")
+          :context_policy
+          (ref "context_policy")
           :receipts
           (arr (ref "receipt"))
           :warnings
@@ -984,7 +998,7 @@
           :arguments
           (obj
             (strings
-              "operation_id delivery_id outbound_id lifecycle_id subscription_id agent_id session_key session_ref catalog_run_id"))
+              "operation_id delivery_id outbound_id lifecycle_id target_key group_id agent_id session_key session_ref catalog_run_id"))
           :requires_user_decision
           boolSchema))))
   (put
@@ -1059,9 +1073,12 @@
   (put definitions :subscription_group (obj (strings "group_id owner_principal_id name state"
     (js-object :revision integerSchema :members (arr (obj (strings "agent_id"
       (js-object :priority (js-object :type "integer") :enabled boolSchema))))))))
-  (put definitions :group_dispatch (obj (strings "subscription_id event_id state group_id next_check_at expires_at algorithm"
+  (put definitions :group_dispatch (obj (strings "target_key event_id state group_id next_check_at expires_at algorithm"
     (js-object :revision integerSchema :agent_id nullableString :delivery_id nullableString :inbox_id nullableString
+      :coalesced_into nullableString
       :coalesced_into_event_id nullableString
+      :matched_rule_ids (arr stringSchema)
+      :context_policy (ref "context_policy")
       :selection_scope stringSchema
       :excluded (arr (obj (strings "agent_id reason")))
       :attempted (arr (obj (strings "agent_id" (js-object :scope nullableString :next_try_at stringSchema))))
@@ -1072,16 +1089,12 @@
     (js-object :reset_at nullableString))))
   (js-call (js-array "spec" "subscription") :forEach (lambda (key)
     (let ((properties (nativeGet (nativeGet definitions key) "properties")))
-      (put properties :group_id stringSchema) (put properties :distribution (ref "distribution"))
+      (put properties :group_id nullableString) (put properties :distribution (ref "distribution"))
       (put properties :agent_id nullableString))))
   (put (nativeGet (nativeGet definitions "subscription") "properties") :subscriber (nullable (ref "subscriber")))
   (put (nativeGet (nativeGet definitions "preview") "properties") :target
     (js-object :anyOf (js-array (ref "agent") (ref "subscription_group"))))
   (put (nativeGet (nativeGet definitions "inbox_pull") "properties") :agent_id stringSchema)
-  (js-call (Object/values definitions) :forEach (lambda (definition)
-    (let ((properties (nativeGet definition "properties")))
-      (when (and properties (object-has? properties :matched))
-        (put properties :group_dispatches (arr (obj (strings "group_id subscription_id selected_agent_id"))))))))
   (defun dataSchemaFor
     (operation kind)
     (cond ((= operation "subscription.group.list") (ref "group_page"))

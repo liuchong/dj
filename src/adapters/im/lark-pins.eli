@@ -36,7 +36,7 @@
     (let* ((now (js-call (nativeGet (nativeGet application "ports") "clock") :utcNow))
       (db (nativeGet (nativeGet application "store") "db")) (id (nativeGet config "connection_id"))
       (subscribed (js-call (js-call db :query
-        "SELECT 1 FROM subscription_sources i JOIN subscriptions s ON s.subscription_id=i.subscription_id AND s.revision=i.revision WHERE i.connection_id=? AND i.event_kind='message.pinned' AND s.state='active' LIMIT 1") :get id))
+        "SELECT 1 FROM subscription_sources i JOIN subscriptions s ON s.target_key=i.target_key AND s.revision=i.revision WHERE i.connection_id=? AND i.event_kind='message.pinned' AND s.state='active' LIMIT 1") :get id))
       (chat (nativeGet checkpoint "chat_id")) (events (js-array))
       (pending (if subscribed (nativeGet checkpoint "pending_pins" (js-array)) (js-array))))
       (if (not subscribed)

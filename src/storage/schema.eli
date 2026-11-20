@@ -43,6 +43,8 @@
       "CREATE TABLE idempotency(principal_id TEXT NOT NULL, operation TEXT NOT NULL, key_hash TEXT NOT NULL, request_hash TEXT NOT NULL, operation_id TEXT NOT NULL REFERENCES operations(operation_id), PRIMARY KEY(principal_id,operation,key_hash)) STRICT"
       "CREATE TABLE lifecycle_actions(lifecycle_id TEXT PRIMARY KEY, operation_id TEXT NOT NULL UNIQUE REFERENCES operations(operation_id), principal_id TEXT NOT NULL, action TEXT NOT NULL, instance_id TEXT NOT NULL REFERENCES instances(instance_id), instance_epoch TEXT NOT NULL, launch_token TEXT, state TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0), payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
       "CREATE INDEX lifecycle_pending ON lifecycle_actions(state,lifecycle_id)"
+      "CREATE INDEX lifecycle_initial_input ON lifecycle_actions(lifecycle_id) WHERE action='create' AND state='ready' AND json_extract(payload,'$.initial_input_state')='pending'"
+      "CREATE INDEX lifecycle_reconcile_requested ON lifecycle_actions(lifecycle_id) WHERE json_extract(payload,'$.reconcile_requested')=1"
       "CREATE TABLE source_progress(connection_id TEXT PRIMARY KEY REFERENCES connections(connection_id), cursor TEXT, last_ingress_seq INTEGER NOT NULL, gap_status TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
       "CREATE TABLE poll_checkpoints(connection_id TEXT NOT NULL REFERENCES connections(connection_id), conversation_key TEXT NOT NULL, generation INTEGER NOT NULL CHECK(generation>0), next_due_at TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)), PRIMARY KEY(connection_id,conversation_key)) STRICT"
       "CREATE INDEX poll_due ON poll_checkpoints(next_due_at,connection_id,conversation_key)"
@@ -54,23 +56,41 @@
       "CREATE INDEX events_reaction_activity ON events(connection_id,ingress_seq) WHERE event_kind='message.reaction.added' AND tombstone=0"
       "CREATE INDEX events_body_expiry ON events(body_expires_at,event_id) WHERE tombstone=0"
       "CREATE TABLE rejected_ingress(diagnostic_id TEXT PRIMARY KEY, connection_id TEXT NOT NULL, source_key TEXT NOT NULL, reason TEXT NOT NULL, received_at TEXT NOT NULL, UNIQUE(connection_id,source_key)) STRICT"
-      "CREATE TABLE subscriptions(subscription_id TEXT PRIMARY KEY, owner_principal_id TEXT NOT NULL, agent_id TEXT REFERENCES agents(agent_id), state TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0), payload TEXT NOT NULL CHECK(json_valid(payload)), CHECK(agent_id IS NOT NULL OR COALESCE(json_type(payload,'$.group_id')='text',0))) STRICT"
-      "CREATE INDEX subscriptions_agent ON subscriptions(agent_id,subscription_id)"
-      "CREATE TABLE subscription_versions(subscription_id TEXT NOT NULL REFERENCES subscriptions(subscription_id), revision INTEGER NOT NULL CHECK(revision>0), start_seq INTEGER NOT NULL, cutover_seq INTEGER, state TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)), PRIMARY KEY(subscription_id,revision)) STRICT"
-      "CREATE TABLE subscription_sources(connection_id TEXT NOT NULL REFERENCES connections(connection_id), native_chat_id TEXT NOT NULL, thread_key TEXT NOT NULL, event_kind TEXT NOT NULL, subscription_id TEXT NOT NULL, revision INTEGER NOT NULL, include_threads INTEGER NOT NULL CHECK(include_threads IN (0,1)), PRIMARY KEY(connection_id,native_chat_id,thread_key,event_kind,subscription_id,revision), FOREIGN KEY(subscription_id,revision) REFERENCES subscription_versions(subscription_id,revision)) STRICT"
-      "CREATE INDEX subscription_candidates ON subscription_sources(connection_id,native_chat_id,event_kind,thread_key,subscription_id,revision)"
-      "CREATE TABLE routing_work(event_id TEXT PRIMARY KEY REFERENCES events(event_id), ingress_seq INTEGER NOT NULL, state TEXT NOT NULL, last_subscription_id TEXT, last_revision INTEGER, payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE TABLE subscription_groups(group_id TEXT PRIMARY KEY, owner_principal_id TEXT NOT NULL, state TEXT NOT NULL, revision INTEGER NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE TABLE subscriptions(target_key TEXT PRIMARY KEY, owner_principal_id TEXT NOT NULL, agent_id TEXT UNIQUE REFERENCES agents(agent_id), group_id TEXT UNIQUE REFERENCES subscription_groups(group_id), state TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0), payload TEXT NOT NULL CHECK(json_valid(payload)), CHECK((agent_id IS NOT NULL AND group_id IS NULL AND target_key GLOB 'session:*') OR (agent_id IS NULL AND group_id IS NOT NULL AND target_key GLOB 'group:*'))) STRICT"
+      "CREATE INDEX subscriptions_agent ON subscriptions(agent_id,target_key)"
+      "CREATE INDEX subscriptions_group ON subscriptions(group_id,state)"
+      "CREATE TABLE subscription_versions(target_key TEXT NOT NULL REFERENCES subscriptions(target_key), revision INTEGER NOT NULL CHECK(revision>0), start_seq INTEGER NOT NULL, cutover_seq INTEGER, state TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)), PRIMARY KEY(target_key,revision)) STRICT"
+      "CREATE TABLE subscription_sources(connection_id TEXT NOT NULL REFERENCES connections(connection_id), native_chat_id TEXT NOT NULL, thread_key TEXT NOT NULL, event_kind TEXT NOT NULL, target_key TEXT NOT NULL, revision INTEGER NOT NULL, include_threads INTEGER NOT NULL CHECK(include_threads IN (0,1)), PRIMARY KEY(connection_id,native_chat_id,thread_key,event_kind,target_key,revision), FOREIGN KEY(target_key,revision) REFERENCES subscription_versions(target_key,revision)) STRICT"
+      "CREATE INDEX subscription_candidates ON subscription_sources(connection_id,native_chat_id,event_kind,thread_key,target_key,revision)"
+      "CREATE TABLE routing_work(event_id TEXT PRIMARY KEY REFERENCES events(event_id), ingress_seq INTEGER NOT NULL, state TEXT NOT NULL, last_target_key TEXT, last_revision INTEGER, payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
       "CREATE INDEX routing_pending ON routing_work(state,ingress_seq)"
-      "CREATE TABLE match_decisions(event_id TEXT NOT NULL REFERENCES events(event_id), subscription_id TEXT NOT NULL, revision INTEGER NOT NULL, result TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)), PRIMARY KEY(event_id,subscription_id,revision), FOREIGN KEY(subscription_id,revision) REFERENCES subscription_versions(subscription_id,revision)) STRICT"
+      "CREATE TABLE match_decisions(event_id TEXT NOT NULL REFERENCES events(event_id), target_key TEXT NOT NULL, revision INTEGER NOT NULL, result TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)), PRIMARY KEY(event_id,target_key,revision), FOREIGN KEY(target_key,revision) REFERENCES subscription_versions(target_key,revision)) STRICT"
+      "CREATE TABLE group_dispatches(target_key TEXT NOT NULL REFERENCES subscriptions(target_key), event_id TEXT NOT NULL REFERENCES events(event_id), state TEXT NOT NULL, next_check_at TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)), PRIMARY KEY(target_key,event_id)) STRICT"
+      "CREATE INDEX group_dispatch_due ON group_dispatches(state,next_check_at,target_key,event_id)"
+      "CREATE TABLE group_cursors(target_key TEXT PRIMARY KEY REFERENCES subscriptions(target_key), payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE TABLE agent_availability(scope_key TEXT PRIMARY KEY, valid_until TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
       "CREATE TABLE deliveries(delivery_id TEXT PRIMARY KEY, route_id TEXT NOT NULL REFERENCES routes(route_id), origin TEXT NOT NULL CHECK(origin IN ('direct','subscription_event')), principal_id TEXT, operation_id TEXT UNIQUE REFERENCES operations(operation_id), agent_id TEXT REFERENCES agents(agent_id), event_id TEXT REFERENCES events(event_id), delivery_seq INTEGER NOT NULL, state TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0), expires_at TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)), UNIQUE(route_id,delivery_seq), CHECK((origin='direct' AND event_id IS NULL AND principal_id IS NOT NULL AND operation_id IS NOT NULL) OR (origin='subscription_event' AND event_id IS NOT NULL AND agent_id IS NOT NULL))) STRICT"
       "CREATE UNIQUE INDEX delivery_event_route ON deliveries(route_id,event_id,COALESCE(json_extract(payload,'$.distribution_key'),'')) WHERE origin='subscription_event'"
       "CREATE INDEX deliveries_route_head ON deliveries(route_id,delivery_seq) WHERE state IN ('ready','deferred','blocked','submitting','unknown')"
+      "CREATE INDEX deliveries_subscription_pending ON deliveries(json_extract(payload,'$.target_key'),json_extract(payload,'$.subscription_revision'),state,delivery_id) WHERE origin='subscription_event' AND state IN ('ready','deferred','blocked')"
       "CREATE INDEX deliveries_owner ON deliveries(principal_id,delivery_id)"
       "CREATE INDEX deliveries_state ON deliveries(state,delivery_id)"
-      "CREATE TABLE contributions(delivery_id TEXT NOT NULL REFERENCES deliveries(delivery_id), subscription_id TEXT NOT NULL, revision INTEGER NOT NULL, state TEXT NOT NULL, expires_at TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)), PRIMARY KEY(delivery_id,subscription_id,revision), FOREIGN KEY(subscription_id,revision) REFERENCES subscription_versions(subscription_id,revision)) STRICT"
-      "CREATE INDEX contribution_subscription ON contributions(subscription_id,revision,state,delivery_id)"
+      "CREATE INDEX delivery_reconcile_requested ON deliveries(delivery_id) WHERE json_extract(payload,'$.reconcile_requested')=1"
+      "CREATE INDEX deliveries_observe_pending ON deliveries(state,COALESCE(json_extract(payload,'$.native_drained'),0),delivery_id) WHERE state='accepted' AND COALESCE(json_extract(payload,'$.native_drained'),0)=0"
+      "CREATE TABLE inbox_entries(inbox_id TEXT PRIMARY KEY, target_key TEXT NOT NULL, revision INTEGER NOT NULL, event_id TEXT NOT NULL REFERENCES events(event_id), agent_id TEXT NOT NULL REFERENCES agents(agent_id), state TEXT NOT NULL, expires_at TEXT NOT NULL, lease_until TEXT, claim_principal_id TEXT, claim_ref TEXT, payload TEXT NOT NULL CHECK(json_valid(payload)), UNIQUE(target_key,revision,event_id), FOREIGN KEY(target_key,revision) REFERENCES subscription_versions(target_key,revision)) STRICT"
+      "CREATE INDEX inbox_pending ON inbox_entries(target_key,revision,state,expires_at,event_id)"
+      "CREATE TABLE inbox_pulls(pull_id TEXT PRIMARY KEY REFERENCES operations(operation_id), target_key TEXT NOT NULL REFERENCES subscriptions(target_key), principal_id TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE TABLE inbox_reply_contexts(reply_context_id TEXT PRIMARY KEY, inbox_id TEXT NOT NULL REFERENCES inbox_entries(inbox_id), recipient_principal_id TEXT NOT NULL, expires_at TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE TABLE dispatch_contexts(context_id TEXT PRIMARY KEY, payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE TABLE dispatch_bindings(binding_id TEXT PRIMARY KEY, context_id TEXT NOT NULL REFERENCES dispatch_contexts(context_id), cause_key TEXT NOT NULL, source_time TEXT NOT NULL, ingress_seq TEXT NOT NULL CHECK(length(ingress_seq)=20), payload TEXT NOT NULL CHECK(json_valid(payload)), UNIQUE(context_id,cause_key)) STRICT"
+      "CREATE INDEX dispatch_bindings_time ON dispatch_bindings(context_id,source_time DESC,ingress_seq DESC,cause_key DESC)"
+      "CREATE TABLE dispatch_notifications(notification_key TEXT PRIMARY KEY, owner_id TEXT NOT NULL, owner_kind TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE INDEX dispatch_notifications_owner ON dispatch_notifications(owner_kind,owner_id)"
       "CREATE TABLE outbound(outbound_id TEXT PRIMARY KEY, operation_id TEXT NOT NULL UNIQUE REFERENCES operations(operation_id), principal_id TEXT NOT NULL, connection_id TEXT NOT NULL REFERENCES connections(connection_id), conversation_key TEXT NOT NULL, state TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0), payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
       "CREATE INDEX outbound_pending ON outbound(state,outbound_id)"
+      "CREATE INDEX outbound_conversation ON outbound(connection_id,conversation_key)"
+      "CREATE INDEX outbound_reconcile_requested ON outbound(outbound_id) WHERE json_extract(payload,'$.reconcile_requested')=1"
       "CREATE TABLE parts(part_id TEXT PRIMARY KEY, outbound_id TEXT NOT NULL REFERENCES outbound(outbound_id), part_index INTEGER NOT NULL, dispatch_key TEXT NOT NULL UNIQUE, state TEXT NOT NULL, native_message_id TEXT, payload TEXT NOT NULL CHECK(json_valid(payload)), UNIQUE(outbound_id,part_index)) STRICT"
       "CREATE TABLE attempts(attempt_id TEXT PRIMARY KEY, delivery_id TEXT REFERENCES deliveries(delivery_id), outbound_id TEXT REFERENCES outbound(outbound_id), lifecycle_id TEXT REFERENCES lifecycle_actions(lifecycle_id), dispatch_key TEXT NOT NULL UNIQUE, state TEXT NOT NULL, definite_not_sent INTEGER NOT NULL CHECK(definite_not_sent IN (0,1)), payload TEXT NOT NULL CHECK(json_valid(payload)), CHECK((delivery_id IS NOT NULL)+(outbound_id IS NOT NULL)+(lifecycle_id IS NOT NULL)=1)) STRICT"
       "CREATE INDEX attempts_delivery ON attempts(delivery_id,attempt_id) WHERE delivery_id IS NOT NULL"
@@ -80,7 +100,34 @@
       "CREATE TABLE claims(route_id TEXT PRIMARY KEY REFERENCES routes(route_id), claim_owner TEXT NOT NULL, claim_epoch INTEGER NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
       "CREATE TABLE reply_contexts(reply_context_id TEXT PRIMARY KEY, delivery_id TEXT NOT NULL REFERENCES deliveries(delivery_id), recipient_principal_id TEXT NOT NULL, expires_at TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
       "CREATE TABLE echo_index(connection_id TEXT NOT NULL REFERENCES connections(connection_id), native_message_id TEXT NOT NULL, outbound_id TEXT NOT NULL REFERENCES outbound(outbound_id), PRIMARY KEY(connection_id,native_message_id)) STRICT"
+      "CREATE INDEX echo_native_message ON echo_index(native_message_id)"
       "CREATE TABLE echo_gates(connection_id TEXT NOT NULL REFERENCES connections(connection_id), conversation_key TEXT NOT NULL, outbound_id TEXT NOT NULL REFERENCES outbound(outbound_id), payload TEXT NOT NULL CHECK(json_valid(payload)), PRIMARY KEY(connection_id,conversation_key,outbound_id)) STRICT"
+      "CREATE TABLE resource_cache(cache_key TEXT PRIMARY KEY, connection_id TEXT NOT NULL REFERENCES connections(connection_id), identity_revision INTEGER NOT NULL, resource_token TEXT NOT NULL, expires_at TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE TABLE resource_watches(watch_id TEXT PRIMARY KEY, connection_id TEXT NOT NULL REFERENCES connections(connection_id), identity_revision INTEGER NOT NULL, resource_token TEXT NOT NULL, state TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE TABLE context_messages(connection_id TEXT NOT NULL REFERENCES connections(connection_id), identity_revision INTEGER NOT NULL, native_message_id TEXT NOT NULL, conversation_key TEXT NOT NULL, source_time TEXT NOT NULL, expires_at TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)), PRIMARY KEY(connection_id,identity_revision,native_message_id)) STRICT"
+      "CREATE INDEX context_messages_conversation ON context_messages(connection_id,identity_revision,conversation_key,source_time,native_message_id)"
+      "CREATE TABLE task_links(delivery_id TEXT NOT NULL REFERENCES deliveries(delivery_id), parent_session_key TEXT NOT NULL REFERENCES sessions(session_key), child_session_key TEXT NOT NULL REFERENCES sessions(session_key), reported_by TEXT NOT NULL, reported_at TEXT NOT NULL, PRIMARY KEY(delivery_id,child_session_key)) STRICT"
+      "CREATE INDEX task_links_parent ON task_links(delivery_id,parent_session_key,child_session_key)"
+      "CREATE TABLE task_commands(event_id TEXT PRIMARY KEY REFERENCES events(event_id), state TEXT NOT NULL, response_text TEXT, principal_id TEXT, destination_ref TEXT, policy_hash TEXT) STRICT"
+      "CREATE INDEX task_commands_pending ON task_commands(state)"
+      "CREATE TABLE work_items(delivery_id TEXT PRIMARY KEY REFERENCES deliveries(delivery_id), state TEXT NOT NULL, expires_at TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE TABLE work_marks(mark_id TEXT PRIMARY KEY, revision INTEGER NOT NULL CHECK(revision>=1), state TEXT NOT NULL, next_due_at TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE INDEX work_marks_due ON work_marks(state,next_due_at)"
+      "CREATE TABLE session_supervisions(session_key TEXT PRIMARY KEY, principal_id TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('active','cancelled')), next_check_at TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>=1), payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE INDEX session_supervisions_due ON session_supervisions(state,next_check_at,session_key)"
+      "CREATE TABLE fixed_routes(id TEXT PRIMARY KEY, state TEXT NOT NULL, next_attempt_at TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE INDEX fixed_routes_due ON fixed_routes(state,next_attempt_at,id)"
+      "CREATE TABLE session_rules(session_key TEXT PRIMARY KEY, revision INTEGER NOT NULL CHECK(revision>=1), payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE TABLE recipient_policies(connection_id TEXT PRIMARY KEY REFERENCES connections(connection_id), revision INTEGER NOT NULL CHECK(revision>=1), payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE TABLE recipient_optouts(connection_id TEXT NOT NULL REFERENCES connections(connection_id), recipient_id TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('allow','deny')), payload TEXT NOT NULL CHECK(json_valid(payload)), PRIMARY KEY(connection_id,recipient_id)) STRICT"
+      "CREATE INDEX recipient_optouts_person ON recipient_optouts(recipient_id,connection_id)"
+      "CREATE TABLE recipient_peers(connection_id TEXT NOT NULL REFERENCES connections(connection_id), native_chat_id TEXT NOT NULL, recipient_id TEXT NOT NULL, PRIMARY KEY(connection_id,native_chat_id)) STRICT"
+      "CREATE TABLE message_filter_policies(policy_id TEXT PRIMARY KEY, revision INTEGER NOT NULL CHECK(revision>=1), payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+      "CREATE TABLE lark_event_receipts(connection_id TEXT NOT NULL REFERENCES connections(connection_id), identity_revision INTEGER NOT NULL, event_id TEXT NOT NULL, event_type TEXT NOT NULL, received_at TEXT NOT NULL, processed_at TEXT, next_attempt_at TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('pending','retrying','processed','ignored')), payload TEXT CHECK(payload IS NULL OR json_valid(payload)), payload_hash TEXT NOT NULL, raw_bytes INTEGER NOT NULL CHECK(raw_bytes>=0), attempts INTEGER NOT NULL CHECK(attempts>=0), normalized_count INTEGER NOT NULL CHECK(normalized_count>=0), last_error TEXT, PRIMARY KEY(connection_id,identity_revision,event_id)) STRICT"
+      "CREATE INDEX lark_event_receipts_due ON lark_event_receipts(connection_id,identity_revision,state,next_attempt_at)"
+      "CREATE INDEX lark_event_receipts_received ON lark_event_receipts(connection_id,received_at)"
+      "CREATE TABLE im_event_inbox(seq INTEGER PRIMARY KEY AUTOINCREMENT, connection_id TEXT NOT NULL REFERENCES connections(connection_id), source_key TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)), UNIQUE(connection_id,source_key)) STRICT"
+      "CREATE INDEX im_event_inbox_pending ON im_event_inbox(connection_id,seq)"
       "CREATE TABLE catalog_runs(catalog_run_id TEXT PRIMARY KEY, operation_id TEXT NOT NULL UNIQUE REFERENCES operations(operation_id), principal_id TEXT NOT NULL, authorization_revision INTEGER NOT NULL, state TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
       "CREATE TABLE catalog_checkpoints(catalog_run_id TEXT NOT NULL REFERENCES catalog_runs(catalog_run_id), source_id TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)), PRIMARY KEY(catalog_run_id,source_id)) STRICT"
       "CREATE TABLE catalog_seen_sessions(scan_id TEXT NOT NULL, source_id TEXT NOT NULL, session_key TEXT NOT NULL, PRIMARY KEY(scan_id,source_id,session_key)) STRICT"
@@ -105,12 +152,8 @@
       "CREATE TABLE audit(audit_id INTEGER PRIMARY KEY, at TEXT NOT NULL, principal_id TEXT, operation_id TEXT, resource_kind TEXT, resource_id TEXT, code TEXT NOT NULL, state TEXT) STRICT"
       "CREATE INDEX audit_retention ON audit(at,audit_id)"
       "PRAGMA user_version=1"))
-  (defun migrate
-    (db)
-    (let
-      (
-        (version
-          (nativeGet (js-call (js-call db :query "PRAGMA user_version") :get) "user_version")))
+  (defun migrate (db)
+    (let ((version (nativeGet (js-call (js-call db :query "PRAGMA user_version") :get) "user_version")))
       (when (> version schemaVersion)
         (throw (new globalThis.Error "database schema is newer than this release")))
       (when (< version schemaVersion)
@@ -121,86 +164,34 @@
           (catch error
             (try (js-call db :run "ROLLBACK") (catch ignored nil))
             (throw error))))
-      ;; Converge the real store to the current target constraint, preserving all
-      ;; rows and dependent FKs. No second read/write representation is retained.
-      (when (= (nativeGet (js-call (js-call db :query "PRAGMA table_info(subscriptions)") :all)
-        "length") 0) (throw (new globalThis.Error "subscriptions table missing")))
-      (when (js-call (js-call (js-call db :query "PRAGMA table_info(subscriptions)") :all) :some
-        (lambda (column) (and (= (nativeGet column "name") "agent_id") (= (nativeGet column "notnull") 1))))
-        (js-call db :run "PRAGMA foreign_keys=OFF")
-        (try
-          (js-call db :run "BEGIN IMMEDIATE")
-          (js-call db :run "CREATE TABLE subscriptions_target(subscription_id TEXT PRIMARY KEY,owner_principal_id TEXT NOT NULL,agent_id TEXT REFERENCES agents(agent_id),state TEXT NOT NULL,revision INTEGER NOT NULL CHECK(revision>0),payload TEXT NOT NULL CHECK(json_valid(payload)),CHECK(agent_id IS NOT NULL OR COALESCE(json_type(payload,'$.group_id')='text',0))) STRICT")
-          (js-call db :run "INSERT INTO subscriptions_target SELECT * FROM subscriptions")
-          (js-call db :run "DROP TABLE subscriptions")
-          (js-call db :run "ALTER TABLE subscriptions_target RENAME TO subscriptions")
-          (js-call db :run "CREATE INDEX subscriptions_agent ON subscriptions(agent_id,subscription_id)")
-          (when (> (js-length (js-call (js-call db :query "PRAGMA foreign_key_check") :all)) 0)
-            (throw (new globalThis.Error "subscription target foreign key check failed")))
-          (js-call db :run "COMMIT")
-          (catch error (try (js-call db :run "ROLLBACK") (catch ignored nil)) (throw error))
-          (finally (js-call db :run "PRAGMA foreign_keys=ON"))))
-      (js-call (js-array
-        "CREATE TABLE IF NOT EXISTS dispatch_contexts(context_id TEXT PRIMARY KEY,payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
-        "CREATE TABLE IF NOT EXISTS dispatch_bindings(binding_id TEXT PRIMARY KEY,context_id TEXT NOT NULL REFERENCES dispatch_contexts(context_id),cause_key TEXT NOT NULL,source_time TEXT NOT NULL,ingress_seq TEXT NOT NULL CHECK(length(ingress_seq)=20),payload TEXT NOT NULL CHECK(json_valid(payload)),UNIQUE(context_id,cause_key)) STRICT"
-        "CREATE INDEX IF NOT EXISTS dispatch_bindings_time ON dispatch_bindings(context_id,source_time DESC,ingress_seq DESC,cause_key DESC)"
-        "CREATE TABLE IF NOT EXISTS dispatch_notifications(notification_key TEXT PRIMARY KEY,owner_id TEXT NOT NULL,owner_kind TEXT NOT NULL,payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
-        "CREATE INDEX IF NOT EXISTS dispatch_notifications_owner ON dispatch_notifications(owner_kind,owner_id)"
-        "CREATE TABLE IF NOT EXISTS subscription_groups(group_id TEXT PRIMARY KEY,owner_principal_id TEXT NOT NULL,state TEXT NOT NULL,revision INTEGER NOT NULL,payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
-        "CREATE TABLE IF NOT EXISTS group_dispatches(subscription_id TEXT NOT NULL REFERENCES subscriptions(subscription_id),event_id TEXT NOT NULL REFERENCES events(event_id),state TEXT NOT NULL,next_check_at TEXT NOT NULL,payload TEXT NOT NULL CHECK(json_valid(payload)),PRIMARY KEY(subscription_id,event_id)) STRICT"
-        "CREATE INDEX IF NOT EXISTS group_dispatch_due ON group_dispatches(state,next_check_at,subscription_id,event_id)"
-        "CREATE TABLE IF NOT EXISTS group_cursors(subscription_id TEXT PRIMARY KEY REFERENCES subscriptions(subscription_id),payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
-        "CREATE TABLE IF NOT EXISTS agent_availability(scope_key TEXT PRIMARY KEY,valid_until TEXT NOT NULL,payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
-        "CREATE INDEX IF NOT EXISTS subscriptions_group ON subscriptions(json_extract(payload,'$.group_id'),state)"
-      ) :forEach (lambda (sql) (js-call db :run sql)))
-      (js-call db :run "DROP INDEX IF EXISTS delivery_event_route")
-      (js-call db :run "CREATE UNIQUE INDEX delivery_event_route ON deliveries(route_id,event_id,COALESCE(json_extract(payload,'$.distribution_key'),'')) WHERE origin='subscription_event'")
-      ;; A client may receive through several exact native conversations.
-      (js-call db :run "DROP INDEX IF EXISTS agents_recipient")
-      (js-call db :run "CREATE INDEX agents_recipient ON agents(recipient_principal_id,agent_id) WHERE state='registered'")
-      ;; These fixed predicates match the scheduler's bounded keyset queries.
-      ;; Keep index maintenance idempotent for stores already using schema 1.
+      (let ((columns (js-call (js-call db :query "PRAGMA table_info(subscriptions)") :all)))
+        (unless (and (> (js-length columns) 0)
+                     (js-call columns :some (lambda (column) (= (nativeGet column "name") "target_key"))))
+          (throw (new globalThis.Error "database schema requires single-line target_key subscriptions"))))
+      ;; Keep fixed keyset and partial indexes idempotent for stores already initialized at schema 1.
       (js-call
         (js-array
-          "CREATE TABLE IF NOT EXISTS resource_cache(cache_key TEXT PRIMARY KEY,connection_id TEXT NOT NULL REFERENCES connections(connection_id),identity_revision INTEGER NOT NULL,resource_token TEXT NOT NULL,expires_at TEXT NOT NULL,payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
-          "CREATE TABLE IF NOT EXISTS resource_watches(watch_id TEXT PRIMARY KEY,connection_id TEXT NOT NULL REFERENCES connections(connection_id),identity_revision INTEGER NOT NULL,resource_token TEXT NOT NULL,state TEXT NOT NULL,payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
-          "CREATE TABLE IF NOT EXISTS context_messages(connection_id TEXT NOT NULL REFERENCES connections(connection_id),identity_revision INTEGER NOT NULL,native_message_id TEXT NOT NULL,conversation_key TEXT NOT NULL,source_time TEXT NOT NULL,expires_at TEXT NOT NULL,payload TEXT NOT NULL CHECK(json_valid(payload)),PRIMARY KEY(connection_id,identity_revision,native_message_id)) STRICT"
           "CREATE INDEX IF NOT EXISTS context_messages_conversation ON context_messages(connection_id,identity_revision,conversation_key,source_time,native_message_id)"
-          "CREATE TABLE IF NOT EXISTS task_links(delivery_id TEXT NOT NULL REFERENCES deliveries(delivery_id),parent_session_key TEXT NOT NULL REFERENCES sessions(session_key),child_session_key TEXT NOT NULL REFERENCES sessions(session_key),reported_by TEXT NOT NULL,reported_at TEXT NOT NULL,PRIMARY KEY(delivery_id,child_session_key)) STRICT"
           "CREATE INDEX IF NOT EXISTS task_links_parent ON task_links(delivery_id,parent_session_key,child_session_key)"
-          "CREATE TABLE IF NOT EXISTS task_commands(event_id TEXT PRIMARY KEY REFERENCES events(event_id),state TEXT NOT NULL,response_text TEXT,principal_id TEXT,destination_ref TEXT,policy_hash TEXT) STRICT"
           "CREATE INDEX IF NOT EXISTS task_commands_pending ON task_commands(state)"
-          "CREATE TABLE IF NOT EXISTS work_items(delivery_id TEXT PRIMARY KEY REFERENCES deliveries(delivery_id),state TEXT NOT NULL,expires_at TEXT NOT NULL,payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
-          "CREATE TABLE IF NOT EXISTS work_marks(mark_id TEXT PRIMARY KEY,revision INTEGER NOT NULL CHECK(revision>=1),state TEXT NOT NULL,next_due_at TEXT NOT NULL,payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
           "CREATE INDEX IF NOT EXISTS outbound_conversation ON outbound(connection_id,conversation_key)"
           "CREATE INDEX IF NOT EXISTS echo_native_message ON echo_index(native_message_id)"
           "CREATE INDEX IF NOT EXISTS work_marks_due ON work_marks(state,next_due_at)"
-          "CREATE TABLE IF NOT EXISTS session_supervisions(session_key TEXT PRIMARY KEY,principal_id TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('active','cancelled')),next_check_at TEXT NOT NULL,revision INTEGER NOT NULL CHECK(revision>=1),payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
           "CREATE INDEX IF NOT EXISTS session_supervisions_due ON session_supervisions(state,next_check_at,session_key)"
-          "CREATE TABLE IF NOT EXISTS fixed_routes(id TEXT PRIMARY KEY,state TEXT NOT NULL,next_attempt_at TEXT NOT NULL,payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
           "CREATE INDEX IF NOT EXISTS fixed_routes_due ON fixed_routes(state,next_attempt_at,id)"
-          "CREATE TABLE IF NOT EXISTS session_rules(session_key TEXT PRIMARY KEY,revision INTEGER NOT NULL CHECK(revision>=1),payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
-          "CREATE TABLE IF NOT EXISTS recipient_policies(connection_id TEXT PRIMARY KEY REFERENCES connections(connection_id),revision INTEGER NOT NULL CHECK(revision>=1),payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
-          "CREATE TABLE IF NOT EXISTS recipient_optouts(connection_id TEXT NOT NULL REFERENCES connections(connection_id),recipient_id TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('allow','deny')),payload TEXT NOT NULL CHECK(json_valid(payload)),PRIMARY KEY(connection_id,recipient_id)) STRICT"
           "CREATE INDEX IF NOT EXISTS recipient_optouts_person ON recipient_optouts(recipient_id,connection_id)"
-          "CREATE TABLE IF NOT EXISTS recipient_peers(connection_id TEXT NOT NULL REFERENCES connections(connection_id),native_chat_id TEXT NOT NULL,recipient_id TEXT NOT NULL,PRIMARY KEY(connection_id,native_chat_id)) STRICT"
-          "CREATE TABLE IF NOT EXISTS message_filter_policies(policy_id TEXT PRIMARY KEY,revision INTEGER NOT NULL CHECK(revision>=1),payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
-          "CREATE TABLE IF NOT EXISTS lark_event_receipts(connection_id TEXT NOT NULL REFERENCES connections(connection_id),identity_revision INTEGER NOT NULL,event_id TEXT NOT NULL,event_type TEXT NOT NULL,received_at TEXT NOT NULL,processed_at TEXT,next_attempt_at TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('pending','retrying','processed','ignored')),payload TEXT CHECK(payload IS NULL OR json_valid(payload)),payload_hash TEXT NOT NULL,raw_bytes INTEGER NOT NULL CHECK(raw_bytes>=0),attempts INTEGER NOT NULL CHECK(attempts>=0),normalized_count INTEGER NOT NULL CHECK(normalized_count>=0),last_error TEXT,PRIMARY KEY(connection_id,identity_revision,event_id)) STRICT"
           "CREATE INDEX IF NOT EXISTS lark_event_receipts_due ON lark_event_receipts(connection_id,identity_revision,state,next_attempt_at)"
           "CREATE INDEX IF NOT EXISTS lark_event_receipts_received ON lark_event_receipts(connection_id,received_at)"
-          "CREATE TABLE IF NOT EXISTS im_event_inbox(seq INTEGER PRIMARY KEY AUTOINCREMENT,connection_id TEXT NOT NULL REFERENCES connections(connection_id),source_key TEXT NOT NULL,payload TEXT NOT NULL CHECK(json_valid(payload)),UNIQUE(connection_id,source_key)) STRICT"
           "CREATE INDEX IF NOT EXISTS events_reaction_scan ON events(connection_id,ingress_seq) WHERE event_kind='message.created' AND tombstone=0"
           "CREATE INDEX IF NOT EXISTS events_native_reply ON events(native_message_id,event_kind,connection_id)"
           "CREATE INDEX IF NOT EXISTS events_reaction_activity ON events(connection_id,ingress_seq) WHERE event_kind='message.reaction.added' AND tombstone=0"
           "CREATE INDEX IF NOT EXISTS im_event_inbox_pending ON im_event_inbox(connection_id,seq)"
-          "CREATE TABLE IF NOT EXISTS inbox_entries(inbox_id TEXT PRIMARY KEY,subscription_id TEXT NOT NULL,revision INTEGER NOT NULL,event_id TEXT NOT NULL REFERENCES events(event_id),agent_id TEXT NOT NULL REFERENCES agents(agent_id),state TEXT NOT NULL,expires_at TEXT NOT NULL,lease_until TEXT,claim_principal_id TEXT,claim_ref TEXT,payload TEXT NOT NULL CHECK(json_valid(payload)),UNIQUE(subscription_id,revision,event_id),FOREIGN KEY(subscription_id,revision) REFERENCES subscription_versions(subscription_id,revision)) STRICT"
-          "CREATE INDEX IF NOT EXISTS inbox_pending ON inbox_entries(subscription_id,revision,state,expires_at,event_id)"
-          "CREATE TABLE IF NOT EXISTS inbox_pulls(pull_id TEXT PRIMARY KEY REFERENCES operations(operation_id),subscription_id TEXT NOT NULL REFERENCES subscriptions(subscription_id),principal_id TEXT NOT NULL,payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
-          "CREATE TABLE IF NOT EXISTS inbox_reply_contexts(reply_context_id TEXT PRIMARY KEY,inbox_id TEXT NOT NULL REFERENCES inbox_entries(inbox_id),recipient_principal_id TEXT NOT NULL,expires_at TEXT NOT NULL,payload TEXT NOT NULL CHECK(json_valid(payload))) STRICT"
+          "CREATE INDEX IF NOT EXISTS inbox_pending ON inbox_entries(target_key,revision,state,expires_at,event_id)"
           "CREATE INDEX IF NOT EXISTS attempts_delivery ON attempts(delivery_id,attempt_id) WHERE delivery_id IS NOT NULL"
           "CREATE INDEX IF NOT EXISTS attempts_outbound ON attempts(outbound_id,attempt_id) WHERE outbound_id IS NOT NULL"
           "CREATE INDEX IF NOT EXISTS sessions_live_key ON sessions(session_key) WHERE tombstone=0"
           "CREATE INDEX IF NOT EXISTS deliveries_route_head ON deliveries(route_id,delivery_seq) WHERE state IN ('ready','deferred','blocked','submitting','unknown')"
+          "CREATE INDEX IF NOT EXISTS deliveries_subscription_pending ON deliveries(json_extract(payload,'$.target_key'),json_extract(payload,'$.subscription_revision'),state,delivery_id) WHERE origin='subscription_event' AND state IN ('ready','deferred','blocked')"
           "DROP INDEX IF EXISTS deliveries_route_pending"
           "CREATE INDEX IF NOT EXISTS lifecycle_initial_input ON lifecycle_actions(lifecycle_id) WHERE action='create' AND state='ready' AND json_extract(payload,'$.initial_input_state')='pending'"
           "CREATE INDEX IF NOT EXISTS lifecycle_reconcile_requested ON lifecycle_actions(lifecycle_id) WHERE json_extract(payload,'$.reconcile_requested')=1"

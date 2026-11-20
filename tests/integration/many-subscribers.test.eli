@@ -11,8 +11,10 @@
         (put config :fixed_routes (js-call (js-array "s1" "s2") :map (lambda (session)
           (js-object :id session :owner_principal_id "O" :recipient_principal_id "A"
             :target (js-object :instance_id "oc-existing" :native_session_id session)
-            :sources (js-array (js-object :connection_id "lark")) :event_kinds (js-array "message.created")
-            :predicate (js-object :all (js-array)))))))
+            :rules (js-array (js-object :id "default" :enabled t
+              :sources (js-array (js-object :connection_id "lark"))
+              :event_kinds (js-array "message.created")
+              :predicate (js-object :all (js-array)))))))))
       (let ((principal (aref (nativeGet config "principals") 2)))
         (Reflect/deleteProperty principal "target_constraint")
         (put principal :grants (js-array (js-object :action "*" :resources (js-array "*")))))
@@ -32,6 +34,10 @@
             (js-object :action "subscription.consume" :resources (js-array "*"))))))
       (let ((sessions (nativeGet (js-call (nativeGet ports "agent_ports") :get "opencode") "sessions")))
         (js-call sessions :push
+          (js-object :tool "opencode" :native_namespace "ns-opencode" :native_session_id "s-pull"
+            :instance_id "oc-existing" :instance_epoch "epoch-1" :title "pull-peer" :workspace_ref "ws-test"
+            :visibility (js-array "live") :runtime_state "idle" :live_receiver t
+            :model_selection (js-object :provider_id undefined :model_id undefined :variant undefined))
           (js-object :tool "opencode" :native_namespace "ns-opencode" :native_session_id "s-inspect"
             :instance_id "oc-existing" :instance_epoch "epoch-1" :title "inspect-peer" :workspace_ref "ws-test"
             :visibility (js-array "live") :runtime_state "idle" :live_receiver t
@@ -46,16 +52,18 @@
       (await (callOk f "A" "agent.register" (js-object :candidate_ref (nativeGet candidate "candidate_ref")
         :display_name (str "receiver-" session) :binding_mode "existing" :idempotency_key (str "register-" session))))))
   (withCase "T33.many-subscribers.integration" setup (async (f)
-    (let* ((a (await (register f "s1"))) (b (await (register f "s2")))
+    (let* ((a (await (register f "s1"))) (b (await (register f "s2"))) (c (await (register f "s-pull")))
       (who (await (callOk f "A" "agent.whoami" (js-object))))
       (sa (await (subscribe f a "lark"))) (sb (await (subscribe f b "lark")))
       (source (await (callOk f "A" "conversation.resolve" (js-object :connection_id "lark" :chat_id "c1" :thread_id nil))))
-      (preview (await (callOk f "A" "subscription.preview" (js-object :spec (js-object :agent_id (nativeGet b "agent_id")
-        :selector (js-object :sources (js-array (js-object :conversation_ref (nativeGet source "conversation_ref") :include_threads false))
-          :event_kinds (js-array "message.created")) :predicate (js-object :all (js-array)) :delivery_mode "pull" :start "now")))))
-      (pull (await (callOk f "A" "subscription.create" (js-object :preview_id (nativeGet preview "preview_id") :idempotency_key "pull-sub"))))
+      (preview (await (callOk f "A" "subscription.preview" (js-object :expected_revision 0 :spec (js-object :agent_id (nativeGet c "agent_id")
+        :rules (js-array (js-object :id "default" :enabled t
+          :sources (js-array (js-object :conversation_ref (nativeGet source "conversation_ref") :include_threads false))
+          :event_kinds (js-array "message.created") :predicate (js-object :all (js-array))))
+        :delivery_mode "pull" :start "now")))))
+      (pull (await (callOk f "A" "subscription.set" (js-object :preview_id (nativeGet preview "preview_id") :expected_revision 0 :idempotency_key "pull-sub"))))
       (peer (nativeGet f "opencode")))
-      (js-call (expect (js-length (nativeGet who "bound_agent_ids"))) :toBe 2)
+      (js-call (expect (js-length (nativeGet who "bound_agent_ids"))) :toBe 3)
       (js-call (expect (nativeGet who "bound_agent_ids")) :toContain (nativeGet a "agent_id"))
       (js-call (expect (nativeGet who "bound_agent_ids")) :toContain (nativeGet b "agent_id"))
       (await (js-call f :ingest (createdEvent "lark" "shared-event" "shared body")))
@@ -65,20 +73,22 @@
         (let* ((envelope (nativeGet input "envelope")) (hints (nativeGet envelope "subscriber_hints"))
           (others (nativeGet hints "subscribers")))
           (js-call (expect (nativeGet hints "basis")) :toBe "same_event")
-          (js-call (expect (js-length others)) :toBe 1)
-          (js-call (expect (= (nativeGet (aref others 0) "native_session_id") (nativeGet (nativeGet envelope "recipient") "native_session_id"))) :toBe false))))
-      (let* ((claimed (await (callOk f "A" "subscription.pull" (js-object :subscription_id (nativeGet pull "subscription_id") :idempotency_key "claim-shared"))))
+          (js-call (expect (js-length others)) :toBe 2)
+          (js-call (expect (js-call others :some (lambda (o) (= (nativeGet o "native_session_id") (nativeGet (nativeGet envelope "recipient") "native_session_id"))))) :toBe false))))
+      (let* ((claimed (await (callOk f "A" "subscription.pull" (js-object :agent_id (nativeGet c "agent_id") :idempotency_key "claim-shared"))))
         (item (nativeGet claimed "item")) (hints (nativeGet (nativeGet item "envelope") "subscriber_hints")))
         (js-call (expect (nativeGet claimed "empty")) :toBe false)
-        (js-call (expect (js-length (nativeGet hints "subscribers"))) :toBe 1)
+        (js-call (expect (js-length (nativeGet hints "subscribers"))) :toBe 2)
         (await (callOk f "A" "subscription.ack" (js-object :claim_ref (nativeGet item "claim_ref") :disposition "consumed" :idempotency_key "ack-shared"))))
-      (await (callOk f "A" "subscription.delete" (js-object :subscription_id (nativeGet sa "subscription_id")
+      (await (callOk f "A" "subscription.delete" (js-object :agent_id (nativeGet a "agent_id")
         :expected_revision (nativeGet sa "revision") :idempotency_key "unsubscribe-only-a")))
+      (await (callOk f "A" "subscription.delete" (js-object :agent_id (nativeGet c "agent_id")
+        :expected_revision (nativeGet pull "revision") :idempotency_key "unsubscribe-only-c")))
       (await (js-call f :ingest (createdEvent "lark" "after-unsubscribe" "only b")))
       (await (js-call f :tick))
       (js-call (expect (js-length (nativeGet peer "inputs"))) :toBe 3)
       (js-call (expect (nativeGet (nativeGet (aref (nativeGet peer "inputs") 2) "envelope") "subscriber_hints")) :toBeUndefined)
-      (js-call (expect (nativeGet (await (callOk f "A" "subscription.get" (js-object :subscription_id (nativeGet sb "subscription_id")))) "state")) :toBe "active")
+      (js-call (expect (nativeGet (await (callOk f "A" "subscription.get" (js-object :agent_id (nativeGet b "agent_id")))) "state")) :toBe "active")
       ;; Cross-principal subscriber_hints allows agent.inspect visibility while
       ;; preserving isolation and post-filter has_more for restricted principals.
       (let* ((page (await (callOk f "O" "agent.discover" (js-object :tool "opencode" :scope "live"))))
@@ -101,7 +111,7 @@
       ;; Paginated agent.discover (>20 candidates with undefined optional fields)
       ;; must serialize pending snapshot items cleanly across pages.
       (let ((extra 0))
-        (while (< extra 55)
+        (while (< extra 54)
           (js-call (nativeGet peer "sessions") :push
             (js-object :tool "opencode" :native_namespace "ns-opencode" :native_session_id (str "s-page-" extra)
               :instance_id "oc-existing" :instance_epoch "epoch-1" :title (str "paged-" extra) :workspace_ref "ws-test"

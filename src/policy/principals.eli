@@ -5,9 +5,20 @@
   (defun credentialDigest
     (credential)
     (js-call (js-call (createHash "sha256") :update credential "utf8") :digest "hex"))
+  (defconst principalMaps (new globalThis.WeakMap))
   (defun configuredPrincipal
     (configured id)
-    (js-call configured :find (lambda (principal) (= (nativeGet principal "principal_id") id))))
+    (if (not (Array/isArray configured))
+      nil
+      (let ((cached (js-call principalMaps :get configured)))
+        (unless cached
+          (setq cached (new globalThis.Map))
+          (js-call configured :forEach
+            (lambda (principal)
+              (when principal
+                (js-call cached :set (nativeGet principal "principal_id") principal))))
+          (js-call principalMaps :set configured cached))
+        (js-call cached :get id))))
   (defun authenticate
     (credential configured)
     (let ((djReturn1Token (js-object)) (djReturn1Value nil))

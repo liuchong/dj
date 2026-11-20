@@ -1,17 +1,20 @@
 (module dj.interfaces.hooks
   (import "../core/native.eli" nativeGet nativeTypeOf nativeSetTimeout nativeClearTimeout)
   (import "../core/types.eli" isObject utf8Bytes hashValue)
-  (import "../core/errors.eli" success failure)
+  (import "../core/errors.eli" success)
   (import "./client.eli" loadClientProfile callService)
   (defconst hookHelp
-    "dj hook pull --target codex|cursor --client-profile FILE --agent ID --subscription ID\nReads native hook JSON from stdin; returns native hook JSON only. No Agent starts, automatic acknowledgement, configuration writes or retries.\n")
+    "dj hook pull --target codex|cursor --client-profile FILE --agent ID [--group ID]\nReads native hook JSON from stdin; returns native hook JSON only. No Agent starts, automatic acknowledgement, configuration writes or retries.\n")
   (defun hookOptions (options)
     (unless (and (isObject options)
       (js-call (js-array "codex" "cursor") :includes (nativeGet options "target"))
-      (js-call (js-array "client_profile" "agent" "subscription") :every
+      (js-call (js-array "client_profile" "agent") :every
         (lambda (key) (let ((value (nativeGet options key)))
-          (and (= (nativeTypeOf value) "string") (> (js-length value) 0) (<= (utf8Bytes value) 4096))))))
-      (throw (new globalThis.TypeError "explicit callback target, profile, agent and subscription required")))
+          (and (= (nativeTypeOf value) "string") (> (js-length value) 0) (<= (utf8Bytes value) 4096)))))
+      (or (not (object-has? options :group))
+          (let ((group (nativeGet options "group")))
+            (and (= (nativeTypeOf group) "string") (> (js-length group) 0) (<= (utf8Bytes group) 4096)))))
+      (throw (new globalThis.TypeError "explicit callback target, profile and agent required")))
     options)
   (defun hookIdentity (target input)
     (unless (and (isObject input) (not (nativeGet input "agent_id"))
@@ -58,11 +61,14 @@
               (= (nativeGet agent "tool") (nativeGet options "target"))
               (= (nativeGet agent "native_session_id") (nativeGet identity "session")))
               (throw (new globalThis.Error "native session mismatch"))))
-          (let* ((key (str "dj-hook-" (hashValue (js-array (nativeGet options "target")
-                        agent-id (nativeGet options "subscription") identity))))
-                 (result (await (funcall call "subscription.pull"
-                   (js-object :subscription_id (nativeGet options "subscription") :lease_seconds 300 :idempotency_key key))))
-                 (data (nativeGet result "data")) (item (nativeGet data "item")))
+          (let* ((group-id (nativeGet options "group" nil))
+                 (key (str "dj-hook-" (hashValue (js-array (nativeGet options "target") agent-id (or group-id "") identity))))
+                 (pull-args (js-object :agent_id agent-id :lease_seconds 300 :idempotency_key key))
+                 (result nil) (data nil) (item nil))
+            (when group-id (put pull-args :group_id group-id))
+            (setq result (await (funcall call "subscription.pull" pull-args)))
+            (setq data (nativeGet result "data"))
+            (setq item (nativeGet data "item"))
             (unless (nativeGet result "ok") (throw (new globalThis.Error "inbox unavailable")))
             (if (or (nativeGet data "empty") (not (nativeGet item "envelope"))) (js-object)
               (let* ((context (hookContext item))
@@ -81,17 +87,18 @@
     (hookOptions options)
     (let* ((target (nativeGet options "target"))
            (words (js-array command "hook" "pull" "--target" target "--client-profile"
-                    (nativeGet options "client_profile") "--agent" (nativeGet options "agent")
-                    "--subscription" (nativeGet options "subscription")))
-           (line (js-call (js-call words :map shellWord) :join " "))
-           (config (if (= target "codex")
-             (js-object :hooks (js-object :UserPromptSubmit (js-array (js-object :hooks
-               (js-array (js-object :type "command" :command line :timeout 8))))))
-             (js-object :version 1 :hooks (js-object :stop
-               (js-array (js-object :command line :timeout 8 :loop_limit 1)))))))
-      (success (js-object :target target :format "json" :config config
-        :client_config_modified false :agent_started false
-        :instructions "Local hooks only. Merge into the matching user hooks.json after native trust review. Requires recipient agent.whoami/agent.bind and subscription.consume grants. Never bypass trust or use operator credentials. See references/callbacks.md. No automatic acknowledgement."))))
+                    (nativeGet options "client_profile") "--agent" (nativeGet options "agent"))))
+      (when (nativeGet options "group")
+        (js-call words :push "--group" (nativeGet options "group")))
+      (let* ((line (js-call (js-call words :map shellWord) :join " "))
+             (config (if (= target "codex")
+               (js-object :hooks (js-object :UserPromptSubmit (js-array (js-object :hooks
+                 (js-array (js-object :type "command" :command line :timeout 8))))))
+               (js-object :version 1 :hooks (js-object :stop
+                 (js-array (js-object :command line :timeout 8 :loop_limit 1)))))))
+        (success (js-object :target target :format "json" :config config
+          :client_config_modified false :agent_started false
+          :instructions "Local hooks only. Merge into the matching user hooks.json after native trust review. Requires recipient agent.whoami/agent.bind and subscription.consume grants. Never bypass trust or use operator credentials. See references/callbacks.md. No automatic acknowledgement.")))))
   (defasync readHookInput (stream)
     (let* ((reader (js-call stream :getReader)) (chunks (js-array)) (size 0) (done false) (timed-out false)
            (timer (nativeSetTimeout (async () (setq timed-out t)
@@ -120,7 +127,7 @@
           (let ((options (js-object)) (i 2))
             (while (< i (js-length argv))
               (let ((flag (aref argv i)))
-                (unless (and (js-call (js-array "--target" "--client-profile" "--agent" "--subscription") :includes flag)
+                (unless (and (js-call (js-array "--target" "--client-profile" "--agent" "--group") :includes flag)
                   (< (1+ i) (js-length argv)) (not (js-call (aref argv (1+ i)) :startsWith "--")))
                   (throw (new globalThis.TypeError "invalid callback option")))
                 (let ((key (js-call (js-call flag :slice 2) :replaceAll "-" "_")))

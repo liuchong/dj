@@ -68,7 +68,7 @@
           (nativeGet owner-row "recipient_principal_id")))
         (revision (nativeGet recipient "authorization_revision"))
         (rows (js-call (js-call (nativeGet (nativeGet context "store") "db") :query
-          "SELECT a.agent_id,a.payload FROM match_decisions m JOIN subscriptions s ON s.subscription_id=m.subscription_id AND s.revision=m.revision AND s.state='active' LEFT JOIN group_dispatches g ON g.subscription_id=s.subscription_id AND g.event_id=m.event_id JOIN agents a ON a.agent_id=COALESCE(s.agent_id,json_extract(g.payload,'$.agent_id')) AND a.state='registered' JOIN routes r ON r.route_id=a.route_id WHERE m.event_id=? AND m.result='match' AND r.session_key<>? GROUP BY a.agent_id ORDER BY a.agent_id")
+          "SELECT a.agent_id,a.payload FROM match_decisions m JOIN subscriptions s ON s.target_key=m.target_key AND s.revision=m.revision AND s.state='active' LEFT JOIN group_dispatches g ON g.target_key=s.target_key AND g.event_id=m.event_id JOIN agents a ON a.agent_id=COALESCE(s.agent_id,json_extract(g.payload,'$.agent_id')) AND a.state='registered' JOIN routes r ON r.route_id=a.route_id WHERE m.event_id=? AND m.result='match' AND r.session_key<>? GROUP BY a.agent_id ORDER BY a.agent_id")
           :iterate (nativeGet envelope "event_id") (nativeGet target "session_key")))
         (items (js-array)) (more false) (done false))
         (try

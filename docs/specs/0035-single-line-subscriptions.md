@@ -22,7 +22,10 @@
 
 `subscriptions` 表以 `target_key` 为唯一主键槽位（不再维护一对多的独立 `subscription_id` 写入集合；历史投递若需审计溯源，直接记录 `target_key` 与 `subscription_revision`）。管理员 `fixed_routes`（`0021`）同样直接绑定目标的这唯一槽位：同一配置中禁止两条 `fixed_route` 指向同一 `session_key` 或 `group_id`；配置托管期间（`configuration_id` 非空），公开订阅写接口拒绝覆盖。
 
-当同一物理对话同时具备自身的单对话订阅（`session:<session_key>`）且又是某个命中组订阅（`group:<group_id>`）的成员时：同一原生事件对该 `session_key` 仍严格遵守单对话单次通知边界（`0031` `dispatch_notifications` 按 `(event_key, session_key, lane)` 唯一归并，不按 `group_id` 拆出第二条重复通知；组内选人优先跳过本事件已有有效直订命中的会话，若仅该成员可选则归并至同一通知并保留组命中记录）。
+当同一物理对话同时具备自身的单对话订阅（`session:<session_key>`）且又是某个命中组订阅（`group:<group_id>`）的成员时，严格执行以下可验证规则：
+
+1. **评估顺序与唯一通知键**：路由阶段固定先评估全部 `session:*` 单对话订阅，再评估 `group:*` 组订阅；`dispatch_notifications` 以 `(event_key, session_key)` 为唯一通知槽位（不按 `push`/`pull` 拆成两个槽位，也不按 `group_id` 拆分）。若单对话订阅本身已有效命中，则由该对话自有的 `delivery_mode`（`push` 或 `pull`）先行占有 `(event_key, session_key)`。
+2. **组选人与归并记录**：组订阅执行成员筛选时，先按配置的额度与在线可用性策略筛出合格成员；对本事件已占有 `(event_key, session_key)` 的成员，在存在其他合格未通知成员时予以跳过，其余合格成员继续按配置的 `random` / `round_robin` / `priority` 算法机械选人。若合格成员全部已在本事件占有 `(event_key, session_key)`，则不重复创建第二条 `push` 投递或 `pull` 待领项，`group_dispatches` 记录 `state="coalesced"` 与 `coalesced_into` 指向原通知持有记录。
 
 ### 2. 单条订阅结构（`spec`）
 
@@ -110,9 +113,9 @@ flowchart LR
 ## 施工与验收清单
 
 施工阶段（按 `bulk-development` 三段式）：
-- [ ] S1 实现 `src/triggers/`（`predicate.eli`、`sources.eli`、`rules.eli`、`suppression.eli`），移除旧分散模块。
-- [ ] S2 重构 `src/storage/schema.eli`、`src/subscriptions/*`、`src/routing/matcher.eli`、`src/delivery/*`、`src/service/fixed-routes.eli`、`src/registry/agents.eli`、`src/sessions/rules.eli`，落地单目标唯一订阅槽位并彻底移除 `contributions`。
-- [ ] S3 同步 `src/application/operations.eli`、`results.eli`、`help.eli`、配置示例与 `skills/dj/` 全套文档。
-- [ ] S4 编写并集中执行集成功能验收（单对话多分支覆盖 IM + 资源变更 + 首行多条件、单分支独立启停、`set`/`pause`/`resume`/`delete` 切流、多对话同事件各自单线通知、直订与组成员重合单次通知、`fixed_routes` 与组订阅单槽位、全局黑名单抑制）。
-- [ ] S5 补充 `src/triggers/` 与单线状态转换关键保护性单测并运行回归。
+- [x] S1 实现 `src/triggers/`（`predicate.eli`、`sources.eli`、`rules.eli`、`suppression.eli`），移除旧分散模块。
+- [x] S2 重构 `src/storage/schema.eli`、`src/subscriptions/*`、`src/routing/matcher.eli`、`src/delivery/*`、`src/service/fixed-routes.eli`、`src/registry/agents.eli`、`src/sessions/rules.eli`，落地单目标唯一订阅槽位并彻底移除 `contributions`。
+- [x] S3 同步 `src/application/operations.eli`、`results.eli`、`help.eli`、配置示例与 `skills/dj/` 全套文档。
+- [x] S4 编写并集中执行集成功能验收（单对话多分支覆盖 IM + 资源变更 + 首行多条件、单分支独立启停、`set`/`pause`/`resume`/`delete` 切流、多对话同事件各自单线通知、直订与组成员重合单次通知、`fixed_routes` 与组订阅单槽位、全局黑名单抑制）。
+- [x] S5 补充 `src/triggers/` 与单线状态转换关键保护性单测并运行回归。
 - [ ] S6 签名提交推送；本机服务升级切换前完整清点现有活跃订阅与规则，按新单线结构一次性写入各目标的唯一订阅槽位（保留全部已登记 Agent、消息历史、已提交投递、`session.rules` 与退订策略，服务运行代码不内建旧表迁移或兼容分支），更新已安装 Skill 并清理全部临时构建产物。

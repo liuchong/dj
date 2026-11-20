@@ -9,7 +9,14 @@
         :prompt (js-object :type "string" :minLength 1 :maxLength 8192)
         :task_template (js-object :type "string" :minLength 1 :maxLength 8192))))
   (defconst templateFields
-    (js-array "message.text" "event.id" "sender.id" "source.chat_id" "source.thread_id" "subscription.id"))
+    (js-array
+      "message.text"
+      "event.id"
+      "sender.id"
+      "source.chat_id"
+      "source.thread_id"
+      "subscription.target_key"
+      "rule.id"))
   (defun templateParts (text)
     (let ((parts (js-call text :split (new globalThis.RegExp "([{][{][^{}]*[}][}])" "g")))
           (result (js-array)) (slots 0))
@@ -25,9 +32,11 @@
               (throw (new globalThis.TypeError "unbalanced task template field")))
             (js-call result :push (js-object :text part))))))
       result))
-  (defun validateInstructionPolicy (policy)
+  (defun validateInstructionPolicy (policy &optional pointer)
     (if (nativeNullish policy) (success nil)
       (try
+        (unless (and (= (nativeTypeOf policy) "object") (not (Array/isArray policy)))
+          (throw (new globalThis.TypeError "invalid instruction policy")))
         (js-call (Object/keys policy) :forEach (lambda (field)
           (let ((text (nativeGet policy field)))
             (unless (and (js-call (js-array "prompt" "task_template") :includes field)
@@ -37,15 +46,16 @@
             (when (= field "task_template") (templateParts text)))))
         (when (= (js-length (Object/keys policy)) 0) (throw (new globalThis.TypeError "empty instruction policy")))
         (success policy)
-        (catch invalid (invalidField "/spec/instruction_policy"
+        (catch invalid (invalidField (or pointer "/spec/instruction_policy")
           "prompt/task_template: 1..8192 UTF-8 bytes; at most 32 documented {{field}} substitutions")))))
-  (defun renderTask (template event contribution body)
+  (defun renderTask (template event item body)
     (let* ((address (nativeGet event "conversation"))
            (values (js-object :message.text body :event.id (nativeGet event "event_id")
              :sender.id (nativeGet (nativeGet event "sender") "id")
              :source.chat_id (nativeGet address "native_chat_id")
              :source.thread_id (nativeGet address "native_thread_id")
-             :subscription.id (nativeGet contribution "subscription_id")))
+             :subscription.target_key (nativeGet item "target_key")
+             :rule.id (nativeGet item "rule_id" "")))
            (text "") (bytes 0) (overflow false))
       ;; Parse configuration once. Substituted external values are literal data:
       ;; never parse their braces, evaluate expressions or run a shell.
@@ -60,13 +70,16 @@
               (setq overflow t)
               (setq text (str text piece)))))))
       (js-object :text text :overflow overflow)))
-  (defun composeInstructions (contributions event body)
+  (defun composeInstructions (items event body)
     (let ((result (js-array)) (bytes 0))
-      (js-call contributions :forEach (lambda (item)
-        (let ((policy (nativeGet item "instruction_policy")))
+      (js-call (or items (js-array)) :forEach (lambda (item)
+        (let ((policy (nativeGet item "policy" (nativeGet item "instruction_policy"))))
           (when (and policy (not (nativeGet result "overflow")))
-            (let ((entry (js-object :subscription_id (nativeGet item "subscription_id")
-                     :subscription_revision (nativeGet item "revision"))))
+            (let ((entry (js-object
+                     :target_key (nativeGet item "target_key")
+                     :subscription_revision (nativeGet item "revision")
+                     :scope (nativeGet item "scope" "subscription")
+                     :rule_id (nativeGet item "rule_id" nil))))
               (when (nativeGet policy "prompt") (put entry :prompt (nativeGet policy "prompt")))
               (when (nativeGet policy "task_template")
                 (let ((rendered (renderTask (nativeGet policy "task_template") event item body)))
@@ -77,4 +90,4 @@
               (when (> bytes (nativeGet limits "native_frame_max_bytes")) (put result :overflow t))
               (unless (nativeGet result "overflow") (js-call result :push entry)))))))
       result))
-  (export instructionPolicySchema validateInstructionPolicy renderTask composeInstructions))
+  (export instructionPolicySchema templateFields validateInstructionPolicy renderTask composeInstructions))

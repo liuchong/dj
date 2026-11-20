@@ -252,19 +252,18 @@
                   (when (nativeGet (nativeGet parent "reply_to") "id") (js-call pending :push (nativeGet (nativeGet parent "reply_to") "id"))))))))
         (catch error (setq failure-code (nativeGet (nativeGet error "domain_result") "error" (js-object :code "unavailable")))))
       failure-code))
-  (defun policyFor (contributions)
-    (let ((before (if (> (js-length contributions) 0) 19 0)) (maximum 16384))
-      (js-call contributions :forEach (lambda (item)
-        (let ((policy (nativeGet item "context_policy")))
-          (setq before (Math/min before (if (= (nativeGet policy "mode") "recent") (1- (nativeGet policy "max_events" 10)) 0)))
-          (setq maximum (Math/min maximum (nativeGet policy "max_bytes" 16384))))))
-      (js-object :before before :after 0 :reference_depth 4 :max_bytes maximum)))
-  (defun envelopeContext (context recipient event contributions)
+  (defun policyFor (policy)
+    (js-object
+      :before (if (= (nativeGet policy "mode") "recent") (1- (nativeGet policy "max_events" 10)) 0)
+      :after 0
+      :reference_depth 4
+      :max_bytes (nativeGet policy "max_bytes" 16384)))
+  (defun envelopeContext (context recipient event context-policy)
     (let* ((scoped (Object/assign (js-object) context (js-object :principal recipient)))
       (address (nativeGet event "conversation")) (connection (scopedConnection scoped address))
       (scope (js-object :address address :anchor event :native_message_id (nativeGet event "native_message_id")
         :identity_revision (nativeGet connection "identity_revision" (nativeGet connection "revision")))))
-      (collectContext scoped scope (policyFor contributions))))
+      (collectContext scoped scope (policyFor context-policy))))
   (defasync handleOperation (context operation args)
     (try
       (let* ((scope (must (resolveScope context args))) (address (nativeGet scope "address"))
