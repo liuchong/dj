@@ -1,0 +1,64 @@
+(module dj.interfaces.batch
+  (import "../core/errors.eli" success failure invalidField)
+  (import "../core/limits.eli" limits)
+  (import "../core/native.eli" nativeGet)
+  (import "../core/types.eli" isObject)
+  (import "../application/operations.eli" operationCatalog)
+  (import "./client.eli" loadClientProfile callService)
+
+  (defasync queryLine (profile options decoder bytes size)
+    (if (> size (js-length bytes))
+      (failure "limit_exceeded")
+      (let* ((request (try
+                        (JSON/parse (js-call decoder :decode (js-call bytes :subarray 0 size)))
+                        (catch invalid nil)))
+             (operation (nativeGet request "operation"))
+             (args (nativeGet request "arguments")))
+        (cond
+          ((not (and (isObject request) (isObject args)
+                     (= (js-length (Object/keys request)) 2)))
+            (invalidField "/" "one JSON object with operation and arguments"))
+          ((not (= (nativeGet (js-call operationCatalog :get operation) "effect_kind") "query"))
+            (invalidField "/operation" "a declared query operation"))
+          (t
+            (await (callService profile operation args
+              (nativeGet options "timeout_seconds") (nativeGet options "endpoint"))))))))
+
+  (defasync runBatch (options io)
+    (let ((loaded (await (loadClientProfile (nativeGet options "client_profile")))))
+      (if (not (nativeGet loaded "ok")) loaded
+        (let* ((profile (nativeGet loaded "data"))
+               (maximum (nativeGet limits "request_bytes"))
+               (bytes (Buffer/alloc maximum))
+               (decoder (new globalThis.TextDecoder "utf-8" (js-object :fatal t)))
+               (reader (js-call (nativeGet io "stdin") :getReader))
+               (write (or (nativeGet io "batch_stdout") (nativeGet io "stdout")))
+               (size 0)
+               (done false)
+               (respond (async ()
+                 (let ((result (await (queryLine profile options decoder bytes size))))
+                   (await (funcall write (str (JSON/stringify result) "\n")))))))
+          (try
+            (while (not done)
+              (let ((part (await (js-call reader :read))))
+                (setq done (nativeGet part "done"))
+                (unless done
+                  (let ((chunk (nativeGet part "value")) (start 0))
+                    (while (< start (js-length chunk))
+                      (let* ((line-end (js-call chunk :indexOf 10 start))
+                             (end (if (< line-end 0) (js-length chunk) line-end))
+                             (next-size (+ size (- end start))))
+                        (when (<= next-size maximum)
+                          (js-call bytes :set (js-call chunk :subarray start end) size))
+                        (setq size (Math/min next-size (1+ maximum)))
+                        (if (< line-end 0) (setq start end)
+                          (progn
+                            (await (funcall respond))
+                            (setq size 0 start (1+ end))))))))))
+            (when (> size 0) (await (funcall respond)))
+            (success nil)
+            (finally
+              (try (await (js-call reader :cancel)) (catch ignored nil))
+              (js-call reader :releaseLock)))))))
+
+  (export runBatch))

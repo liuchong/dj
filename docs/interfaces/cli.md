@@ -42,11 +42,24 @@ dj message reply --input reply-request.json --json
 
 操作超时后，operation-lookup.json 使用原 operation+idempotency_key；查到 operation_id 后再从 resource_refs 取得 outbound/delivery/subscription ID。不能凭名字猜哪个 get，也不能新键重发。not_found 不证明原请求不会提交，若重放必须保留原键和原输入。
 
+## 在一个进程中连续查询
+
+优先复用已连接的 DJ MCP。脚本也可以保持一个 `dj batch` 客户端进程，对同一个已配置的 DJ 服务依次查询：
+
+```bash
+dj batch <<'JSONL'
+{"operation":"service.status","arguments":{}}
+{"operation":"connection.list","arguments":{}}
+JSONL
+```
+
+每行包含一个 `operation` 和 `arguments` 对象，按输入顺序各返回一行 JSON 结果。输出包括逐条错误。输入可保持打开，收到本页结果后再填入游标或原生 `page_token` 请求下一页。单行沿用请求字节上限，写入类操作使用对应的独立命令或 MCP。退出码反映客户端能否完成输入输出，查询结果以各行的 `ok` 为准。
+
 ## 生命周期入口
 
 服务采用 `dj serve --config FILE`，FILE 为本地部署配置，缺省为可信宿主 home 下的 `.dj/service.json`（即 `~/.dj/service.json`）；--config 仅属于该操作员启动入口，不是普通业务 JSON 参数。CLI/MCP 从可信宿主设置的 DJ_CLIENT_PROFILE 指向受保护客户端配置，--endpoint 只选择其中的服务引用；不接受请求自报 principal。启动与权限接线见 [完整流程](../startup-to-reply.md)。
 
-操作员进程入口 dj serve（前台常驻）和 dj mcp serve --transport stdio（薄代理）均待实现。服务由部署配置启动，不由 Agent 隐式安装/后台脱离。MCP/CLI 断线不删除订阅；服务不可用不另建空数据库或影子服务。
+`dj serve` 启动前台服务，`dj mcp serve --transport stdio` 启动可复用的 MCP 客户端。服务由部署配置启动，不由 Agent 隐式安装/后台脱离。MCP/CLI 断线不删除订阅；服务不可用不另建空数据库或影子服务。
 
 本地秘密通过受保护配置引用取得，不放进命令参数、模型正文、输出或 Skill。普通 Agent 无法调用 operator-only resolve。CLI 与 MCP 共用幂等台账、字段目录、错误与权限，不因换入口而重新执行副作用。
 

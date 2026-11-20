@@ -9,6 +9,7 @@
   (import "../core/limits.eli" limits)
   (import "../application/operations.eli" operationCatalog descriptorData)
   (import "./client.eli" loadClientProfile callService)
+  (import "./batch.eli" runBatch)
   (defconst flags
     (js-object
       :--connection
@@ -214,6 +215,7 @@
             (or
               (= operation "serve")
               (= operation "mcp.serve")
+              (= operation "batch")
               (js-call operationCatalog :has operation)
               (and (= (js-length words) 0) (nativeGet options "help")))
             (progn
@@ -222,6 +224,12 @@
                 (invalidField "/operation" "declared command words; use --help"))
               (throw djReturn1Token)))
           (cond
+            ((= operation "batch")
+              (when (or (not (= (nativeGet options "input" "-") "-"))
+                        (> (js-length (Object/keys business)) 0)
+                        (nativeGet options "config") (nativeGet options "transport"))
+                (setq djReturn1Value (invalidField "/operation" "batch reads JSON lines from stdin"))
+                (throw djReturn1Token)))
             ((= operation "serve")
               (when
                 (or
@@ -368,13 +376,15 @@
   (defun commandHelp
     (operation)
     (cond
+      ((= operation "batch")
+        "dj batch [--client-profile FILE] [--endpoint ID] [--timeout-seconds N]\nOne JSON line per query on stdin: {\"operation\":\"service.status\",\"arguments\":{}}. One result line on stdout before the next query. Query operations only.\n")
       ((= operation "serve")
         "dj serve [--config FILE]\nForeground service; default ~/.dj/service.json. Startup recovers durable state before intake. Stop may remain draining while native work is unresolved.\n")
       ((= operation "mcp.serve")
         "dj mcp serve --transport stdio [--client-profile FILE]\nThin authenticated proxy to the configured DJ service. It does not start another Core.\n")
       ((= operation "")
         (str
-          "DJ: deterministic IM and Agent gateway\n\ndj skill targets|install|check|config --help\ndj controller --help\n\n"
+          "DJ: deterministic IM and Agent gateway\n\ndj skill targets|install|check|config --help\ndj controller --help\ndj batch --help\n\n"
           (js-call
             (js-call
               (descriptorData)
@@ -502,6 +512,7 @@
                 (funcall (nativeGet io "stdout") (commandHelp operation))
                 (progn (setq djReturn3Value 0) (throw djReturn3Token)))
               (cond
+                ((= operation "batch") (setq result (await (runBatch options io))))
                 ((= operation "serve")
                   (let ((service (await (js* "import('../service/main.mjs')"))))
                     (setq result (await (js-call service :runService (nativeGet options "config"))))))
@@ -531,7 +542,8 @@
                       (when (eq invalid djReturn3Token) (throw invalid))
                       (setq result (failure "invalid_argument"))))))))
           (if (nativeGet result "ok")
-            (unless (= (nativeGet (nativeGet parsed "data") "operation") "mcp.serve")
+            (unless (js-call (js-array "mcp.serve" "batch") :includes
+                      (nativeGet (nativeGet parsed "data") "operation"))
               (funcall
                 (nativeGet io "stdout")
                 (if json (str (JSON/stringify result) "\n") (humanResult result))))
@@ -553,6 +565,11 @@
               (js-call (nativeGet NativeBun "stdin") :stream)
               :stdout
               (lambda (text) (js-call (nativeGet globalThis.process "stdout") :write text))
+              :batch_stdout
+              (lambda (text)
+                (new globalThis.Promise (lambda (resolve reject)
+                  (js-call (nativeGet globalThis.process "stdout") :write text
+                    (lambda (error) (if error (funcall reject error) (funcall resolve nil)))))))
               :stderr
               (lambda (text) (js-call (nativeGet globalThis.process "stderr") :write text))))))
       (catch unavailable

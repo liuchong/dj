@@ -24506,6 +24506,24 @@
       "then": "保留已提交事实；原输入最多一次，cutover后新事件不触发"
     },
     {
+      "case_id": "T18.cli-batch-queries.integration",
+      "parent_id": "T18",
+      "file": "tests/integration/interfaces.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-integration",
+      "acceptance_ids": ["A19"],
+      "requirements": ["Q07"],
+      "given": "An authenticated CLI client connected to the existing service",
+      "when": "One batch process receives valid queries interleaved with a mutation and invalid lines",
+      "then": "Results retain their order, only valid queries run, and per-line errors do not terminate the client"
+    },
+    {
       "case_id": "T18.cli-mcp-api-single-operation.integration",
       "parent_id": "T18",
       "file": "tests/integration/interfaces.test.eli",

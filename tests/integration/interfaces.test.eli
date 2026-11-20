@@ -3,6 +3,7 @@
   (import "../../tools/opencode-observer.eli" observeOpenCode)
   (import "../../tools/opencode-observer-controller.eli" loadObserverBinding readObserverRequest)
   (import "../../src/core/types.eli" stableSessionKey)
+  (import "../../src/core/limits.eli" limits)
   (import "bun:test" expect)
   (import "node:path" resolve)
   (import "node:crypto" randomUUID)
@@ -777,6 +778,37 @@
               (when server (js-call server :stop t))
               (await (closeFixture f)))))
         (setq index (1+ index)))))
+  (withCase "T18.cli-batch-queries.integration" setupEntry (async (p)
+    (let* ((profile (await (writeClientProfile p "S")))
+           (body (str
+             "{\"operation\":\"service.status\",\"arguments\":{}}\n"
+             "{\"operation\":\"session.send\",\"arguments\":{}}\n"
+             "{not-json}\n"
+             (js-call "x" :repeat (1+ (nativeGet limits "request_bytes"))) "\n"
+             "{\"operation\":\"agent.whoami\",\"arguments\":{}}"))
+           (child (Bun/spawn
+             (js-array (nativeGet globalThis.process "execPath")
+               (resolve "dist/src/interfaces/cli.mjs") "batch" "--client-profile" profile)
+             (js-object :stdin (new globalThis.Blob (js-array body)) :stdout "pipe" :stderr "pipe"))))
+      (try
+        (let* ((finished (await (Promise/all (js-array
+                 (js-call (new globalThis.Response (nativeGet child "stdout")) :text)
+                 (js-call (new globalThis.Response (nativeGet child "stderr")) :text)
+                 (nativeGet child "exited")))))
+               (results (js-call (js-call (js-call (aref finished 0) :trimEnd) :split "\n")
+                 :map (lambda (line) (JSON/parse line)))))
+          (js-call (expect (aref finished 2)) :toBe 0)
+          (js-call (expect (aref finished 1)) :toBe "")
+          (js-call (expect (js-length results)) :toBe 5)
+          (js-call (expect (nativeGet (aref results 0) "ok")) :toBe t)
+          (js-call (expect (nativeGet (nativeGet (aref results 1) "error") "code")) :toBe "invalid_argument")
+          (js-call (expect (nativeGet (nativeGet (aref results 2) "error") "code")) :toBe "invalid_argument")
+          (js-call (expect (nativeGet (nativeGet (aref results 3) "error") "code")) :toBe "limit_exceeded")
+          (js-call (expect (nativeGet (nativeGet (aref results 4) "data") "principal_id")) :toBe "S")
+          (js-call (expect (nativeGet (await (js-call p :control (js-object :kind "stats"))) "inputs")) :toBe 0))
+        (finally
+          (when (= (nativeGet child "exitCode") nil) (js-call child :kill "SIGTERM"))
+          (await (nativeGet child "exited")))))) closeProcess)
   (withCase
     "T18.cli-mcp-api-single-operation.integration"
     setupEntry

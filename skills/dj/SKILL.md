@@ -51,6 +51,7 @@ metadata:
 | 需要做什么 | DJ接口 | 详细说明 |
 | --- | --- | --- |
 | 官方各业务域 API、JSON、上传下载 | lark.api.read / lark.api.call / lark.api.get | [Lark原生入口](references/lark.md#官方-api-通用入口)；明确连接身份，写操作先记账，原生权限错误如实返回 |
+| 连续查询和分页 | 复用已连接的 DJ MCP；CLI 用单个 `dj batch` | [逐行查询](references/lark.md#官方-api-通用入口) |
 | 核对连接账号、健康、群/私聊/话题目的地 | connection.list、connection.get、connection.probe；conversation.list、conversation.resolve | [本人身份](references/user-inbox.md) |
 | 读取、搜索消息与更多历史/引用上下文 | message.list、message.search、message.get；message.context、message.history | [上下文](references/context.md) |
 | 读取图片、文件、音视频及 Lark 文档附件 | message.attachment.get | [原生定位与同身份补取](references/lark.md#读图片与附件) |
