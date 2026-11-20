@@ -16,7 +16,7 @@
   ],
   "sideEffects": false,
   "peerDependencies": {
-    "eliscript": ">=0.1.0"
+    "eliscript": "0.1.3"
   },
   "license": "LicenseRef-1PL",
   "scripts": {

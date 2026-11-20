@@ -316,8 +316,8 @@
           (put environment :lock_sha256 (sha256 (await (readFile "bun.lock"))))
           (put
             environment
-            :compiler_source_record_sha256
-            (sha256 (await (readFile "config/compiler-source-inputs.json"))))
+            :toolchain_lock_sha256
+            (sha256 (await (readFile "config/toolchain.lock.json"))))
           (when
             (and
               (nativeGet selection "real")

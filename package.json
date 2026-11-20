@@ -27,7 +27,7 @@
   ],
   "scripts": {
     "build": "bun dist-tools/tools/build.mjs --scope all",
-    "build:tools": "rm -rf -- dist-tools && ELISCRIPT_BOOTSTRAP_MODULE_DIR=.local/toolchains/eliscript-b1c7741/source/dist/bootstrap ELISCRIPT_JS_RUNTIME=bun .local/toolchains/eliscript-b1c7741/source/bin/eliscript-build --json --config eliscript.tools.json",
+    "build:tools": "rm -rf -- dist-tools && ELISCRIPT_BOOTSTRAP_MODULE_DIR=./node_modules/eliscript/dist/bootstrap ELISCRIPT_JS_RUNTIME=bun bun ./node_modules/eliscript/bootstrap/host/project-cli.mjs --json --config eliscript.tools.json",
     "build:test": "bun dist-tools/tools/build.mjs --scope all",
     "package:directory": "bun dist-tools/tools/package.mjs",
     "test": "bun dist-tools/tools/verify.mjs --suite unit",
@@ -42,7 +42,7 @@
   "dependencies": {
     "@modelcontextprotocol/server": "2.3.1",
     "ajv": "8.20.0",
-    "eliscript": "0.1.0"
+    "eliscript": "0.1.3"
   },
   "devDependencies": {
     "@oven/bun-darwin-aarch64": "1.4.4"

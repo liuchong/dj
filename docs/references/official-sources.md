@@ -144,14 +144,14 @@ Pi 的可编程 RPC 不意味着任意已经打开的普通 TUI 可附着。本�
 <a id="eliscript-runtime"></a>
 ## Eliscript、宿主与技术选型补充
 
-本节于 2026-10-23 新增。EL 条目是对下述固定 commit 的本地源码/文档只读核对，链接用于持久定位；没有把线上网页访问或语言测试当作已完成。曾尝试的站点 getting-started.html 不能读取，故不列为有效资料。其他条目本轮实际读取官方正文；npm 精确补丁版本与兼容实测仍待实现阶段锁定。
+EL 条目以当前锁定的 Eliscript 0.1.3 正式发布为准。发布依据和 DJ 自身构建验收分别记录。
 
 | ID | 官方资料 | 用途与适用边界 | 状态 |
 | --- | --- | --- | --- |
-| EL01 | [Eliscript README](https://github.com/liuchong/eliscript/blob/b1c7741365545d5a048079d64f863524cf7117e2/README.md) | ESM、工具链、发布包与能力入口；不是 DJ 编译验收 | 固定本地源码已读 |
-| EL02 | [JavaScript interoperation](https://github.com/liuchong/eliscript/blob/b1c7741365545d5a048079d64f863524cf7117e2/docs/javascript-interop.md) | 包导入、宿主对象与 false/null/undefined 保真 | 固定本地源码已读 |
-| EL03 | [Project configuration](https://github.com/liuchong/eliscript/blob/b1c7741365545d5a048079d64f863524cf7117e2/docs/project-configuration.md) | 多入口、源码/产物边界、构建与缓存 | 固定本地源码已读 |
-| EL04 | [0.1.0 正式语法](https://github.com/liuchong/eliscript/blob/b1c7741365545d5a048079d64f863524cf7117e2/docs/emacs-compatible-syntax.md) | 当前显式扩展与宿主边界；不从旧提案推断当前支持 | 固定本地源码已读 |
+| EL01 | [Eliscript README](https://github.com/liuchong/eliscript/blob/8204dd9403c117d5e133cbbda74b65936313ace4/README.md) | ESM、工具链、发布包与能力入口；不是 DJ 编译验收 | 固定本地源码已读 |
+| EL02 | [JavaScript interoperation](https://github.com/liuchong/eliscript/blob/8204dd9403c117d5e133cbbda74b65936313ace4/docs/javascript-interop.md) | 包导入、宿主对象与 false/null/undefined 保真 | 固定本地源码已读 |
+| EL03 | [Project configuration](https://github.com/liuchong/eliscript/blob/8204dd9403c117d5e133cbbda74b65936313ace4/docs/project-configuration.md) | 多入口、源码/产物边界、构建与缓存 | 固定本地源码已读 |
+| EL04 | [核心语法](https://github.com/liuchong/eliscript/blob/8204dd9403c117d5e133cbbda74b65936313ace4/docs/core-syntax.md) | 当前显式扩展与宿主边界；不从旧提案推断当前支持 | 固定本地源码已读 |
 | RT01 | [Bun SQLite](https://bun.com/docs/runtime/sqlite) | 内置同步驱动、事务与 WAL 接口；实际内嵌 SQLite 版本另查 | 已访问 |
 | RT02 | [Bun HTTP server](https://bun.com/docs/runtime/http/server) | HTTP/1.1 与 Unix socket 的本地控制入口 | 已访问 |
 | RT03 | [Bun child processes](https://bun.com/docs/runtime/child-process) | 参数数组、管道、流及退出；不使用 shell 拼正文 | 已访问 |
@@ -233,7 +233,7 @@ I06/I07 续写时重新读取 [IM01 getUpdates](https://core.telegram.org/bots/a
 
 I08 资源字段只读核对本机 macOS SDK 的 libproc.h/sys/resource.h，并读取 [Apple XNU resource.h](https://raw.githubusercontent.com/apple-oss-distributions/xnu/main/bsd/sys/resource.h)；确认 resident size、physical footprint 和进程出生时间是不同字段。在线 Libc/include/libproc.h 定位返回404，函数声明依据本机官方 SDK，不把失败链接当已读正文。没有调用 proc_pid_rusage 或运行资源测试。
 
-编译器准备复用已定位的 Eliscript 本地固定 SHA b1c7741365545d5a048079d64f863524cf7117e2，未更新/切换共享检出；读取 bootstrap-runtime.el、bootstrap-seed.el、backends/bootstrap.el、compiler-build.eli 与 release-cli.eli，固化 Emacs seed→自举→目录包的重建输入。隔离树只复制固定源与已绑定摘要的生成源；未运行编译器、发布器或上游测试。实际 source closure 见 config/compiler-source-inputs.json，不把准备记录当新的语言发布证明。
+当前构建使用 [Eliscript 0.1.3 正式发布](https://github.com/liuchong/eliscript/releases/tag/v0.1.3) 对应的 [npm 归档](https://registry.npmjs.org/eliscript/0.1.3)。DJ 校验已安装文件、stage3 回执和编译器产物元数据，输入以 `bun.lock` 与 `config/toolchain.lock.json` 为准。早期从源码自举的准备记录见 [历史说明](../archive/readiness.md)。
 
 ## S2 原生身份与成品接线资料
 

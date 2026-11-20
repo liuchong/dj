@@ -68,38 +68,6 @@
               (throw
                 (new globalThis.Error "unsupported file in maintained package assets")))))
         (setq index (1+ index)))))
-  (defun fixedRuntimePlugin
-    (compiler-root)
-    (js-object
-      :name
-      "dj-fixed-eliscript-runtime"
-      :setup
-      (lambda
-        (builder)
-        (js-call
-          builder
-          :onResolve
-          (js-object :filter (new globalThis.RegExp "^eliscript/"))
-          (lambda
-            (args)
-            (let*
-              ((name (js-call (nativeGet args "path") :slice (js-length "eliscript/")))
-                (path
-                  (resolve
-                    compiler-root
-                    (if (js-call name :endsWith ".mjs") name (str name ".mjs")))))
-              (unless
-                (and
-                  (or
-                    (js-call name :startsWith "runtime/")
-                    (js-call name :startsWith "dist/stdlib/"))
-                  (not (js-call (js-call name :split "/") :includes ".."))
-                  (within compiler-root path))
-                (throw
-                  (new
-                    globalThis.Error
-                    "production import must name only the fixed language runtime")))
-              (js-object :path path)))))))
   (defasync normalizeSourceMaps
     (directory compiler-root checkout)
     (let ((entries (await (readdir directory (js-object :withFileTypes t)))) (index 0))
@@ -307,9 +275,7 @@
                     :chunk
                     "chunks/[name]-[hash].mjs"
                     :asset
-                    "assets/[name]-[hash].[ext]")
-                  :plugins
-                  (js-array (fixedRuntimePlugin (nativeGet compiler "root"))))))))
+                    "assets/[name]-[hash].[ext]"))))))
         (unless (nativeGet result "success")
           (throw
             (new
@@ -332,8 +298,7 @@
         (let ((result (await (Bun/build (js-object
           :entrypoints (js-array (resolve "dist/src/controller/platform/darwin/main.mjs"))
           :outdir (resolve staging "libexec/darwin") :target "bun" :format "esm" :packages "bundle"
-          :splitting false :naming (js-object :entry "main.mjs")
-          :plugins (js-array (fixedRuntimePlugin (nativeGet compiler "root"))))))))
+          :splitting false :naming (js-object :entry "main.mjs"))))))
           (unless (nativeGet result "success") (throw (new globalThis.Error "standalone controller bundling failed")))))
       (await (copyTree "skills/dj" staging "skills/dj"))
       (await (copyTree "connectors/codex" staging "connectors/codex"))

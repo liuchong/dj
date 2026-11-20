@@ -15,11 +15,9 @@
 
 ## 固定工具链
 
-Bun 固定为 1.4.4，目标 macOS arm64。Eliscript 源身份与完整输入分别记录在 `config/toolchain.lock.json`、`config/compiler-provenance.json`、`config/compiler-source-inputs.json`。
+Bun 固定为 1.4.4，目标 macOS arm64。Eliscript 编译器与运行库使用同一份 npm 0.1.3 正式发布包。`bun.lock` 绑定归档完整性，`config/toolchain.lock.json` 固定发布源提交、已安装文件摘要及 stage3 回执。`tools/build.eli` 校验这些值后才编译项目。
 
-源码构建还需要私有 `.local/toolchains/` 中已完成固定源 stage3 核验的编译器；安装 npm 同名版本不能替代该条件。`tools/build.eli` 的 `bindCompiler` 校验实际源文件、产物和 stage3 回执，失配时拒绝继续。历史准备细节见[依赖准备记录](../archive/readiness.md)，其中当时的状态不代表当前状态，也不能据此更换源身份。
-
-工具链就绪后：
+从干净源码检出直接执行：
 
 ```sh
 bun install --frozen-lockfile

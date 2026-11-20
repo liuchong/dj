@@ -12,6 +12,9 @@
   <title>DJ — 消息一响，Agent 上场。</title>
   <link rel="icon" href="pages/assets/dj-mark.svg" type="image/svg+xml">
   <link rel="stylesheet" href="pages/site.css">
+  <script type="importmap">
+    {"imports":{"eliscript/":"https://cdn.jsdelivr.net/npm/eliscript@0.1.3/","eliscript/browser":"https://cdn.jsdelivr.net/npm/eliscript@0.1.3/browser/host.mjs"}}
+  </script>
 </head>
 <body>
   <a class="skip-link" href="#main">跳到正文</a>
@@ -69,7 +72,7 @@
           <article class="signal-card target-card"><div class="card-label"><span>OUT / 对话接棒</span><b id="demo-target-icon">↗</b></div><div class="signal-author"><span class="avatar target-avatar" id="demo-avatar">AI</span><div><b id="demo-target">Codex · 原订阅对话</b><small id="demo-target-state">精确投递到已有会话</small></div></div><p id="demo-action">携带原消息与规则，交给这个对话处理。</p><span class="tiny-tag" id="demo-outcome">是否处理、何时回复，由 AI 判断</span></article>
         </div>
         <div class="event-log" role="status" aria-live="polite" aria-atomic="true"><span>ROUTE LOG</span><p id="demo-log">收到消息 → 匹配订阅 → 持久受理 → 原会话输入</p></div>
-        <p class="runtime-status" id="runtime-status">交互加载中；当前展示 @ 提及的路由示意。</p>
+        <p class="runtime-status" id="runtime-status">交互就绪前，页面会显示 @ 提及的路由示意。</p>
       </div>
       <p class="section-footnote">上面的触发黑名单只拦自动通知，消息仍接收、缓存和可读；收件人TD/退订另行限制回复与新增表情，不阻止输入事件。</p>
     </section>
@@ -127,11 +130,9 @@ POST /session/list
   <noscript><p class="noscript-note">JavaScript 未启用，页面与文档链接可正常阅读；交互演示需要在浏览器中加载 Eliscript。</p></noscript>
   <script type="text/eliscript" src="pages/site.eli"></script>
   <script type="module">
-    // Only bootstrapping lives here; all page behaviour is maintained in site.eli.
-    const base = 'https://cdn.jsdelivr.net/npm/eliscript@0.1.0/';
     try {
-      const { mountEliscriptScripts } = await import(base + 'browser/host.mjs');
-      await mountEliscriptScripts(document, { resolveExternal: name => name.startsWith('eliscript/') ? new URL(name.slice(10), base).href : undefined });
+      const { mountEliscriptScripts } = await import('eliscript/browser');
+      await mountEliscriptScripts();
     } catch (error) {
       document.getElementById('runtime-status').textContent = '交互暂未加载；页面内容和文档链接仍可正常阅读。';
       console.error('DJ Pages could not load its Eliscript program.', error);

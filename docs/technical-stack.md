@@ -4,7 +4,7 @@
 | --- | --- | --- |
 | 业务语言 | Eliscript `.eli`，编译为标准 ESM | `src/`、`tools/`、`tests/`；不另维护 JS/TS 业务实现 |
 | 服务运行时 | Bun 1.4.4，macOS arm64 | `package.json` 与 `config/toolchain.lock.json` 固定身份 |
-| 编译器 | 固定 Eliscript 源与已核验 stage3 产物 | `config/compiler-source-inputs.json` 及构建器 `bindCompiler` 校验；仅同名版本不足以通过 |
+| 编译器及语言运行库 | Eliscript 0.1.3 正式 npm 包 | `bun.lock` 固定归档，`config/toolchain.lock.json` 固定发布提交、安装文件与 stage3 证据 |
 | 存储 | `bun:sqlite`、WAL、`synchronous=FULL`、外键开启 | 同步事务、持久台账、事件/投递去重和崩溃恢复 |
 | 本地通信 | JSON HTTP-over-UDS | CLI、MCP 薄代理与 GEPO 连接同一常驻 Core，不默认开放公网端口 |
 | MCP | `@modelcontextprotocol/server` 2.3.1 | 当前安装 SDK 提供协议与 stdio，业务权限和 schema 由 DJ 执行 |

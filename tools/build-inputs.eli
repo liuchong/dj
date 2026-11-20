@@ -34,8 +34,6 @@
             "tests/cases.json"
             "tests/operation-vectors.json"
             "config/toolchain.lock.json"
-            "config/compiler-source-inputs.json"
-            "config/compiler-provenance.json"
             "bin/dj"
             "config/service.example.json"
             "config/fixed-routes.example.json"

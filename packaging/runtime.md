@@ -4,7 +4,7 @@
 
 ## 成品与依赖
 
-在固定 Eliscript stage3 与目标 Bun 准备好后，以 `bun run build` 生成当前构建，再执行 `bun run package:directory`；已有匹配构建时直接打包，构建器尚未准备时才先运行 `bun run build:tools`。打包器只接受当前源码/输出摘要匹配的全入口构建，输出到全新 `.local/packages/dj-<build_id>`，不覆盖现有目录；失败保留私有 `.build-<uuid>` 诊断目录，不启动成品。具体工具链准备按施工文档执行，不能用同版本但未绑定的编译器替代。
+通过 `bun install --frozen-lockfile` 取得锁定的 Eliscript 0.1.3 与 Bun 依赖。执行 `bun run build:tools`、`bun run build`，再运行 `bun run package:directory`。打包器校验已安装编译器和当前源码、产物摘要，只写入新的私有目录包。详见[开发与打包](https://github.com/liuchong/dj/blob/master/docs/guides/development.md)。
 
 目录包含 `bin/dj`、`dist/src/{service/main,interfaces/cli,interfaces/mcp,library}.mjs` 及共享 chunks/source map、`dist/build-identity.json`、Skill、两份配置示例、项目 `LICENSE`、第三方 `licenses/` 和 `package-manifest.json`。manifest 记录 build_id、相对文件摘要、固定编译器身份、Bun 版本和生产依赖。SDK/Ajv/语言运行时被打入 ESM；成品不带构建器、测试、编译器、Emacs、node_modules、账号或数据库。source map 的源码名称转换为包内逻辑路径。
 

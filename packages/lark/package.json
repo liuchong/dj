@@ -13,7 +13,7 @@
     "LICENSE"
   ],
   "peerDependencies": {
-    "eliscript": "0.1.0"
+    "eliscript": "0.1.3"
   },
   "scripts": {
     "build": "eliscript-build --config eliscript.json"

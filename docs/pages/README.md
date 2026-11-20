@@ -12,7 +12,7 @@ python3 -m http.server 8787 --bind 127.0.0.1
 
 打开 `http://127.0.0.1:8787/docs/`。结束后 Ctrl-C 停止服务。不要直接双击 HTML 文件打开，因为浏览器需要通过 HTTP 加载 Eliscript 源文件。
 
-`index.html` 通过明确固定的 `eliscript@0.1.0` 浏览器 SDK 加载 `site.eli`，现场编译并执行。小段原生模块脚本仅用于启动 SDK 与报告加载失败；场景切换、键盘导航、示例复制、动效控制均在 Eliscript 中实现。编译得到的 JavaScript 只存在于浏览器内存，不生成或提交 JS 文件，不需要离线构建。SDK 从 jsDelivr 加载，首次交互需要联网；加载失败或脚本禁用时，正文、默认示意及文档链接仍可阅读。
+`index.html` 通过明确固定的 `eliscript@0.1.3` 浏览器 SDK 和 import map 加载 `site.eli`，在浏览器中现场编译并执行。场景切换、键盘导航、示例复制、动效控制均在 Eliscript 中实现。编译得到的 JavaScript 只存在于浏览器内存，不生成或提交 JS 文件，不需要离线构建。SDK 从 jsDelivr 加载，首次交互需要联网；加载失败或脚本禁用时，正文、默认示意及文档链接仍可阅读。
 
 ## 内容维护
 
