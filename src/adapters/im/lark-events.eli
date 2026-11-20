@@ -13,7 +13,7 @@
   (import "../../../packages/lark/src/wire.eli" decodeLarkFrame encodeLarkFrame)
   (import "../../../packages/lark/src/messages.eli" parseLarkMessage)
   (import "./lark-attachments.eli" projectLarkContent)
-  (import "./telegram.eli" readJson)
+  (import "../../host/bun/response.eli" readJson)
   (import "./lark-identities.eli" larkIdentities)
   (import "./lark-inbox.eli" createLarkInboxPoller)
   (defun flattenLarkEvent (wire)

@@ -4,6 +4,8 @@
   "entries": [
     "src/service/main.eli",
     "src/interfaces/cli.eli",
+    "src/interfaces/native.eli",
+    "src/controller/install.eli",
     "src/interfaces/mcp.eli",
     "src/interfaces/mcp-runtime.eli",
     "src/library.eli",

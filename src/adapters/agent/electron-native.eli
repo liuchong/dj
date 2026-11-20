@@ -1,7 +1,7 @@
 (module dj.adapters.agent.electron-native
   (import "../../core/native.eli" nativeGet nativeSetTimeout nativeClearTimeout nativeFetch)
   (import "../../core/types.eli" hashValue)
-  (import "../im/telegram.eli" readJson)
+  (import "../../host/bun/response.eli" readJson)
   (import "./desktop-transport.eli" desktopDeadline desktopError)
   (import "./electron-inspector.eli" openElectronInspector electronProcessInfo electronInspectorListening)
   (import "node:crypto" randomUUID)

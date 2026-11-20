@@ -4,15 +4,11 @@
   (import "node:path" resolve dirname)
   (import "./skill.eli" runSkillCommand)
   (import "./hooks.eli" runHookCommand)
-  (import "./native.eli" runNativeCommand)
-  (import "../controller/install.eli" installController)
   (import "../core/errors.eli" success failure invalidField)
   (import "../core/types.eli" utf8Bytes)
   (import "../core/limits.eli" limits)
   (import "../application/operations.eli" operationCatalog descriptorData)
   (import "./client.eli" loadClientProfile callService)
-  (import "./mcp.eli" runMcp)
-  (import "../service/main.eli" runService)
   (defconst flags
     (js-object
       :--connection
@@ -470,7 +466,8 @@
             (funcall (nativeGet io "stdout") "dj controller install\nInstall DJ Control.app and its user login item. Requires an existing DJ launchd service and private client profile. Exiting the controller leaves DJ running.\n")
             (if (and (= (aref argv 1) "install") (= (js-length argv) 2))
               (try
-                (let ((installed (await (installController
+                (let* ((controller (await (js* "import('../controller/install.mjs')")))
+                       (installed (await (js-call controller :installController
                   (resolve (dirname (aref (nativeGet globalThis.process "argv") 1)) "../../..")
                   (nativeGet globalThis.process "execPath")))))
                   (funcall (nativeGet io "stdout") (str (JSON/stringify installed) "\n")))
@@ -481,7 +478,8 @@
                 (setq djReturn3Value 2) (throw djReturn3Token))))
           (setq djReturn3Value 0) (throw djReturn3Token))
         (when (= (aref argv 0) "native")
-          (setq djReturn3Value (await (runNativeCommand argv io)))
+          (let ((native-command (await (js* "import('./native.mjs')"))))
+            (setq djReturn3Value (await (js-call native-command :runNativeCommand argv io))))
           (throw djReturn3Token))
         (when (= (aref argv 0) "hook")
           (setq djReturn3Value (await (runHookCommand argv io)))
@@ -505,9 +503,11 @@
                 (progn (setq djReturn3Value 0) (throw djReturn3Token)))
               (cond
                 ((= operation "serve")
-                  (setq result (await (runService (nativeGet options "config")))))
+                  (let ((service (await (js* "import('../service/main.mjs')"))))
+                    (setq result (await (js-call service :runService (nativeGet options "config"))))))
                 ((= operation "mcp.serve")
-                  (setq result (await (runMcp (nativeGet options "client_profile")))))
+                  (let ((mcp (await (js* "import('./mcp.mjs')"))))
+                    (setq result (await (js-call mcp :runMcp (nativeGet options "client_profile"))))))
                 (t
                   (try
                     (when (nativeGet options "input")

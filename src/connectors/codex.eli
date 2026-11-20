@@ -1,6 +1,6 @@
 (module dj.connectors.codex
   (import "../core/native.eli" nativeGet nativeTypeOf)
-  (import "../adapters/im/telegram.eli" readJson)
+  (import "../host/bun/response.eli" readJson)
   (import "node:net" createConnection)
   (import "node:http" createServer)
   (import "node:stream" Readable)

@@ -10,6 +10,10 @@ dj status --client-profile PRIVATE_PROFILE --json
 
 检查服务是否运行、profile 是否指向同一个私有 socket、配置与目录权限是否正确。macOS 服务的 label 为 `dev.dispatch-junction.local`，检查方式见[常驻服务](macos-service.md)。不要另起一个相同状态目录的服务来绕过原实例。
 
+## 短时间出现多个 DJ CLI 进程
+
+每条 CLI 命令会启动一个短期客户端，连接同一常驻服务。批量读取优先复用已接入的 MCP；用 CLI 时按页续读，避免同时启动大量读取进程。排查时看进程父链、持续时间、RSS 和内存压力。Bun 的虚拟地址空间（VSZ/VIRT）包含地址预留，不能用来计算实际物理内存占用。服务状态用 `dj status --json` 单独确认。
+
 ## 已收消息，但没有通知 AI
 
 依次核对：

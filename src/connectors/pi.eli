@@ -2,7 +2,7 @@
   (import "./pi-sessions.eli" createPiSessions)
   (import "../core/native.eli" nativeGet nativeTypeOf nativeBitAnd)
   (import "../core/types.eli" utf8Bytes)
-  (import "../adapters/im/telegram.eli" readJson)
+  (import "../host/bun/response.eli" readJson)
   (import "node:http" createServer)
   (import "node:stream" Readable)
   (import "node:fs/promises" mkdir lstat realpath writeFile unlink chmod)

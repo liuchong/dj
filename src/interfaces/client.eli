@@ -12,8 +12,8 @@
   (import "../core/errors.eli" success failure)
   (import "../core/types.eli" utf8Bytes isObject)
   (import "../core/limits.eli" limits)
-  (import "../host/bun/io.eli" readPrivate)
-  (import "../adapters/im/telegram.eli" readJson)
+  (import "../host/bun/private-file.eli" readPrivate)
+  (import "../host/bun/response.eli" readJson)
   (import "../application/operations.eli" operationCatalog operationCatalogDigest)
   (defconst clientSchema
     (js-object

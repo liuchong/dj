@@ -1,0 +1,34 @@
+(module dj.host.bun.response
+  (import "../../core/native.eli" NativeNumber nativeGet)
+  (defasync readJson
+    (response maximum)
+    (let*
+      ((declared (js-call (nativeGet response "headers") :get "content-length"))
+        (stream (nativeGet response "body"))
+        (reader nil)
+        (size 0)
+        (chunks (js-array)))
+      (when (and declared (> (NativeNumber declared) maximum))
+        (when stream (await (js-call stream :cancel)))
+        (throw (new globalThis.Error "native response budget exceeded")))
+      (unless stream (throw (new globalThis.Error "native response body missing")))
+      (setq reader (js-call stream :getReader))
+      (try
+        (let ((done false))
+          (while (not done)
+            (let ((part (await (js-call reader :read))))
+              (setq done (nativeGet part "done"))
+              (unless done
+                (setq size (+ size (js-length (nativeGet part "value"))))
+                (when (> size maximum)
+                  (throw (new globalThis.Error "native response budget exceeded")))
+                (js-call chunks :push (Buffer/from (nativeGet part "value")))))))
+        (JSON/parse
+          (js-call
+            (new globalThis.TextDecoder "utf-8" (js-object :fatal t))
+            :decode
+            (Buffer/concat chunks size)))
+        (finally
+          (try (await (js-call reader :cancel)) (catch ignored nil))
+          (js-call reader :releaseLock)))))
+  (export readJson))

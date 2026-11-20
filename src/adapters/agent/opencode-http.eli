@@ -4,7 +4,7 @@
   (import "../../core/limits.eli" limits)
   (import "../../lifecycle/workspaces.eli" creationWorkspace)
   (import "../../delivery/envelope.eli" encodeAgentInput openCodeMessageId)
-  (import "../im/telegram.eli" readJson)
+  (import "../../host/bun/response.eli" readJson)
   (import "./native-local.eli" ownedJson metadataCommand)
   (import "../../core/availability.eli" quotaFailure)
   (import "node:fs/promises" lstat readdir)

@@ -27,7 +27,7 @@
 - write: lark.api.call明确POST/PUT/PATCH/DELETE、path和唯一idempotency_key；body是原生JSON对象，原生content若要求JSON字符串仍按官方协议填写。先持久记录unknown再调用官方API，同键重试只返回原结果，绝不二次执行。
 - files: multipart上传使用form，普通字段是标量，文件字段是含base64、filename、可选content_type的对象；body与form互斥。单文件及API响应最多512KiB，受DJ请求总大小限制。大文件可由程序使用独立包的Blob/File与分块原生API，不把本接口预算误报成平台限制。
 - output: response_mode默认json，可选text或bytes；bytes的response是base64。结果保留http_status、native_ok、response、日志/限流等安全响应头。原生非零code与permission_violations在response里，不把外层ok当成原生成功。
-- pagination: 使用原生response.data.has_more/page_token等字段显式续页；不同端点字段按官方文档，不自动扫描全租户或无限拉取。
+- pagination: 使用原生response.data.has_more/page_token等字段显式续页；不同端点字段按官方文档，不自动扫描全租户或无限拉取。连续多页优先复用 MCP；用 DJ CLI 时按页读取，避免为每页并发启动一个进程。
 - state: accepted表示原生接口受理；rejected表示明确原生拒绝；unknown表示调用结果不确定。用lark.api.get(action_id)或operation.get查询，unknown禁止换键或换CLI补做；HTTP限流也不自动重发写请求。
 - managed: 普通消息发送、原消息回复、撤销、Working及资源订阅优先已有message/resource接口，保留固定身份、位置、回声防重及业务台账。原生办公操作可用通用入口；原生写入不会自动生成DJ出站/资源订阅记录。
 - excluded: OAuth登录、令牌签发/刷新由连接内部管理，通用入口不暴露认证接口。缺少原生权限时报告response中的具体权限，不声称整个Lark功能未实现。

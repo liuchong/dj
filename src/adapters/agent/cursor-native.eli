@@ -3,7 +3,7 @@
   (import "../../core/types.eli" hashValue)
   (import "./desktop-transport.eli" desktopDeadline desktopError)
   (import "node:crypto" randomUUID)
-  (import "../im/telegram.eli" readJson)
+  (import "../../host/bun/response.eli" readJson)
   (import "./electron-native.eli" electronNativeRequest electronNativeUrl)
   (import "./cursor-recovery.eli" recoverCursorEndpoint)
   (import "./local-endpoint-resolver.eli" originalProcessGone)

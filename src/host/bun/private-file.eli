@@ -1,0 +1,18 @@
+(module dj.host.bun.private-file
+  (import "../../core/native.eli" nativeBitAnd nativeGet)
+  (import "node:fs/promises" lstat readFile)
+  (defasync readPrivate
+    (path)
+    (let ((info (await (lstat path))))
+      (unless
+        (and
+          (js-call info :isFile)
+          (not (js-call info :isSymbolicLink))
+          (= (nativeGet info "uid") (js-call globalThis.process :getuid))
+          (= (nativeBitAnd (nativeGet info "mode") 63) 0))
+        (throw
+          (new
+            globalThis.Error
+            "credential reference must identify an owner-private regular file")))
+      (await (readFile path "utf8"))))
+  (export readPrivate))

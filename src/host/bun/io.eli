@@ -1,5 +1,5 @@
 (module dj.host.bun.io
-  (import "../../core/native.eli" nativeBitAnd nativeTypeOf nativeFetch nativeGet)
+  (import "../../core/native.eli" nativeTypeOf nativeFetch nativeGet)
   (import "node:fs/promises"
     readFile
     writeFile
@@ -13,24 +13,11 @@
   (import "node:path" resolve dirname)
   (import "node:os" homedir)
   (import "node:crypto" randomUUID)
+  (import "./private-file.eli" readPrivate)
   (import "./clock.eli" createClockPort)
   (import "./ids.eli" nextHostId)
   (import "./process.eli" createProcessPort)
   (import "./attachments.eli" createAttachmentFiles)
-  (defasync readPrivate
-    (path)
-    (let ((info (await (lstat path))))
-      (unless
-        (and
-          (js-call info :isFile)
-          (not (js-call info :isSymbolicLink))
-          (= (nativeGet info "uid") (js-call globalThis.process :getuid))
-          (= (nativeBitAnd (nativeGet info "mode") 63) 0))
-        (throw
-          (new
-            globalThis.Error
-            "credential reference must identify an owner-private regular file")))
-      (await (readFile path "utf8"))))
   (defasync writePrivate
     (path content)
     (let* ((temporary (str path ".write-" (randomUUID))) (handle nil) (created false))
@@ -150,4 +137,4 @@
                 (nativeGet globalThis.process "stderr")
                 :write
                 (str (JSON/stringify safe) "\n"))))))))
-  (export createHostPorts readPrivate writePrivate))
+  (export createHostPorts))
