@@ -1,5 +1,7 @@
 (module dj.tests.integration.composable-subscriptions
   (import "../../src/core/native.eli" nativeGet)
+  (import "../../src/application/operations.eli" operationCatalog)
+  (import "../../src/interfaces/mcp-runtime.eli" validateResult)
   (import "../../src/core/errors.eli" success)
   (import "../../src/adapters/im/lark-events.eli" flattenLarkEvent normalizeLarkEvent)
   (import "../../src/adapters/im/lark-resource-events.eli" normalizeResourceEvents)
@@ -158,6 +160,16 @@
       (let ((conflict (await (js-call f :call (nativeGet f "A") "subscription.preview"
         (js-object :expected_revision 0 :spec (spec a (js-array (ruleBranch "dup" (leaf "addressed_self" "eq" t)))))))))
         (js-call (expect (nativeGet (nativeGet conflict "error") "code")) :toBe "revision_conflict"))
+      (let* ((descriptor (js-call operationCatalog :get "subscription.preview"))
+             (selected (spec a (js-array (ruleBranch "inspect" (leaf "addressed_self" "eq" t)))))
+             (missing-revision (validateResult descriptor (await (js-call f :call (nativeGet f "A")
+               "subscription.preview" (js-object :spec selected)))))
+             (missing-event (validateResult descriptor (await (js-call f :call (nativeGet f "A")
+               "subscription.preview" (js-object :expected_revision 1 :spec selected
+                 :sample_event_ids (js-array "event_missing")))))))
+        (js-call (expect (nativeGet (nativeGet missing-revision "error") "code")) :toBe "revision_conflict")
+        (js-call (expect (nativeGet (nativeGet (nativeGet missing-revision "error") "details") "current_revision")) :toBe 1)
+        (js-call (expect (nativeGet (nativeGet missing-event "error") "code")) :toBe "forbidden"))
       ;; Ingest both IM mention and bitable resource.changed; each hits only its matching branch on the same slot.
       (let ((im-hit (event "im-1" "human" "person-1" "c1" false t "ping")))
         (put im-hit :addressed_self t)

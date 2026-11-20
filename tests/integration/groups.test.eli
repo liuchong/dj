@@ -1,5 +1,7 @@
 (module dj.tests.integration.groups
   (import "../../src/core/native.eli" nativeGet)
+  (import "../../src/application/operations.eli" operationCatalog)
+  (import "../../src/interfaces/mcp-runtime.eli" validateResult)
   (import "../support/case.eli" withCase)
   (import "../support/fixtures.eli" createFixture closeFixture callOk createdEvent subscribe)
   (import "node:crypto" randomUUID)
@@ -147,6 +149,10 @@
             :agent_id (nativeGet b "agent_id") :idempotency_key "pull-right-member")))))
           (js-call (expect (nativeGet empty "empty")) :toBe t)
           (js-call (expect (nativeGet claimed "empty")) :toBe false)
+          (let* ((result (await (js-call f :call (nativeGet f "A") "operation.get"
+                   (js-object :operation "subscription.pull" :idempotency_key "pull-right-member"))))
+                 (validated (validateResult (js-call operationCatalog :get "operation.get") result)))
+            (js-call (expect (nativeGet validated "ok")) :toBe t))
           (await (callOk f "A" "subscription.ack" (js-object :claim_ref (nativeGet (nativeGet claimed "item") "claim_ref")
             :disposition "consumed" :idempotency_key "consume"))))
         (js-call (expect (nativeGet (nativeGet f "quota_calls") "count")) :toBe 2)

@@ -148,12 +148,10 @@
                  (has-expected (object-has? args :expected_revision))
                  (expected-revision (if has-expected (nativeGet args "expected_revision") (if existing -1 0))))
             (unless (= expected-revision current-revision)
-              (setq djReturn2Value
-                (failure "revision_conflict"
-                  (js-object :details (js-object
-                    :expected_revision (if has-expected expected-revision nil)
-                    :current_revision current-revision))))
-              (throw djReturn2Token))
+              (let ((details (js-object :current_revision current-revision)))
+                (when has-expected (put details :expected_revision expected-revision))
+                (setq djReturn2Value (failure "revision_conflict" (js-object :details details)))
+                (throw djReturn2Token)))
             (if (nativeGet spec "group_id")
               (put spec :distribution (distributionPolicy (nativeGet context "config") (nativeGet spec "distribution")))
               (await (refreshSubscriberModel context agent)))
@@ -179,7 +177,8 @@
                                  (recipientCan context recipient
                                    (sourceReadAction (nativeGet event "conversation"))
                                    (nativeGet event "conversation")))
-                      (must (failure "forbidden")))
+                      (setq djReturn2Value (failure "forbidden"))
+                      (throw djReturn2Token))
                     (let* ((evaluated (evaluateSubscriptionRules context preview-version event connection))
                            (verdict (nativeGet evaluated "result")))
                       (js-call samples :push
