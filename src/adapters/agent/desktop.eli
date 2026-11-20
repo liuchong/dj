@@ -3,7 +3,7 @@
   (import "../../core/types.eli" utf8Bytes sliceUtf8 hashValue)
   (import "../../core/limits.eli" limits)
   (import "../../delivery/envelope.eli" renderEnvelope)
-  (import "../../attachments/notification.eli" codexAttachmentInputs)
+  (import "../../attachments/notification.eli" codexAttachmentInputs cursorAttachmentContext)
   (import "./codex-loader.eli" requestCodexLoad)
   (import "./cursor-control.eli" cursorCreationId)
   (import "./cursor-native.eli" cursorNativeRequest)
@@ -451,8 +451,10 @@
                   (let* ((send-context (Object/assign (js-object) context
                               (js-object :expected_epoch (nativeGet binding "instance_epoch"))))
                          (response (if (nativeGet endpoint "native_api")
-                           (await (cursorNativeRequest endpoint
-                             (js-object :operation "submit" :thread id :text text :bubble (randomUUID)) send-context))
+                           (let* ((media (await (cursorAttachmentContext (nativeGet envelope "attachments" (js-array)))))
+                                  (request (js-object :operation "submit" :thread id :text text :bubble (randomUUID))))
+                             (when media (put request :media media))
+                             (await (cursorNativeRequest endpoint request send-context)))
                            (await (cursorRequest endpoint
                              (js-object :type "sendMessage" :threadId id :text text :force false) send-context))))
                          (data (nativeGet response "data"))

@@ -87,6 +87,7 @@
       " let sent=false,settled=false,error=false;\n"
       " try {\n"
       "  Promise.resolve(ref.submitMessage(request.text,{skipFocusAfterSubmission:true,forceBubbleId:request.bubble,\n"
+      "   ...(request.media?{context:request.media}:{}),\n"
       "   onDidSendRequest:()=>{sent=true;}})).then(()=>{settled=true;},()=>{settled=true;error=true;}).finally(()=>ref.dispose());\n"
       " } catch(e) {ref.dispose();throw e;}\n"
       " const end=performance.now()+request.wait;\n"

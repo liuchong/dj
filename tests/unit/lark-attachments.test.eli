@@ -2,7 +2,7 @@
   (import "../../src/core/native.eli" nativeGet)
   (import "../../packages/lark/src/messages.eli" parseLarkMessage)
   (import "../../packages/lark/src/resources.eli" officeResourceLink messageResourcePath)
-  (import "../../src/attachments/notification.eli" notificationBody codexAttachmentInputs)
+  (import "../../src/attachments/notification.eli" notificationBody codexAttachmentInputs imageDimensions)
   (import "../../src/adapters/agent/desktop.eli" codexInputRequest)
   (import "../support/case.eli" withUnitCase)
   (import "bun:test" expect)
@@ -26,6 +26,8 @@
       (js-call (expect (officeResourceLink "lark" "https://demo.larksuite.com.example.org/docx/doc_example")) :toBe nil)
       (js-call (expect (lambda () (messageResourcePath "om_message" "../private" "file"))) :toThrow)
       (js-call (expect (js-length native)) :toBe 1)
+      (js-call (expect (imageDimensions (Buffer/from "GIF89a0000"))) :toEqual
+        (js-object :width 12336 :height 12336))
       (let* ((request (codexInputRequest "thread-example" body t "client-example" native))
              (input (nativeGet (nativeGet request "parameters") "input")))
         (js-call (expect (aref input 1)) :toEqual (js-object :type "localImage" :path path)))))))
