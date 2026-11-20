@@ -37,11 +37,10 @@ request_id 可选，用于追踪；所有受理变更要求 idempotency_key。�
 | agent.probe | agent_id | 核对事实、状态、能力 | bind 范围内只读探测 |
 | agent.rebind | agent_id、candidate_ref | 同一原生目标的新 Binding、revision | bind；原生会话不变 |
 | agent.unregister | agent_id | closed 状态、撤销摘要、revision | bind；不结束原生会话 |
-| subscription.preview | spec、sample_event_ids?、subscription_id?、expected_revision? | normalized_spec/摘要/问题/样本决定，合格时有 preview_id | manage + 必要 read；不投递 |
-| subscription.create | preview_id | Subscription、start_seq、revision | manage；提交固定预览 |
-| subscription.list/get | filters? / subscription_id | Subscription 与解析后来源/目标摘要 | owner 范围 |
-| subscription.update | subscription_id、preview_id | 新 revision、cutover_seq | manage；同目标、固定预览 |
-| subscription.pause/resume/delete | subscription_id | 状态、revision、cutover_seq、已提交数量 | manage；不撤回已送输入 |
+| subscription.preview | spec、sample_event_ids?、expected_revision? | 规范化规则、来源与样例命中分支，合格时有 preview_id | manage + 必要 read |
+| subscription.set | preview_id、expected_revision、idempotency_key | 目标唯一订阅、start_seq、revision | manage；提交固定预览 |
+| subscription.list/get | filters? / agent_id 或 group_id | 订阅与分支来源 | owner 范围 |
+| subscription.pause/resume/delete | agent_id 或 group_id、expected_revision、idempotency_key | 状态、revision、cutover_seq | manage |
 | message.list | conversation_ref、time_range?、corpus?、limit?、cursor? | 事件摘要及读取引用 | read |
 | message.search | conversation_ref、query、time_range?、corpus?、limit?、cursor? | 匹配摘要、语料来源与完整性 | search；字面检索 |
 | message.get | event_id 或 message_ref（二选一）、offset_bytes?、max_bytes? | 元数据、正文分页、附件引用 | read |
@@ -54,7 +53,7 @@ request_id 可选，用于追踪；所有受理变更要求 idempotency_key。�
 | outbound.get | outbound_id | Outbound、parts、安全回执 | 自有/授权记录 |
 | outbound.reconcile/retry/cancel | outbound_id | 当前 Outbound 与处理结果 | manage；核对/安全重试/取消分开 |
 | outbound.resolve | outbound_id、resolution、reason | resolved、manual 决定 | 仅操作员；永不重发 |
-| delivery.list/get | filters? / delivery_id | 投递、贡献、安全回执、reply_context_id? | inspect；正文另读 |
+| delivery.list/get | filters? / delivery_id | 投递、命中分支、安全回执、reply_context_id? | inspect；正文另读 |
 | delivery.reconcile/retry/cancel | delivery_id | 当前 Delivery 与处理结果 | manage；核对/安全重试/取消分开 |
 | delivery.resolve | delivery_id、resolution、reason | resolved、manual 决定 | 仅操作员；永不重发 |
 
@@ -64,38 +63,27 @@ request_id 可选，用于追踪；所有受理变更要求 idempotency_key。�
 
 service.status同时返回visible_operations与unavailable_operations。后者说明已实现但当前主体未暴露的操作、required_action、reason（operator_required或grant_required）及同源help，不返回私有策略。可见不等于具体资源必然获准；不可见不等于产品缺少能力。message.recipient_policy.get/set要求operator身份及connection.manage，普通agent即使有该grant也不可调用。规则文本不执行过滤；禁触发和禁发/禁表情按各自结构化接口配置、读回。
 
-agent.register 的 recipient_principal_id 仅操作员代登记时允许且必填，普通 Agent 不能传入；主体/目标约束见安全文档。rebind 不接受 tool/namespace/session 改变。unregister 关闭目标并暂停其订阅，撤销未提交的订阅贡献，保留已提交记录；不能把新 native_session_id 写进原 agent_id。它不停止原生实例、不删除共享 TargetRoute/unknown，也不取消独立直发。后续登记沿用同一 canonical route，不能通过注销/重登记绕过顺序屏障。
+agent.register 的 recipient_principal_id 仅操作员代登记时允许且必填，普通 Agent 不能传入；主体/目标约束见安全文档。rebind 不接受 tool/namespace/session 改变。unregister 关闭目标并暂停其订阅，取消未提交的订阅投递，保留已提交记录；不能把新 native_session_id 写进原 agent_id。它不停止原生实例、不删除共享 TargetRoute/unknown，也不取消独立直发。后续登记沿用同一 canonical route，不能通过注销/重登记绕过顺序屏障。
 
 agent.discover 继续为登记核对返回 Candidate；agent.list 只列已登记 AgentTarget。跨全部/若干工具会话列表和检索使用 session.list/search，不要求先 register。session.send 受理返回 Delivery，message.send/reply 返回 IM Outbound；启动/创建返回 LifecycleAction。operation.get.resource_refs 指明对象类型，不让调用者猜 get 操作。所有新操作沿用台账原子受理与原键重放。
 
 ## 规则与提交
 
-spec 可选 instruction_policy：`prompt` 为固定提示词，`task_template` 为确定性任务模板，至少提供一项，每项 1..8192 UTF-8 字节。模板仅支持 `{{message.text}}`、`{{event.id}}`、`{{sender.id}}`、`{{source.chat_id}}`、`{{source.thread_id}}`、`{{subscription.id}}`，最多 32 个占位符。未知/未闭合占位符在 preview 前拒绝；固定 prompt 不展开。message.text 使用最终信封的有界正文，缺失 thread 等字段为空字符串，插入值中的花括号永不二次展开。
+每个会话或分发组使用一个订阅槽位。通过 `rules[]` 分别定义来源、事件类型和组合条件，命中多条分支时只生成一次通知。直订先于组选人，按规范事件与精确会话合并推送和拉取。详细字段和优先级见 [单线订阅](../specs/0035-single-line-subscriptions.md)。
 
-配置随 subscription revision、preview hash 与不可变 version 保存，再复制到 contribution；提交时仍逐条重检 owner/revision/TTL/授权，仅有效贡献生成 instructions。信封 instructions 按 matched 的订阅顺序携带 subscription_id、subscription_revision 及可选 prompt/task_template/task。task 是配置模板的机械渲染，不是 DJ 调用模型或执行任务；正文及其插值仍是外部数据，不提高优先级或权限。单 task 超 32768 UTF-8 字节或最终帧超原上限时阻塞为 limit_exceeded，不发送部分任务。旧订阅未设置该字段时不增加 instructions 字段，原 accepted attempt 快照不变。
+规则使用 `all`、`any`、`not`，可组合人员、消息、话题和文本字段。服务级 `message.filter` 的 `suppress_trigger` 优先，抑制后的事件仍保留在可读的消息历史。来源与谓词示例见 [订阅 Skill](../../skills/dj/references/subscriptions.md)。
 
-订阅 predicate 使用统一 all/any/not 条件树；包含与排除可以交叉组合。mentions.any
-表示任意原生提及，chat_type=p2p 表示私聊；sender.id/kind/person_id、
-conversation.native_chat_id、native_message_id、thread.id、topic.key、reply_to.id
-与 text 可组合人员、机器人、会话、消息列和关键词。sender.person_id 使用服务级
-已核实人员别名表。省略来源仍订阅全部获准来源，省略 predicate 仍为 addressed_self。
+订阅和规则分支均可配置 `instruction_policy`。线级说明在前，随后按声明顺序附加命中分支的说明。模板字段为 `{{message.text}}`、`{{event.id}}`、`{{sender.id}}`、`{{source.chat_id}}`、`{{source.thread_id}}`、`{{subscription.target_key}}`、`{{rule.id}}`，最多 32 个占位符。`prompt` 和 `task_template` 分别限制为 8192 UTF-8 字节，渲染任务超过 32768 字节或完整通知超限时阻塞。模板插值中的原消息为数据。
 
-每条订阅独立匹配，允许同一事件进入不同订阅线；同目标合并有效贡献，不同目标
-分别投递。服务级 message.filter 的 suppress_trigger 优先；preview.samples.result
-只表示订阅条件，reason_codes 中的 trigger_suppressed 表示全局禁止触发。所有
-排除仅控制自动动作，不隐藏消息历史。配置示例见 [可组合订阅](../../skills/dj/references/subscriptions.md)。
-
-spec 定义见 [模型](../domain-model.md)。sources 使用 conversation_ref，selector.event_kinds 形成明确类型范围。preview 更新模式必须同时给 subscription_id/expected_revision；create 模式不能给这两个字段。update 的 preview 必须属于同一对象/revision，且 spec.agent_id 不变。
-
-create/update 不接收 spec，不能将 preview 的解释与另一份输入组合。票据失效/状态漂移返回 preview_expired/preview_stale，不能自动修改再提交。只签发无 blocking_issues 的票据；warnings 不等于人工审批要求。sample_event_ids 最多 20，缺省不遍历历史。start 首轮仅 now，backfill 返回 unsupported。
+目标已有订阅时，`subscription.preview` 要求当前 `expected_revision`。新目标的修订值为 0。取得有效 `preview_id` 后由 `subscription.set` 提交票据、修订值与幂等键。样例最多 20 条。票据过期或语义发生变化时重新读取当前状态并预览。
 
 ## 消息与查询
 
 ### 订阅待办拉取
 
-spec.delivery_mode 默认为 push；显式 pull 时，规则命中的事件写入独立收件箱，不创建原生投递或调用 AI 接口。修改模式同样走 preview/update 与版本 cutover；旧版本待办不能借新版本授权复活。message.list/search/get 仍只是消息查询，不领取待办。
+spec.delivery_mode 默认为 push；显式 pull 时，规则命中的事件写入独立收件箱，不创建原生投递或调用 AI 接口。修改模式同样通过 preview 和 set 提交，切流时取消旧修订未提交的投递和待领项。message.list/search/get 仍只是消息查询，不领取待办。
 
-`subscription.pull(subscription_id, lease_seconds?, idempotency_key)` 每次最多领取一项，lease 默认 60 秒、范围 1..300 秒且不晚于待办 TTL。调用者必须是该 Agent 的 recipient，并具备 subscription.consume（self 按 recipient 归属）及当前消息读取权限；operator 不能冒用 recipient。匹配和每次领取都重检订阅 owner、revision、TTL、连接身份和授权。按 ingress_seq 选择已完成路由的待办，跳过其他未过期租约；每次扫描上限 50。返回 pull_id、empty、more 以及可选 item；more 只表示可能还有候选，空结果不代表所有历史均扫描完。
+`subscription.pull(agent_id, group_id?, lease_seconds?, idempotency_key)` 每次最多领取一项，lease 默认 60 秒、范围 1..300 秒且不晚于待办 TTL。调用者必须是该 Agent 的 recipient，并具备 subscription.consume（self 按 recipient 归属）及当前消息读取权限；operator 不能冒用 recipient。匹配和每次领取都重检订阅 owner、revision、TTL、连接身份和授权。按 ingress_seq 选择已完成路由的待办，跳过其他未过期租约；每次扫描上限 50。返回 pull_id、empty、more 以及可选 item；more 只表示可能还有候选，空结果不代表所有历史均扫描完。
 
 item 含 inbox_id、状态、claim_ref、lease_until 和 envelope；信封 delivery_id 为 null，inbox_id 标明主动消费来源，原消息、指令和受限 reply_context 均按当前权限生成。它不经过 native queue，不绕过原生队首屏障。使用 claim_ref 调 `subscription.ack(claim_ref, disposition, idempotency_key)`：consumed 确认本次消费；retry 释放待办供新领取。消费确认不是 AI 任务完成声明。两个操作都写原操作台账；同键重放不重新领取，空领取也固定记录。租约过期或重领后旧 claim_ref 无效，旧回复上下文在回复受理和实际出站前均校验代次；应以 inbox_id 对业务处理去重，不能宣称 exactly-once。
 

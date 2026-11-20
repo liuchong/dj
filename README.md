@@ -15,7 +15,7 @@ DJ 负责身份核对、订阅匹配、持久受理和投递；AI 负责判断�
 ## 能做什么
 
 - **统一会话控制**：发现、创建、改名、读取和通知原对话；Cursor 可显式受控重启，由调用方 AI 续接原工作；创建可带明确首条消息，原生能力与真实接线范围见[会话控制](docs/specs/0030-native-session-creation.md)。
-- **实时订阅**：Lark / 飞书直连官方 WebSocket 与 HTTPS API，支持原生 @、关键词、组合条件，以及人员和字符触发黑名单；[Slack](docs/guides/slack.md) 使用官方 Socket Mode 与有界 HTTP 补收，复用同一套分发和消息接口。
+- **实时订阅**：Lark / 飞书直连官方 WebSocket 与 HTTPS API，支持原生 @、关键词、组合条件，以及人员和字符触发黑名单；每个会话或分发组有一条订阅，规则可以分支组合。[Slack](docs/guides/slack.md) 使用官方 Socket Mode 与有界 HTTP 补收，复用同一套分发和消息接口。
 - **通知原会话**：通过已有客户端的 IPC、socket 或本机 API 精确投递，不启动替代 Agent 进程。支持的接收端可在工作中继续接收输入；积压按有界批次投递，不等待模型逐条完成。工具接线与验证范围见[能力范围](docs/release-scope.md)。
 - **外发不自触发**：DJ发出的消息再次收回时只记录历史，不再次通知AI；真实后续回复和主动标记仍按规则触发。见[外发回声](docs/specs/0032-outbound-echo-suppression.md)。
 - **保留上下文**：提供历史、引用、话题和 thread；默认读取本地缓存，AI 可主动请求更多上下文。

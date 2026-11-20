@@ -13,9 +13,9 @@ DJ 以事件、规则、状态与原生证据确定性工作，不调用模型�
 | conversation_handles / previews | 句柄 ID；主体和类型约束 | 精确地址/规范化 spec 快照与过期 |
 | operations / idempotency | operation_id；principal+operation+key | 受理台账、业务对象与幂等结果同事务 |
 | events / ingress_cursor | event_id；connection+source_key | 事件、ingress_seq、源游标 |
-| subscription_versions | subscription_id+revision | 起止序号与编译规则索引 |
-| routing_work / match_decisions | event+订阅版本；处理游标 | 决定、贡献、Delivery 与匹配进度 |
-| deliveries / contributions | 订阅类 route_id+event_id 唯一；直发由受理台账唯一；贡献版本唯一 | IM 多贡献或 direct 授权快照、过期和同一队列 |
+| subscriptions / subscription_versions | target_key；target_key + revision | 每个目标的唯一有效订阅和切流记录 |
+| routing_work / match_decisions | event_id；event_id + target_key + revision | 匹配决定、命中分支与路由进度 |
+| deliveries / inbox_entries / dispatch_notifications | 投递或收件项 ID；事件与会话唯一通知键 | 匹配规则、上下文、投递策略、过期和跨推送及拉取的去重 |
 | attempts / receipts / claims | attempt/receipt ID；原生回执去重 | submitting 意图、观察追加与租约 |
 | reply_contexts / outbound / parts | 各 ID；每 Outbound 有序 part_id | 固定目的地、出站意图与子消息结算 |
 | service_lease / echo_index | 服务 owner；connection+native_message_id | 唯一自身调度者与可证回声归属 |
@@ -24,39 +24,33 @@ SQLite（bun:sqlite、WAL/FULL）为单机存储，schema与事务已有实现�
 
 免订阅 session.send 的原子边界为 Operation/幂等键、内部 TargetRoute 和 origin=direct 的 Delivery；不需要 Event、Subscription 或 AgentTarget。所有发往同一 canonical key 的输入共用 Binding、claim 和 unknown 屏障；origin 的权限/取消规则不能互相借用。启动/创建使用独立 LifecycleAction 和原生关联键，不能把网络超时视作“未创建”重新执行，详见 Agent 控制面。
 
-异步匹配有持久 routing_work，每个分批游标的推进与决定/贡献/队列一起提交，不能先保存 checkpoint 再排队。预算耗尽续算，不认定剩余候选不匹配。控制面的 Preview 和 Operation 不触发事件路由。
+异步匹配有持久 routing_work，每个分批游标的推进与决定和队列一起提交，不能先保存 checkpoint 再排队。预算耗尽续算，不认定剩余候选不匹配。控制面的 Preview 和 Operation 不触发事件路由。
 
-外部网络调用在事务之外：先原子校验目标/权限/贡献并把状态改为 submitting，保存 attempt/dispatch_key；然后写出；最后追加回执。**状态进入 submitting 的事务是提交点**。pause/delete 与该事务按数据库串行顺序决定先后，不能保证提交点之后仍可撤回。
+外部网络调用在事务之外：先原子校验目标、权限和订阅修订并把状态改为 submitting，保存 attempt/dispatch_key；然后写出；最后追加回执。**状态进入 submitting 的事务是提交点**。pause/delete 与该事务按数据库串行顺序决定先后，不能保证提交点之后仍可撤回。
 
 ## 状态与证据
 
 | 状态 | 意义 | 可推进方向 |
 | --- | --- | --- |
-| ready | 已入库且有有效订阅贡献或 direct 发送授权 | submitting 或撤销/到期 |
+| ready | 已入库且有有效订阅匹配或 direct 发送授权 | submitting 或撤销/到期 |
 | deferred | busy/offline/退避中 | 条件满足 ready；或过期/撤销 |
 | blocked | 能力、容量、权限或版本需要改变 | 条件消除后重评 |
 | submitting | 意图落盘，外部副作用可能发生 | accepted、明确 failed、unknown |
 | accepted | 原生确认接受 | 追加观察；不再提交相同输入 |
 | unknown | 可能已送，证据不足 | reconcile；不能按 TTL 自动当作未发送 |
 | failed | 明确失败，保留阶段、部分结果与 retryable | 仅未送达单位安全重试 |
-| expired / cancelled | 未提交订阅贡献全部到期/撤销，或 direct 请求到期/被取消 | 保留元数据，不自动恢复 |
+| expired / cancelled | 待投订阅到期或撤销，或 direct 请求到期/被取消 | 保留元数据，不自动恢复 |
 | resolved | 操作员明确不重发的人工结案 | manual 证据；不冒充 accepted |
 
 started/turn_finished/agent_settled/held/rejected 是独立 Receipt，不凭标题、正文或模型推测。agent_report 不升级为 native_protocol。Operation.done 只代表 API 受理结果已结算；不是 Delivery accepted，更不是 Agent 完成任务。
 
 accepted 仍可对应原生 busy/held/waiting_permission，默认 queue 要等可靠 idle。一个目标 unknown 形成顺序屏障，其他目标继续；操作员 resolve 后也不能越过原生 busy/未知状态直接发下一条。
 
-## 多贡献的确定性合并
+## 同一事件的通知合并
 
-同 route_id+event_id 一项订阅 Delivery；agent_id 为已登记别名，不能因后续登记或注销改变去重身份。每 Contribution 保留订阅版本、策略、授权引用和自身 expires_at，不能只保存一个 matched 列表。
+按规范事件与原生会话分配唯一通知。直订命中后保留该订阅自己的推送或拉取模式。组订阅优先选择合格且尚未通知的成员。每条通知直接保存命中规则、订阅修订、上下文和忙时策略。权限始终按实际接收者核验。详见 [单线订阅](specs/0035-single-line-subscriptions.md)。
 
-本节只适用于 subscription_event。direct 使用自己的 TTL、发送授权和取消状态，不参与订阅贡献合并；pause/delete 不取消独立直发。直接输入的授权撤销仍阻止尚未提交项，提交点后保留可能已送达事实。
-
-- 只考虑当前仍有效、未过期且来源/目标都获授权的贡献；暂停/更新/删除撤销旧贡献，resume 不复活。
-- busy 只要有一条 queue 就采用 queue；全部明确 steer 且原生能力满足才 steer。缺能力不自动换策略，返回 blocked/unsupported。
-- context 只要有一条 current 就 current；否则 recent，max_events/max_bytes 取各贡献与目标主体预算的最小值。始终使用 recipient 的可见范围，不取多 owner 权限并集。
-- 下一次到期检查取有效贡献 expires_at 的最小值。某条过期只移除该贡献并重新计算，不使仍有长 TTL 的贡献提前失效；全部到期才 expired。
-- 原文正文与同来源上下文在提交点投影并冻结信封；已经 submitting 不再重写输入。一个贡献要求更少上下文不会导致另外一条被授权内容偷偷扩大预算。
+提交事务冻结信封并再次核对目标、修订、来源权限和到期时间。暂停、更新或删除会取消尚未提交的旧订阅投递。直发使用独立的授权和到期时间。
 
 不同事件默认不合并为一个模型输入。delivery_seq 在首次入队事务分配；同批 IM 事件按 ingress_seq 排序，直发与订阅按已经入队的序号共同调度，不承诺尚未完成匹配的旧事件优先于新直发，也不声称源时间的全局顺序。同一原生目标的不同客户端视图统一到 canonical_target_key/TargetRoute。
 

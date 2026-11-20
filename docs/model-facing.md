@@ -20,7 +20,7 @@ session.rules只保存AI可读文本，不执行订阅、触发过滤或出站�
 | candidate_ref | agent.discover | agent.register/rebind |
 | message_ref | native message.list/search | message.get，与实时 event_id 不互换 |
 | agent_id | agent.register/get、agent.whoami | 订阅目标、状态检查 |
-| preview_id | subscription.preview | subscription.create/update |
+| preview_id | subscription.preview | subscription.set |
 | reply_context_id | delivery.get 和输入信封 | message.reply |
 | outbound_id | message.send/reply、outbound.get | accepted单消息可作为message.reply锚点；reply_in_thread创建Lark话题，content.type=markdown发送原生Markdown |
 | inbox_id / claim_ref | subscription.pull 返回的当前领取 | 按 inbox_id 识别重复业务，claim_ref 仅用于 subscription.ack；不当 delivery_id 或回复引用 |
@@ -34,20 +34,20 @@ Agent 原生 ID 可由 session.resolve 接收 instance_id+native_session_id，�
 
 ## 订阅预览与提交
 
-subscription.preview 接收 spec（更新时还带 subscription_id/expected_revision），执行确定性规范化、来源/目标校验、预算/能力检查；返回 resolved_sources、resolved_target、normalized_spec、spec_hash、warnings、blocking_issues 和 sample_decisions。不存在待执行副作用，也不会联系模型解释规则。
+subscription.preview 接收 spec。现有目标需要给出当前 expected_revision，新目标可省略或传 0。它确定性地规范化规则并核验来源与目标，返回解析结果及样例命中分支。
 
-没有 blocking_issues 才签发 preview_id，默认有效 10 分钟，绑定 principal、规范化 spec 摘要、目标 revision、来源引用、策略/能力快照，以及更新对象 revision。create 只接收 preview_id 与 idempotency_key；update 另带相同 subscription_id/expected_revision，禁止再次提交一份可能被模型修改的 spec。
+没有 blocking_issues 才签发 preview_id，默认有效 10 分钟，绑定主体、规范化规则、目标修订、来源和授权。subscription.set 接收 preview_id、expected_revision 和 idempotency_key，提交已预览的规则。
 
-commit 时重新检查权限、目标、引用和 revision。语义相关状态漂移返回 preview_stale，不能悄悄重新解释；健康探测时间更新但语义未变不使预览失效。有效期过后返回 preview_expired。允许调用方在原授权内连续 preview → create，不要求额外的人类确认弹窗。
+commit 时重新检查权限、目标、引用和 revision。语义相关状态漂移返回 preview_stale，不能悄悄重新解释；健康探测时间更新但语义未变不使预览失效。有效期过后返回 preview_expired。允许调用方在原授权内连续 preview → set，不要求额外的人类确认弹窗。
 
-预览中的 start=now 是将来提交时的起点，不能绑定预览时的 ingress_seq。预览不是权限批准，也不保证未来原生投递成功。同一 preview_id 不同幂等键的重复 create 返回 already_committed 及原 operation_id，不创建第二条订阅。
+预览中的 start=now 是将来提交时的起点，不能绑定预览时的 ingress_seq。预览不是权限批准，也不保证未来原生投递成功。同一 preview_id 不同幂等键的重复 set 返回 already_committed 及原 operation_id，不创建第二条订阅。
 
 ## 典型闭环
 
 1. service.status 获取可见协议和业务能力；agent.whoami 获得当前已认证目标。未绑定则使用被允许的候选登记，不从自身猜 ID。
 2. conversation.list 获取目标对话的 conversation_ref，核对摘要和完整性；不能列举时可用 resolve 校验明确原生 ID。
 3. 模型将需求编为 spec，preview 后检查解析出的来源、目标和触发条件。自然语言还不明确时，模型先澄清规则含义。
-4. 使用 preview_id 提交；保存 subscription_id、operation_id 和当前 revision。客户端退出不影响持久订阅。
+4. 使用 preview_id 提交；保存 target_key、operation_id 和当前 revision。客户端退出不影响持久订阅。
 5. 收到信封后执行目标任务，使用给定 reply_context_id 回原话题；DJ 只转发回复，不评价答案是否正确。
 6. 受理请求超时时，operation.get 按 operation_id 或原 operation+幂等键查询；获取 outbound_id/delivery_id 后分别查询和核对，不能用新的幂等键重试原副作用。
 

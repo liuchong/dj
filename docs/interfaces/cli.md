@@ -4,7 +4,7 @@
 
 ## 命令与输入
 
-operation 的每一段点号映射为命令词，例如 subscription.create → dj subscription create、session.message.search → dj session message search；service.status 的唯一特例为 dj status。每个独立操作都有明确 --help；--help 说明必填字段、ID 类型、默认、上限、权限、受理和完成区别，以及典型错误后的查询操作。
+operation 的每一段点号映射为命令词，例如 subscription.set → dj subscription set、session.message.search → dj session message search；service.status 的唯一特例为 dj status。每个独立操作都有明确 --help；--help 说明必填字段、ID 类型、默认、上限、权限、受理和完成区别，以及典型错误后的查询操作。
 
 | 选项 | 规则 |
 | --- | --- |
@@ -12,7 +12,7 @@ operation 的每一段点号映射为命令词，例如 subscription.create → 
 | --input FILE | 完整 JSON 参数；FILE=- 从 stdin 读，相对文件路径；与所有逐字段业务 flags 互斥 |
 | --idempotency-key / --expected-revision | 逐字段模式下的幂等/并发参数；--input 模式放入 JSON |
 | --limit / --cursor | 顶层列表分页，不嵌套 page |
-| --connection / --agent / --subscription / --delivery / --outbound | 映射相应对象 ID，非当前操作所需即拒绝 |
+| --connection / --agent / --group / --delivery / --outbound | 映射相应对象 ID，非当前操作所需即拒绝 |
 | --conversation-ref / --destination-ref / --candidate-ref / --preview-id | 不同类型的引用；不按名称相似度互换 |
 | --session-ref / --session-key / --session-message-ref / --instance / --profile / --catalog-run / --lifecycle | Agent 控制面引用/ID；get 的 ref/key 互斥，只在对应操作允许，不能当作 IM 地址 |
 | --operation-id | operation.get 的 ID 查询模式；与 operation+幂等键查询互斥 |

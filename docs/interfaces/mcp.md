@@ -14,7 +14,7 @@ MCP 入口使用锁定的 `@modelcontextprotocol/server` 2.3.1 和 stdio 传输�
 | --- | --- |
 | service.status | dj_service_status |
 | agent.whoami / agent.discover / agent.register | dj_agent_whoami / dj_agent_discover / dj_agent_register |
-| subscription.preview / subscription.create | dj_subscription_preview / dj_subscription_create |
+| subscription.preview / subscription.set | dj_subscription_preview / dj_subscription_set |
 | conversation.resolve / operation.get / outbound.get | dj_conversation_resolve / dj_operation_get / dj_outbound_get |
 | message.get / message.reply | dj_message_get / dj_message_reply |
 | message.attachment.get | dj_message_attachment_get |
@@ -33,7 +33,7 @@ MCP 入口使用锁定的 `@modelcontextprotocol/server` 2.3.1 和 stdio 传输�
 
 首轮本地 stdio 薄代理连接同一个常驻核心；stdout 只允许协议记录。远程 Streamable HTTP 为扩展候选，启用前实现认证、Origin/目的地校验与租户边界，按该版本传输/授权规范验证。代理不能用宿主自报名称决定 principal。[传输](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports)、[授权](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization)
 
-查询有预算，长时间等待不占用一次工具调用作为唯一状态容器。subscription.create 返回持久句柄；delivery.get/reconcile 获取受控状态。可选资源 URI 如 dj://deliveries/del_example 只提供授权投影，不提供任意文件访问；首轮工具集足够，无须依赖 Resources/Tasks 扩展才能工作。
+查询有预算，长时间等待不占用一次工具调用作为唯一状态容器。subscription.set 返回持久订阅状态；delivery.get/reconcile 获取受控状态。可选资源 URI 如 dj://deliveries/del_example 只提供授权投影，不提供任意文件访问；首轮工具集足够，无须依赖 Resources/Tasks 扩展才能工作。
 
 ## 主动唤醒
 
@@ -59,7 +59,7 @@ inputSchema 在所有嵌套业务对象上明确 additionalProperties=false；�
 
 outputSchema 覆盖成功与领域失败两种 envelope，字段为统一目录规定的 data/error、effect_state、evidence_level、warnings。field_errors 使用 JSON Pointer；next_actions 来自固定代码映射，工具文本只是该结构的简短投影，不产生另一个与 JSON 冲突的解释。
 
-subscription.preview 返回可直接提交的 preview_id；create/update 不接受第二份 spec。超时通过 dj_operation_get 找对象，再调用 dj_outbound_get 或 dj_delivery_get。引用失败一律不按标题兜底。MCP 的协议握手由锁定 SDK 处理，不能改变业务授权、参数与幂等语义。
+subscription.preview 返回 preview_id。用 subscription.set 提交该引用及 expected_revision，规则内容保存在预览中。超时通过 dj_operation_get 找对象，再调用 dj_outbound_get 或 dj_delivery_get。引用失败一律不按标题兜底。MCP 的协议握手由锁定 SDK 处理，不能改变业务授权、参数与幂等语义。
 
 以上是 DJ 自身的设计取舍，不能把服务校验寄托于宿主 strict 模式、Skill 被读取或模型总能正确选择。完整责任边界见 [模型调用契约](../model-facing.md)。
 
