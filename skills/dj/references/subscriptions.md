@@ -28,12 +28,50 @@
 | 原生消息列/thread | thread.id | eq / "native-thread-id" |
 | 已规范化话题 | topic.key | eq / "topic-key-from-dj" |
 | 引用某条消息 | reply_to.id | eq / "native-parent-id" |
-| 关键词 | text | contains / "故障" |
-| 文本前缀 | text | prefix / "处理：" |
+| 全文关键词 | text | contains / "故障" |
+| 全文前/后缀 | text | prefix / "处理："；suffix / "请跟进" |
+| 第一行文本（如首行告警） | text.first_line | contains / "炸了！"；prefix / "[P0]" |
+| 任一行文本 | text.lines | contains / "ERROR"；eq / "紧急" |
 | 接入账号 | connection_id | eq / "configured-connection" |
 
+## 字段作用域与多段正文
+
+- text_lines: `text`、`text.first_line`、`text.lines` 均支持区分大小写的字面 `eq`、`in`、`contains`、`prefix`、`suffix`（`contains`/`prefix`/`suffix` 模式值须非空）。`text.first_line` 仅匹配首个 `\r\n`/`\n`/`\r` 之前的第一行（若首字符即为换行则第一行为 `""`，第二行不会误判为第一行；后续行即使发生超长截断也不影响已换行的首行确定性判断）。Lark 多段富文本 `post` 在 WebSocket 与 HTTP 两侧统一按真实标题行与段落换行提取正文，不会变成单行 JSON。
 - identity: sender.id通常属于应用或平台作用域；在多个应用中代表同一人时，使用全局people登记已核实别名，再按sender.person_id匹配。机器人也按准确身份登记。没有映射时说明缺口，不从昵称自动合并。
 - reactions: 表情事件sender仍是原消息作者，reaction.operator.id/kind/is_self表示添加表情的人；按实际触发者选择条件，详见[表情触发](reactions.md)。
+
+## 任意多条件组合订阅（不限于两条）
+
+`all` 数组支持 0..64 个子条件同时交集（整棵 `all`/`any`/`not` 树最大深度 8、总叶数 64），既可写 2 条条件，也可按业务需要组合 3 条、5 条或更多条件，或挂入顶层 `any` 与原有 `@`/私聊/话题回应并存。
+
+### 示例1：指定群且第一行带“炸了！”（两条核心条件 + 事件类型）
+
+```json
+{"all":[
+  {"field":"event_kind","op":"eq","value":"message.created"},
+  {"field":"conversation.native_chat_id","op":"eq","value":"oc_fire_group_example"},
+  {"field":"text.first_line","op":"contains","value":"炸了！"}
+]}
+```
+
+### 示例2：五条及以上条件同时判断（群 + 首行词组 + 真人发送 + 非演练 + 非特定话题）
+
+```json
+{"all":[
+  {"field":"event_kind","op":"eq","value":"message.created"},
+  {"field":"conversation.native_chat_id","op":"in","value":["oc_fire_group_example","oc_oncall_group_example"]},
+  {"any":[
+    {"field":"text.first_line","op":"contains","value":"炸了！"},
+    {"field":"text.first_line","op":"prefix","value":"[P0]"}
+  ]},
+  {"field":"sender.kind","op":"eq","value":"human"},
+  {"not":{"field":"text","op":"contains","value":"演练"}},
+  {"not":{"field":"thread.id","op":"eq","value":"omt_muted_thread_example"}}
+]}
+```
+
+- keep_defaults: 若要在已有订阅上新增此类多条件规则而不丢掉原有的 `@`/私聊/引用/话题/Pin 触发，先 `subscription.get` 取出当前 `spec.predicate`（顶层通常为 `{"any":[...]}`），把上述 `{"all":[...]}` 作为一个新元素追加进顶层 `any`，再用原 `subscription_id` 和 `expected_revision` 走 `subscription.preview` → `subscription.update`。
+- reply_identity: 无 `@` 的纯规则命中通知中，`trigger_reasons` 为 `subscription_rule`。若该群在当前 DJ 中只有一个可回复连接，通知直接附带 `reply_context_id`；若同一群同时接入了本人与机器人多条同租户连接且原消息未明确指向具体身份，DJ 按 0031 保持输入通知送达但 `reply_route` 为 `ambiguous_target`（不替调用方猜用本人还是机器人回复），调用方按本对话授权使用明确连接 `conversation.resolve` + `message.send` 或仅做内部处理。
 
 ## @或私聊，同时排除机器人和关键词
 

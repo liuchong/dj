@@ -29,7 +29,41 @@
         :reply_to.id
         "string"
         :text
+        "string"
+        :text.first_line
+        "string"
+        :text.lines
         "string")))
+  (defconst textFields (Object/freeze (js-array "text" "text.first_line" "text.lines")))
+  (defconst textPatternOps (Object/freeze (js-array "contains" "prefix" "suffix")))
+  (defconst lineBreakPattern (new globalThis.RegExp "\\r\\n|\\r|\\n"))
+  (defun firstLineEnd (text)
+    (let ((lf (js-call text :indexOf "\n")) (cr (js-call text :indexOf "\r")))
+      (cond
+        ((and (>= lf 0) (>= cr 0)) (Math/min lf cr))
+        ((>= lf 0) lf)
+        (t cr))))
+  (defun evaluateScalarMatch (value wanted op truncated)
+    (cond
+      ((= op "eq")
+        (if truncated "indeterminate" (if (= value wanted) "true" "false")))
+      ((= op "in")
+        (if truncated
+          "indeterminate"
+          (if (js-call wanted :includes value) "true" "false")))
+      ((= op "contains")
+        (if (js-call value :includes wanted)
+          "true"
+          (if truncated "indeterminate" "false")))
+      ((= op "prefix")
+        (cond ((js-call value :startsWith wanted) "true")
+          ((and truncated (js-call wanted :startsWith value)) "indeterminate")
+          (t "false")))
+      ((= op "suffix")
+        (if truncated
+          "indeterminate"
+          (if (js-call value :endsWith wanted) "true" "false")))
+      (t "indeterminate")))
   ;; Defaults are ordinary editable predicate branches, not a separate router.
   ;; Callers can keep any subset, combine filters, or supply their own predicate.
   (defun defaultSubscriptionPredicate ()
@@ -110,8 +144,11 @@
                                     value
                                     :every
                                     (lambda (item) (= (nativeTypeOf item) type)))))
-                              ((or (= op "contains") (= op "prefix"))
-                                (and (= field "text") (= (nativeTypeOf value) "string")))
+                              ((js-call textPatternOps :includes op)
+                                (and
+                                  (js-call textFields :includes field)
+                                  (= (nativeTypeOf value) "string")
+                                  (> (js-length value) 0)))
                               (t false)))
                           (setq bad path))))
                     (t (setq bad path))))
@@ -128,6 +165,15 @@
   (defun fieldValue
     (event field)
     (cond ((= field "text") (nativeGet (nativeGet event "content") "text"))
+      ((= field "text.first_line")
+        (let ((raw (nativeGet (nativeGet event "content") "text")))
+          (if (= (nativeTypeOf raw) "string")
+            (let ((end (firstLineEnd raw)))
+              (if (>= end 0) (js-call raw :slice 0 end) raw))
+            raw)))
+      ((= field "text.lines")
+        (let ((raw (nativeGet (nativeGet event "content") "text")))
+          (if (= (nativeTypeOf raw) "string") (js-call raw :split lineBreakPattern) raw)))
       ((= field "mentions.id") (nativeGet event "mentions"))
       ((= field "mentions.any")
         (cond ((or (= (nativeGet event "addressed_self") t) (= (nativeGet event "addressed_bot") t)) t)
@@ -216,11 +262,18 @@
           (t
             (let*
               ((field (nativeGet predicate "field"))
+                (content (nativeGet event "content"))
+                (body-truncated (= (nativeGet content "truncated") t))
                 (value (fieldValue event field))
                 (wanted (nativeGet predicate "value"))
                 (op (nativeGet predicate "op"))
                 (truncated
-                  (and (= field "text") (= (nativeGet (nativeGet event "content") "truncated") t))))
+                  (cond
+                    ((= field "text") body-truncated)
+                    ((= field "text.first_line")
+                      (let ((raw (nativeGet content "text")))
+                        (and body-truncated (= (nativeTypeOf raw) "string") (< (firstLineEnd raw) 0))))
+                    (t false))))
               (when (nativeNullish value)
                 (progn (setq djReturn3Value "indeterminate") (throw djReturn3Token)))
               (when (js-call (js-array "mentions.id" "people.id") :includes field)
@@ -228,24 +281,19 @@
                   (js-call value :some (lambda (mention) (if (= op "in")
                     (js-call wanted :includes (nativeGet mention "id")) (= (nativeGet mention "id") wanted))))) "true" "false"))
                 (throw djReturn3Token))
-              (when (and budget (= field "text"))
+              (when (= field "text.lines")
+                (let ((raw (nativeGet content "text")) (index 0) (last (1- (js-length value))))
+                  (when (and budget (= (nativeTypeOf raw) "string"))
+                    (js-call budget :visit (js-length raw)))
+                  (while (<= index last)
+                    (when (= (evaluateScalarMatch (aref value index) wanted op (and body-truncated (= index last))) "true")
+                      (progn (setq djReturn3Value "true") (throw djReturn3Token)))
+                    (setq index (1+ index)))
+                  (setq djReturn3Value (if body-truncated "indeterminate" "false"))
+                  (throw djReturn3Token)))
+              (when (and budget (or (= field "text") (= field "text.first_line")))
                 (js-call budget :visit (js-length value)))
-              (cond
-                ((= op "eq")
-                  (if truncated "indeterminate" (if (= value wanted) "true" "false")))
-                ((= op "in")
-                  (if truncated
-                    "indeterminate"
-                    (if (js-call wanted :includes value) "true" "false")))
-                ((= op "contains")
-                  (if (js-call value :includes wanted)
-                    "true"
-                    (if truncated "indeterminate" "false")))
-                ((= op "prefix")
-                  (cond ((js-call value :startsWith wanted) "true")
-                    ((and truncated (js-call wanted :startsWith value)) "indeterminate")
-                    (t "false")))
-                (t "indeterminate")))))
+              (evaluateScalarMatch value wanted op truncated))))
         (catch djReturn3Error
           (if (eq djReturn3Error djReturn3Token) djReturn3Value (throw djReturn3Error))))))
   (defun matchesSource

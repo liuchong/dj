@@ -111,3 +111,27 @@ trigger_suppressed 明示全局策略阻止动作，不能把条件命中误当�
 别名更新。原有过滤 push/pull、来源范围、资源与混合收件用例共同验证共享接线。
 `T38.composable-subscriptions.unit` 保护字段类型、未知/否定和人员 memo 边界。
 这些本地隔离验收不冒充真实平台机器人身份已配置或外部消息实发。
+
+## 任意多条件组合与按行字面匹配（当前规范）
+
+订阅 `predicate`、全局 `message.filter` 与管理员 `fixed_routes` 共用同一棵递归布尔谓词树，不限制为单条件或双条件：
+
+1. **任意多条布尔组合**：
+   - `{"all": [p1, p2, ..., pN]}`：N 条子条件（0..64 项）同时成立才命中；例如“指定群 + 新消息事件 + 第一行含指定告警词 + 真人发送 + 排除演练文案”等任意多条件交集。`all: []` 表示无条件命中。
+   - `{"any": [b1, b2, ..., bM]}`：M 条分支（1..64 项）任一成立即命中；可在保留默认 `@`/私聊/引用/话题/Pin/表情回应分支的同时，并列追加多条自定义多条件触发分支。
+   - `{"not": p}`：对任意叶子或子树取反。整棵谓词树受统一上限保护（最大深度 `rule_depth=8`，总叶数 `rule_leaves=64`，单次 `in` 集合最多 `rule_in_values=64` 项）。
+
+2. **全文、首行与逐行字面匹配**：
+   - `text`：完整消息正文字符串。
+   - `text.first_line`：正文在首个换行符（`\r\n`、`"\n"` 或 `"\r"`）之前的第一行字符串。以换行开头的正文（如 `"\n炸了！"`）第一行为空字符串 `""`，第二行不会冒充第一行。
+   - `text.lines`：正文按 `\r\n|\r|\n` 切分后的逐行序列；存在任一行满足对应操作符即返回 `"true"`。
+   - 三个文本字段统一支持 `eq`、`in`、`contains`、`prefix`、`suffix` 五种区分大小写的字面匹配（不做正则或语义推断）。`contains`、`prefix`、`suffix` 的模式值必须为非空字符串；`eq: ""` 可用于显式判断空行或空正文。
+
+3. **截断正文的三值边界**：
+   - `content.truncated=true` 表示正文尾部在入库上限处被截断。
+   - 对 `text.first_line`：只要已保存的正文前缀中已经出现换行符（`\r` 或 `\n`），第一行在截断点之前即已完整结束，其 `eq`/`in`/`contains`/`prefix`/`suffix` 均为确定性的 `"true"` 或 `"false"`（含外层 `not`），不会因后续大段堆栈截断而退化为 `"indeterminate"`；仅当正文被截断且尚未出现任何换行符时，第一行本身才按截断三值规则处理。
+   - 对 `text` 与 `text.lines` 的尾部截断行：`suffix`、`eq`、`in` 在截断时返回 `"indeterminate"`；`text.lines` 在已有完整行命中时返回 `"true"`，未命中且正文被截断时返回 `"indeterminate"`，保证 `not(indeterminate)` 仍为 `"indeterminate"`。
+   - 字符访问计数统一纳入 `match_character_visits` 路由预算保护。
+
+4. **Lark 多段富文本（`post`）换行提取**：
+   - 飞书客户端发送多段文字、带链接/截图/`@`/代码块的消息时原生类型为 `post`。Lark 包的 `extractLarkMessageText` 在 WebSocket 实时事件与 HTTP 增量补收/上下文读取两侧统一提取 `post` 正文：非空 `title` 作为首行，各段落行按顺序用 `"\n"` 连接（保留行内 `text`、`md`、`a`、`at`、`code_block`、`emotion` 及附件占位），不再将多段 `post` 压成单行 `[post] {...}` 原始 JSON，确保 `text.first_line` 与 `text.lines` 在真实群消息上按实际段落行工作。

@@ -2,26 +2,14 @@
   (import "../../core/native.eli" nativeGet nativeTypeOf NativeNumber nativeEncodeURIComponent nativeSetTimeout nativeClearTimeout)
   (import "../../core/errors.eli" success failure)
   (import "../../core/types.eli" hashValue)
-  (import "../../../packages/lark/src/index.eli" createLarkClient messagePayload)
+  (import "../../../packages/lark/src/index.eli" createLarkClient messagePayload extractLarkMessageText)
 
   (import "./lark-identities.eli" larkIdentities)
   (import "./lark-reaction-policy.eli" reactionReadBudget)
   (defun formatLarkMessage (message thread &optional brand app)
-    (let ((text nil))
-      (when (= (nativeGet message "msg_type") "text")
-        (try
-          (setq text (nativeGet (JSON/parse (nativeGet (nativeGet message "body") "content" "{}")) "text"))
-          (catch invalid nil)))
-      (when (= (nativeGet message "msg_type") "post")
-        (try
-          (let* ((post (JSON/parse (nativeGet (nativeGet message "body") "content" "{}")))
-            (locale (or (nativeGet post "zh_cn") (nativeGet post "en_us") post))
-            (rows (nativeGet locale "content")) (row (and (Array/isArray rows) (= (js-length rows) 1) (aref rows 0)))
-            (node (and (Array/isArray row) (= (js-length row) 1) (aref row 0))))
-            (when (= (nativeGet node "tag") "md") (setq text (nativeGet node "text"))))
-          (catch invalid nil)))
-      (unless (= (nativeTypeOf text) "string")
-        (setq text (str "[" (nativeGet message "msg_type" "unknown") "] " (nativeGet (nativeGet message "body") "content" ""))))
+    (let ((text (extractLarkMessageText
+            (nativeGet message "msg_type" "unknown")
+            (nativeGet (nativeGet message "body") "content" ""))))
       (Object/assign (js-object) message
         (js-object :sender (Object/assign (js-object) (nativeGet message "sender")
           (js-object :identities (larkIdentities (or brand "lark") app nil

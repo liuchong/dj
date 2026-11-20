@@ -1,5 +1,6 @@
 (module dj.tests.integration.composable-subscriptions
   (import "../../src/core/native.eli" nativeGet)
+  (import "../../src/adapters/im/lark-events.eli" flattenLarkEvent normalizeLarkEvent)
   (import "../support/case.eli" withCase)
   (import "../support/fixtures.eli" createFixture closeFixture callOk bindRecipient createdEvent)
   (import "bun:sqlite" Database)
@@ -115,4 +116,60 @@
       (await (js-call f :ingest (event "old-alias" "human" "ou_person_a" "c1" t false "hello")))
       (await (js-call f :ingest (event "new-alias" "human" "ou_person_b" "c1" t false "hello")))
       (await (js-call f :tick))
-      (js-call (expect (js-length (nativeGet (nativeGet f "opencode") "inputs"))) :toBe 2))) closeFixture))
+      (js-call (expect (js-length (nativeGet (nativeGet f "opencode") "inputs"))) :toBe 2))) closeFixture)
+  (defun larkWireEvent (id chat sender-type sender-id msg-type payload)
+    (let ((cfg (js-object :connection_id "lark" :brand "lark" :identity "bot" :event_app_id "cli_test" :event_subject_id "ou_bot"))
+          (wire (js-object
+            :header (js-object :event_type "im.message.receive_v1" :app_id "cli_test" :tenant_key "tenant_a")
+            :event (js-object
+              :sender (js-object :sender_id (js-object :open_id sender-id) :sender_type sender-type :tenant_key "tenant_a")
+              :message (js-object :message_id id :chat_id chat :chat_type "group" :message_type msg-type
+                :create_time "1790000000000" :content (JSON/stringify payload) :mentions (js-array))))))
+      (normalizeLarkEvent cfg (flattenLarkEvent wire))))
+  (withCase "T38.multi-condition-first-line.integration" setup (async (f)
+    (let* ((agent (await (bindRecipient f)))
+      (fire-first-line (js-object :all (js-array
+        (leaf "event_kind" "eq" "message.created")
+        (leaf "conversation.native_chat_id" "eq" "chat-fire")
+        (leaf "text.first_line" "contains" "炸了！")
+        (leaf "sender.kind" "eq" "human")
+        (js-object :not (leaf "text" "contains" "演练")))))
+      (fire-any-line-suffix (js-object :all (js-array
+        (leaf "event_kind" "eq" "message.created")
+        (leaf "conversation.native_chat_id" "eq" "chat-fire")
+        (leaf "sender.kind" "eq" "human")
+        (leaf "text.lines" "suffix" "请立即介入"))))
+      (sub (await (subscribe f "A" agent (js-object :any (js-array fire-first-line fire-any-line-suffix))))))
+      (await (js-call f :ingest (larkWireEvent "fire-post-hit" "chat-fire" "user" "ou_human_1" "post"
+        (js-object :title "" :content (js-array
+          (js-array (js-object :tag "text" :text "[告警] 线上订单服务炸了！ ") (js-object :tag "at" :user_name "值班员"))
+          (js-array (js-object :tag "text" :text "错误率升高，请查看 ") (js-object :tag "a" :text "监控面板" :href "https://example.invalid/m")))))))
+      (await (js-call f :ingest (larkWireEvent "fire-post-second-line-only" "chat-fire" "user" "ou_human_1" "post"
+        (js-object :title "" :content (js-array
+          (js-array (js-object :tag "text" :text "日常巡检正常"))
+          (js-array (js-object :tag "text" :text "昨天测试环境炸了！")))))))
+      (await (js-call f :ingest (larkWireEvent "fire-leading-newline" "chat-fire" "user" "ou_human_1" "text"
+        (js-object :text "\n炸了！"))))
+      (await (js-call f :ingest (larkWireEvent "other-chat-miss" "chat-other" "user" "ou_human_1" "text"
+        (js-object :text "线上服务炸了！\n详情"))))
+      (await (js-call f :ingest (larkWireEvent "bot-sender-miss" "chat-fire" "app" "cli_other_bot" "text"
+        (js-object :text "线上服务炸了！\n详情"))))
+      (await (js-call f :ingest (larkWireEvent "drill-excluded" "chat-fire" "user" "ou_human_1" "text"
+        (js-object :text "线上服务炸了！\n本次为混沌演练"))))
+      (await (js-call f :ingest (larkWireEvent "fire-line-suffix-hit" "chat-fire" "user" "ou_human_2" "text"
+        (js-object :text "值班通报\n数据库主从延迟超限，请立即介入\n附慢查询摘要"))))
+      (await (js-call f :tick))
+      (let ((inputs (nativeGet (nativeGet f "opencode") "inputs")))
+        (js-call (expect (js-length inputs)) :toBe 2)
+        (let ((env0 (nativeGet (aref inputs 0) "envelope"))
+              (env1 (nativeGet (aref inputs 1) "envelope")))
+          (js-call (expect (nativeGet (nativeGet env0 "content") "text"))
+            :toBe "[告警] 线上订单服务炸了！ @值班员\n错误率升高，请查看 监控面板")
+          (js-call (expect (js-call (nativeGet env0 "trigger_reasons" (js-array)) :some
+            (lambda (item) (= (nativeGet item "code") "subscription_rule")))) :toBe t)
+          (js-call (expect (nativeGet (nativeGet env1 "content") "text"))
+            :toBe "值班通报\n数据库主从延迟超限，请立即介入\n附慢查询摘要")))
+      (let* ((address (await (callOk f "A" "conversation.resolve" (js-object :connection_id "lark" :chat_id "chat-fire" :thread_id nil))))
+        (listed (nativeGet (await (callOk f "A" "message.list" (js-object :conversation_ref (nativeGet address "conversation_ref")))) "items")))
+        (js-call (expect (js-length listed)) :toBe 6)
+        (js-call (expect (nativeGet sub "revision")) :toBe 1)))) closeFixture))

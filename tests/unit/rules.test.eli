@@ -142,7 +142,29 @@
           (expect
             (evaluatePredicate (js-object :field "text" :op "eq" :value "ABC") partial))
           :toBe
-          "indeterminate"))))
+          "indeterminate")
+        (js-call
+          (expect
+            (evaluatePredicate (js-object :field "text" :op "suffix" :value "C") partial))
+          :toBe
+          "indeterminate")
+        (js-call
+          (expect
+            (evaluatePredicate (js-object :field "text.first_line" :op "contains" :value "D") partial))
+          :toBe
+          "indeterminate")
+        (let ((multiline-partial (Object/assign (js-object) event
+                (js-object :content (js-object :kind "text" :text "首行炸了！\n堆栈截断..." :truncated t)))))
+          (js-call (expect (evaluatePredicate
+            (js-object :field "text.first_line" :op "eq" :value "首行炸了！") multiline-partial)) :toBe "true")
+          (js-call (expect (evaluatePredicate
+            (js-object :field "text.first_line" :op "suffix" :value "炸了！") multiline-partial)) :toBe "true")
+          (js-call (expect (evaluatePredicate
+            (js-object :not (js-object :field "text.first_line" :op "contains" :value "演练")) multiline-partial)) :toBe "true")
+          (js-call (expect (evaluatePredicate
+            (js-object :field "text.lines" :op "eq" :value "首行炸了！") multiline-partial)) :toBe "true")
+          (js-call (expect (evaluatePredicate
+            (js-object :not (js-object :field "text.lines" :op "contains" :value "未出现")) multiline-partial)) :toBe "indeterminate")))))
   (withUnitCase
     "T04.tristate.unit.source-thread"
     (lambda

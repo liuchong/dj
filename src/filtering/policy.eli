@@ -17,7 +17,7 @@
         (cond ((object-has? node :all) (js-call (nativeGet node "all") :forEach visit))
           ((object-has? node :any) (js-call (nativeGet node "any") :forEach visit))
           ((object-has? node :not) (funcall visit (nativeGet node "not")))
-          ((and (js-call (js-array "contains" "prefix") :includes (nativeGet node "op"))
+          ((and (js-call (js-array "contains" "prefix" "suffix") :includes (nativeGet node "op"))
                 (= (nativeGet node "value") ""))
             (setq problem (invalidField (str "/rules/" index "/predicate") "a nonempty literal text pattern"))))))
       (when (not problem)

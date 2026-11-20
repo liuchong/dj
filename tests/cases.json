@@ -26842,7 +26842,7 @@
     {
       "case_id": "T38.subscription-source-boundaries.unit",
       "parent_id": "T38",
-      "file": "tests/unit/context.test.eli",
+      "file": "tests/unit/subscription-scope.test.eli",
       "suite": "unit",
       "level": "unit",
       "e2e": false,
@@ -27363,6 +27363,28 @@
       "given": "An isolated DJ Core and real SQLite with two existing session peers",
       "when": "Subscription predicates resolve scoped people with fresh mappings and reject unknown person references",
       "then": "Only matching unsuppressed subscriptions deliver, while all received messages remain in local history"
+    },
+    {
+      "case_id": "T38.multi-condition-first-line.integration",
+      "parent_id": "T38",
+      "file": "tests/integration/composable-subscriptions.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "requirements": [
+        "Q11"
+      ],
+      "acceptance_ids": [
+        "A05"
+      ],
+      "given": "An isolated DJ Core, real SQLite and Lark text/post wire normalization",
+      "when": "Multi-condition all/any/not predicates combine chat, event_kind, sender.kind, negative text, text.first_line and text.lines suffix",
+      "then": "Only messages whose real first line or target line satisfies every condition trigger delivery, while non-matching second-line or excluded messages stay in history without triggering"
     },
     {
       "case_id": "T38.composable-subscriptions.unit",

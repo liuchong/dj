@@ -3,7 +3,7 @@
 - purpose: 通过同一持久规则模型管理人员、字符或组合条件；消息可见度与触发行为分离。
 - boundary: 当前只支持服务级suppress_trigger，不能隐藏、删除消息或绕过既有读取权限。管理需要message.filter.manage、读取需要message.filter.inspect，资源均为message-filter:service。
 - read: 先调用message.filter.get读取revision和已有rules，不因新增一人就覆盖其他规则。
-- literal: 人员使用全局people表和sender.person_id；原生别名带平台及应用/租户作用域，不猜显示名；contains按区分大小写的字面子串，支持Unicode/emoji，空contains/prefix拒绝。
+- literal: 人员使用全局people表和sender.person_id；原生别名带平台及应用/租户作用域，不猜显示名；text、text.first_line、text.lines均支持区分大小写的eq/in/contains/prefix/suffix字面匹配（支持Unicode/emoji，空contains/prefix/suffix拒绝）。
 - composition: 启用规则之间按OR；规则内使用all/any/not。所有连接共用人员表和规则；仅明确的单连接例外才用connection_id缩小范围，不把不同平台同名人自动合并。
 
 ## 一次设置人员和字符

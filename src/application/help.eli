@@ -34,7 +34,7 @@
       :message.filter.get
       "读取服务级触发过滤，需要message.filter.inspect。仅限制通知AI，不改变收件、可见性或出站权限；只想禁止回复/表情而保留事件时用message.recipient_policy。"
       :message.filter.update
-      "需要message.filter.manage，按当前revision替换完整rules/people并保留既有项；仅支持suppress_trigger，不补发历史。禁触发与禁发独立：不回复/不加自动表情但继续通知AI须配置message.recipient_policy，session.rules中的自然语言黑名单不会执行本操作。"
+      "需要message.filter.manage，按当前revision替换完整rules/people并保留既有项；支持任意多条all/any/not条件及text、text.first_line、text.lines与eq/in/contains/prefix/suffix字面匹配，仅支持suppress_trigger，不补发历史。禁触发与禁发独立：不回复/不加自动表情但继续通知AI须配置message.recipient_policy，session.rules中的自然语言黑名单不会执行本操作。"
       :operation.get
       "按 operation_id，或原 operation+idempotency_key 查受理台账；not_found 不证明原请求不会提交。"
       :connection.list
@@ -64,7 +64,7 @@
       :agent.unregister
       "关闭登记并撤销未提交订阅贡献；保留共享 route、unknown 和独立直发。"
       :subscription.preview
-      "按 all/any/not 组合提及、私聊、作者、机器人、会话、话题和关键词条件；预览返回固定 preview_id，样例只读并标明全局触发屏蔽，不生成投递。"
+      "按 all/any/not 任意多条件组合事件类型、提及、私聊、作者、机器人、会话、话题及全文/首行/逐行字面文本（text、text.first_line、text.lines 配合 eq/in/contains/prefix/suffix）；预览返回固定 preview_id，样例只读并标明全局触发屏蔽，不生成投递。"
       :subscription.create
       "提交固定 preview_id；不接收第二份 spec，从 start_seq 起处理新事件。"
       :subscription.list

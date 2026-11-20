@@ -132,9 +132,11 @@
               "addressed_self"
               "chat_type"
               "reply_to.id"
-              "text")
+              "text"
+              "text.first_line"
+              "text.lines")
             :op
-            (enumSchema "eq" "in" "contains" "prefix")
+            (enumSchema "eq" "in" "contains" "prefix" "suffix")
             :value
             (js-object
               :oneOf
