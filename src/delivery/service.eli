@@ -1,6 +1,7 @@
 (module dj.delivery.service
   (import "../core/types.eli" sourceReadAction nextRevision addSeconds encodeSeq)
   (import "../dispatch/notifications.eli" notificationSummary)
+  (import "../messaging/reply-context.eli" projectReplyAccess)
   (import "../core/native.eli" nativeGet)
   (import "../core/errors.eli" success failure)
   (import "../core/limits.eli" limits)
@@ -189,7 +190,7 @@
                            (js-array "receipt_id" "attempt_id" "kind" "evidence_level" "native_ref" "definite_not_sent" "retryable"))))
                     (put safe :received_at (nativeGet receipt "observed_at"))
                     safe))))
-            projection))
+            (projectReplyAccess context projection)))
         (catch djReturn1Error
           (if (eq djReturn1Error djReturn1Token) djReturn1Value (throw djReturn1Error))))))
   (defasync acceptDirect (context args)

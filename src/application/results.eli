@@ -620,11 +620,12 @@
     :operator (obj (strings "id kind" (js-object :is_self boolSchema :identities (arr (obj (strings "platform scope id"))))))))))
   (put definitions :ingress_evidence (obj (strings "kind operation_id requested_by reason recovered_at")))
   (put definitions :topic (obj (strings "topic_key kind root_message_id" (js-object :native_thread_id nullableString :parent_message_id nullableString))))
+  (put definitions :reply_authority (obj (strings "recipient_principal_id expires_at")))
   (put definitions :inbox_envelope (obj (js-object
     :schema_version integerSchema :kind stringSchema :origin stringSchema
     :delivery_id nullableString :inbox_id stringSchema :event_id stringSchema
     :source (ref "delivery_source") :sender (ref "sender") :content (ref "content")
-    :attachments (arr (ref "attachment")) :reply_context_id nullableString :allowed_actions (arr stringSchema)
+    :attachments (arr (ref "attachment")) :reply_context_id nullableString :reply_authority (ref "reply_authority") :allowed_actions (arr stringSchema)
     :matched (ref "matched_summary")
     :group_dispatch (obj (strings "group_id target_key selected_agent_id"))
     :dispatch_context (obj (strings "context_id identity_binding_id connection_id identity basis"))
@@ -743,6 +744,8 @@
           nullableString
           :reply_context_id
           nullableString
+          :reply_authority
+          (ref "reply_authority")
           :allowed_actions
           (arr stringSchema)
           :matched
@@ -785,6 +788,8 @@
           integerSchema
           :reply_context_id
           nullableString
+          :reply_authority
+          (ref "reply_authority")
           :destination
           (ref "address")
           :content

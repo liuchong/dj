@@ -2,6 +2,7 @@
   (import "../messaging/topics.eli" topicOf trackedTopic)
   (import "../resources/service.eli" resourceEnvelope)
   (import "../messaging/context.eli" envelopeContext)
+  (import "../messaging/reply-context.eli" replyAuthority)
   (import "../dispatch/contexts.eli" existingSelection prepareIdentity activateIdentity)
   (import "../dispatch/notifications.eli" notificationState)
   (import "./working.eli" trackWorking finishWorking)
@@ -384,6 +385,7 @@
             :allowed_actions
             (if reply (js-array "reply") (js-array))))
                  (instructions (composeInstructions (nativeGet record "instruction_policies" (js-array)) event body)))
+            (when reply (put envelope :reply_authority (replyAuthority reply)))
             (when (nativeGet record "group_id")
               (put envelope :group_dispatch
                 (js-object

@@ -10,7 +10,7 @@
 - required: 身份信息与任务正文一起显式传递，并沿派工、续接、补问、结果交回各跳保留。准确原值来自DJ信封、固定回复记录和connection.get/probe；不以接收连接、正文@对象、显示名、旧消息作者或CLI默认配置代替确定出口。服务已连通并收到的来源事实应从DJ自动查回并补齐，不让用户手工找账号或因交接遗漏停工。
 - sender_fields: 平台、品牌/租户、原来源connection_id、DJ选定reply_connection_id、identity（user或bot）、可核实的app_id、原生账号锚点（本人ID或机器人ID）和identity_revision。来源连接与回复连接必须分列。
 - source_fields: 原event_id、delivery_id、native_chat_id、native_message_id、native_thread_id及thread_kind。无thread明确null；任务后续补充另列自己的来源标识，不覆盖原事项的发送身份。
-- return_fields: 协调者与执行者的工具/原生会话ID、默认返回方式、原reply_context_id的所属主体及有效期、引用过期时从原delivery重新取得引用的方式，以及本次逻辑发送的幂等键/既有outbound状态（已有时）。认证留在DJ，交接说明已安装的CLI/MCP/GEPO入口、非敏感client profile定位/使用方法及服务代注入认证的方式，不传凭据、token或secret。
+- return_fields: 协调者与执行者的工具/原生会话ID、默认返回方式、原reply_context_id的所属主体及有效期、原接收主体在原期限内从 delivery 刷新失效引用的方式，以及本次逻辑发送的幂等键/既有outbound状态（已有时）。认证留在DJ，交接说明已安装的CLI/MCP/GEPO入口、非敏感client profile定位/使用方法及服务代注入认证的方式，不传凭据、token或secret。
 - access_fields: 明确DJ接口入口、本对话合法client profile如何定位、connection.get/delivery.get/message.get如何查原身份与来源、message.reply_context(delivery_id)如何恢复引用，以及协调者的实际跨进程返回方法、异常时用户本人的私聊目的地与原生身份。Lark CLI例外需说明同账号配置/认证的使用入口，不能让执行者依赖默认登录；无法立即复用CLI认证时优先改走同身份DJ或协调者代理。
 - action_fields: 预期发送内容、具体@对象及其所属原生ID范围、是否已有用户外发授权、是否确有单条force_send授权。任务分派或metadata本身不授予发送权限，不把force_send作为默认值向后传播。
 - continuity: 执行者收到交接后核对身份信息是否充分；压缩、重启或继续工作时从原任务记录恢复。不得把“用户要求开工”解释为允许使用用户账号发消息；原事项由机器人接受，就继续用该机器人，不能切本人或另一个机器人。确需改身份必须有用户新的明确要求及重新核实的合法路由。
@@ -60,7 +60,7 @@
 - owner_private_destination_ref: "verified_owner_private_conversation_ref"
 - reply_context_owner: "coordinator_recipient"
 - reply_context_id: "reply_context_example"
-- reply_context_expires_at: "actual_native_expiry"
+- reply_context_expires_at: "dj_reply_context_expires_at"
 - outbound_id: null
 - idempotency_key: "stable_key_for_this_logical_send"
 - external_send_authorization: "current_user_authorized_scope"

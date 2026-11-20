@@ -13,7 +13,7 @@
 | delivery_unknown / outbound_unknown | 对对应对象 reconcile；操作成功仍可能 state=unknown，不重发 |
 | failed / unknown | 首期 Outbound 只有一个文本 part；仅明确未发送且接口允许时显式 retry，unknown 先核对原尝试，不整条重发 |
 | reply_identity_unresolved | 保留原delivery与回复幂等键，检查reply_route及同原生消息视图；双连接私聊发送回显不应造成身份冲突，交维护者修复，不换账号绕过 |
-| reply_context 缺失/过期 | 不回复或报告限制；主动发送要有独立目标与授权 |
+| reply_context 缺失或失效 | 核对当前主体；原接收主体可在原期限内按 delivery_id 刷新。已过期或无权限时报告具体限制 |
 | incompatible / unsupported | 不猜帧、不切目标、不用模型为 DJ 补协议 |
 | indeterminate / 正文不完整 | 报告判定缺口，不把未找到关键词解释为确定不存在 |
 

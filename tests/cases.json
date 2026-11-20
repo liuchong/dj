@@ -26367,6 +26367,29 @@
       ]
     },
     {
+      "case_id": "T40.reply-context-lifecycle.integration",
+      "parent_id": "T40",
+      "file": "tests/integration/mention-replies.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "acceptance_ids": [
+        "A01",
+        "A03"
+      ],
+      "requirements": [
+        "SPEC-0005"
+      ],
+      "given": "An accepted delivery readable by both its recipient and an operator",
+      "when": "The operator inspects it, the recipient refreshes it after authorization changes, and the deadline passes",
+      "then": "Only the recipient may reply and refresh within the original absolute deadline; queued effects respect the same deadline"
+    },
+    {
       "case_id": "T40.mention-reply-guards.integration",
       "parent_id": "T40",
       "file": "tests/integration/mention-replies.test.eli",
@@ -26485,6 +26508,30 @@
       "requirements": [
         "SPEC-0006"
       ]
+    },
+    {
+      "case_id": "T40.pull-reply-authority.integration",
+      "parent_id": "T40",
+      "file": "tests/integration/working.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "acceptance_ids": [
+        "A01",
+        "A03"
+      ],
+      "requirements": [
+        "SPEC-0005",
+        "SPEC-0006"
+      ],
+      "given": "A claimed inbox message has queued a reply and a Get reaction",
+      "when": "The claim is released, then acquired and consumed with a new claim",
+      "then": "Neither queued effect escapes the old claim, and the consumed current claim can reply"
     },
     {
       "case_id": "T38.working-http.integration",
@@ -28861,6 +28908,29 @@
       "given": "Two authenticated native representations with missing or conflicting reply identities",
       "when": "Freeze notifications, then receive late native evidence before a queued reply submits",
       "then": "Resolve the exact native identity across app IDs or refuse; never change the frozen account or let AI choose"
+    },
+    {
+      "case_id": "T40.reply-context-expiry.unit",
+      "parent_id": "T40",
+      "file": "tests/unit/mention-replies.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 5000,
+      "resource_group": "pure",
+      "acceptance_ids": [
+        "A01",
+        "A03"
+      ],
+      "requirements": [
+        "SPEC-0005"
+      ],
+      "given": "An expired opaque reply reference",
+      "when": "The original actor, another actor or a different reference kind is checked",
+      "then": "Only the current owner of the reply reference can learn that its lifetime elapsed"
     },
     {
       "case_id": "T38.reply-identity-evidence.unit",

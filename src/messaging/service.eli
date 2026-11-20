@@ -2,7 +2,7 @@
   (import "../attachments/service.eli" attachmentReferences getAttachment)
   (import "./echo.eli" reserveOutboundEcho settleOutboundEcho)
   (import "./recipients.eli" checkRecipients recipientContent policyOperation)
-  (import "../dispatch/contexts.eli" checkReplyIdentity)
+  (import "./reply-context.eli" currentReplyContext projectReplyAccess replyRecord resolveReply validateReplyRecord)
   (import "../tasks/commands.eli" taskOutboundAllowed)
   (import "./topics.eli" topicOf trackedTopic)
   (import "../delivery/working.eli" finishWorking queueAcknowledgement)
@@ -35,7 +35,7 @@
   (import "../policy/principals.eli" configuredPrincipal)
   (import "../policy/authorize.eli" authorize)
   (import "../ingestion/service.eli" allowedAddress)
-  (import "../ingestion/visibility.eli" eventContentAvailable eventReadable)
+  (import "../ingestion/visibility.eli" eventReadable)
   (import "../catalog/snapshots.eli" openSnapshot resumeSnapshot advanceSnapshot)
   (import "../connections/manager.eli" imPort dispatchIm)
   (defun addressOf
@@ -776,93 +776,6 @@
           (success nil))
         (catch djReturn7Error
           (if (eq djReturn7Error djReturn7Token) djReturn7Value (throw djReturn7Error))))))
-  (defun resolveReply
-    (context ref)
-    (let ((djReturn8Token (js-object)) (djReturn8Value nil))
-      (try
-        (let ((resolved (resolveResourceHandle context ref "reply_context")))
-          (unless (nativeGet resolved "ok")
-            (progn
-              (setq djReturn8Value (failure "reply_context_expired"))
-              (throw djReturn8Token)))
-          (let*
-            ((repository (nativeGet context "repository"))
-              (handle (nativeGet resolved "data"))
-              (reply
-                (js-call repository :get (if (nativeGet handle "inbox_id") "inbox_reply_contexts" "reply_contexts")
-                  (nativeGet handle "resource_key")))
-              (record
-                (and
-                  reply
-                  (if (nativeGet handle "inbox_id")
-                    (js-call repository :get "inbox_entries" (nativeGet handle "inbox_id"))
-                    (js-call repository :get "deliveries" (nativeGet reply "delivery_id")))))
-              (event
-                (and reply (js-call repository :get "events" (nativeGet reply "event_id"))))
-              (connection
-                (and
-                  reply
-                  (js-call
-                    repository
-                    :get
-                    "connections"
-                    (nativeGet (nativeGet reply "destination") "connection_id")))))
-            (unless
-              (and
-                reply
-                record
-                connection
-                (=
-                  (nativeGet reply "recipient_principal_id")
-                  (nativeGet (currentPrincipal context) "principal_id"))
-                (> (Date/parse (nativeGet reply "expires_at")) (Date/parse (utcNow context)))
-                (=
-                  (nativeGet reply "identity_revision")
-                  (nativeGet connection "identity_revision" (nativeGet connection "revision")))
-                (eventContentAvailable context event)
-                (if (nativeGet handle "inbox_id")
-                  (and (= (nativeGet record "claim_ref") (nativeGet handle "inbox_claim_ref"))
-                    (or (= (nativeGet record "state") "consumed")
-                      (and (= (nativeGet record "state") "claimed")
-                        (> (Date/parse (nativeGet record "lease_until")) (Date/parse (utcNow context))))))
-                  (js-call (js-array "submitting" "accepted" "unknown" "resolved") :includes (nativeGet record "state"))))
-              (progn
-                (setq djReturn8Value (failure "reply_context_expired"))
-                (throw djReturn8Token)))
-            (when (nativeGet reply "source_destination")
-              (let* ((source (nativeGet reply "source_destination"))
-                (source-connection (js-call repository :get "connections" (nativeGet source "connection_id"))))
-                (unless (and source-connection
-                  (= (nativeGet reply "source_identity_revision") (nativeGet source-connection "identity_revision" (nativeGet source-connection "revision")))
-                  (can context "message.reply" source))
-                  (setq djReturn8Value (failure "reply_context_expired")) (throw djReturn8Token))))
-            (unless (can context "message.reply" (nativeGet reply "destination"))
-              (progn (setq djReturn8Value (failure "forbidden")) (throw djReturn8Token)))
-            (let ((identity-check (checkReplyIdentity context reply)))
-              (unless (nativeGet identity-check "ok")
-                (setq djReturn8Value identity-check) (throw djReturn8Token)))
-            (success reply)))
-        (catch djReturn8Error
-          (if (eq djReturn8Error djReturn8Token) djReturn8Value (throw djReturn8Error))))))
-  (defun currentReplyContext (context delivery-id)
-    (inTransaction context (lambda (tx)
-      (let* ((repository (nativeGet context "repository"))
-        (delivery (js-call repository :get "deliveries" delivery-id))
-        (row (and delivery (js-call (js-call (nativeGet tx "db") :query
-          "SELECT payload FROM reply_contexts WHERE delivery_id=? ORDER BY rowid DESC LIMIT 1") :get delivery-id)))
-        (reply (and row (JSON/parse (nativeGet row "payload"))))
-        (actor (currentPrincipal context)))
-        (if (not (and reply actor (= (nativeGet reply "recipient_principal_id") (nativeGet actor "principal_id"))
-          (> (Date/parse (nativeGet reply "expires_at")) (Date/parse (utcNow context)))))
-          (failure "reply_context_expired")
-          (let* ((identity-check (must (checkReplyIdentity context reply)))
-            (handle (must (issueResourceHandle context "reply_context" (nativeGet reply "reply_context_id")
-              (js-object :identity_revision (nativeGet reply "identity_revision"))
-              (Math/floor (/ (- (Date/parse (nativeGet reply "expires_at")) (Date/parse (utcNow context))) 1000)))))
-            (checked (resolveReply context (nativeGet handle "ref"))))
-            (if (not (nativeGet checked "ok")) checked
-              (success (js-object :delivery_id delivery-id :reply_context_id (nativeGet handle "ref")
-                :expires_at (nativeGet handle "expires_at") :allowed_actions (js-array "reply"))))))))))
   (defun projectOutbound
     (context record)
     (let ((djReturn9Token (js-object)) (djReturn9Value nil))
@@ -968,7 +881,7 @@
                             "retryable"))))
                     (put safe :received_at (nativeGet receipt "observed_at"))
                     safe))))
-            projection))
+            (projectReplyAccess context projection)))
         (catch djReturn9Error
           (if (eq djReturn9Error djReturn9Token) djReturn9Value (throw djReturn9Error))))))
   ;; An accepted outbound is an exact native anchor, not permission to select
@@ -984,11 +897,11 @@
         (unless (and (= (nativeGet record "state") "accepted") (= (js-length ids) 1))
           (must (failure "ambiguous_target" (js-object :details (js-object :reason "reply_anchor_requires_one_accepted_native_message")))))
         (unless (= (nativeGet connection "platform") "lark") (must (failure "unsupported")))
-        (must (outboundReady context (Object/assign (js-object) record (js-object :force_send force-send))))
         (let* ((inbox (nativeGet record "reply_inbox_id"))
-          (original (and (nativeGet record "reply_record_id")
-            (js-call repository :get (if inbox "inbox_reply_contexts" "reply_contexts") (nativeGet record "reply_record_id"))))
+          (original (when (nativeGet record "reply_record_id")
+            (must (validateReplyRecord context (replyRecord context (nativeGet record "reply_record_id") inbox)))))
           (address (Object/assign (js-object) (nativeGet record "destination"))))
+          (must (outboundReady context (Object/assign (js-object) record (js-object :force_send force-send))))
           (success (Object/assign (js-object) original (js-object :destination address :native_reply_to (aref ids 0)
             :native_thread_id (nativeGet record "native_thread_id")
             :reply_context_id (nativeGet record "reply_record_id" nil) :inbox_id inbox)))))))
@@ -1169,12 +1082,7 @@
         (let*
           ((repository (nativeGet context "repository"))
             (connection
-              (js-call repository :get "connections" (nativeGet record "connection_id")))
-            (reply
-              (and
-                (nativeGet record "reply_record_id")
-                (js-call repository :get (if (nativeGet record "reply_inbox_id") "inbox_reply_contexts" "reply_contexts")
-                  (nativeGet record "reply_record_id")))))
+              (js-call repository :get "connections" (nativeGet record "connection_id"))))
           (unless
             (and
               connection
@@ -1187,26 +1095,12 @@
           (unless (outboundPrincipalAllows context record)
             (progn (setq djReturn12Value (failure "forbidden")) (throw djReturn12Token)))
           (when (nativeGet record "reply_record_id")
-            (let ((identity-check (checkReplyIdentity context reply)))
-              (unless (nativeGet identity-check "ok")
-                (setq djReturn12Value identity-check) (throw djReturn12Token)))
-            (when (nativeGet record "reply_inbox_id")
-              (let ((entry (js-call repository :get "inbox_entries" (nativeGet record "reply_inbox_id"))))
-                (unless (and entry reply (= (nativeGet entry "claim_ref") (nativeGet reply "inbox_claim_ref"))
-                    (or (= (nativeGet entry "state") "consumed")
-                      (and (= (nativeGet entry "state") "claimed")
-                        (> (Date/parse (nativeGet entry "lease_until")) (Date/parse (utcNow context))))))
-                  (setq djReturn12Value (failure "reply_context_expired")) (throw djReturn12Token))))
-            (unless
-              (and
-                reply
-                (> (Date/parse (nativeGet reply "expires_at")) (Date/parse (utcNow context)))
-                (eventContentAvailable
-                  context
-                  (js-call repository :get "events" (nativeGet reply "event_id"))))
-              (progn
-                (setq djReturn12Value (failure "reply_context_expired"))
-                (throw djReturn12Token))))
+            (let* ((actor-context (Object/assign (js-object) context
+                     (js-object :principal (js-object :principal_id (nativeGet record "principal_id")))))
+                   (reply (replyRecord context (nativeGet record "reply_record_id") (nativeGet record "reply_inbox_id")))
+                   (checked (validateReplyRecord actor-context reply)))
+              (unless (nativeGet checked "ok")
+                (setq djReturn12Value checked) (throw djReturn12Token))))
           (let ((recipient-check (checkRecipients context (nativeGet record "destination") (nativeGet record "native_reply_to") (nativeGet record "content") (nativeGet record "force_send" false))))
             (unless (nativeGet recipient-check "ok")
               (setq djReturn12Value recipient-check) (throw djReturn12Token)))
@@ -1378,7 +1272,10 @@
                           (unless (nativeGet check "ok")
                             (put record :state "blocked")
                             (put record :blocked_reason (nativeGet (nativeGet check "error") "code"))
-                            (when (js-call (js-array "recipient_opted_out" "recipient_blocked") :includes (nativeGet record "blocked_reason"))
+                            (when (or (js-call (js-array "recipient_opted_out" "recipient_blocked") :includes (nativeGet record "blocked_reason"))
+                                      (and (nativeGet record "reply_record_id")
+                                           (js-call (js-array "reply_context_expired" "stale_reference" "content_unavailable")
+                                             :includes (nativeGet record "blocked_reason"))))
                               (put record :state "failed") (put record :definite_not_sent t) (put record :retryable false)
                               (let ((part (js-call repository :get "parts" (nativeGet record "part_id"))))
                                 (put part :state "failed") (put part :definite_not_sent t)
@@ -1717,13 +1614,14 @@
               operation)
             (queryMessages context operation args))
           ((= operation "message.acknowledge")
-            (let ((reply (must (resolveReply context (nativeGet args "reply_context_id")))))
-              (must (requirePermission context "message.reply" (nativeGet reply "destination")))
-              (when (nativeGet reply "source_destination")
-                (must (requirePermission context "message.reply" (nativeGet reply "source_destination"))))
-              (js-call context :accept (lambda (tx operation-id)
-                (queueAcknowledgement context (must (resolveReply context (nativeGet args "reply_context_id")))))
-                (lambda (data) (js-array (typedRef "acknowledgement" (nativeGet data "acknowledgement_id")))))))
+            (try
+              (let ((reply (must (resolveReply context (nativeGet args "reply_context_id")))))
+                (must (requirePermission context "message.reply" (nativeGet reply "destination")))
+                (must (requirePermission context "message.reply" (nativeGet reply "source_destination")))
+                (js-call context :accept (lambda (tx operation-id)
+                  (queueAcknowledgement context (must (resolveReply context (nativeGet args "reply_context_id")))))
+                  (lambda (data) (js-array (typedRef "acknowledgement" (nativeGet data "acknowledgement_id"))))))
+              (catch error (or (nativeGet error "domain_result") (throw error)))))
           ((js-call (js-array "message.send" "message.reply") :includes operation)
             (acceptOutbound context operation args))
           ((= operation "outbound.get")

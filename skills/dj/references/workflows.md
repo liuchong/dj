@@ -69,7 +69,7 @@ surface 以该工具实际能力为准；Pi是已有TUI进程内接收扩展，�
 {"reply_context_id":"reply_example","content":{"type":"text","text":"已收到，我会按约定检查。"},"idempotency_key":"reply-example-1"}
 ```
 
-文字只示例参数形状，实际结果由你负责。保存返回的 operation_id/outbound_id，outbound.get 查看当前平台投递状态。public reply_context 丢失时，可在原有效期内用 message.reply_context(delivery_id) 重新取得固定引用；它不延长有效期、不换账号或目的地。过期或未授予时不自动另发群消息。
+文字只示例参数形状，实际结果由你负责。保存返回的 operation_id/outbound_id，outbound.get 查看当前平台投递状态。公开的 reply_context 丢失或授权更新使其失效时，原接收主体可在原有效期内用 message.reply_context(delivery_id) 重新取得固定引用，返回原 expires_at。用 agent.whoami 对照信封中的 reply_authority.recipient_principal_id；可查看投递的其他主体应将内容交回原接收对话。已过原期限或当前访问被拒绝时报告具体原因。
 
 ### 群简讯与话题详情
 

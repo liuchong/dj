@@ -83,7 +83,7 @@
           (put actor :authorization_revision (1+ (nativeGet actor "authorization_revision")))
           (let ((rejected (await (js-call f :call actor "message.reply" (js-object
               :reply_context_id (nativeGet first "reply_context_id") :content (js-object :type "text" :text "reply") :idempotency_key "task-reply")))))
-            (js-call (expect (nativeGet (nativeGet rejected "error") "code")) :toBe "reply_context_expired"))
+            (js-call (expect (nativeGet (nativeGet rejected "error") "code")) :toBe "stale_reference"))
           (let ((fresh (await (callOk f "A" "message.reply_context" (js-object :delivery_id id)))))
             (js-call (expect (nativeGet (await (js-call f :call (nativeGet f "B") "message.reply_context" (js-object :delivery_id id))) "ok")) :toBe false)
             (await (callOk f "A" "message.reply" (js-object :reply_context_id (nativeGet fresh "reply_context_id")

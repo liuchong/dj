@@ -4813,7 +4813,7 @@
                               expectPrefixV7
                               (nativeGet reply-row "reply_context_id")
                               "reply_context_record")
-                            ;; Opaque entity IDs never grant authorization or substitute for handles:
+                            ;; Default message reads, delivery inspection and reply handles have independent access rules.
                             (let
                               ((unauth-del
                                   (await
@@ -4823,14 +4823,9 @@
                                       (nativeGet f "X")
                                       "delivery.get"
                                       (js-object :delivery_id d-seq2-v7))))
-                                (unauth-msg
-                                  (await
-                                    (js-call
-                                      f
-                                      :call
-                                      (nativeGet f "X")
-                                      "message.get"
-                                      (js-object :event_id (nativeGet ingested "event_id")))))
+                                (readable-msg
+                                  (await (callOk f "X" "message.get"
+                                    (js-object :event_id (nativeGet ingested "event_id")))))
                                 (raw-record-reply
                                   (await
                                     (js-call
@@ -4850,16 +4845,12 @@
                                 (expect (nativeGet (nativeGet unauth-del "error") "code"))
                                 :toBe
                                 "forbidden")
-                              (js-call (expect (nativeGet unauth-msg "ok")) :toBe false)
-                              (js-call
-                                (expect (nativeGet (nativeGet unauth-msg "error") "code"))
-                                :toBe
-                                "forbidden")
+                              (js-call (expect (nativeGet readable-msg "event_id")) :toBe (nativeGet ingested "event_id"))
                               (js-call (expect (nativeGet raw-record-reply "ok")) :toBe false)
                               (js-call
                                 (expect (nativeGet (nativeGet raw-record-reply "error") "code"))
                                 :toBe
-                                "reply_context_expired")))
+                                "stale_reference")))
                           (finally (js-call raw-db :close))))
                       ;; 4. Static mixed v4/v7 delivery.list pagination & concurrent insert <= cursor boundary:
                       (let*

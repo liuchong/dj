@@ -16,7 +16,7 @@
       "读取消息投递的持续IM身份绑定；delivery.get.notification列出同一通知的来源副本与归并关系。交互上下文不是AI任务或负责人。"
       :dispatch.context.transfer
       "仅在用户明确要求身份转移时调用；传context_id、当前expected_binding_id、目标connection_id、explicit=true及reason。只改变之后的交互，不改旧投递快照、订阅或退订状态。"
-      :message.reply_context "原接收者在原有效期内重新取得固定回复引用；重检当前授权和原身份，不改目标、不延长有效期。"
+      :message.reply_context "仅 reply_authority.recipient_principal_id 对应的 DJ 主体可刷新。重检源和出口权限、原消息及冻结身份，返回原绝对 expires_at；forbidden 表示主体或当前访问受限，reply_context_expired 表示原期限已到。"
       :task.list "按当前管理员白名单或本人连接范围分页巡查任务；accepted 不代表完成。"
       :task.tree "展示原 IM 消息、准确 AI 会话与登记的子对话；未知关联明确标注。"
       :task.link "为已接收投递登记明确父子会话关系；未原生核验，不猜任务归属。"
