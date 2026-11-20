@@ -2,12 +2,12 @@
   (import "../../core/native.eli" nativeGet nativeTypeOf NativeNumber nativeEncodeURIComponent nativeSetTimeout nativeClearTimeout)
   (import "../../core/errors.eli" success failure)
   (import "../../core/types.eli" hashValue)
-  (import "../../../packages/lark/src/index.eli" createLarkClient messagePayload extractLarkMessageText)
+  (import "../../../packages/lark/src/index.eli" createLarkClient messagePayload parseLarkMessage)
 
   (import "./lark-identities.eli" larkIdentities)
   (import "./lark-reaction-policy.eli" reactionReadBudget)
   (defun formatLarkMessage (message thread &optional brand app)
-    (let ((text (extractLarkMessageText
+    (let ((parsed (parseLarkMessage
             (nativeGet message "msg_type" "unknown")
             (nativeGet (nativeGet message "body") "content" ""))))
       (Object/assign (js-object) message
@@ -15,7 +15,7 @@
           (js-object :identities (larkIdentities (or brand "lark") app nil
             (js-object :open_id (and (= (nativeGet (nativeGet message "sender") "id_type" "open_id") "open_id")
               (nativeGet (nativeGet message "sender") "id"))))))
-          :content text :thread_id
+          :content (nativeGet parsed "text") :parsed_content parsed :thread_id
           (or (nativeGet message "thread_id") thread nil)))))
 
   (defun createLarkHttpTransport (config host)

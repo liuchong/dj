@@ -14,6 +14,7 @@
 | --- | --- | --- | --- | --- |
 | notification | object | true | | true |
 | literal_blocks | list | true | 1 | false |
+| attachments | list | false | 1 | true |
 
 # notification
 

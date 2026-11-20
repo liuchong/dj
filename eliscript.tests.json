@@ -64,6 +64,8 @@
     "tests/integration/message-actions.test.eli",
     "tests/unit/message-actions.test.eli",
     "tests/integration/lark-api.test.eli",
+    "tests/integration/lark-attachments.test.eli",
+    "tests/unit/lark-attachments.test.eli",
     "tests/unit/lark-api.test.eli",
     "tests/integration/slack.test.eli",
     "tests/unit/slack.test.eli",

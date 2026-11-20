@@ -313,7 +313,7 @@
           (expect (nativeGet status "operation_catalog_digest"))
           :toMatch
           (new globalThis.RegExp "^[a-f0-9]{64}$"))
-        (js-call (expect (js-length (nativeGet status "visible_operations"))) :toBe 108)))
+        (js-call (expect (js-length (nativeGet status "visible_operations"))) :toBe 109)))
     closeFixture)
   (import "../support/process.eli" spawnFixture closeProcess until)
   (import "../support/entries.eli" callCli createMcpClient)
@@ -935,7 +935,7 @@
                       "dj_session_search"
                       :arguments
                       (js-object :query "business error inside valid protocol shell"))))))
-            (js-call (expect (js-length tools)) :toBe 108)
+            (js-call (expect (js-length tools)) :toBe 109)
             (js-call (expect (nativeGet (nativeGet read "annotations") "readOnlyHint")) :toBe t)
             (js-call (expect (nativeGet (nativeGet send "annotations") "readOnlyHint")) :toBe false)
             (js-call (expect (nativeGet (nativeGet send "annotations") "idempotentHint")) :toBe t)

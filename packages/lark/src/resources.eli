@@ -1,0 +1,37 @@
+(module lark.resources
+  (import "./native.eli" nativeGet nativeTypeOf)
+
+  (defun resourceSegment (value)
+    (unless (and (= (nativeTypeOf value) "string")
+      (js-call (new globalThis.RegExp "^[A-Za-z0-9_-]{1,256}$") :test value))
+      (throw (new globalThis.TypeError "invalid Lark resource identifier")))
+    value)
+
+  (defun messageResourcePath (message-id file-key resource-type)
+    (unless (js-call (js-array "file" "image") :includes resource-type)
+      (throw (new globalThis.TypeError "invalid Lark message resource type")))
+    (str "/open-apis/im/v1/messages/" (resourceSegment message-id)
+      "/resources/" (resourceSegment file-key) "?type=" resource-type))
+
+  (defun officeResourceLink (brand href)
+    (try
+      (let* ((url (new globalThis.URL href)) (host (nativeGet url "hostname"))
+             (segments (js-call (nativeGet url "pathname") :split "/"))
+             (kind (nativeGet (js-object :wiki "wiki" :doc "doc" :docs "doc" :docx "docx"
+               :sheets "sheet" :base "bitable" :file "file") (aref segments 1)))
+             (query (nativeGet url "searchParams")))
+        (when (and kind (= (nativeGet url "protocol") "https:")
+          (= (nativeGet url "port") "") (= (nativeGet url "username") "") (= (nativeGet url "password") "")
+          (if (= brand "feishu") (js-call host :endsWith ".feishu.cn")
+            (or (js-call host :endsWith ".larksuite.com") (js-call host :endsWith ".larksuite.cn"))))
+          (let ((result (js-object :url href :resource_kind kind :resource_token (resourceSegment (aref segments 2)))))
+            (js-call (js-array (js-array "table" "table_id") (js-array "record" "record_id")
+              (js-array "sheet" "sheet_id") (js-array "range" "range")) :forEach
+              (lambda (entry)
+                (let ((value (js-call query :get (aref entry 0))))
+                  (when (and value (<= (js-length value) 256)) (put result (aref entry 1) value)))))
+            (when (nativeGet url "hash") (put result :fragment (nativeGet url "hash")))
+            result)))
+      (catch invalid nil)))
+
+  (export resourceSegment messageResourcePath officeResourceLink))

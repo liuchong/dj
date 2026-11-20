@@ -23,6 +23,7 @@
   (import "../../ingestion/service.eli" acceptEvent allowedAddress)
   (import "./lark-http.eli" createLarkHttpTransport)
   (import "./lark-resources.eli" requestResource ensureUserNotices)
+  (import "./lark-attachments.eli" createLarkAttachmentReader projectLarkContent)
   (defun watchAddress
     (config watch)
     (js-object
@@ -212,7 +213,6 @@
                     (when
                       (or
                         (= (nativeGet message "deleted") t)
-                        (not (= (nativeGet message "msg_type") "text"))
                         (not (= (nativeTypeOf (nativeGet message "content")) "string")))
                       (js-call messages :push diagnostic)
                       (progn (setq djReturn4Value nil) (throw djReturn4Token)))
@@ -250,9 +250,10 @@
                               :text
                               (nativeGet message "content")
                               :truncated
-                              false)
-                            :attachments
-                            (js-array))))
+                            false))))
+                      (Object/assign event (projectLarkContent config (nativeGet message "parsed_content") id
+                        (nativeGet message "chat_id") (nativeGet message "thread_id" nil)
+                        (nativeGet message "root_id" nil) (nativeGet message "parent_id" nil)))
                       (when (Array/isArray (nativeGet message "mentions"))
                         (put event :mentions (js-call (nativeGet message "mentions") :filter (lambda (mention)
                           (= (nativeGet mention "id_type" "open_id") "open_id")))))
@@ -292,6 +293,7 @@
     (config host)
     (let* ((active (new globalThis.Map))
         (http (createLarkHttpTransport config host))
+        (attachment-reader (createLarkAttachmentReader http (nativeGet host "clock")))
         (closed false)
         (watch-busy (new globalThis.Set))
         (local-limiter (createReadLimiter (nativeGet host "clock")))
@@ -878,6 +880,7 @@
                           commitPollPage
                           :userNotices (async (context) (await (ensureUserNotices http context)))
                           :resource (async (command parameters context) (await (requestResource http command parameters context)))
+                          :downloadAttachment (nativeGet attachment-reader "read")
                           :apiCall (async (record context)
                             (await (js-call http :apiRequest (nativeGet record "request") context)))
                           :nativeRequest (async (path method body context) (await (js-call http :request path method body context)))
@@ -933,6 +936,7 @@
                           (async
                             ()
                             (setq closed t)
+                            (js-call attachment-reader :clear)
                             (when http (js-call http :close))
                             (js-call
                               active

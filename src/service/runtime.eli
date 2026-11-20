@@ -594,7 +594,7 @@
                   (js-call
                     db
                     :query
-                    "UPDATE events SET tombstone=1,payload=json_set(json_remove(payload,'$.content.text'),'$.tombstone',json('true'),'$.content.kind','tombstone') WHERE event_id IN (SELECT event_id FROM events WHERE tombstone=0 AND body_expires_at<=? LIMIT 100)")
+                    "UPDATE events SET tombstone=1,payload=json_set(json_remove(payload,'$.content.text','$.raw_content','$.message_links','$.attachments'),'$.tombstone',json('true'),'$.content.kind','tombstone') WHERE event_id IN (SELECT event_id FROM events WHERE tombstone=0 AND body_expires_at<=? LIMIT 100)")
                   :run
                   at)
                 (let

@@ -247,6 +247,7 @@
             :chat_id (nativeGet message "chat_id") :chat_type (nativeGet message "chat_type" "unknown")
             :thread_id (nativeGet message "thread_id" nil) :root_id (nativeGet message "root_id" nil)
             :reply_to (nativeGet message "parent_id" nil) :content (nativeGet message "content")
+            :parsed_content (nativeGet message "parsed_content")
             :create_time (nativeGet message "create_time") :sender_id (nativeGet sender "id")
             :sender_type (nativeGet sender "sender_type") :mentions (nativeGet message "mentions" (js-array))
             :sender_native_ids (js-object :open_id (nativeGet sender "id")) :sender_tenant_key (nativeGet sender "tenant_key"))))))

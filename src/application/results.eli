@@ -192,11 +192,22 @@
         (js-object :definite_not_sent boolSchema :retryable boolSchema))))
   (put
     definitions
+    :message_source
+    (obj (strings "brand connection_id message_id chat_id msg_type"
+      (js-object :tenant_ref nullableString :account_ref nullableString :identity nullableString
+        :thread_id nullableString :root_id nullableString :parent_id nullableString
+        :file_key stringSchema :resource_type stringSchema :url stringSchema :resource_kind stringSchema
+        :resource_token stringSchema :table_id stringSchema :record_id stringSchema :sheet_id stringSchema
+        :range stringSchema :fragment stringSchema))))
+  (put
+    definitions
     :attachment
     (obj
       (strings
-        "attachment_id kind file_name mime_type native_handle_ref"
-        (js-object :size_bytes integerSchema))))
+        "attachment_id attachment_ref anchor kind mime_type native_handle_ref state local_path sha256"
+        (js-object :size_bytes integerSchema :file_name nullableString :format nullableString
+          :offset (nullable integerSchema) :length (nullable integerSchema) :expires_at_ms integerSchema
+          :source (ref "message_source") :error (ref "error")))))
   (put
     definitions
     :part
@@ -622,6 +633,7 @@
         (js-object :agent_id stringSchema :display_name stringSchema))))))
     :recipient (ref "subscriber") :conversation_rules (ref "conversation_rules") :people (arr (ref "mention")) :mentions (arr (ref "mention")) :reaction (ref "reaction") :pin (ref "pin") :trigger_reasons (arr (ref "trigger_reason")) :interaction (ref "interaction") :reply_route (ref "reply_route")
     :resource (ref "lark_resource") :context (ref "message_context") :topic (ref "topic") :ingress_evidence (ref "ingress_evidence")
+    :message_source (ref "message_source")
     :instructions (arr (obj (js-object :target_key stringSchema :subscription_revision integerSchema
       :scope stringSchema :rule_id nullableString
       :prompt stringSchema :task_template stringSchema :task stringSchema))))))
@@ -669,6 +681,8 @@
           (ref "content")
           :attachments
           (arr (ref "attachment"))
+          :message_source
+          (ref "message_source")
           :ingress_seq
           stringSchema
           :deleted

@@ -1,0 +1,121 @@
+(module dj.adapters.im.lark-attachments
+  (import "../../core/native.eli" nativeGet nativeSetTimeout)
+  (import "../../core/errors.eli" success failure)
+  (import "../../../packages/lark/src/resources.eli" officeResourceLink resourceSegment messageResourcePath)
+
+  (defun projectLarkContent (config parsed message-id chat-id thread-id root-id parent-id)
+    (let* ((brand (nativeGet config "brand" "lark"))
+           (source (js-object :brand brand :connection_id (nativeGet config "connection_id")
+             :tenant_ref (nativeGet config "tenant_ref" nil) :account_ref (nativeGet config "account_ref" nil)
+             :identity (nativeGet config "identity" nil) :message_id message-id :chat_id chat-id
+             :msg_type (nativeGet parsed "msg_type" "unknown")
+             :thread_id thread-id :root_id root-id :parent_id parent-id))
+           (links (nativeGet parsed "links" (js-array)))
+           (resources (nativeGet parsed "resources" (js-array)))
+           (attachments (js-array))
+           (urls (new globalThis.Set))
+           (add-office (lambda (url offset length)
+             (let ((location (and (<= (js-length url) 2048) (officeResourceLink brand url))))
+               (when (and location (not (js-call urls :has url)))
+                 (js-call urls :add url)
+                 (js-call attachments :push (js-object :kind "document" :offset offset :length length
+                   :source (Object/assign (js-object) source location))))))))
+      (js-call resources :forEach (lambda (item)
+        (let ((location (Object/assign (js-object :file_key (nativeGet item "file_key")
+          :resource_type (nativeGet item "resource_type")) source)))
+          (js-call attachments :push (js-object :kind (nativeGet item "kind")
+            :file_name (nativeGet item "file_name") :offset (nativeGet item "offset")
+            :length (nativeGet item "length") :source location)))))
+      (js-call links :forEach (lambda (link)
+        (funcall add-office (nativeGet link "href") (nativeGet link "offset") (nativeGet link "length"))))
+      (let ((text (nativeGet parsed "text" "")))
+        (js-call (Array/from (js-call text :matchAll (new globalThis.RegExp "https://[^\\s<>\\[\\]()\"“”]+" "g"))) :forEach
+          (lambda (match)
+            ;; Plain URLs and already formatted Markdown retain their original syntax.
+            (funcall add-office (aref match 0) nil nil))))
+      (js-call attachments :sort (lambda (left right)
+        (- (or (nativeGet left "offset") (js-length (nativeGet parsed "text" "")))
+           (or (nativeGet right "offset") (js-length (nativeGet parsed "text" ""))))))
+      (js-object :message_source source :raw_content (nativeGet parsed "raw_content" nil)
+        :message_links links :attachments (js-call attachments :slice 0 64))))
+
+  (defun nativeFailure (response)
+    (let* ((status (nativeGet response "status")) (wire (nativeGet response "wire"))
+           (code (nativeGet wire "code" nil)))
+      (failure (cond ((= status 429) "rate_limited")
+        ((or (= status 401) (= status 403)) "forbidden")
+        ((= status 404) "content_unavailable")
+        (t "unavailable"))
+        (js-object :details (js-object :http_status status :native_code code
+          :retry_after_seconds (nativeGet response "retry_after" 0)
+          :missing_scopes (nativeGet (nativeGet wire "error") "permission_violations" (js-array)))))))
+
+  (defasync fetchAttachment (http path sink maximum context &optional labels)
+    (let* ((result (await (js-call http :apiRequest
+                   (js-object :path path :method "GET" :response_mode "stream"
+                     :write_chunk sink :max_response_bytes maximum) context)))
+           (wire (nativeGet result "wire")) (headers (nativeGet result "headers")))
+      (if (and (= (nativeGet result "status") 200) (= (nativeGet wire "streamed") t))
+        (success (Object/assign (js-object :size_bytes (nativeGet wire "size_bytes")
+          :mime_type (nativeGet headers "content-type" "application/octet-stream")
+          :content_disposition (nativeGet headers "content-disposition" nil)) labels))
+        (nativeFailure result))))
+
+  (defun createLarkAttachmentReader (http clock)
+    (let ((exports (new globalThis.Map)))
+      (js-object
+        :read (async (source sink maximum context)
+          (if (nativeGet source "file_key")
+            (await (fetchAttachment http (messageResourcePath (nativeGet source "message_id")
+              (nativeGet source "file_key") (nativeGet source "resource_type")) sink maximum context))
+            (let* ((token (resourceSegment (nativeGet source "resource_token")))
+                   (kind (nativeGet source "resource_kind")) (response nil)
+                   (key nil) (cached nil) (ticket nil) (job nil) (count 0))
+              (when (= kind "wiki")
+                (setq response (await (js-call http :request (str "/open-apis/wiki/v2/spaces/get_node?token=" token) "GET" nil context)))
+                (let ((node (nativeGet (nativeGet (nativeGet response "wire") "data") "node")))
+                  (if node
+                    (setq token (resourceSegment (nativeGet node "obj_token")) kind (nativeGet node "obj_type"))
+                    (setq kind nil))))
+              (cond
+                ((not kind) (nativeFailure response))
+                ((= kind "file")
+                  (await (fetchAttachment http (str "/open-apis/drive/v1/files/" token "/download") sink maximum context)))
+                ((not (js-call (js-array "doc" "docx" "sheet" "bitable") :includes kind))
+                  (failure "unsupported"))
+                (t
+                  (let* ((format (if (or (= kind "doc") (= kind "docx")) "pdf" "xlsx"))
+                         (now (js-call clock :monoNow)))
+                    (setq key (str kind ":" token ":" format) cached (js-call exports :get key))
+                    (when (and cached (> (nativeGet cached "until") now)) (setq ticket (nativeGet cached "ticket")))
+                    (unless ticket
+                      (setq response (await (js-call http :request "/open-apis/drive/v1/export_tasks" "POST"
+                        (js-object :type kind :token token :file_extension format) context)))
+                      (let ((wire (nativeGet response "wire")))
+                        (when (and (= (nativeGet response "status") 200) (= (nativeGet wire "code") 0))
+                          (setq ticket (resourceSegment (nativeGet (nativeGet wire "data") "ticket")))
+                          (when (>= (nativeGet exports "size") 64)
+                            (js-call exports :delete (nativeGet (js-call (js-call exports :keys) :next) "value")))
+                          (js-call exports :set key (js-object :ticket ticket :until (+ now 540000))))))
+                    (when ticket
+                      (while (and (< count 5) (not (nativeGet job "file_token"))
+                        (or (= count 0) (js-call (js-array 1 2) :includes (nativeGet job "job_status")))
+                        (not (nativeGet (nativeGet context "abort_signal") "aborted"))
+                        (< (+ (js-call clock :monoNow) 400) (nativeGet context "deadline")))
+                        (when (> count 0) (await (new globalThis.Promise (lambda (done) (nativeSetTimeout done 350)))))
+                        (setq response (await (js-call http :request
+                          (str "/open-apis/drive/v1/export_tasks/" ticket "?token=" token) "GET" nil context))
+                          job (nativeGet (nativeGet (nativeGet response "wire") "data") "result")
+                          count (1+ count))))
+                    (cond
+                      ((and (= (nativeGet job "job_status") 0) (nativeGet job "file_token"))
+                        (await (fetchAttachment http (str "/open-apis/drive/v1/export_tasks/file/"
+                          (resourceSegment (nativeGet job "file_token")) "/download") sink maximum context
+                          (js-object :format format :file_name
+                            (str (nativeGet job "file_name" "document") "." format)))))
+                      ((and ticket (or (= count 0) (js-call (js-array 1 2) :includes (nativeGet job "job_status"))))
+                        (failure "unavailable" (js-object :details (js-object :reason "export_pending"))))
+                      (t (when ticket (js-call exports :delete key)) (nativeFailure response)))))))))
+        :clear (lambda () (js-call exports :clear)))))
+
+  (export projectLarkContent createLarkAttachmentReader))

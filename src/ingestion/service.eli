@@ -300,7 +300,7 @@
                                     "file_name"
                                     "mime_type"
                                     "size_bytes"
-                                    "native_handle_ref"))))
+                                    "native_handle_ref" "source" "offset" "length"))))
                             :received_at
                             (utcNow context)
                             :body_expires_at
@@ -322,6 +322,14 @@
                       (when (Array/isArray (nativeGet normalized "mentions"))
                         (put event :mentions (js-call (nativeGet normalized "mentions") :map (lambda (mention)
                           (safeFields mention (js-array "id" "name" "key"))))))
+                      (when (nativeGet normalized "message_source")
+                        (put event :message_source (nativeGet normalized "message_source"))
+                        (put event :message_links (nativeGet normalized "message_links" (js-array)))
+                        (when (nativeGet normalized "raw_content")
+                          (let* ((raw (nativeGet normalized "raw_content"))
+                                 (page (sliceUtf8 raw 0 (nativeGet limits "event_body_bytes"))))
+                            (put event :raw_content (nativeGet page "text"))
+                            (put event :raw_content_truncated (not (nativeGet page "complete"))))))
                       (when (object-has? normalized :addressed_self) (put event :addressed_self (nativeGet normalized "addressed_self")))
                       (when (object-has? normalized :chat_type) (put event :chat_type (nativeGet normalized "chat_type")))
                       (when (js-call (js-array "websocket" "poll") :includes (nativeGet normalized "receive_transport"))

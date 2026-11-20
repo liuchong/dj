@@ -1,4 +1,5 @@
 (module dj.messaging.service
+  (import "../attachments/service.eli" attachmentReferences getAttachment)
   (import "./echo.eli" reserveOutboundEcho settleOutboundEcho)
   (import "./recipients.eli" checkRecipients recipientContent policyOperation)
   (import "../dispatch/contexts.eli" checkReplyIdentity)
@@ -487,10 +488,11 @@
                   "received_at"
                   "source_time"
                   "ingress_seq"
-                  "attachments"))))
+                  "message_source"))))
           (put projection :trigger_reasons (triggerReasons event))
           (unless (nativeGet page "ok")
             (progn (setq djReturn4Value page) (throw djReturn4Token)))
+          (put projection :attachments (attachmentReferences context (currentPrincipal context) event))
           (setq
             handle
             (must
@@ -1589,7 +1591,8 @@
     (context operation args)
     (let ((djReturn19Token (js-object)) (djReturn19Value nil))
       (try
-        (cond ((js-call (js-array "message.recipient_policy.get" "message.recipient_policy.set") :includes operation)
+        (cond ((= operation "message.attachment.get") (await (getAttachment context args)))
+          ((js-call (js-array "message.recipient_policy.get" "message.recipient_policy.set") :includes operation)
             (policyOperation context operation args))
           ((= operation "message.reply_context") (currentReplyContext context (nativeGet args "delivery_id")))
           ((= operation "connection.list") (queryConnections context args))

@@ -37,7 +37,8 @@
                   (normalizeLarkEvent connection (js-object :type "im.message.receive_v1" :message_id native-id
                   :chat_id (nativeGet message "chat_id") :thread_id (nativeGet message "thread_id" nil)
                   :root_id (nativeGet message "root_id" nil) :reply_to (nativeGet message "parent_id" nil)
-                  :content (nativeGet message "content") :create_time (nativeGet message "create_time")
+                  :content (nativeGet message "content") :parsed_content (nativeGet message "parsed_content")
+                  :create_time (nativeGet message "create_time")
                   :sender_id (nativeGet sender "id") :sender_type (nativeGet sender "sender_type")
                   :sender_native_ids (js-object :open_id (nativeGet sender "id")) :sender_tenant_key (nativeGet sender "tenant_key")
                   :chat_type (nativeGet message "chat_type" "unknown") :mentions (nativeGet message "mentions" (js-array)))))))

@@ -18,7 +18,8 @@
       (event (funcall normalize config (js-object :type "im.message.receive_v1"
         :message_id (nativeGet message "message_id") :chat_id (nativeGet message "chat_id")
         :chat_type (if (js-call (js-array "p2p_chat" "p2p") :includes chat-type) "p2p" "group")
-        :content (nativeGet message "content") :create_time (nativeGet message "create_time")
+        :content (nativeGet message "content") :parsed_content (nativeGet message "parsed_content")
+        :create_time (nativeGet message "create_time")
         :sender_id (nativeGet sender "id") :sender_type
           (if (= (nativeGet sender "sender_type") "user") "user" "bot")
         :sender_app_id (nativeGet config "event_app_id")

@@ -53,6 +53,7 @@ metadata:
 | 官方各业务域 API、JSON、上传下载 | lark.api.read / lark.api.call / lark.api.get | [Lark原生入口](references/lark.md#官方-api-通用入口)；明确连接身份，写操作先记账，原生权限错误如实返回 |
 | 核对连接账号、健康、群/私聊/话题目的地 | connection.list、connection.get、connection.probe；conversation.list、conversation.resolve | [本人身份](references/user-inbox.md) |
 | 读取、搜索消息与更多历史/引用上下文 | message.list、message.search、message.get；message.context、message.history | [上下文](references/context.md) |
+| 读取图片、文件、音视频及 Lark 文档附件 | message.attachment.get | [原生定位与同身份补取](references/lark.md#读图片与附件) |
 | 主动发文本/Markdown、回复、创建及续接Lark话题 | message.send；message.reply（reply_context_id/outbound_id二选一，reply_in_thread）；message.reply_context | [工作流](references/workflows.md#群简讯与话题详情)、[中文链接](references/lark.md#中文路径与章节链接) |
 | 撤回已发消息、编辑文本 | message.recall、message.edit、message.action.get | [已发消息操作](references/message-actions.md) |
 | 查看、添加、移除消息表情 | message.reaction.list、message.reaction.add、message.reaction.remove | [已发消息操作](references/message-actions.md) |

@@ -2,5 +2,5 @@
   (import "./client.eli" createLarkClient)
   (import "./http.eli" apiUrl readBytes methods)
   (import "./wire.eli" decodeLarkFrame encodeLarkFrame)
-  (import "./messages.eli" messagePayload extractLarkMessageText)
-  (export createLarkClient apiUrl readBytes methods decodeLarkFrame encodeLarkFrame messagePayload extractLarkMessageText))
+  (import "./messages.eli" messagePayload parseLarkMessage extractLarkMessageText)
+  (export createLarkClient apiUrl readBytes methods decodeLarkFrame encodeLarkFrame messagePayload parseLarkMessage extractLarkMessageText))

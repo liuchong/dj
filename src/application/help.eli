@@ -8,6 +8,7 @@
     (js-object
       :message.recipient_policy.get "读取连接的结构化出站黑白名单及分页退订记录；需要operator身份与connection.manage，普通agent即使有该grant也不能调用。deny拦截文字及自动Typing/Get等新增表情，输入照常触发；session.rules文本不是此策略。"
       :message.recipient_policy.set "替换连接出站策略；需要operator身份与connection.manage。先get保留既有allow/deny，添加准确recipient_ids或chat_ids，set后get读回；新策略expected_revision=0。覆盖文字和自动/手动新增表情，不屏蔽输入。不同应用身份须分别配置对应连接；deny不能被allow解除，不能修改收件人退订。保存对话规则不等于设置本策略。"
+      :message.attachment.get "按通知或消息返回的attachment_ref查询附件。corpus默认local；native在缓存缺失时沿原连接和身份补取。state=ready时local_path为实际可读文件；附件未就绪时仍给出原生资源定位。"
       :lark.api.read "用指定连接和identity_revision直连官方GET API；path为/open-apis/相对路径，query按原生文档填写，响应保留http_status/native_ok/response。bytes响应为base64，最多512KiB，分页显式续传原生page_token。"
       :lark.api.call "用指定连接身份调用官方POST/PUT/PATCH/DELETE API；支持JSON body或multipart form（文件含base64/filename/content_type）。必须幂等键，先落台账再调用，unknown不得重发；原生拒绝与权限详情见response。消息写入须使用message.send/reply/edit等受控操作；通用API不允许绕过收件人禁收。其他resource操作优先固定业务台账。"
       :lark.api.get "读取原生API写操作台账；accepted只表示平台受理，unknown表示结果未确定，同一幂等键不会再次执行。"
@@ -191,6 +192,8 @@
       "操作员对 unknown 生命周期不重发结案；没有原生 absence 不释放 slot。"))
   (defconst referenceSources
     (js-object
+      :attachment_ref
+      "原通知附件附录或 message.get/list/context/history 的 attachments"
       :conversation_ref
       "conversation.list/resolve"
       :destination_ref
@@ -249,7 +252,7 @@
         (put defaults :max_bytes (nativeGet limits "body_page_default_bytes")))
       (when (js-call (js-array "message.list" "message.search") :includes name)
         (put defaults :corpus "local"))
-      (when (= name "resource.resolve") (put defaults :corpus "local"))
+      (when (or (= name "resource.resolve") (= name "message.attachment.get")) (put defaults :corpus "local"))
       (when (= name "resource.read") (Object/assign defaults (js-object :corpus "local" :view "content" :limit 20)))
       (when (= name "message.context") (Object/assign defaults (js-object :corpus "local" :before 10 :after 0 :reference_depth 4 :max_bytes 16384)))
       (when (= name "message.history") (Object/assign defaults (js-object :corpus "local" :order "desc" :limit 20 :max_bytes 16384)))

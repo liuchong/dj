@@ -16,6 +16,7 @@
   (import "./clock.eli" createClockPort)
   (import "./ids.eli" nextHostId)
   (import "./process.eli" createProcessPort)
+  (import "./attachments.eli" createAttachmentFiles)
   (defasync readPrivate
     (path)
     (let ((info (await (lstat path))))
@@ -61,6 +62,8 @@
         clock
         :process
         (createProcessPort clock)
+        :attachment_files
+        (createAttachmentFiles root)
         :measurement
         (js-object
           :monoNow

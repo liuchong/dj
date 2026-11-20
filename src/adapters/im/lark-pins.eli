@@ -90,7 +90,8 @@
               (unless (nativeGet message "deleted")
                 (setq original (funcall normalize config (js-object :type "im.message.receive_v1"
                   :message_id (nativeGet message "message_id") :chat_id chat :chat_type (nativeGet checkpoint "pin_chat_type" "group")
-                  :content (nativeGet message "content") :create_time (nativeGet message "create_time")
+                  :content (nativeGet message "content") :parsed_content (nativeGet message "parsed_content")
+                  :create_time (nativeGet message "create_time")
                   :sender_id (nativeGet (nativeGet message "sender") "id") :sender_type (nativeGet (nativeGet message "sender") "sender_type")
                   :thread_id (nativeGet message "thread_id") :root_id (nativeGet message "root_id") :reply_to (nativeGet message "parent_id")
                   :mentions (nativeGet message "mentions" (js-array))))))))

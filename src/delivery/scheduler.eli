@@ -39,6 +39,8 @@
   (import "../lifecycle/native-refresh.eli" probeNativeRefresh refreshObservedSession)
   (import "../sessions/rules.eli" attachConversationRules)
   (import "./envelope.eli" encodeAgentInput renderEnvelope)
+  (import "../attachments/service.eli" attachmentReferences prepareAttachments)
+  (import "../ingestion/visibility.eli" eventReadable)
   (import "../registry/availability.eli" noteAvailabilityFailure)
   (import "./snapshot.eli" packEnvelope unpackEnvelope)
   (import "./service.eli" isSubscriptionDeliveryEffective projectDelivery queueCapacity)
@@ -263,7 +265,7 @@
         (catch djReturn3Error
           (if (eq djReturn3Error djReturn3Token) djReturn3Value (throw djReturn3Error))))))
   (defun freezeEnvelope
-    (context record event &optional known-agent read selection)
+    (context record event &optional known-agent read selection media)
     (if (= (nativeGet record "origin") "direct")
       (let
         (
@@ -373,7 +375,10 @@
             :content
             content
             :attachments
-            (nativeGet event "attachments" (js-array))
+            (attachmentReferences context recipient (if (and (= (nativeGet media "event_id") (nativeGet event "event_id"))
+              (= (nativeGet media "identity_revision") (nativeGet event "identity_revision"))
+              (= (nativeGet media "authorization_revision") (nativeGet recipient "authorization_revision")))
+              (Object/assign (js-object) event (js-object :attachments (nativeGet media "items"))) event))
             :reply_context_id
             (if reply (nativeGet reply "public_ref") nil)
             :allowed_actions
@@ -385,6 +390,8 @@
                   :group_id (nativeGet record "group_id")
                   :target_key (nativeGet record "target_key")
                   :selected_agent_id (nativeGet agent "agent_id"))))
+            (when (nativeGet event "message_source") (put envelope :message_source (nativeGet event "message_source")))
+            (when (nativeGet event "message_links") (put envelope :message_links (nativeGet event "message_links")))
             (when (nativeGet selected "identity_binding_id")
               (put envelope :dispatch_context (js-object :context_id (nativeGet selected "dispatch_context_id")
                 :identity_binding_id (nativeGet selected "identity_binding_id") :connection_id (nativeGet selected "connection_id")
@@ -435,7 +442,7 @@
         :every
         (lambda (field) (= (nativeGet observation field) (nativeGet session field))))))
   (defun beginSubmission
-    (context delivery-id claim &optional observation)
+    (context delivery-id claim &optional observation media)
     (inTransaction
       context
       (lambda
@@ -598,7 +605,7 @@
                   (binding (attachBinding context route session instance observation))
                     (envelope (attachConversationRules context
                       (Object/assign (js-object) session (js-object :model_selection (nativeGet observation "model_selection")))
-                      (freezeEnvelope context record event agent nil identity)))
+                      (freezeEnvelope context record event agent nil identity media)))
                     (frame
                       (encodeAgentInput
                         (nativeGet session "tool")
@@ -944,11 +951,23 @@
                     nil)))
               (setq verified-instance (await (probeNativeRefresh context session observation instance port)))
               (let*
-                (
+                ((delivery (js-call repository :get "deliveries" (nativeGet claim "delivery_id")))
+                 (event-id (nativeGet delivery "event_id"))
+                 (media-event (and event-id (js-call repository :get "events" event-id)))
+                 (media (when (and port (nativeGet observation "live_receiver")
+                   (> (js-length (nativeGet media-event "attachments" (js-array))) 0))
+                   (let* ((principal-id (nativeGet delivery "recipient_principal_id"))
+                          (principal (configuredPrincipal (nativeGet (nativeGet context "config") "principals") principal-id))
+                          (recipient-context (Object/assign (js-object) context
+                            (js-object :principal (js-object :principal_id principal-id)))))
+                     (when (eventReadable recipient-context media-event)
+                       (js-object :event_id event-id :identity_revision (nativeGet media-event "identity_revision")
+                         :authorization_revision (nativeGet principal "authorization_revision")
+                         :items (await (prepareAttachments recipient-context media-event)))))))
                   (prepared
                     (await (enqueueWrite context (lambda ()
                       (refreshObservedSession context session observation verified-instance instance)
-                      (beginSubmission context (nativeGet claim "delivery_id") claim observation)))))
+                      (beginSubmission context (nativeGet claim "delivery_id") claim observation media)))))
                   (frozen (nativeGet prepared "data")))
                 (unless (and (nativeGet prepared "ok") (nativeGet frozen "submitted"))
                   (progn (setq djReturn6Value prepared) (throw djReturn6Token)))

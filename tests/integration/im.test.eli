@@ -497,7 +497,6 @@
                       "missing-scope"
                       "malformed-output"
                       "oversized-output"
-                      "non-text"
                       "deleted"
                       "identity-revision-change")
                     :includes
@@ -506,6 +505,11 @@
                 ((or (= variant "same-timestamp-two-pages") (= variant "expired-token"))
                   (js-call (expect (js-length events)) :toBe 2))
                 (t (js-call (expect (js-length events)) :toBe 1)))
+              (when (= variant "non-text")
+                (let* ((received (aref events 0)) (media (aref (nativeGet received "attachments") 0)))
+                  (js-call (expect (nativeGet (nativeGet received "message_source") "msg_type")) :toBe "image")
+                  (js-call (expect (nativeGet (nativeGet media "source") "file_key")) :toBe "img_poll_fixture")
+                  (js-call (expect (nativeGet media "attachment_ref")) :toBeTruthy)))
               (when (= variant "updated-first-seen")
                 (js-call
                   (expect (nativeGet (aref events 0) "event_kind"))

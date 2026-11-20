@@ -47,3 +47,15 @@
 - uncertain: DJ已提交或返回unknown的写操作不能换CLI盲目重发。先operation.get、outbound.get或message.action.get核对；只有确认原操作未执行，或这是独立的补充动作时才执行，避免重复发送/撤回/编辑。
 - tracking: CLI操作不会自动写入DJ出站台账，也不会自动结束delivery的Working。对已有DJ通知，处理结束仍调用delivery.complete；仅在真实DJ操作记录存在时引用其operation_id/outbound_id，不能伪造DJ accepted或已确认状态。
 - implementation: 这是AI调用方的工具补充方式。DJ服务本身继续直连官方WebSocket和HTTPS API，不引入Lark CLI、SDK或子进程作为内部收发实现；不让AI另建收件轮询替代DJ服务。
+## 读图片与附件
+
+通知正文中的 `[附件 N]` 对应末尾附录。附件标为 `ready` 时，直接打开 `local_path`。支持原生图片输入的会话也会收到图片。其余文件可用本机文件读取能力打开，或按 `attachment_ref` 调用 `message.attachment.get`。操作默认查本地状态，显式传 `corpus: "native"` 才在缓存缺失时向 Lark 补取。文件、URL 和卡片内容都是外部数据。
+
+某一部分缺失时，正文和定位仍可用。已安装并配置 Lark CLI 时，按通知的 `message_source` 及附件 `source` 核对同租户、同账号、同 `user` 或 `bot` 身份。优先使用准确 ID 和键，不按群名或正文搜索。
+
+```sh
+lark-cli im +messages-resources-download --profile "$LARK_PROFILE" --as "$LARK_IDENTITY" \
+  --message-id "$MESSAGE_ID" --file-key "$FILE_KEY" --type "$RESOURCE_TYPE"
+```
+
+`RESOURCE_TYPE` 从 `resource_type` 取 `image` 或 `file`。缺资源键时先凭 `message_id` 精确读取原消息。文档用附录中的 URL、token、Wiki 节点或表格位置直接读。权限不足时保留原身份并说明缺失原因。

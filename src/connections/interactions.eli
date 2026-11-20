@@ -44,7 +44,8 @@
             (when (and message (= (nativeGet message "message_id") id) (not (nativeGet message "deleted")))
               (setq target (or (nativeGet message "normalized") (funcall normalize config (js-object :type "im.message.receive_v1"
                 :message_id id :chat_id (nativeGet message "chat_id") :chat_type (nativeGet message "chat_type" "unknown")
-                :content (nativeGet message "content") :create_time (nativeGet message "create_time")
+                :content (nativeGet message "content") :parsed_content (nativeGet message "parsed_content")
+                :create_time (nativeGet message "create_time")
                 :sender_id (nativeGet sender "id") :sender_type (nativeGet sender "sender_type")
                 :root_id (nativeGet message "root_id") :thread_id (nativeGet message "thread_id")
                 :reply_to (nativeGet message "parent_id") :mentions (nativeGet message "mentions" (js-array))))))))

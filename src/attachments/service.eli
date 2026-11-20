@@ -1,0 +1,127 @@
+(module dj.attachments.service
+  (import "../core/native.eli" nativeGet)
+  (import "../core/errors.eli" success failure)
+  (import "../core/types.eli" addSeconds hashValue sourceReadAction)
+  (import "../core/limits.eli" limits)
+  (import "../application/context.eli" utcNow must can currentPrincipal inTransaction
+    nativeCallContext resolveResourceHandle safeFields)
+  (import "../policy/handles.eli" issueHandle)
+  (import "../connections/manager.eli" imPort)
+  (import "../ingestion/service.eli" allowedAddress)
+  (import "../ingestion/visibility.eli" eventReadable)
+
+  (defun cacheKey (attachment revision)
+    (let ((source (nativeGet attachment "source")))
+      (hashValue (js-array revision (safeFields source
+        (js-array "brand" "connection_id" "tenant_ref" "account_ref" "identity"
+          "message_id" "resource_type" "file_key" "resource_kind" "resource_token" "url"))))))
+
+  (defun retainedMessage (context reference)
+    (let* ((repository (nativeGet context "repository"))
+           (id (nativeGet reference "event_id"))
+           (event (and id (js-call repository :get "events" id))))
+      (if id
+        (and (eventReadable context event) event)
+        (let* ((source (nativeGet reference "source"))
+               (connection (js-call repository :get "connections" (nativeGet source "connection_id")))
+               (revision (nativeGet reference "identity_revision"))
+               (row (and connection (= revision (nativeGet connection "identity_revision"))
+                 (js-call (js-call (nativeGet (nativeGet context "store") "db") :query
+                   "SELECT payload FROM context_messages WHERE connection_id=? AND identity_revision=? AND native_message_id=? AND expires_at>?")
+                   :get (nativeGet source "connection_id") revision (nativeGet source "message_id") (utcNow context))))
+               (message (and row (JSON/parse (nativeGet row "payload"))))
+               (address (nativeGet message "conversation")))
+          (and message (allowedAddress connection address)
+            (can context (sourceReadAction address) address) message)))))
+
+  (defun attachmentReferences (context principal message)
+    (let ((attachments (nativeGet message "attachments" (js-array)))
+          (revision (nativeGet message "identity_revision")))
+      (if (= (js-length attachments) 0) attachments
+        (must (inTransaction context (lambda (tx)
+          (success (js-call attachments :map (lambda (attachment index)
+            (let* ((source (nativeGet attachment "source"))
+                   (key (and source (cacheKey attachment revision)))
+                   (view (Object/assign (js-object :anchor (str "附件 " (1+ index)) :state "not_requested") attachment)))
+              (when key
+                (let ((ref (issueHandle context "message_attachment" principal key
+                  (js-object :source source :identity_revision revision :event_id (nativeGet message "event_id" nil))
+                  (addSeconds (utcNow context) (nativeGet limits "handle_ttl_seconds")))))
+                  (put view :attachment_ref (nativeGet ref "ref"))))
+              view))))))))))
+
+  (defun checkedConnection (context source revision)
+    (let ((record (js-call (nativeGet context "repository") :get "connections" (nativeGet source "connection_id"))))
+      (and record (not (nativeGet record "disabled")) (= (nativeGet record "platform") "lark")
+        (= (nativeGet record "identity_revision") revision))))
+
+  (defun attachmentReadable (context source conversation)
+    (and (can context (sourceReadAction conversation) conversation)
+      (or (not (nativeGet source "resource_token"))
+        (can context "resource.read" (js-object :kind "resource"
+          :connection_id (nativeGet source "connection_id")
+          :resource_kind (nativeGet source "resource_kind") :resource_token (nativeGet source "resource_token"))))))
+
+  (defun withDownloadState (view result)
+    (if (nativeGet result "ok")
+      (Object/assign (js-object) view (nativeGet result "data") (js-object :state "ready"))
+      (let* ((error (nativeGet result "error")) (code (nativeGet error "code"))
+             (reason (nativeGet (nativeGet error "details") "reason")))
+        (Object/assign (js-object) view (js-object :state
+          (cond ((= code "forbidden") "forbidden") ((= code "unsupported") "unsupported")
+            ((= code "limit_exceeded") "too_large") ((or (= reason "export_pending")
+              (= reason "attachment_fetch_capacity") (= code "rate_limited")) "pending") (t "unavailable"))
+          :error error)))))
+
+  (defasync materialize (context message attachment fetch-native call)
+    (let* ((source (nativeGet attachment "source")) (revision (nativeGet message "identity_revision"))
+           (port (imPort context (nativeGet source "connection_id")))
+           (files (nativeGet (nativeGet context "ports") "attachment_files"))
+           (key (and source (cacheKey attachment revision))))
+      (cond
+        ((not key) attachment)
+        ((not (and (= (nativeGet message "connection_id") (nativeGet source "connection_id"))
+          (= (nativeGet message "native_message_id") (nativeGet source "message_id"))
+          (checkedConnection context source revision)
+          (attachmentReadable context source (nativeGet message "conversation"))))
+          (withDownloadState attachment (failure "forbidden")))
+        ((not files) (withDownloadState attachment (failure "unsupported")))
+        (t
+          (try
+            (let* ((cached (await (js-call files :inspect key)))
+                   (result (cond (cached (success cached))
+                     ((not fetch-native) nil)
+                     ((not (nativeGet port "downloadAttachment")) (failure "unsupported"))
+                     (t (await (js-call files :fetch key (async (sink maximum)
+                       (await (js-call port :downloadAttachment source sink maximum call)))))))))
+              (cond
+                ((not (and (checkedConnection context source revision)
+                  (attachmentReadable context source (nativeGet message "conversation"))))
+                  (withDownloadState attachment (failure "stale_reference")))
+                (result (withDownloadState attachment result))
+                (t (Object/assign (js-object) attachment (js-object :state "not_cached")))))
+            (catch error
+              (withDownloadState attachment (failure (if (js* "error instanceof RangeError") "limit_exceeded" "unavailable")))))))))
+
+  (defasync getAttachment (context args)
+    (let* ((ref (nativeGet args "attachment_ref"))
+           (reference (must (resolveResourceHandle context ref "message_attachment")))
+           (message (retainedMessage context reference))
+           (attachment (and message (js-call (nativeGet message "attachments" (js-array)) :find
+             (lambda (item) (and (nativeGet item "source")
+               (= (cacheKey item (nativeGet message "identity_revision")) (nativeGet reference "resource_key"))))))))
+      (unless attachment (must (failure "content_unavailable")))
+      (let ((view (await (materialize context message
+        (Object/assign (js-object :attachment_ref ref) attachment)
+        (= (nativeGet args "corpus" "local") "native") (nativeCallContext context)))))
+        (unless (retainedMessage context reference) (must (failure "content_unavailable")))
+        (success view))))
+
+  (defasync prepareAttachments (context message)
+    (let* ((clock (nativeGet (nativeGet context "ports") "clock"))
+           (call (nativeCallContext context (js-object :deadline (+ (js-call clock :monoNow) 2200))))
+           (attachments (nativeGet message "attachments" (js-array))))
+      (await (Promise/all (js-call attachments :map (lambda (item index)
+        (materialize context message item (< index 4) call)))))))
+
+  (export attachmentReferences getAttachment prepareAttachments))
