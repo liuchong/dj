@@ -71,14 +71,10 @@
   (defun acknowledgementAuthority (context mark)
     (let* ((actor-context (Object/assign (js-object) context
              (js-object :principal (js-object :principal_id (nativeGet mark "principal_id")))))
-           (principal (currentPrincipal actor-context))
            (reply (replyRecord context (nativeGet mark "reply_record_id") (nativeGet mark "reply_inbox_id"))))
-      (cond
-        ((<= (Date/parse (nativeGet mark "expires_at")) (Date/parse (utcNow context)))
-          (failure "acknowledgement_authority_expired"))
-        ((not (= (nativeGet principal "authorization_revision") (nativeGet mark "authorization_revision")))
-          (failure "stale_reference"))
-        (t (validateReplyRecord actor-context reply)))))
+      (if (<= (Date/parse (nativeGet mark "expires_at")) (Date/parse (utcNow context)))
+        (failure "acknowledgement_authority_expired")
+        (validateReplyRecord actor-context reply))))
   (defun projectAcknowledgement (context mark)
     (let ((actor (currentPrincipal context)))
       (if (not (and (= (nativeGet mark "acknowledgement") t)
@@ -93,7 +89,8 @@
       (connection (js-call repository :get "connections" (nativeGet address "connection_id")))
       (port (imPort context (nativeGet address "connection_id")))
       (id (str "ack_" (hashValue (js-array (nativeGet address "connection_id") (nativeGet reply "identity_revision")
-        (nativeGet reply "native_reply_to") (nativeGet port "acknowledgement_emoji" "Get") (nativeGet actor "principal_id") (nativeGet actor "authorization_revision")))))
+        (nativeGet reply "native_reply_to") (nativeGet port "acknowledgement_emoji" "Get")
+        (nativeGet actor "principal_id") (nativeGet reply "inbox_claim_ref" nil)))))
       (mark (js-call repository :get "work_marks" id)))
       (must (ownerGuard context))
       (unless (nativeGet port "reaction") (must (failure "unsupported")))
@@ -101,7 +98,7 @@
       (unless mark
         (setq mark (Object/assign (js-object :mark_id id :revision 1 :state "pending" :next_due_at (utcNow context)
           :acknowledgement t :acknowledged false :principal_id (nativeGet actor "principal_id")
-          :authorization_revision (nativeGet actor "authorization_revision") :destination address
+          :destination address
           :connection_id (nativeGet address "connection_id") :identity_revision (nativeGet reply "identity_revision")
           :event_id (nativeGet reply "event_id") :native_message_id (nativeGet reply "native_reply_to")
           :reply_record_id (nativeGet reply "reply_context_id") :reply_inbox_id (nativeGet reply "inbox_id" nil)

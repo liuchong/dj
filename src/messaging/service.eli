@@ -889,20 +889,19 @@
   ;; through follow-up replies; force_send applies only to this new message.
   (defun resolveOutboundReply (context id force-send)
     (let* ((repository (nativeGet context "repository")) (record (js-call repository :get "outbound" id)))
-      (unless (and record (can context "outbound.inspect" record)
-        (can context (nativeGet record "permission_action") (nativeGet record "destination")))
-        (must (failure "forbidden")))
-      (let* ((projection (projectOutbound context record)) (ids (nativeGet projection "native_message_ids" (js-array)))
+      (unless record (must (failure "stale_reference")))
+      (unless (can context "message.reply" (nativeGet record "destination")) (must (failure "forbidden")))
+      (let* ((parts (js-call repository :page "parts" (js-object :filters (js-object :outbound_id id) :limit 2)))
+        (native-id (when (= (js-length parts) 1) (nativeGet (aref parts 0) "native_message_id")))
         (connection (js-call repository :get "connections" (nativeGet record "connection_id"))))
-        (unless (and (= (nativeGet record "state") "accepted") (= (js-length ids) 1))
+        (unless (and (= (nativeGet record "state") "accepted") native-id)
           (must (failure "ambiguous_target" (js-object :details (js-object :reason "reply_anchor_requires_one_accepted_native_message")))))
         (unless (= (nativeGet connection "platform") "lark") (must (failure "unsupported")))
         (let* ((inbox (nativeGet record "reply_inbox_id"))
-          (original (when (nativeGet record "reply_record_id")
-            (must (validateReplyRecord context (replyRecord context (nativeGet record "reply_record_id") inbox)))))
+          (original (replyRecord context (nativeGet record "reply_record_id") inbox))
           (address (Object/assign (js-object) (nativeGet record "destination"))))
-          (must (outboundReady context (Object/assign (js-object) record (js-object :force_send force-send))))
-          (success (Object/assign (js-object) original (js-object :destination address :native_reply_to (aref ids 0)
+          (must (outboundReady context (Object/assign (js-object) record (js-object :force_send force-send)) t))
+          (success (Object/assign (js-object) original (js-object :destination address :native_reply_to native-id
             :native_thread_id (nativeGet record "native_thread_id")
             :reply_context_id (nativeGet record "reply_record_id" nil) :inbox_id inbox)))))))
   (defun acceptOutbound
@@ -1074,7 +1073,7 @@
           (nativeGet principal "authorization_revision"))
         "allowed")))
   (defun outboundReady
-    (context record)
+    (context record &optional follow-up)
     (let ((djReturn12Token (js-object)) (djReturn12Value nil))
       (try
         (unless (taskOutboundAllowed context record)
@@ -1092,11 +1091,13 @@
             (progn
               (setq djReturn12Value (failure "stale_reference"))
               (throw djReturn12Token)))
-          (unless (outboundPrincipalAllows context record)
+          (unless (if follow-up
+                    (can context "message.reply" (nativeGet record "destination"))
+                    (outboundPrincipalAllows context record))
             (progn (setq djReturn12Value (failure "forbidden")) (throw djReturn12Token)))
           (when (nativeGet record "reply_record_id")
-            (let* ((actor-context (Object/assign (js-object) context
-                     (js-object :principal (js-object :principal_id (nativeGet record "principal_id")))))
+            (let* ((actor-context (if follow-up context (Object/assign (js-object) context
+                     (js-object :principal (js-object :principal_id (nativeGet record "principal_id"))))))
                    (reply (replyRecord context (nativeGet record "reply_record_id") (nativeGet record "reply_inbox_id")))
                    (checked (validateReplyRecord actor-context reply)))
               (unless (nativeGet checked "ok")

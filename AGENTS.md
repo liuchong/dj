@@ -30,6 +30,8 @@
 
 已通过 DJ 身份认证的调用方，默认可以发现、读取、订阅及收发已配置 IM 连接中平台实际可访问的信息，不需要逐连接、逐群、逐私聊补消息 grants。连接的原生凭据、平台权限、显式接入范围、身份栅栏、类型化引用和幂等边界继续生效；订阅过滤决定何时通知 AI，不是消息读取或回复许可。本人／机器人不换身份，管理面和其他 Agent 会话控制仍按其独立规则执行。禁止为修复某个群的发送再堆群权限名单，现行设计以规格 0003 为准。
 
+已认证的 DJ 调用方可以使用有效的精准回复引用原路回复或确认表情，也可以按准确的 delivery_id 在原期限内重取引用。原接收主体和其授权计数不参与回复校验。引用固定原消息、话题和 IM 发送账号，校验时效、原生身份和领取代次。投递检查与领取确认各按自己的访问规则执行。
+
 DJ 程序内部的 Lark 接入必须直连官方 WebSocket 与 HTTPS API，禁止第三方 SDK、CLI 及其子进程封装；本仓库自有的独立 Lark 包直接实现官方协议。AI 调用方优先使用 DJ 已有能力；DJ 缺少所需功能时可按 DJ Skill 使用 Lark CLI 补充，必须保持原计划使用的同一租户、账号和 user/bot 身份，不把程序内部实现要求扩大成 AI 工具禁令。正式 IM 接入使用受保护的 key/secret、bot token 或已授权用户 OAuth 凭据，不依赖 IM 桌面客户端。user 代表本人收发，bot 代表应用收发，分别核对身份与权限；不能把本人支持降为只允许操作员向机器人发送调试消息。接入、订阅和调试范围以当前明确授权为准，不混用账号或扩大可见范围；实时接收遵守规格 0001。
 
 ## 工具定位与参数边界
@@ -56,7 +58,7 @@ DJ提供准确事实与确定性接口：真实显示标题、工具、实例、
 
 - DJ外发回声按[0032](docs/specs/0032-outbound-echo-suppression.md)：发送前持久预留、原生回执精确识别，收件历史保留但不再次通知；新建话题回执前用原生parent/root处理竞态，不按正文、昵称或整条话题屏蔽。消息证据归messaging/echo，公共触发判断归connections/echo。
 
-- Lark普通群话题创建、已发消息续接及Markdown按[0024](docs/specs/0024-outbound-topic-replies.md)：message.reply的reply_context_id/outbound_id二选一，reply_in_thread显式创建，content.type=markdown走原生post/md；保留原账号、原订阅身份约束、禁收与幂等台账，返回原生话题ID。中文URL路径/锚点完整编码；不得把无原消息锚点或纯文本不渲染误报为平台不支持。
+- Lark普通群话题创建、已发消息续接及Markdown按[0024](docs/specs/0024-outbound-topic-replies.md)：message.reply的reply_context_id/outbound_id二选一，reply_in_thread显式创建，content.type=markdown走原生post/md；沿用固定 IM 账号、原消息引用约束、禁收与幂等台账，返回原生话题ID。中文URL路径/锚点完整编码；不得把无原消息锚点或纯文本不渲染误报为平台不支持。
 
 - 出站收件人选择按 [0023](docs/specs/0023-recipient-preferences.md)：TD/退订只禁止出站（含自动工作中、已阅及其他全部新增表情），不限制来信记录、事件或原订阅匹配，TD本身也按原规则触发。显式拒绝和收件人退订优先于白名单；退订由DJ按收到的原生命令自动登记、恢复漏登及拦截，不依赖AI核实或控制。AI收到禁收错误不可更换账号、工具或渠道绕过；仅用户明确要求本次强制发送时，可用message.send/reply的force_send=true临时豁免本条收件人屏蔽，不改持久选择或其他发送安全边界。所有发送/编辑/新增表情路径复用统一规则，不能通过通用OpenAPI绕过；撤回与清理已有受托表情仍允许。
 

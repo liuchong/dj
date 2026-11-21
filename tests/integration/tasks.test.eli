@@ -77,17 +77,12 @@
         (js-call (expect (js-length (nativeGet (await (callOk f "O" "task.list" (js-object))) "items"))) :toBe 2)
         (await (js-call f :ingest (command "task-group" "/dj tasks" "ou_admin" t))) (await (js-call f :tick))
         (js-call (expect (js-length (nativeGet (nativeGet f "lark") "sent"))) :toBe 2)
-        ;; A changed grant invalidates old handles, but can safely reissue the same frozen reply route.
+        ;; Task inspection and use of an exact reply reference are independent.
         (let* ((first (await (callOk f "A" "message.reply_context" (js-object :delivery_id id))))
-          (actor (nativeGet f "A")))
-          (put actor :authorization_revision (1+ (nativeGet actor "authorization_revision")))
-          (let ((rejected (await (js-call f :call actor "message.reply" (js-object
-              :reply_context_id (nativeGet first "reply_context_id") :content (js-object :type "text" :text "reply") :idempotency_key "task-reply")))))
-            (js-call (expect (nativeGet (nativeGet rejected "error") "code")) :toBe "stale_reference"))
-          (let ((fresh (await (callOk f "A" "message.reply_context" (js-object :delivery_id id)))))
-            (js-call (expect (nativeGet (await (js-call f :call (nativeGet f "B") "message.reply_context" (js-object :delivery_id id))) "ok")) :toBe false)
-            (await (callOk f "A" "message.reply" (js-object :reply_context_id (nativeGet fresh "reply_context_id")
-              :content (js-object :type "text" :text "reply") :idempotency_key "task-reply"))))
+          (fresh (await (callOk f "B" "message.reply_context" (js-object :delivery_id id)))))
+          (js-call (expect (nativeGet fresh "expires_at")) :toBe (nativeGet first "expires_at"))
+          (await (callOk f "B" "message.reply" (js-object :reply_context_id (nativeGet fresh "reply_context_id")
+            :content (js-object :type "text" :text "reply") :idempotency_key "task-reply")))
           (await (js-call f :tick))
           (js-call (expect (js-length (nativeGet (nativeGet f "lark") "sent"))) :toBe 3))))) closeFixture)
   (withCase "T31.message-consumption.sqlite" (async () nil) (async (unused)

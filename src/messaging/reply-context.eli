@@ -1,5 +1,5 @@
 (module dj.messaging.reply-context
-  (import "../application/context.eli" can currentPrincipal inTransaction resolveResourceHandle utcNow)
+  (import "../application/context.eli" can currentPrincipal inTransaction utcNow)
   (import "../core/errors.eli" success failure)
   (import "../core/native.eli" nativeGet)
   (import "../core/types.eli" sourceReadAction)
@@ -16,10 +16,6 @@
       (js-call (nativeGet context "repository") :get
         (if inbox-id "inbox_reply_contexts" "reply_contexts") id)))
 
-  (defun ownedReply (reply principal)
-    (and reply principal
-      (= (nativeGet reply "recipient_principal_id") (nativeGet principal "principal_id"))))
-
   (defun unexpired (record now)
     (> (Date/parse (nativeGet record "expires_at")) now))
 
@@ -30,7 +26,7 @@
     (and connection
       (= revision (nativeGet connection "identity_revision" (nativeGet connection "revision")))))
 
-  (defun currentParent (context reply principal now)
+  (defun currentParent (context reply now)
     (let* ((repository (nativeGet context "repository"))
            (inbox-id (nativeGet reply "inbox_id"))
            (parent (if inbox-id
@@ -39,23 +35,23 @@
       (and parent (= (nativeGet parent "event_id") (nativeGet reply "event_id"))
         (if inbox-id
           (and (= (nativeGet parent "claim_ref") (nativeGet reply "inbox_claim_ref"))
-            (= (nativeGet parent "claim_principal_id") (nativeGet principal "principal_id"))
+            (= (nativeGet parent "claim_principal_id") (nativeGet reply "recipient_principal_id"))
             (or (= (nativeGet parent "state") "consumed")
               (and (= (nativeGet parent "state") "claimed")
                    (> (Date/parse (nativeGet parent "lease_until")) now))))
           (js-call (js-array "submitting" "accepted" "unknown" "resolved") :includes (nativeGet parent "state"))))))
 
-  ;; The persisted reply fixes the actor, original event, claim and native
-  ;; identity. Refresh and queued sends check the same contract as new requests.
+  ;; The record fixes the original event, claim and native sending identity.
+  ;; The DJ caller is authenticated independently of the notification recipient.
   (defun validateReplyRecord (context reply)
     (let ((principal (currentPrincipal context))
           (now (Date/parse (utcNow context))))
       (cond
+        ((or (not principal) (= (nativeGet principal "disabled") t)) (failure "forbidden"))
         ((not reply) (replyFailure "stale_reference" "reply_context_unavailable"))
-        ((not (ownedReply reply principal)) (replyFailure "forbidden" "reply_recipient_required"))
         ((elapsed reply now) (failure "reply_context_expired"))
         ((not (unexpired reply now)) (replyFailure "stale_reference" "reply_context_unavailable"))
-        ((not (currentParent context reply principal now))
+        ((not (currentParent context reply now))
           (replyFailure "stale_reference" (if (nativeGet reply "inbox_id") "reply_claim_changed" "reply_delivery_unavailable")))
         (t
           (let* ((repository (nativeGet context "repository"))
@@ -80,51 +76,39 @@
                 (let ((identity (checkReplyIdentity context reply)))
                   (if (nativeGet identity "ok") (success reply) identity)))))))))
 
-  (defun storedHandle (context ref)
-    (when ref
-      (js-call (nativeGet (nativeGet context "repository") "handleRecords") :get ref)))
+  (defun replyHandle (context ref)
+    (let ((handle (when ref
+             (js-call (nativeGet (nativeGet context "repository") "handleRecords") :get ref))))
+      (when (= (nativeGet handle "kind") "reply_context") handle)))
+
+  (defun recordForReplyHandle (context handle)
+    (let* ((inbox-id (nativeGet handle "inbox_id" nil))
+           (reply (replyRecord context (nativeGet handle "resource_key") inbox-id)))
+      (when (and reply
+              (= (nativeGet handle "identity_revision") (nativeGet reply "identity_revision"))
+              (= (nativeGet handle "expires_at") (nativeGet reply "expires_at"))
+              (= inbox-id (nativeGet reply "inbox_id" nil))
+              (= (nativeGet handle "inbox_claim_ref" nil) (nativeGet reply "inbox_claim_ref" nil)))
+        reply)))
 
   (defun resolveReply (context ref)
-    (let* ((resolved (resolveResourceHandle context ref "reply_context"))
-           (principal (currentPrincipal context))
-           (handle (if (nativeGet resolved "ok") (nativeGet resolved "data") (storedHandle context ref))))
-      (if (nativeGet resolved "ok")
-        (let* ((inbox-id (nativeGet handle "inbox_id" nil))
-               (reply (replyRecord context (nativeGet handle "resource_key") inbox-id)))
-          (if (and (ownedReply reply principal)
-                   (= (nativeGet handle "identity_revision") (nativeGet reply "identity_revision"))
-                   (= inbox-id (nativeGet reply "inbox_id" nil))
-                   (= (nativeGet handle "inbox_claim_ref" nil) (nativeGet reply "inbox_claim_ref" nil)))
-            (validateReplyRecord context reply)
-            (replyFailure "stale_reference" "reply_context_unavailable")))
-        ;; An opaque reference outside the caller's current authority proves
-        ;; nothing about another recipient's record or its remaining lifetime.
-        (if (and handle principal (= (nativeGet handle "kind") "reply_context")
-                 (= (nativeGet handle "principal_id") (nativeGet principal "principal_id"))
-                 (= (nativeGet handle "authorization_revision") (nativeGet principal "authorization_revision"))
-                 (elapsed handle (Date/parse (utcNow context))))
-          (failure "reply_context_expired")
-          (replyFailure "stale_reference" "reply_reference_not_current")))))
+    (let* ((handle (replyHandle context ref))
+           (reply (recordForReplyHandle context handle)))
+      (validateReplyRecord context reply)))
 
   (defun currentReplyContext (context delivery-id)
     (inTransaction context (lambda (tx)
       (let* ((repository (nativeGet context "repository"))
              (delivery (js-call repository :get "deliveries" delivery-id))
-             (principal (currentPrincipal context)))
-        (if (not (and delivery principal
-                      (= (nativeGet delivery "recipient_principal_id") (nativeGet principal "principal_id"))))
-          (replyFailure "forbidden" "reply_recipient_required")
-          (let* ((handle (storedHandle context (nativeGet delivery "reply_context_id")))
-                 (reply (and (= (nativeGet handle "kind") "reply_context")
-                    (replyRecord context (nativeGet handle "resource_key"))))
-                 (checked (if (= (nativeGet reply "delivery_id") delivery-id)
-                            (validateReplyRecord context reply)
-                            (replyFailure "stale_reference" "reply_context_unavailable"))))
-            (if (not (nativeGet checked "ok")) checked
-              (let ((issued (issueHandle context "reply_context" principal (nativeGet reply "reply_context_id")
-                (js-object :identity_revision (nativeGet reply "identity_revision")) (nativeGet reply "expires_at"))))
-                (success (js-object :delivery_id delivery-id :reply_context_id (nativeGet issued "ref")
-                  :expires_at (nativeGet issued "expires_at") :allowed_actions (js-array "reply")))))))))))
+             (handle (replyHandle context (nativeGet delivery "reply_context_id")))
+             (reply (recordForReplyHandle context handle))
+             (checked (validateReplyRecord context
+                        (when (= (nativeGet reply "delivery_id") delivery-id) reply))))
+        (if (not (nativeGet checked "ok")) checked
+          (let ((issued (issueHandle context "reply_context" (currentPrincipal context) (nativeGet reply "reply_context_id")
+            (js-object :identity_revision (nativeGet reply "identity_revision")) (nativeGet reply "expires_at"))))
+            (success (js-object :delivery_id delivery-id :reply_context_id (nativeGet issued "ref")
+              :expires_at (nativeGet issued "expires_at") :allowed_actions (js-array "reply")))))))))
 
   (defun replyAuthority (reply)
     (js-object :recipient_principal_id (nativeGet reply "recipient_principal_id")

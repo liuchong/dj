@@ -136,8 +136,8 @@ metadata:
 
 ## 回复职责与提及身份
 
-- refresh_reply: 权限更新导致原 reply_context_id 失效时，原接收者可用 message.reply_context(delivery_id) 重新取得引用；仍核对当前权限、原消息、原身份及原有效期，不延长 TTL，不换收件人或重放任务。新引用后使用同一逻辑回复的原幂等键，先查原操作，不能重发已 accepted 的回复。
-- reply_access: 用 agent.whoami 将当前调用身份与通知的 reply_authority.recipient_principal_id 核对；reply_authority.expires_at 是该引用的绝对期限。能读 delivery.get/list 或原消息不等于持有该次回复权限。stale_reference 时由原接收主体尝试刷新；forbidden 时核对原接收主体和访问范围；reply_context_expired 表示原期限已经到期。其他对话需要交回结果时，把内容交给原接收对话，由它明确调用回复接口。
+- reply_access: 用当前对话已配置的 DJ 认证调用 message.reply 或 message.acknowledge。有效 reply_context_id 可交给获准代办的对话使用，由 DJ 沿原消息、话题和账号执行。reply_authority.recipient_principal_id 记录通知接收方，expires_at 是原截止时间。调用方自己的 DJ 身份可以不同。
+- refresh_reply: stale_reference 时用准确的 delivery_id 调 message.reply_context 重取仍有效的引用。重取保留原期限、账号、话题和领取代次。reply_context_expired 表示原期限已到，forbidden 则核对当前 DJ 认证及连接接入范围。重试前查原操作，沿用同一逻辑发送的幂等键，已 accepted 的回复视为已发送。
 - route: 谁被询问就由谁回复：@本人用本人，@机器人用该机器人，私聊及引用/话题按确定原生对象。收件连接不等于回复身份，原生mentions和reply_route说明被提及者及DJ已固定的回复身份；message.reply只提交reply_context_id、content、稳定idempotency_key，不选择账号或收件人，不改为message.send绕开缺失引用。
 - decision: 按本对话规则判断是否处理、是否属于已有任务、是否及何时回复；不是每条通知都要建任务或回复，也不是每次输出都外发。最终回答不自动转发IM；真正外发是显式工具调用，可在最终回答前进行。
 - tool_boundary: DJ提供机械接线、映射和关系查询，不判断负责人或决定转交。历史接收者不等于任务所有者；AI自行决定如何查找、联系和协作，也可使用获准的原生工具、其他可用接口或已安装 Skill。

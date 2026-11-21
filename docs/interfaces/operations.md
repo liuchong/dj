@@ -48,14 +48,14 @@ request_id 可选，用于追踪；所有受理变更要求 idempotency_key。�
 | message.context | event_id/message_ref/context_ref之一、before?、after?、reference_depth?、max_bytes?、corpus? | 锚点、前后文、引用链及context_ref | read；默认DJ缓存 |
 | message.history | context_ref/conversation_ref之一、limit?、cursor?、order?、time_range?、max_bytes?、corpus? | 同会话历史分页 | read；默认DJ缓存 |
 | message.send | destination_ref、content、force_send? | Outbound、state、revision、force_send | send；创建出站意图，强制仅限用户明确要求的本条 |
-| message.reply | reply_context_id 或 outbound_id（二选一）、content、force_send? | Outbound、state、revision、force_send | reply；固定目的地和身份，继承原回复授权 |
-| message.reply_context | delivery_id | reply_context_id、原 expires_at、allowed_actions | reply；原接收者在绝对期限内刷新 |
+| message.reply | reply_context_id 或 outbound_id（二选一）、content、force_send? | Outbound、state、revision、force_send | reply，已认证调用方使用固定目的地和身份 |
+| message.reply_context | delivery_id | reply_context_id、原 expires_at、allowed_actions | reply，已认证调用方可按准确的投递 ID 在原期限内重取 |
 | message.acknowledge | reply_context_id | 表情确认状态 | reply；与文字回复共享引用校验 |
 | message.recipient_policy.get/set | connection_id；set另需expected_revision、policy | 出站黑白名单；get含分页退订记录 | connection.manage；白名单不解除退订 |
 | outbound.get | outbound_id | Outbound、parts、安全回执 | 自有/授权记录 |
 | outbound.reconcile/retry/cancel | outbound_id | 当前 Outbound 与处理结果 | manage；核对/安全重试/取消分开 |
 | outbound.resolve | outbound_id、resolution、reason | resolved、manual 决定 | 仅操作员；永不重发 |
-| delivery.list/get | filters? / delivery_id | 投递、命中分支、安全回执、reply_context_id?、reply_authority? | inspect；仅原接收者可见当前可用的回复引用 |
+| delivery.list/get | filters? / delivery_id | 投递、命中分支、安全回执、reply_context_id?、reply_authority? | inspect，调用方可在获准查看的投递中读到有效引用 |
 | delivery.reconcile/retry/cancel | delivery_id | 当前 Delivery 与处理结果 | manage；核对/安全重试/取消分开 |
 | delivery.resolve | delivery_id、resolution、reason | resolved、manual 决定 | 仅操作员；永不重发 |
 
@@ -127,8 +127,8 @@ resolve 是操作员显式解除 unknown 的唯一人工入口，resolution 为 
 | catalog_incomplete / source_unavailable | 返回允许的覆盖/时间与缺口；不声称全量无匹配，不自动启动来源 |
 | cursor_expired / content_expired | 按当前权限重新发现或读取 |
 | reply_context_expired | 已到原回复期限；刷新不会延长 |
-| stale_reference（回复） | 引用、领取代次或身份已失效；原接收者可用 delivery_id 刷新仍有效的回复记录 |
-| forbidden（回复） | 核对当前 DJ 主体、原接收归属及来源和出口访问权限 |
+| stale_reference（回复） | 引用、领取代次或身份已失效，可用 delivery_id 重取仍有效的回复记录 |
+| forbidden（回复） | 核对当前 DJ 认证及连接接入范围 |
 | rate_limited / unavailable | 只在 effect_state 与确定未送达证据允许时重试 |
 | storage_unavailable / capacity_exceeded | 保持积压与损失边界可见，不确认未持久事件 |
 

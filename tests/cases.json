@@ -26403,9 +26403,9 @@
       "requirements": [
         "SPEC-0005"
       ],
-      "given": "An accepted delivery readable by both its recipient and an operator",
-      "when": "The operator inspects it, the recipient refreshes it after authorization changes, and the deadline passes",
-      "then": "Only the recipient may reply and refresh within the original absolute deadline; queued effects respect the same deadline"
+      "given": "An accepted delivery with a reply reference and a fixed native route",
+      "when": "Another authenticated caller refreshes the reference or replies to an accepted outbound, and the deadline passes",
+      "then": "The native route and original deadline carry through across callers, including for queued effects"
     },
     {
       "case_id": "T40.mention-reply-guards.integration",
@@ -26547,9 +26547,9 @@
         "SPEC-0005",
         "SPEC-0006"
       ],
-      "given": "A claimed inbox message has queued a reply and a Get reaction",
+      "given": "An authenticated caller other than the claimant queues a reply and a Get reaction for a claimed inbox message",
       "when": "The claim is released, then acquired and consumed with a new claim",
-      "then": "Neither queued effect escapes the old claim, and the consumed current claim can reply"
+      "then": "Only the claimant can acknowledge consumption, and the reply and Get reaction require the current claim generation"
     },
     {
       "case_id": "T38.working-http.integration",
@@ -28946,9 +28946,9 @@
       "requirements": [
         "SPEC-0005"
       ],
-      "given": "An expired opaque reply reference",
-      "when": "The original actor, another actor or a different reference kind is checked",
-      "then": "Only the current owner of the reply reference can learn that its lifetime elapsed"
+      "given": "An expired opaque reply reference that matches its stored reply record",
+      "when": "Reference types and identity are checked with active, disabled and unconfigured callers",
+      "then": "Active callers see the true expiry regardless of original recipient; malformed references and invalid callers fail"
     },
     {
       "case_id": "T38.reply-identity-evidence.unit",

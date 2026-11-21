@@ -2,7 +2,7 @@
 
 ## 行为
 
-`message.reply` 接收 `content`、幂等键，以及严格二选一的 `reply_context_id` / `outbound_id`。前者沿原通知回复；后者以已被平台 accepted、且仅有一个原生消息 ID 的出站消息为锚点，不要求先发生订阅事件。不接受额外目的地、账号或裸消息 ID。
+`message.reply` 接收 `content`、幂等键，以及严格二选一的 `reply_context_id` / `outbound_id`。已认证调用方可沿原通知回复，或用已被平台 accepted、且仅有一个原生消息 ID 的出站消息作为锚点。操作使用锚点固定的目的地和账号。出站台账的查看范围单独校验。
 
 Lark 可设置 `reply_in_thread=true`，调用官方消息回复 API 创建或续接话题。已有话题默认沿原话题，false 不把它移回群主流。普通群可先 `message.send` 发简讯，再对其 accepted outbound 回复详情。话题形式群直接发送主消息时由平台生成话题根。仅有 thread_id 的 Lark destination 仍不是独立可发送锚点。
 
