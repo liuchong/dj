@@ -24,6 +24,7 @@ Kimi Work / Code Web 与 DSH Desktop / Web 的形态、既有实例接收及调�
 ## 调用身份与 MCP
 
 - profile: 部署时为获准本机AI准备普通local-ai client profile，默认~/.dj/client.json；一个profile可用于多个对话，管理profile单独保存。凭据文件保持私有。不要在 Skill、项目文件、模型正文或 MCP 参数中写 token；参数里只有 profile 路径。
+- loopback_mcp: DJ 服务配置含 `service.mcp_http_port` 时，优先让支持 Streamable HTTP 的客户端直连 `http://127.0.0.1:<port>/mcp`。执行 `dj skill config --target TOOL --client-profile PRIVATE_PROFILE --mcp-url URL` 生成目标配置。根据私有 profile 填入同一主体的 Bearer token，应用只在其私有配置里读取，避免打印或传到对话中。切换时更新原有 dj 项，避免同时保留命令和 URL。用 `service.status.mcp_http` 检查活跃会话。
 - generate: `~/.dj/current/bin/dj skill config --target cursor --client-profile PRIVATE_PROFILE` 输出 MCP 配置片段。通过稳定软链入口调用时自动保留稳定 `bin/dj` 启动路径，不固化单次版本发布目录。命令只打印，不安装配置、不读取凭据；按本机实际路径合并 dj 项，不覆盖原文件。移动安装根后需要重新生成。
 - process: MCP 启动的只是 DJ 薄代理，连接原服务 Core；它不启动 AI 或新建对话。stdout 只用于 MCP 协议。所有接口仍重新执行 DJ 主体权限校验。
 - binding: 全局MCP配置只确定调用身份，不自动识别当前对话。agent.whoami返回bound_agent_ids；AI核对自身准确原生ID和实例，agent.discover/register后以显式agent_id订阅。一个调用身份可登记多个目标，不需操作员逐对话接线；受限profile仍遵守target_constraint，不借用其他身份。

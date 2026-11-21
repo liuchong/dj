@@ -10,7 +10,7 @@
   (import "./mcp-runtime-loader.eli" createRuntimeLoader)
   (import "../core/native.eli" nativeSetInterval nativeClearInterval)
   (defun createMcpServer
-    (profile proxy-abort on-close &optional supplied-loader)
+    (profile proxy-abort on-close &optional supplied-loader direct-call)
     (let*
       (
         (server
@@ -23,6 +23,9 @@
               :instructions
               modelInstructions)))
         (load-runtime (or supplied-loader (createRuntimeLoader)))
+        (invoke (or direct-call (async (runtime operation args)
+          (await (funcall (nativeGet runtime "call") profile operation args 30 nil
+            (js-object :abort_signal (nativeGet proxy-abort "signal")))))))
         (current nil)
         (timer nil)
         (refresh nil))
@@ -33,11 +36,12 @@
               (setq current runtime)
               (when changed (await (js-call server :sendToolListChanged)))))
           runtime)))
-      (setq timer (nativeSetInterval (lambda ()
-        (js-call (funcall refresh) :catch (lambda (error)
-          (js-call (nativeGet globalThis.process "stderr") :write "DJ MCP runtime refresh failed\n")))) 2000))
-      (js-call timer :unref)
-      (put server :onclose (lambda () (nativeClearInterval timer) (funcall on-close)))
+      (unless direct-call
+        (setq timer (nativeSetInterval (lambda ()
+          (js-call (funcall refresh) :catch (lambda (error)
+            (js-call (nativeGet globalThis.process "stderr") :write "DJ MCP runtime refresh failed\n")))) 2000))
+        (js-call timer :unref))
+      (put server :onclose (lambda () (when timer (nativeClearInterval timer)) (funcall on-close)))
       (put
         server
         :onerror
@@ -61,13 +65,7 @@
               (runtime (await (funcall refresh)))
               (result
                 (await
-                  (funcall (nativeGet runtime "call")
-                    profile
-                    "service.status"
-                    (js-object)
-                    30
-                    nil
-                    (js-object :abort_signal (nativeGet proxy-abort "signal"))))))
+                  (funcall invoke runtime "service.status" (js-object)))))
             (unless
               (and
                 (nativeGet result "ok")
@@ -105,13 +103,7 @@
                 ;; reach the same authoritative validator as CLI and API.
                 (result
                   (await
-                    (funcall (nativeGet runtime "call")
-                      profile
-                      operation
-                      (nativeGet params "arguments" (js-object))
-                      30
-                      nil
-                      (js-object :abort_signal (nativeGet proxy-abort "signal")))))
+                    (funcall invoke runtime operation (nativeGet params "arguments" (js-object)))))
                 (safe (funcall (nativeGet runtime "validate") descriptor result))
                 (output
                   (js-object

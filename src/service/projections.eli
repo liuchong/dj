@@ -288,6 +288,8 @@
             0
             :limits
             limits)))
+      (let ((status (nativeGet (nativeGet context "ports") "mcp_http_status")))
+        (when status (put projection :mcp_http (funcall status))))
       (let ((after nil) (done false))
         (while (not done)
           (let ((options (js-object :limit 1000)) (rows nil))

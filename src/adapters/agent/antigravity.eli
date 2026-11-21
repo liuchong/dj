@@ -89,7 +89,9 @@
           (aref rows 0))))
       (setq summaries (async (endpoint context)
         (when closed (throw (new globalThis.Error "Antigravity port closed")))
-        (await (funcall rpc endpoint "GetAllCascadeTrajectories" (js-object :excludeSubtrajectories t) context))))
+        ;; Desktop can keep an independently addressable conversation under a
+        ;; parent trajectory. The exact ID may be absent from the root-only view.
+        (await (funcall rpc endpoint "GetAllCascadeTrajectories" (js-object :excludeSubtrajectories false) context))))
       (setq inspect (async (target context)
         (let* ((endpoint (funcall endpointFor target)) (response (await (funcall summaries endpoint context)))
                (row (nativeGet (nativeGet (nativeGet response "data") "trajectorySummaries")

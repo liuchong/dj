@@ -12,6 +12,7 @@
   (import "../core/errors.eli" success failure)
   (import "../host/bun/io.eli" createHostPorts)
   (import "../interfaces/gepo.eli" handleServiceRequest)
+  (import "../interfaces/mcp-http.eli" startMcpHttp)
   (import "./config.eli" loadConfig)
   (import "./core.eli" createCore)
   (defasync socketIsAbsent
@@ -116,7 +117,8 @@
                   supplied-host
                   (createHostPorts (js-object :root (nativeGet config "config_root")))))
               (core nil)
-              (server nil)
+              (server nil) (mcp nil)
+              (mcp-port (nativeGet (nativeGet config "service") "mcp_http_port"))
               (socket (nativeGet (nativeGet config "service") "socket"))
               (socket-identity nil)
               (timer nil)
@@ -130,6 +132,9 @@
               (reload-handler nil)
               (reload-running false))
             (put host :build_id (await (installedBuildId)))
+            (when mcp-port
+              (put host :mcp_http_status (lambda ()
+                (if mcp (js-call mcp :status) (js-object :active_sessions 0 :in_flight 0)))))
             (setq core (createCore host config))
             (let ((started (await (js-call core :start))))
               (unless (nativeGet started "ok")
@@ -159,6 +164,7 @@
                 finishSocket
                 (async
                   ()
+                  (when mcp (await (js-call mcp :close)) (setq mcp nil))
                   (when server (await (js-call server :stop false)))
                   (when socket-identity
                     (try
@@ -227,6 +233,7 @@
                   (throw
                     (new globalThis.Error "service did not create its private socket")))
                 (await (chmod socket 384))
+                (when mcp-port (setq mcp (startMcpHttp core mcp-port)))
                 (setq signal-handler (lambda () (setq requested t) (stopWhenSafe)))
                 (js-call globalThis.process :on "SIGTERM" signal-handler)
                 (js-call globalThis.process :on "SIGINT" signal-handler)
@@ -238,7 +245,8 @@
                       (setq reload-running t)
                       (try
                         (let ((candidate (await (loadConfig path host))))
-                          (if (nativeGet candidate "ok")
+                          (if (and (nativeGet candidate "ok")
+                                (= (nativeGet (nativeGet (nativeGet candidate "data") "service") "mcp_http_port") mcp-port))
                             (let
                               (
                                 (reloaded

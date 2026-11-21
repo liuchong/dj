@@ -367,7 +367,8 @@
         :config_root
         id
         :service
-        (obj (js-object :service_id id :socket id) (js-array "service_id"))
+        (obj (js-object :service_id id :socket id
+          :mcp_http_port (js-object :type "integer" :minimum 1024 :maximum 65535)) (js-array "service_id"))
         :storage
         (obj
           (js-object

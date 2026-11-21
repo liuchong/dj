@@ -24,7 +24,7 @@
     :antigravity (js-object :user ".gemini/config/skills" :project ".agents/skills")
     :agy (js-object :user ".gemini/antigravity-cli/skills" :project ".agents/skills"))))
   (defconst skillHelp
-    "dj skill targets\ndj skill install|check --target TOOL --scope user|project [--project DIRECTORY] [--update] [--dry-run]\ndj skill config --target TOOL --client-profile FILE\ndj skill hooks --target codex|cursor --client-profile FILE --agent ID [--group ID]\nTargets: dj (shared Skill directory), agents, codex, cursor, claude, opencode, pi, kimi, dsh, antigravity, agy, openclaw, hermes.\nCopies the complete bundled dj Skill. Different existing files or links are conflicts unless install --update explicitly refreshes an existing Markdown Skill directory. Config/hooks print snippets only; no client configuration changes or Agent starts.\n")
+    "dj skill targets\ndj skill install|check --target TOOL --scope user|project [--project DIRECTORY] [--update] [--dry-run]\ndj skill config --target TOOL --client-profile FILE [--mcp-url LOCAL_URL]\ndj skill hooks --target codex|cursor --client-profile FILE --agent ID [--group ID]\nTargets: dj (shared Skill directory), agents, codex, cursor, claude, opencode, pi, kimi, dsh, antigravity, agy, openclaw, hermes.\nCopies the complete bundled dj Skill. Different existing files or links are conflicts unless install --update explicitly refreshes an existing Markdown Skill directory. Config/hooks print snippets only; no client configuration changes or Agent starts.\n")
   (defasync fileInfo (path)
     (try (await (lstat path))
       (catch error (if (= (nativeGet error "code") "ENOENT") nil (throw error)))))
@@ -141,13 +141,37 @@
               (setq i (1+ i)))))
         (success (js-object :state state :target (nativeGet options "target") :destination destination
           :files rows :client_config_modified false :agent_started false :client_adoption "unverified")))))
-  (defun skillConfig (target command profile)
+  (defun httpSkillConfig (target value)
+    (let* ((url (new globalThis.URL value))
+      (headers (js-object :Authorization "Bearer <DJ_CLIENT_TOKEN>"))
+      (endpoint (js-object :url value :headers headers)))
+      (unless (and (= (nativeGet url "protocol") "http:")
+        (= (nativeGet url "hostname") "127.0.0.1") (nativeGet url "port")
+        (= (nativeGet url "pathname") "/mcp") (= (nativeGet url "username") "")
+        (= (nativeGet url "password") "") (= (nativeGet url "search") "") (= (nativeGet url "hash") ""))
+        (throw (new globalThis.TypeError "MCP requires a numeric loopback URL and /mcp path")))
+      (cond
+        ((= target "codex") (str "[mcp_servers.dj]\nurl = " (JSON/stringify value)
+          "\nhttp_headers = { Authorization = \"Bearer <DJ_CLIENT_TOKEN>\" }\n"))
+        ((= target "opencode") (js-object :mcp (js-object :servers
+          (js-object :dj (Object/assign endpoint (js-object :type "remote" :oauth false :pool t))))))
+        ((= target "openclaw") (js-object :mcp (js-object :servers
+          (js-object :dj (Object/assign endpoint (js-object :transport "streamable-http"))))))
+        ((= target "hermes") (js-object :mcp_servers (js-object :dj endpoint)))
+        ((= target "claude") (js-object :mcpServers (js-object :dj (Object/assign endpoint (js-object :type "http")))))
+        ((js-call (js-array "antigravity" "agy") :includes target)
+          (js-object :mcpServers (js-object :dj (js-object :serverUrl value :headers headers))))
+        ((= target "cursor") (js-object :mcpServers (js-object :dj endpoint)))
+        (t nil))))
+
+  (defun skillConfig (target command profile &optional mcp-url)
     (unless (and (object-has? skillTargets target) (= (nativeTypeOf command) "string")
       (> (js-length command) 0) (= (nativeTypeOf profile) "string") (> (js-length profile) 0))
       (throw (new globalThis.TypeError "target, command and private client profile required")))
     (let* ((args (js-array "mcp" "serve" "--transport" "stdio" "--client-profile" profile))
            (server (js-object :command command :args args))
            (config (cond
+             (mcp-url (httpSkillConfig target mcp-url))
              ((= target "codex") (str "[mcp_servers.dj]\ncommand = " (JSON/stringify command)
                "\nargs = " (JSON/stringify args) "\n"))
              ((= target "opencode") (js-object :mcp (js-object :dj (js-object :type "local"
@@ -158,7 +182,9 @@
              (t (js-object :mcpServers (js-object :dj server))))))
       (success (js-object :target target :format (if (= target "codex") "toml" "json")
         :config config :cli_command command :client_profile profile
-        :instructions "Merge only the dj entry into local client configuration, preserving all other entries and approval policy. Pi/shared targets use CLI unless the host supplies an MCP client. See references/clients.md. GEPO uses the private UDS; it is not an MCP HTTP endpoint."
+        :instructions (if mcp-url
+          "Merge the dj entry into the private client configuration and substitute the selected profile token without exposing it in prompts or logs."
+          "Merge only the dj entry into local client configuration, preserving all other entries and approval policy. Pi/shared targets use CLI unless the host supplies an MCP client. See references/clients.md. GEPO uses the private UDS; it is not an MCP HTTP endpoint.")
         :client_config_modified false :agent_started false))))
   (defasync runSkillCommand (argv io root &optional command-root)
     (let ((launcher-root (or command-root root)))
@@ -179,7 +205,7 @@
                   ((= flag "--update")
                     (when (object-has? options :update) (throw (new globalThis.TypeError "missing or repeated Skill option")))
                     (put options :update t))
-                  ((js-call (js-array "--target" "--scope" "--project" "--client-profile" "--agent" "--group") :includes flag)
+                  ((js-call (js-array "--target" "--scope" "--project" "--client-profile" "--agent" "--group" "--mcp-url") :includes flag)
                     (let ((key (js-call (js-call flag :slice 2) :replaceAll "-" "_")))
                       (when (or (object-has? options key) (>= (1+ i) (js-length argv))
                         (js-call (aref argv (1+ i)) :startsWith "--"))
@@ -193,10 +219,11 @@
                   (unless (= (js-length (Object/keys options)) 0) (throw (new globalThis.TypeError "targets takes no options")))
                   (success skillTargets))
                 ((= action "config")
-                  (unless (js-call (Object/keys options) :every (lambda (k) (js-call (js-array "target" "client_profile") :includes k)))
-                    (throw (new globalThis.TypeError "config accepts target and client-profile only")))
+                  (unless (js-call (Object/keys options) :every (lambda (k) (js-call (js-array "target" "client_profile" "mcp_url") :includes k)))
+                    (throw (new globalThis.TypeError "config accepts target, client-profile and mcp-url only")))
                   (skillConfig (nativeGet options "target") (resolve launcher-root "bin/dj")
-                    (if (nativeGet options "client_profile") (resolve (nativeGet options "client_profile")) nil)))
+                    (if (nativeGet options "client_profile") (resolve (nativeGet options "client_profile")) nil)
+                    (nativeGet options "mcp_url")))
                 ((= action "hooks")
                   (unless (js-call (Object/keys options) :every
                     (lambda (k) (js-call (js-array "target" "client_profile" "agent" "group") :includes k)))
@@ -210,7 +237,7 @@
                 (t
                   (when (and (= action "check") (nativeGet options "update"))
                     (throw (new globalThis.TypeError "check does not accept --update")))
-                  (when (or (nativeGet options "agent") (nativeGet options "group"))
+                  (when (or (nativeGet options "agent") (nativeGet options "group") (nativeGet options "mcp_url"))
                     (throw (new globalThis.TypeError "install/check do not accept callback binding")))
                   (when (nativeGet options "client_profile") (throw (new globalThis.TypeError "install/check do not read profiles")))
                   (put options :action action)

@@ -63,3 +63,7 @@ rm "$HOME/Library/LaunchAgents/dev.dispatch-junction.controller.plist"
 ```
 
 随后将系统 Applications 中的 DJ Control.app 移到废纸篓；保留核心服务登录项和 `.dj` 数据。App 启动器的索引由 macOS 更新，不改写其数据库。
+
+## MCP 连接复用
+
+服务配置可设置 `service.mcp_http_port`，同一个 DJ 进程监听本机 MCP 接口。支持 Streamable HTTP 的客户端配置 `http://127.0.0.1:<port>/mcp` 和私有 Bearer 凭据，替换该客户端原有的 DJ 命令入口。客户端重启后重新初始化。使用 `service.status` 查看 `mcp_http.active_sessions` 与 `mcp_http.in_flight`。见[接收规格](../specs/0037-local-mcp-transport.md)。

@@ -12,6 +12,7 @@
     "tests/integration/im.test.eli",
     "tests/integration/agent.test.eli",
     "tests/integration/interfaces.test.eli",
+    "tests/integration/mcp-http.test.eli",
     "tests/system/recovery.test.eli",
     "tests/system/flows.test.eli",
     "tests/system/ownership.test.eli",

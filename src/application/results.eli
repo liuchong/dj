@@ -967,6 +967,7 @@
         "api_version build_id operation_catalog_digest service_id state"
         (js-object
           :fixed_routes (arr (ref "fixed_route"))
+          :mcp_http (obj (js-object :active_sessions integerSchema :in_flight integerSchema))
           :module_runtime
           stringSchema
           :modules
