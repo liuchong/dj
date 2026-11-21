@@ -57,18 +57,18 @@
         (await (mkdir workspace (js-object :recursive t :mode 448)))
         (let ((db (new Database (resolve root "codex.sqlite"))))
           (try
-            (js-call db :exec "CREATE TABLE threads(id TEXT PRIMARY KEY,title TEXT,cwd TEXT,updated_at INTEGER,archived INTEGER)")
-            (js-call (js-call db :query "INSERT INTO threads VALUES(?,?,?,?,0)") :run
-              "codex-thread" "Codex native fixture" workspace 1767225700)
+            (js-call db :exec "CREATE TABLE threads(id TEXT PRIMARY KEY,title TEXT,name TEXT,cwd TEXT,updated_at INTEGER,archived INTEGER)")
+            (js-call (js-call db :query "INSERT INTO threads VALUES(?,?,?,?,?,0)") :run
+              "codex-thread" "Old first message\nContinue an old task" "Codex native fixture" workspace 1767225700)
             ;; A scoped recipient must not sit behind pages of other workspaces.
             (let ((index 0))
               (while (< index 150)
-                (js-call (js-call db :query "INSERT INTO threads VALUES(?,?,?,?,0)") :run
-                  (str "a-foreign-" index) "Other workspace" (resolve root "other-workspace")
+                (js-call (js-call db :query "INSERT INTO threads VALUES(?,?,?,?,?,0)") :run
+                  (str "a-foreign-" index) "Other workspace preview" nil (resolve root "other-workspace")
                   (if (= index 0) 1767225690 1767225600))
                 (setq index (1+ index))))
-            (js-call (js-call db :query "INSERT INTO threads VALUES(?,?,?,?,1)") :run
-              "a-archived" "Archived target" workspace 1767225600)
+            (js-call (js-call db :query "INSERT INTO threads VALUES(?,?,?,?,?,1)") :run
+              "a-archived" "Archived preview" "Archived target" workspace 1767225600)
             (finally (js-call db :close))))
         (let ((db (new Database (resolve root "cursor.sqlite"))))
           (try
@@ -137,7 +137,7 @@
                               :conversationState (js-object :id cid
                                 :cwd (if (= cid "a-foreign-0") (resolve root "other-workspace") workspace)
                                 :fixture_padding (nativeGet h "codex_padding" "")
-                                :title (if (= cid "a-foreign-0") "Other workspace" "Codex native fixture")
+                                :title "Old first message\nContinue an old task"
                                 :resumeState "resumed" :requests (js-array)
                                 :threadRuntimeStatus (js-object :type (nativeGet h "codex_status"))
                                 :turnHistory (when (nativeGet h "codex_incomplete")
@@ -533,6 +533,11 @@
               (js-call (expect (js-call (nativeGet first "items") :map
                 (lambda (row) (nativeGet row "native_session_id")))) :toEqual (js-array "codex-thread"))
               (js-call (expect (nativeGet (aref (nativeGet first "items") 0) "live_receiver")) :toBe false)
+              (js-call (expect (nativeGet (aref (nativeGet first "items") 0) "title")) :toBe "Codex native fixture")
+              (let ((live (await (js-call port :probe (js-object :native_session_id "codex-thread") endpoint
+                (js-object :deadline (+ (performance/now) 2000))))))
+                (js-call (expect (nativeGet live "live_receiver")) :toBe t)
+                (js-call (expect (nativeGet live "title")) :toBe "Codex native fixture"))
               (js-call (expect (js-length (nativeGet last "items"))) :toBe 0)
               (js-call (expect (nativeGet last "complete")) :toBe t))
             (finally (await (js-call port :close)))))
@@ -827,6 +832,7 @@
                            (js-object :instance_id "codex-native") (js-object :deadline (+ (performance/now) 3000))))))
               (js-call (expect (js-call (nativeGet first "items") :map
                 (lambda (row) (nativeGet row "native_session_id")))) :toEqual (js-array "codex-thread" "a-foreign-0"))
+              (js-call (expect (nativeGet (aref (nativeGet first "items") 1) "title")) :toBe "")
               (js-call (expect (nativeGet (aref (nativeGet first "items") 0) "workspace_ref")) :toBe "ws-test")
               (js-call (expect (js-call (nativeGet (aref (nativeGet first "items") 1) "workspace_ref") :startsWith "codex-workspace-")) :toBe t)
               (js-call (expect (nativeGet (aref (nativeGet first "items") 1) "directory"))

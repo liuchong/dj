@@ -1052,6 +1052,9 @@
     (js-object :message (ref "message")))))
   (put definitions :message_context (obj (strings "context_ref as_of corpus scope coverage_reason"
     (js-object :resource (ref "lark_resource") :topic (ref "topic") :anchor (ref "message") :messages (arr (ref "message")) :references (arr (ref "context_reference"))
+      :related_recipients (obj (js-object :basis stringSchema :truncated boolSchema
+        :items (arr (obj (strings "session_key tool native_namespace native_session_id instance_id runtime_state observed_at"
+          (js-object :workspace_ref nullableString :live_receiver boolSchema :stale boolSchema))))))
       :coverage_complete boolSchema :truncated boolSchema :query_available boolSchema :external_data boolSchema))))
   (put definitions :message_history (obj (strings "context_ref corpus as_of coverage_reason"
     (js-object :items (arr (ref "message")) :next_cursor nullableString :complete boolSchema

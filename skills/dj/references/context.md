@@ -13,5 +13,5 @@
 ## 接手续接
 
 - thread_root: 通知只有一句“继续”时，先message.context(event_id)读anchor、references、topic；话题根保存于群主流不等于不可见。再message.history(context_ref)按游标读取原话题，本地缺失才corpus=native。
-- prior_receivers: context.related_recipients列同话题实际接收过通知的准确会话，不等于任务负责人。结合原任务记录确认原协调者，用session.get(session_key)取得新ref并session.send联系，不要求当前仍有订阅，不创建替代对话。
+- prior_receivers: context.related_recipients列同话题实际接收过通知的准确会话，不等于任务负责人。结合原任务记录确认原协调者，用 session.get(session_key) 取得显示标题和新引用，再用 session.send 联系，不要求当前仍有订阅，不创建替代对话。
 - unloaded: 精确原生ID用session.resolve(instance_id,native_session_id)。history且live_receiver=false代表已保存但当前未确认活接收端，可能未加载，不是丢失。工作对话不能接收时沿原协调者请求其原生宿主续接；已有准确入口时不要直接要求用户重选负责人。保留暂停、授权、原账号与幂等边界，未受理不能说投递成功。

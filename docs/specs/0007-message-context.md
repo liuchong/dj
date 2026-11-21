@@ -40,4 +40,4 @@ message.context/history的scope默认topic；有明确thread或回复链时优�
 
 话题根可能保存为群主流消息。沿原生parent/root引用允许同账号同群的根消息具有不同thread标识，逐条复核其自身可见性与授权；普通历史仍按请求thread读取，禁止跨群或跨账号。补取按消息实际地址缓存，不把根消息改写为话题回复。
 
-context.related_recipients在字节预算内列出同话题历史上实际收到过通知且调用方可查看的会话，最多8项；basis=same_topic_history_not_task_ownership，仅为历史接收证据，不证明任务归属或自动交接。truncated表示有界覆盖。可结合原任务记录，用准确session_key经session.get换取引用，再联系原协调者。
+context.related_recipients在字节预算内列出同话题历史上实际收到过通知且调用方可查看的会话，最多8项；basis=same_topic_history_not_task_ownership，仅为历史接收证据，不证明任务归属或自动交接。truncated表示有界覆盖。该列表只携带会话定位和接收状态。可结合原任务记录，用准确 session_key 经 session.get 查询显示标题与引用，再联系原协调者。

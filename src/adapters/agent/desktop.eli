@@ -91,7 +91,7 @@
   (defasync savedCodexHeader (endpoint id)
     (let ((db (await (openHistory endpoint))))
       (try
-        (let* ((row (js-call (js-call db :query "SELECT id,title,cwd FROM threads WHERE id=? AND archived=0") :get id))
+        (let* ((row (js-call (js-call db :query "SELECT id,COALESCE(name,'') AS title,cwd FROM threads WHERE id=? AND archived=0") :get id))
           (cwd (nativeGet row "cwd")))
           (and row (= (nativeTypeOf cwd) "string") (isAbsolute cwd)
             (or (= (nativeGet endpoint "workspace_scope") "instance") (= cwd (nativeGet endpoint "directory"))) row))
@@ -297,8 +297,10 @@
                     (cursorRuntime row) (nativeGet page "instance_epoch")
                     (js-object :model_id (nativeGet row "model" nil) :provider_id (nativeGet row "modelProvider" nil)))))
               (await (funcall codexSnapshot endpoint id context (async (channel result)
-                (let ((state (nativeGet result "state")))
-                  (funcall sessionRecord endpoint id (nativeGet state "title" "")
+                (let* ((state (nativeGet result "state"))
+                       ;; Codex stores the chat name separately from its first-message preview.
+                       (header (try (await (savedCodexHeader endpoint id)) (catch unreadable nil))))
+                  (funcall sessionRecord endpoint id (nativeGet header "title" "")
                     (codexRuntime state) (nativeGet channel "instance_epoch")
                     (js-object :provider_id (nativeGet state "modelProvider" nil) :model_id (nativeGet state "model" nil)
                       :reasoning_effort (nativeGet state "reasoningEffort" nil))
@@ -367,10 +369,10 @@
                     (if (funcall instanceScope endpoint)
                       (let ((rows (if (Number/isSafeInteger before-updated)
                                     (js-call (js-call db :query
-                                      "SELECT id,title,cwd,updated_at FROM threads WHERE archived=0 AND (updated_at<? OR (updated_at=? AND id<?)) ORDER BY updated_at DESC,id DESC LIMIT ?")
+                                      "SELECT id,COALESCE(name,'') AS title,cwd,updated_at FROM threads WHERE archived=0 AND (updated_at<? OR (updated_at=? AND id<?)) ORDER BY updated_at DESC,id DESC LIMIT ?")
                                       :all before-updated before-updated after maximum)
                                     (js-call (js-call db :query
-                                      "SELECT id,title,cwd,updated_at FROM threads WHERE archived=0 ORDER BY updated_at DESC,id DESC LIMIT ?")
+                                      "SELECT id,COALESCE(name,'') AS title,cwd,updated_at FROM threads WHERE archived=0 ORDER BY updated_at DESC,id DESC LIMIT ?")
                                       :all maximum))))
                         (setq more (= (js-length rows) maximum))
                         (js-call rows :forEach (lambda (row)
@@ -384,7 +386,7 @@
                                 (put session :visibility (js-array "history"))
                                 (js-call items :push session)))))))
                       (let ((rows (js-call (js-call db :query
-                        "SELECT id,title,cwd,updated_at FROM threads WHERE cwd=? AND id>? AND archived=0 ORDER BY id LIMIT ?")
+                        "SELECT id,COALESCE(name,'') AS title,cwd,updated_at FROM threads WHERE cwd=? AND id>? AND archived=0 ORDER BY id LIMIT ?")
                         :all (nativeGet endpoint "directory") after maximum)))
                         (setq more (= (js-length rows) maximum))
                         (js-call rows :forEach (lambda (row)

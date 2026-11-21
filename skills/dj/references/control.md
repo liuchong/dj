@@ -117,7 +117,7 @@ receiver_discovery_timeout 表示本次有界探测未确认owner，不等同于
 ## 入口失效和未加载目标
 
 - 单一MCP连接返回`incompatible`时，先用稳定安装入口`~/.dj/current/bin/dj status --json --client-profile ~/.dj/client.json`检查当前服务。新CLI正常就使用同一profile继续原操作，不因旧MCP目录状态停工。受理过的操作仍先查原operation/delivery。
-- 发送前核对准确的显示标题、工具、工作区和原生ID。相似名字的两个对话不能混用，历史列表里的长首条消息不是显示标题的可靠替代。
+- 发送前核对准确的显示标题、工具、工作区和原生ID。相似名字的对话用原生 ID 区分。Codex 会话没有原生名称时标题为空，可继续用原生 ID 定位。
 - 当前为notLoaded只说明接收端尚未加载。配置了原对话加载器的DJ会在session.send受理后的投递阶段加载并重验，再发送正文；无需用户手工点击。仅probe不触发加载。
 - 外部接口的`queued`、CLI退出码0、`codex queue`入队记录，都不是原Desktop已接收的证据。尤其`could not resume`意味着自动恢复失败，不能报告“发到了”。外部队列不由DJ消费，也不能替代已存在Desktop的跨进程通知。
 - 其他入口的发送已经unknown时，先核对准确原目标的历史和原操作；不能为试验加载再发送同一正文。明确未发送或取消原待投后才换入口。跨工具通知或直发受阻时只走DJ或目标原生非UI接口排查，禁止改用`kimi-cu`、`osascript`等桌面UI自动化向目标客户端窗口模拟输入。
