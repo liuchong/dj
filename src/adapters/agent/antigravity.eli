@@ -128,7 +128,9 @@
         (let ((total (nativeGet row "stepCount" 0))
               (offset (nativeGet row "lastUserInputStepIndex" nil)))
           (if (= total 0)
-            (js-object :plannerConfig (js-object :planModel (cascadeModel (nativeGet binding "model_selection"))))
+            (js-object :plannerConfig (js-object :planModel
+              (or (cascadeModel (nativeGet binding "model_selection"))
+                  (cascadeModel (nativeGet binding "initial_model_selection")))))
             (let ((resolved nil) (fallback-model nil))
               ;; Query only the single user-turn anchor via GetTrajectoryTurns so long
               ;; multi-hundred-step turns never exceed the bounded step/frame budget.
