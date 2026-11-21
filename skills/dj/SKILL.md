@@ -26,7 +26,7 @@ metadata:
 ## 独立会话创建
 
 - native_creation: DJ 自己实现原生接口，不依赖其他 Agent 控制工具。创建流程、权限与工具边界见[会话控制](references/control.md#显式启动与创建)。调用方工具不限制目标工具，目标由 instance_id 明确指定。
-- desktop_availability: 发现返回空列表时同时检查 coverage_complete 和 sources 的 coverage、reason。Antigravity Desktop 报 antigravity_desktop_auth_unavailable 时，当前 DJ 无法发现、创建或向该实例投递。已有桌面对话仍可主动调用已配置的 DJ MCP。明确要求桌面时保持原工具形态。
+- desktop_availability: 发现返回空列表时检查 coverage_complete 和 sources 的 coverage、reason。Antigravity Desktop 接通后，DJ 直接创建并向原生对话投递；桌面对话可立即调用 DJ MCP/API 发回。出现 antigravity_desktop_auth_unavailable 时，报告当前实机认证失败。保持选定的桌面实例，避免用定时任务或文件轮询代替实时收发。
 - prerequisites: session.create 不隐含 instance.inspect；部署创建调用方时同时配置实例查询、lifecycle.inspect、lifecycle.reconcile。先读 instance.get，核对当前 epoch、workspace_scope 和目录；forbidden 的 details.reason 区分工作区与模型能力，不猜测需要 managed profile。
 - workspace: directory 范围仅配置目录；instance 范围允许同一实例其他工作区，传发现得到的 workspace_ref 和绝对 directory，或由 DJ 从已发现会话解析目录。创建可以为空，也可显式传 content 作为首条消息。DJ 在同一原生会话创建成功后持久受理该消息；核对 lifecycle.initial_delivery_id 和 delivery.get，不把创建 ready 当消息已送达。不自动订阅或选择任务。
 

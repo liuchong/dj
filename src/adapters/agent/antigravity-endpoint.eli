@@ -2,7 +2,7 @@
   (import "../../core/native.eli" nativeGet nativeTypeOf)
   (import "./desktop-transport.eli" desktopError)
   (import "./native-local.eli" trustedProcessHelper processProof localCertificate antigravityRpc)
-  (import "./local-endpoint-resolver.eli" processRows nativeArgument tcpListenerPorts createLocalEndpointResolver)
+  (import "./local-endpoint-resolver.eli" processRows tcpListenerPorts createLocalEndpointResolver)
   ;; Secrets belong to this port's memory, never to endpoint projections or SQLite.
   ;; Discovery plugs Antigravity's language-server identity into the shared resolver.
   (defun createAntigravityEndpointResolver (host)
@@ -30,18 +30,21 @@
             (let* ((row (aref candidates 0)) (pid (nativeGet row "pid"))
                    (proof (JSON/parse (await (funcall command helper (js-array (str pid)) context))))
                    (parent (JSON/parse (await (funcall command helper (js-array (str (nativeGet row "ppid"))) context))))
-                   (args (await (funcall command "ps" (js-array "-p" (str pid) "-o" "args=") context)))
-                   (token (nativeArgument args "csrf_token"))
+                   (token nil)
                    (ports nil)
                    (matches (js-array)))
               (unless (and (= (nativeGet proof "uid") (js-call globalThis.process :getuid))
                 (= (nativeGet proof "pid") pid) (= (nativeGet proof "executable") (nativeGet row "executable"))
                 (= (nativeGet parent "uid") (nativeGet proof "uid"))
                 (= (nativeGet parent "pid") (nativeGet row "ppid"))
-                (= (nativeGet parent "executable") (str (js-call (nativeGet proof "executable") :slice 0 (- (js-length "/Contents/Resources/bin/language_server"))) "/Contents/MacOS/Antigravity"))
-                (= (nativeArgument args "app_data_dir") "antigravity"))
+                (= (nativeGet parent "executable") (str (js-call (nativeGet proof "executable") :slice 0 (- (js-length "/Contents/Resources/bin/language_server"))) "/Contents/MacOS/Antigravity")))
                 (throw (desktopError "native_process_changed")))
-              (unless (and (= (nativeTypeOf token) "string") (js-call (new globalThis.RegExp "^[A-Za-z0-9_-]+$") :test token))
+              (try
+                (setq token (await (funcall command helper
+                  (js-array "antigravity-credential" (str pid) (nativeGet proof "birth")
+                    (str (nativeGet parent "pid")) (nativeGet parent "birth")) context 256)))
+                (catch unavailable (throw (desktopError "antigravity_desktop_auth_unavailable"))))
+              (unless (and (= (nativeTypeOf token) "string") (js-call (new globalThis.RegExp "^[A-Za-z0-9_-]{16,256}$") :test token))
                 (throw (desktopError "antigravity_desktop_auth_unavailable")))
               (setq ports (tcpListenerPorts
                 (await (funcall command "lsof" (js-array "-nP" "-a" "-p" (str pid) "-iTCP" "-sTCP:LISTEN" "-Fn") context))))
@@ -67,4 +70,4 @@
               (unless (= (js-length matches) 1) (throw (desktopError "native_listener_ambiguous")))
               (aref matches 0)))))
       host))
-  (export createAntigravityEndpointResolver processRows nativeArgument))
+  (export createAntigravityEndpointResolver))

@@ -73,7 +73,7 @@ The service supports an existing Claude Code native inbox and an existing Antigr
 - codex_antigravity: Codex Desktop 与 Antigravity App 单实例端点可显式设置 `workspace_scope: "instance"`，按实例发现并投递不同项目目录的原生对话（保留各自真实 `directory` 与派生的 `workspace_ref`）；省略时保持默认 `directory` 精确目录边界。
 
 - antigravity_input: 原生端点已接通时，Antigravity 的 steer 使用 NEXT_INVOCATION，忙时在下一次模型调用前输入。显式 queue 使用 WHEN_IDLE，积压按最多 32 条连续受理。核对 accepted 回执，继续等待处理结果。保持 accepted、unknown 和超期记录的现有防重规则。
-- antigravity_desktop_auth_unavailable: Antigravity Desktop 2.34.0 的认证材料仅传给 App 内部进程，现有 DJ 接入无法认证它。遇到 `agent.discover` 的此原因，保留登记和订阅，向调用方报告该桌面实例不可用。AI 主动调用 DJ MCP 与 DJ 对桌面会话投递是两个方向。
+- antigravity_desktop_auth_unavailable: DJ 使用获准的同用户 Desktop 进程及其原生 HTTPS 认证，直接创建和投递。遇到 `agent.discover` 的此原因时，保留登记和订阅，报告当前实例无法认证。桌面对话发回消息用配置好的 DJ MCP/API，收发两端都走即时接口。
 
 
 ## 控制接口

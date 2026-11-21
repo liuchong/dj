@@ -14,9 +14,6 @@
           (when m (js-call rows :push (js-object :pid (NativeNumber (aref m 1)) :ppid (NativeNumber (aref m 2))
             :uid (NativeNumber (aref m 3)) :executable (aref m 4)))))))
       rows))
-  (defun nativeArgument (args name)
-    (let ((m (js-call args :match (new globalThis.RegExp (str "(?:^|\\s)--" name "(?:=|\\s+)([^\\s]+)(?:\\s|$)")))))
-      (and m (aref m 1))))
   (defun tcpListenerAddresses (text &optional ipv4-only)
     (let ((seen (new globalThis.Set)) (items (js-array)))
       (js-call (js-call text :split "\n") :forEach (lambda (line)
@@ -85,10 +82,10 @@
                         (and host (= (nativeTypeOf (nativeGet host "local_discovery_command")) "function")
                           (nativeGet host "local_discovery_command"))
                         (nativeGet spec "command")
-                        (async (file args context)
+                        (async (file args context &optional max-bytes)
                           (await (metadataCommand file args context
-                            (if (and (= file "ps") (= (aref args 0) "-axo")) 1048576 65536))))))
-           (helpers (js-object :command command :processRows processRows :nativeArgument nativeArgument
+                            (or max-bytes (if (and (= file "ps") (= (aref args 0) "-axo")) 1048576 65536)))))))
+           (helpers (js-object :command command :processRows processRows
                       :tcpListenerAddresses tcpListenerAddresses :tcpListenerPorts tcpListenerPorts
                       :unixListenerPaths unixListenerPaths :privateDirectoryJsonNames privateDirectoryJsonNames
                       :cloneEndpoint cloneEndpoint
@@ -134,7 +131,6 @@
           :clear (lambda () (js-call cached :clear) (js-call pending :clear))))))
   (export
     processRows
-    nativeArgument
     tcpListenerAddresses
     tcpListenerPorts
     unixListenerPaths

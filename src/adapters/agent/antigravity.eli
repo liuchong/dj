@@ -77,7 +77,8 @@
           (resolve-endpoint (createAntigravityEndpointResolver host))
           (rpc (nativeGet host "antigravity_rpc" (async (endpoint method payload context)
             (let ((live (await (funcall resolve-endpoint endpoint context))))
-              (await (antigravityRpc (nativeGet live "endpoint") method payload context (nativeGet live "credential")))))))
+              (await (antigravityRpc (nativeGet live "endpoint") method payload context
+                (nativeGet live "credential") (nativeGet live "verified")))))))
           (endpointFor nil) (summaries nil) (inspect nil) (project nil) (steps nil) (resolveCascadeConfig nil) (listSessions nil) (createSession nil))
       (setq endpointFor (lambda (target)
         (let ((rows (js-call endpoints :filter (lambda (endpoint)
