@@ -16,7 +16,7 @@ OpenCode endpoint 指向经过进程归属验证的本机服务实例；已有�
 
 ## 提示
 
-服务配置 `subscriber_hints` 缺省为 true；false 完全关闭。push 和 pull 信封都可带 `subscriber_hints`：basis=same_event、subscribers、has_more、instruction。仅列同一 event_id 已实际匹配、当前仍有效的其他已登记接收对话，并按接收主体的 agent.inspect、session.inspect 或 agent.bind 可见性过滤；每个接收对话只列一次，最多 32 个。迭代到第 33 个可见项才置 has_more，不按过滤前数量推断；无其他可见项时不附空提示。登记显示名、工具、准确原生 ID、工作区和已知模型仅供协作参考，不猜同任务、父子关系或负责人。
+服务配置 `subscriber_hints` 缺省为 true；false 完全关闭。push 和 pull 信封都可带 `subscriber_hints`：basis=same_event、subscribers、has_more、instruction。仅列同一 event_id 已实际匹配、当前仍有效的其他已登记接收对话，并按接收主体的 agent.inspect、session.inspect 或 agent.bind 可见性过滤；每个接收对话只列一次，最多 32 个。迭代到第 33 个可见项才置 has_more，不按过滤前数量推断；无其他可见项时不附空提示。简短的单行登记显示名、工具、准确原生 ID、工作区和已知模型仅供协作参考。超长或多行登记显示名只通过显式查询读取，不猜同任务、父子关系或负责人。
 
 提示不引入排队、互斥、转交、抢占或单消费者限制；同一目标的多个订阅仍按投递归并机制合并；同一原生事件的跨线路副本按[0031](0031-dispatch-contexts.md)对每个准确目标单独归并，不把多个接收者归成一个。同事件提示是生成信封时的快照，不保证后续订阅状态不变化。
 

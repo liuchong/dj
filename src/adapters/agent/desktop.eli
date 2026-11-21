@@ -96,6 +96,15 @@
           (and row (= (nativeTypeOf cwd) "string") (isAbsolute cwd)
             (or (= (nativeGet endpoint "workspace_scope") "instance") (= cwd (nativeGet endpoint "directory"))) row))
         (finally (js-call db :close)))))
+  (defasync confirmCodexHeader (endpoint id context)
+    (let ((title (nativeGet context "expected_codex_title"))
+          (header (await (savedCodexHeader endpoint id))) (reads 0))
+      (while (and title (not (= (nativeGet header "title") title)) (< reads 3))
+        (let ((delay (Math/min 50 (desktopDeadline context))))
+          (await (new globalThis.Promise (lambda (done) (nativeSetTimeout done delay)))))
+        (desktopDeadline context)
+        (setq header (await (savedCodexHeader endpoint id)) reads (1+ reads)))
+      header))
   (defasync assertCursorBridgeEnabled (endpoint)
     ;; A listening bridge can outlive the renderer's feature gate. Its empty
     ;; list in that state is not authoritative evidence of an empty catalog.
@@ -299,7 +308,7 @@
               (await (funcall codexSnapshot endpoint id context (async (channel result)
                 (let* ((state (nativeGet result "state"))
                        ;; Codex stores the chat name separately from its first-message preview.
-                       (header (try (await (savedCodexHeader endpoint id)) (catch unreadable nil))))
+                       (header (try (await (confirmCodexHeader endpoint id context)) (catch unreadable nil))))
                   (funcall sessionRecord endpoint id (nativeGet header "title" "")
                     (codexRuntime state) (nativeGet channel "instance_epoch")
                     (js-object :provider_id (nativeGet state "modelProvider" nil) :model_id (nativeGet state "model" nil)
@@ -314,7 +323,7 @@
                 (js-call (nativeGet unavailable "code" "") :startsWith "receiver_")))
                 (try
                   (let* ((endpoint (funcall endpointFor binding)) (id (nativeGet target "native_session_id"))
-                    (row (await (savedCodexHeader endpoint id))))
+                    (row (await (confirmCodexHeader endpoint id context))))
                     (when row
                       (setq historical (funcall sessionRecord endpoint id (nativeGet row "title" "")
                         (if (= (nativeGet unavailable "code") "desktop_owner_timeout") "unknown" "offline")
@@ -516,9 +525,13 @@
                      :directory directory :content (nativeGet context "creation_content" nil) :title (nativeGet context "title" nil)
                      :model_selection (nativeGet context "model_selection" nil)) context)))
                  (data (nativeGet response "data")) (id (nativeGet data "thread_id"))
+                 (title (nativeGet context "title"))
                  (row (when id (await (funcall probeWith
-                   (js-object :native_session_id id) instance context)))))
-            (if (not row) (js-object :state "unknown" :creation_key key :native_ref (or id key) :evidence_level "none")
+                   (js-object :native_session_id id) instance
+                   (Object/assign (js-object) context (js-object :expected_codex_title title)))))))
+            (if (or (not id) (not (= (nativeGet row "native_session_id") id))
+                    (and title (not (= (nativeGet row "title") title))))
+              (js-object :state "unknown" :creation_key key :native_ref (or id key) :evidence_level "none")
               (progn
                 (unless (or lookup (= (nativeGet row "directory") directory)) (throw (desktopError "desktop_target_mismatch")))
                 (js-object :state "ready" :creation_key key :native_ref id
@@ -600,7 +613,8 @@
                                (js-object :operation "rename" :thread (nativeGet session "native_session_id") :title title)
                                (Object/assign (js-object) context (js-object :expected_epoch (nativeGet session "instance_epoch")))))))
                            (row (if (= tool "codex")
-                             (let ((probe (await (funcall probeWith session session context))))
+                             (let ((probe (await (funcall probeWith session session
+                               (Object/assign (js-object) context (js-object :expected_codex_title title))))))
                                (js-object :id (nativeGet probe "native_session_id") :title (nativeGet probe "title")
                                  :cwd (nativeGet probe "directory") :runtime_state (nativeGet probe "runtime_state")))
                              (nativeGet (nativeGet response "data") "thread"))))

@@ -7,6 +7,10 @@
   (import "../policy/principals.eli" configuredPrincipal)
   (import "../people/registry.eli" identityKey eventIdentities)
   (import "./service.eli" inspectionScope listTasks taskTree)
+  (import "../sessions/models.eli" compactSessionLabel)
+  (defun sessionHeading (session)
+    (let ((title (compactSessionLabel (nativeGet session "title"))))
+      (str (nativeGet session "tool") (if title (str " · " title) ""))))
   (defun stageCommand (context event)
     (let ((text (nativeGet (nativeGet event "content") "text" "")))
       (when (and (nativeGet (nativeGet context "config") "task_inspection")
@@ -24,18 +28,18 @@
       (when (= (js-length users) 1)
         (configuredPrincipal (nativeGet (nativeGet context "config") "principals") (nativeGet (aref users 0) "principal_id")))))
   (defun renderTask (task)
-    (let ((source (nativeGet task "source")))
+    (let ((source (nativeGet task "source")) (reason (nativeGet task "blocked_reason" "")))
       (str (nativeGet task "delivery_id") "\n"
         (nativeGet source "connection_id") " · " (nativeGet source "native_chat_id" "资源")
         (if (nativeGet source "native_thread_id") (str " / " (nativeGet source "native_thread_id")) "") "\n"
         "消息 " (nativeGet source "native_message_id") "：" (nativeGet source "summary") "\n"
-        "└─ " (nativeGet task "tool") " · " (nativeGet task "title") " [" (nativeGet task "state")
-        (if (nativeGet task "blocked_reason") (str " / " (nativeGet task "blocked_reason")) "") "]\n"
+        "└─ " (sessionHeading task) " [" (nativeGet task "state")
+        (if (> (js-length reason) 0) (str " / " reason) "") "]\n"
         "   会话 " (nativeGet task "native_session_id") " · 任务 " (nativeGet task "task_state"))))
   (defun renderChildren (nodes parent depth)
     (if (> depth 8) ""
       (js-call (js-call (js-call nodes :filter (lambda (node) (= (nativeGet node "parent_session_key") parent))) :map
-        (lambda (node) (str (js-call "  " :repeat depth) "└─ " (nativeGet node "tool") " · " (nativeGet node "title")
+        (lambda (node) (str (js-call "  " :repeat depth) "└─ " (sessionHeading node)
           " [已登记，归属未原生确认] " (nativeGet node "native_session_id") "\n"
           (renderChildren nodes (nativeGet node "session_key") (1+ depth))))) :join "")))
   (defun commandText (context event scope)

@@ -1,5 +1,5 @@
 (module dj.tests.integration.desktop
-  (import "../../src/core/native.eli" nativeGet nativeSetTimeout)
+  (import "../../src/core/native.eli" nativeGet nativeSetTimeout nativeClearTimeout)
   (import "../../src/service/config.eli" validateStructure)
   (import "../../src/delivery/envelope.eli" renderEnvelope)
   (import "../../src/delivery/snapshot.eli" unpackEnvelope)
@@ -538,6 +538,19 @@
                 (js-object :deadline (+ (performance/now) 2000))))))
                 (js-call (expect (nativeGet live "live_receiver")) :toBe t)
                 (js-call (expect (nativeGet live "title")) :toBe "Codex native fixture"))
+              (let ((db (new Database (nativeGet endpoint "history_database"))) (timer nil))
+                (try
+                  (setq timer (nativeSetTimeout (lambda ()
+                    (js-call (js-call db :query "UPDATE threads SET name=? WHERE id=?")
+                      :run "Renamed fixture" "codex-thread")) 75))
+                  (let ((named (await (js-call port :probe (js-object :native_session_id "codex-thread") endpoint
+                    (js-object :deadline (+ (performance/now) 2000) :expected_codex_title "Renamed fixture")))))
+                    (js-call (expect (nativeGet named "title")) :toBe "Renamed fixture"))
+                  (finally
+                    (nativeClearTimeout timer)
+                    (js-call (js-call db :query "UPDATE threads SET name=? WHERE id=?")
+                      :run "Codex native fixture" "codex-thread")
+                    (js-call db :close))))
               (js-call (expect (js-length (nativeGet last "items"))) :toBe 0)
               (js-call (expect (nativeGet last "complete")) :toBe t))
             (finally (await (js-call port :close)))))

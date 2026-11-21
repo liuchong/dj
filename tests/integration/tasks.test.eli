@@ -60,12 +60,18 @@
           (try
             (js-call (js-call db :query "INSERT INTO work_items(delivery_id,state,expires_at,payload) VALUES (?,'completed','2099-01-01T00:00:00.000Z',?)")
               :run id (JSON/stringify (js-object :delivery_id id :state "completed" :reason "lease_expired")))
+            (js-call (js-call db :query "UPDATE sessions SET payload=json_set(payload,'$.title',?) WHERE native_session_id='s1'")
+              :run "Old task preview\nResume an unrelated timer")
             (finally (js-call db :close))))
         (js-call (expect (nativeGet (nativeGet (await (callOk f "O" "task.tree" (js-object :delivery_id id))) "task") "task_state")) :toBe "accepted_not_confirmed_complete")
         ;; Deterministic IM commands use the same persisted source and ordinary outbound queue.
         (let ((event (command "task-command" "/dj tasks" "ou_admin")))
           (await (js-call f :ingest event)) (await (js-call f :tick))
           (js-call (expect (js-length (nativeGet (nativeGet f "lark") "sent"))) :toBe 1)
+          (let* ((sent (aref (nativeGet (nativeGet f "lark") "sent") 0))
+            (text (nativeGet (nativeGet (nativeGet sent "outbound") "content") "text")))
+            (js-call (expect (js-call text :includes "└─ opencode [accepted]")) :toBe t)
+            (js-call (expect (js-call text :includes "Old task preview")) :toBe false))
           (await (js-call f :ingest event)) (await (js-call f :tick))
           (let ((db (new Database (resolve (nativeGet f "root") "state/dj.sqlite"))))
             (try (js-call db :run "UPDATE task_commands SET state='prepared' WHERE state='recorded'")

@@ -46,13 +46,14 @@
             :instance_id "oc-existing" :instance_epoch "epoch-1" :title "isolated-peer" :workspace_ref "ws-test"
             :visibility (js-array "live") :runtime_state "idle" :live_receiver t
             :model_selection (js-object :provider_id undefined :model_id undefined :variant undefined)))))))))
-  (defasync register (f session)
+  (defasync register (f session &optional display-name)
     (let* ((page (await (callOk f "A" "agent.discover" (js-object :tool "opencode" :scope "live"))))
       (candidate (js-call (nativeGet page "items") :find (lambda (row) (= (nativeGet row "native_session_id") session)))))
       (await (callOk f "A" "agent.register" (js-object :candidate_ref (nativeGet candidate "candidate_ref")
-        :display_name (str "receiver-" session) :binding_mode "existing" :idempotency_key (str "register-" session))))))
+        :display_name (or display-name (str "receiver-" session)) :binding_mode "existing" :idempotency_key (str "register-" session))))))
   (withCase "T33.many-subscribers.integration" setup (async (f)
-    (let* ((a (await (register f "s1"))) (b (await (register f "s2"))) (c (await (register f "s-pull")))
+    (let* ((a (await (register f "s1" "Unrelated archived prompt\nResume an old timer")))
+      (b (await (register f "s2" (js-call "x" :repeat 200)))) (c (await (register f "s-pull")))
       (who (await (callOk f "A" "agent.whoami" (js-object))))
       (sa (await (subscribe f a "lark"))) (sb (await (subscribe f b "lark")))
       (source (await (callOk f "A" "conversation.resolve" (js-object :connection_id "lark" :chat_id "c1" :thread_id nil))))
@@ -74,11 +75,15 @@
           (others (nativeGet hints "subscribers")))
           (js-call (expect (nativeGet hints "basis")) :toBe "same_event")
           (js-call (expect (js-length others)) :toBe 2)
+          (js-call (expect (js-call others :filter (lambda (o) (object-has? o :display_name)))) :toEqual
+            (js-call others :filter (lambda (o) (= (nativeGet o "native_session_id") "s-pull"))))
           (js-call (expect (js-call others :some (lambda (o) (= (nativeGet o "native_session_id") (nativeGet (nativeGet envelope "recipient") "native_session_id"))))) :toBe false))))
       (let* ((claimed (await (callOk f "A" "subscription.pull" (js-object :agent_id (nativeGet c "agent_id") :idempotency_key "claim-shared"))))
         (item (nativeGet claimed "item")) (hints (nativeGet (nativeGet item "envelope") "subscriber_hints")))
         (js-call (expect (nativeGet claimed "empty")) :toBe false)
         (js-call (expect (js-length (nativeGet hints "subscribers"))) :toBe 2)
+        (js-call (expect (js-call (nativeGet hints "subscribers") :every
+          (lambda (o) (not (object-has? o :display_name))))) :toBe t)
         (await (callOk f "A" "subscription.ack" (js-object :claim_ref (nativeGet item "claim_ref") :disposition "consumed" :idempotency_key "ack-shared"))))
       (await (callOk f "A" "subscription.delete" (js-object :agent_id (nativeGet a "agent_id")
         :expected_revision (nativeGet sa "revision") :idempotency_key "unsubscribe-only-a")))

@@ -1,5 +1,11 @@
 (module dj.sessions.models
   (import "../core/native.eli" nativeGet nativeTypeOf)
+  ;; Automatic notices carry compact labels and exact IDs. Free-form names stay in explicit queries.
+  (defun compactSessionLabel (value)
+    (when (and (= (nativeTypeOf value) "string") (<= (js-length value) 160)
+               (not (js-call (new globalThis.RegExp "[\\r\\n\\u2028\\u2029]") :test value)))
+      (let ((label (js-call value :trim)))
+        (when (> (js-length label) 0) label))))
   (defun modelValue (value)
     (if (and (= (nativeTypeOf value) "string") (> (js-length value) 0)
              (<= (js-length value) 512)) value nil))
@@ -33,4 +39,4 @@
         :model_selection selection
         :stale (or (= (nativeGet selection "source") "subscriber_report") (not (nativeGet session "observation_expires_at"))
           (<= (Date/parse (nativeGet session "observation_expires_at")) (Date/parse now))))))
-  (export modelSelection nativeModelSelection subscriberMetadata))
+  (export modelSelection nativeModelSelection subscriberMetadata compactSessionLabel))
