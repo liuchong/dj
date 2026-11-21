@@ -166,7 +166,7 @@
               (sources (js-array))
               (budget (nativeGet args "limit" 50))
               (reads 0)
-              (coverage t))
+              (coverage (not (nativeGet checkpoint "coverage_partial"))))
             (let
               (
                 (frozen
@@ -219,16 +219,22 @@
                                 (nativeCallContext context)))))
                         (setq pending (js-call (nativeGet page "items" (js-array)) :slice))
                         (put checkpoint :native_cursor (nativeGet page "next_cursor" nil))
-                        (put checkpoint :source_complete (= (nativeGet page "complete") t))
-                        (unless (= (nativeGet page "complete") t) (setq coverage false)))
+                        (let* ((complete (= (nativeGet page "complete") t))
+                               (partial (or (= (nativeGet page "coverage") "partial")
+                                          (and (not complete) (not (nativeGet page "next_cursor"))))))
+                          (put checkpoint :source_coverage (if (and complete (not partial)) "covered" "partial"))
+                          (put checkpoint :source_reason (nativeGet page "reason" nil))
+                          (when partial (put checkpoint :coverage_partial t))))
                       (catch error
                         (when (eq error djReturn1Token) (throw error))
-                        (setq coverage false)
-                        (put checkpoint :source_complete t)
+                        (put checkpoint :coverage_partial t)
+                        (put checkpoint :source_coverage "partial")
+                        (put checkpoint :source_reason nil)
                         (put checkpoint :native_cursor nil)))
                     (progn
-                      (setq coverage false)
-                      (put checkpoint :source_complete t)
+                      (put checkpoint :coverage_partial t)
+                      (put checkpoint :source_coverage "partial")
+                      (put checkpoint :source_reason nil)
                       (put checkpoint :native_cursor nil))))
                 (while (and (> (js-length pending) 0) (< (js-length items) budget))
                   (let*
@@ -297,16 +303,12 @@
                           :push
                           (js-object :resource_key (nativeGet session "session_key")))))))
                 (put checkpoint :pending (sanitizePending pending))
-                (js-call
-                  sources
-                  :push
-                  (js-object
-                    :source_id
-                    (nativeGet instance "instance_id")
-                    :tool
-                    tool
-                    :coverage
-                    (if coverage "covered" "partial")))
+                (let* ((source-coverage (nativeGet checkpoint "source_coverage" "covered"))
+                       (reason (nativeGet checkpoint "source_reason"))
+                       (source (js-object :source_id (nativeGet instance "instance_id") :tool tool :coverage source-coverage)))
+                  (when (= source-coverage "partial") (setq coverage false))
+                  (when (= (nativeTypeOf reason) "string") (put source :reason reason))
+                  (js-call sources :push source))
                 (when
                   (and (= (js-length pending) 0) (not (nativeGet checkpoint "native_cursor")))
                   (setq source-index (1+ source-index))

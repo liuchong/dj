@@ -78,7 +78,7 @@ delivery_policy 仅 busy/offline/ttl_seconds，默认 steer/hold；busy=queue �
 {"instance_id":"inst_example","expected_instance_epoch":"epoch_example","workspace_ref":"opencode-workspace-<发现所得摘要>","directory":"/absolute/project","title":"issue-123","idempotency_key":"create-example-2"}
 ```
 
-当前能力：OpenCode、Cursor native_api、Antigravity、Kimi/DSH 保留各自已有宿主创建路径。Codex 由已有原生 Node 工具宿主加载 DJ 接收端，配置 control_manifest_path，通过平台鉴权的 App Tools 接口创建/改名；必须提供明确非空 content，native_queued 与 initial_input_receipt_key 表示一次原生创建已同时受理首条消息，不再重复 session.send。Claude Desktop 通过原生 LocalSessions 创建/改名，CLI inbox 仍仅通知已有会话。Pi 接收扩展在同一宿主内创建独立 SDK 会话，原交互会话保持；空会话按 Pi 首条 assistant 后保存历史。模型覆盖以 instance.get 的实际能力为准，未实现参数明确拒绝。接线及宿主退出边界见 clients.md 与运行包 connectors/codex、connectors/pi 的说明。
+当前能力：OpenCode、Cursor native_api、Kimi/DSH 有各自的宿主创建路径。Antigravity 创建需要当前桌面实例能通过原生认证，先核对 agent.discover 的 coverage 和 reason。Codex 由已有原生 Node 工具宿主加载 DJ 接收端，配置 control_manifest_path，通过平台鉴权的 App Tools 接口创建/改名；必须提供明确非空 content，native_queued 与 initial_input_receipt_key 表示一次原生创建已同时受理首条消息，不再重复 session.send。Claude Desktop 通过原生 LocalSessions 创建/改名，CLI inbox 仍仅通知已有会话。Pi 接收扩展在同一宿主内创建独立 SDK 会话，原交互会话保持；空会话按 Pi 首条 assistant 后保存历史。模型覆盖以 instance.get 的实际能力为准，未实现参数明确拒绝。接线及宿主退出边界见 clients.md 与运行包 connectors/codex、connectors/pi 的说明。
 
 不提供 content 则只创建会话；提供 content（纯文本）时要求额外 session.send 权限，创建成功后由持久 outbox 向准确新会话发送一次。lifecycle 的 ready 仅表示创建成功；initial_input_state=pending/queued/blocked 和 initial_delivery_id 分别表示待受理、已记入投递及被拒绝，具体送达看 delivery.get。进程恢复后用稳定幂等键找回首条投递，不另建对话或重复输入。也可在创建后单独 send。不得捏造占位 prompt、复制权限、安装 Skill 或注册订阅。Cursor 必须使用实际 Desktop 接口；CLI-only 证据不代替 Desktop。OpenCode 的创建也不证明新会话已成为桌面当前 Tab。
 

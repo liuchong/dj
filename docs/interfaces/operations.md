@@ -69,6 +69,8 @@ agent.register 的 recipient_principal_id 仅操作员代登记时允许且必�
 
 agent.discover 继续为登记核对返回 Candidate；agent.list 只列已登记 AgentTarget。跨全部/若干工具会话列表和检索使用 session.list/search，不要求先 register。session.send 受理返回 Delivery，message.send/reply 返回 IM Outbound；启动/创建返回 LifecycleAction。operation.get.resource_refs 指明对象类型，不让调用者猜 get 操作。所有新操作沿用台账原子受理与原键重放。
 
+`agent.discover` 的 `complete` 表示分页结束。用 `coverage_complete` 和 `sources[].coverage` 判断原生来源是否查到，部分来源会给出 `reason`。空列表加 `coverage_complete=false` 表示本次发现范围不完整。Antigravity 的 `antigravity_desktop_auth_unavailable` 表示 DJ 无法以桌面接口要求的方式认证现有实例。
+
 ## 规则与提交
 
 每个会话或分发组使用一个订阅槽位。通过 `rules[]` 分别定义来源、事件类型和组合条件，命中多条分支时只生成一次通知。直订先于组选人，按规范事件与精确会话合并推送和拉取。详细字段和优先级见 [单线订阅](../specs/0035-single-line-subscriptions.md)。
