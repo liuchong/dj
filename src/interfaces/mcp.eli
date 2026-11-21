@@ -125,16 +125,7 @@
                         :type
                         "text"
                         :text
-                        (if (nativeGet safe "ok")
-                          (str
-                            operation
-                            ": "
-                            (nativeGet safe "effect_state")
-                            "; inspect returned resource IDs for current state.")
-                          (str
-                            (nativeGet (nativeGet safe "error") "code")
-                            "; effect_state="
-                            (nativeGet safe "effect_state"))))))))
+                        (JSON/stringify safe))))))
               (js-call
                 server
                 :projectCallToolResult

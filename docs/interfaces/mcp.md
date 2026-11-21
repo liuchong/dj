@@ -25,7 +25,7 @@ MCP 入口使用锁定的 `@modelcontextprotocol/server` 2.3.1 和 stdio 传输�
 
 其余逐一按同一规则生成独立工具，不实现万能 dj_execute，也不把多个操作塞进自由字符串 action。schema 使用 object + additionalProperties=false，字段、必填、默认值和限制取自统一契约。枚举使用精确字符串，不让模型传入任意 shell。
 
-每个工具声明 inputSchema 和 outputSchema。正常及领域失败在 structuredContent 返回统一 envelope，同时提供简短文本摘要；领域失败设置 isError=true。JSON-RPC 协议级错误仅用于无法识别方法/参数等协议问题，不混淆成厂商业务错误。[Tools](https://modelcontextprotocol.io/specification/2026-07-28/server/tools)
+每个工具声明 inputSchema 和 outputSchema。成功与领域失败都返回同一个统一结果。structuredContent 供程序直接读取，文本内容是该结果的 JSON，供只读取 MCP 文本的客户端使用。领域失败设置 isError=true，无法识别方法等协议问题使用 JSON-RPC 错误。[MCP Tools](https://modelcontextprotocol.io/specification/2026-07-28/server/tools)
 
 只读工具标 readOnlyHint=true；管理和发送标 false。destructiveHint/idempotentHint 依据实际语义：带服务幂等键的创建/发送可声明幂等，但“幂等”不等于没有外部效果。annotations 是提示，不能替代服务端授权。
 

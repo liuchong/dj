@@ -981,6 +981,8 @@
               false)
             (js-call (expect (nativeGet send "outputSchema")) :toBeDefined)
             (js-call (expect (nativeGet raw "isError")) :toBe t)
+            (js-call (expect (JSON/parse (nativeGet (aref (nativeGet raw "content") 0) "text")))
+              :toEqual (nativeGet raw "structuredContent"))
             (js-call
               (expect (nativeGet (nativeGet raw "structuredContent") "effect_state"))
               :toBe
@@ -989,6 +991,10 @@
               (expect (nativeGet (nativeGet (nativeGet raw "structuredContent") "error") "code"))
               :toBe
               "invalid_argument")
+            (let* ((ok (await (js-call client :request "tools/call" (js-object :name "dj_agent_whoami" :arguments (js-object)))))
+                   (body (JSON/parse (nativeGet (aref (nativeGet ok "content") 0) "text"))))
+              (js-call (expect body) :toEqual (nativeGet ok "structuredContent"))
+              (js-call (expect (nativeGet (nativeGet body "data") "principal_id")) :toBe "O"))
             (let ((protocol-error false))
               (try
                 (await (js-call client :request "not-a-protocol-method" (js-object)))

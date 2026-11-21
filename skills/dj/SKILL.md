@@ -190,7 +190,7 @@ metadata:
 - pull: message.list/search/get 查询获准来源，delivery.list/get 查询原生投递；订阅待办使用 delivery_mode=pull 与 subscription.pull/ack。领取需要订阅目标对应的调用身份和 subscription.consume 授权；同主体可登记多个目标，须明确 `agent_id`（组订阅另传 `group_id`），不借 operator 凭据。按[工作流](references/workflows.md)处理租约与原键，不把消费确认当作任务完成。
 - callbacks: Codex / Cursor 的可选消费回调使用各自原生事件，配置仅生成、不自动安装；按[本机回调](references/callbacks.md)核对原会话与独立主体，显式确认领取，不以回调代替 DJ 主动通知或任务完成。
 - schema: 先读具体操作的--help或schema，不从ID示例猜参数。
-- result: 即使协议壳合法，业务失败也须读取structuredContent中的统一Result；HTTP 200或MCP有响应不证明发送成功。
+- result: MCP 的 structuredContent 与文本 JSON 提供同一业务结果，读取任一即可。先检查 ok 和 effect_state，再使用返回的准确引用或核对投递状态。
 
 ## 按需参考
 
