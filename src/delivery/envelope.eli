@@ -139,7 +139,7 @@
             ((= tool "codex")
               (let ((images (codexAttachmentInputs (nativeGet envelope "attachments" (js-array)))))
                 (if (> (js-length images) 0) (js-object :text message :images images) (js-object :text message))))
-            ((js-call (js-array "cursor" "claude" "antigravity" "kimi" "dsh") :includes tool)
+            ((js-call (js-array "cursor" "claude" "antigravity" "kimi" "dsh" "openclaw" "hermes") :includes tool)
               (js-object :text message))
             (t (throw (new globalThis.TypeError "unsupported native input codec")))))
         (wire (JSON/stringify value)))

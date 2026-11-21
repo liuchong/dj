@@ -15,7 +15,7 @@
   (import "../policy/registry.eli" reconcilePrincipals)
   (import "./ownership.eli" ownerGuard)
   (defconst knownTools
-    (js-array "opencode" "pi" "codex" "claude" "cursor" "antigravity" "kimi" "dsh"))
+    (js-array "opencode" "pi" "codex" "claude" "cursor" "antigravity" "kimi" "dsh" "openclaw" "hermes"))
   (defun connectionIdentity
     (connection)
     (hashValue

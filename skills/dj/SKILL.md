@@ -257,7 +257,7 @@ metadata:
 
 ## 原生会话控制
 
-- hosts: 创建和改名优先查询 instance.get 的实际 capabilities；支持的已有宿主包括 OpenCode、Cursor、Antigravity、Codex 原生工具宿主接收端、Claude Desktop 与加载 DJ 扩展的 Pi。Claude inbox 只通知已有 CLI 会话；Pi 的空会话历史由原生首次 assistant 后保存。具体接线见 [clients.md](references/clients.md)。
+- hosts: 创建和改名优先查询 instance.get 的实际 capabilities；支持的已有宿主包括 OpenClaw Gateway、Hermes 后台服务、OpenCode、Cursor、Antigravity、Codex 原生工具宿主接收端、Claude Desktop 与加载 DJ 扩展的 Pi。Claude inbox 只通知已有 CLI 会话；Pi 的空会话历史由原生首次 assistant 后保存。具体接线见 [clients.md](references/clients.md)。
 - outcome: DJ 未接通或不能满足目标时，可使用自身原生工具、其他接口或已安装的相关 Skill；无需安装特定外部工具。已受理或 unknown 的操作先核对原结果，避免重复创建或发送。
 
 ## 通知归并与身份绑定

@@ -12,6 +12,8 @@ DJ 把 IM 消息按规则送进已有的 AI 编程对话，并为 AI 提供读�
 
 DJ 负责身份核对、订阅匹配、持久受理和投递；AI 负责判断是否处理、怎样处理、是否回复。DJ 自己不调用模型，也不会把 AI 的普通输出自动转发给 IM。
 
+使用本机 OpenClaw Gateway 或 Hermes 后台服务时，可由 DJ 发现、创建、改名和向原生对话投递，并读取历史。[接线指南](docs/adapters/local-gateways.md)
+
 ## 能做什么
 
 - **统一会话控制**：发现、创建、改名、读取和通知原对话；Cursor 可显式受控重启，由调用方 AI 续接原工作；创建可带明确首条消息，原生能力与真实接线范围见[会话控制](docs/specs/0030-native-session-creation.md)。

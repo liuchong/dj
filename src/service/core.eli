@@ -34,6 +34,7 @@
   (import "../adapters/im/lark.eli" createReadLimiter)
   (import "../connections/manager.eli" createConnectionManager)
   (import "../adapters/agent/opencode-http.eli" createOpenCodePort)
+  (import "../adapters/agent/gateway-port.eli" createGatewayPort)
   (import "../adapters/agent/desktop.eli" createDesktopPort)
   (import "../adapters/agent/pi-native.eli" createPiNativePort)
   (import "../adapters/agent/antigravity.eli" createAntigravityPort)
@@ -245,6 +246,8 @@
       (let ((instance (js-call repository :get "instances" (nativeGet endpoint "instance_id"))))
         (Object/assign (js-object) endpoint (js-object :instance_epoch (nativeGet instance "instance_epoch")))))))
     (factories (new globalThis.Map (js-array
+      (js-array "openclaw" (lambda (tool selected) (createGatewayPort tool selected ports)))
+      (js-array "hermes" (lambda (tool selected) (createGatewayPort tool selected ports)))
       (js-array "kimi" (lambda (tool selected) (createKimiDshPort tool (js-object :endpoints selected) ports)))
       (js-array "dsh" (lambda (tool selected) (createKimiDshPort tool (js-object :endpoints selected) ports)))
       (js-array "opencode" (lambda (tool selected) (createOpenCodePort (js-object :endpoints selected :profiles (js-array) :existing_only t) ports)))

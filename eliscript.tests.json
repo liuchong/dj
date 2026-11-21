@@ -78,6 +78,7 @@
     "tests/unit/controller.test.eli",
     "tests/integration/recipients.test.eli",
     "tests/unit/recipients.test.eli",
+    "tests/integration/local-gateways.test.eli",
     "tests/integration/opencode-live.test.eli",
     "tests/integration/many-subscribers.test.eli",
     "tests/integration/swift-hosts.test.eli",

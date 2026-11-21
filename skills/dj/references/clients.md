@@ -33,6 +33,8 @@ Kimi Work / Code Web 与 DSH Desktop / Web 的形态、既有实例接收及调�
 | Codex | ~/.codex/config.toml 的 mcp_servers.dj；项目配置遵守原客户端信任范围 | 将 config 命令 data.config 的 TOML 合并，再查看工具目录 |
 | Cursor | .cursor/mcp.json 或 ~/.cursor/mcp.json 的 mcpServers.dj | 合并 JSON dj 项；在 Desktop 核对 dj_service_status，不用 Agent CLI 代验 |
 | Claude Code | 项目 .mcp.json 的 mcpServers.dj；用户级使用原生 MCP 设置 | 合并 JSON dj 项，保留原审批；不改 settings 权限 |
+| OpenClaw | openclaw.json 的 mcp.servers.dj | 以本机 stdio 连接 DJ |
+| Hermes | config.yaml 的 mcp_servers.dj | 以本机 stdio 连接 DJ |
 | OpenCode | opencode.json 的 mcp.dj，type=local、command 为数组 | 合并生成的 OpenCode 配置；Code Mode 下在 execute 内通过 search/tools.dj.* 调用，或通过 shell 调用 ~/.dj/current/bin/dj CLI |
 | Antigravity/agy | ~/.gemini/config/mcp_config.json 或 .agents/mcp_config.json 的 mcpServers.dj | 合并 dj 项，通过原生 MCP 工具目录调用 |
 | Pi / agents | 本模块不宣称宿主有内置 MCP 配置 | 通过已授权工具调用 DJ CLI；宿主另有 MCP 扩展时按其实际接口配置 |
@@ -75,6 +77,12 @@ The service supports an existing Claude Code native inbox and an existing Antigr
 - antigravity_input: 原生端点已接通时，Antigravity 的 steer 使用 NEXT_INVOCATION，忙时在下一次模型调用前输入。显式 queue 使用 WHEN_IDLE，积压按最多 32 条连续受理。核对 accepted 回执，继续等待处理结果。保持 accepted、unknown 和超期记录的现有防重规则。
 - antigravity_desktop_auth_unavailable: DJ 使用获准的同用户 Desktop 进程及其原生 HTTPS 认证，直接创建和投递。遇到 `agent.discover` 的此原因时，保留登记和订阅，报告当前实例无法认证。桌面对话发回消息用配置好的 DJ MCP/API，收发两端都走即时接口。
 
+
+## OpenClaw 与 Hermes 本机实例
+
+- 使用 `agent.discover` 核对已运行的 `openclaw` 或 `hermes` 实例，使用原生 ID 通过 `session.resolve` 取得 `session_ref`，可创建、改名和向该对话发送。
+- `delivery.get` 的 `accepted` 表示原生后台接受输入。`catalog.refresh` 加 `session.message.list` 可读回原输入及回复。Hermes 工作中的后续输入沿原生队列处理。
+- 若没有可用端点，检查服务状态和接线配置。聊天输入继续经原连接，实例启动由操作者管理。
 
 ## 控制接口
 

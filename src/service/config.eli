@@ -1,4 +1,5 @@
 (module dj.service.config
+  (import "../adapters/agent/gateway-channel.eli" localGatewayUrl)
   (import "../core/native.eli" NativeNumber nativeBitAnd nativeGet)
   (import "ajv/dist/2020.js" :default Ajv2020)
   (import "node:path" resolve dirname relative isAbsolute)
@@ -156,7 +157,7 @@
     (obj
       (js-object
         :tool
-        (enumOf "opencode" "pi" "codex" "cursor" "claude" "antigravity" "kimi" "dsh")
+        (enumOf "opencode" "pi" "codex" "cursor" "claude" "antigravity" "kimi" "dsh" "openclaw" "hermes")
         :service_file id
         :desktop_registry_path id
         :server_key id
@@ -505,8 +506,13 @@
                              (not (nativeGet endpoint "process_helper_ref"))))
                   (throw (new globalThis.TypeError "Receiver loading requires a Codex endpoint and both native helpers")))
                 (when (and (nativeGet endpoint "workspace_scope")
-                           (not (js-call (js-array "codex" "antigravity" "opencode") :includes tool)))
-                  (throw (new globalThis.TypeError "workspace_scope applies only to Codex, Antigravity or OpenCode endpoints")))
+                           (not (js-call (js-array "codex" "antigravity" "opencode" "openclaw" "hermes") :includes tool)))
+                  (throw (new globalThis.TypeError "workspace_scope is unsupported by this endpoint")))
+                (when (js-call (js-array "openclaw" "hermes") :includes tool)
+                  (unless (and (nativeGet endpoint "directory") (nativeGet endpoint "workspace_ref")
+                    (nativeGet endpoint "base_url") (nativeGet endpoint "credential_ref"))
+                    (throw (new globalThis.TypeError "Agent gateway requires a loopback origin, workspace and credential reference")))
+                  (localGatewayUrl (nativeGet endpoint "base_url")))
                 (when (and (= tool "opencode") (or (nativeGet endpoint "service_file") (nativeGet endpoint "desktop_registry_path")))
                   (unless (and (nativeGet endpoint "directory") (nativeGet endpoint "workspace_ref")
                     (or (nativeGet endpoint "service_file") (nativeGet endpoint "base_url"))

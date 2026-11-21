@@ -1,0 +1,118 @@
+(module dj.tests.integration.local-gateways
+  (import "../../src/core/native.eli" nativeGet)
+  (import "../../src/host/bun/io.eli" createHostPorts)
+  (import "../../src/adapters/agent/gateway-port.eli" createGatewayPort)
+  (import "../support/case.eli" withCase)
+  (import "bun:test" expect)
+  (import "node:path" resolve)
+
+  (defconst directory (resolve ".local/tests"))
+  (defconst session-id "original-chat")
+  (defconst live-id "runtime-handle")
+  (defconst session-key "agent:main:original-chat")
+  (defconst token "fixture-gateway-token")
+
+  (defun gatewayFixture (tool requests wires)
+    (let ((title "Fixture chat") (hermes (= tool "hermes")))
+      (Bun/serve (js-object :hostname "127.0.0.1" :port 0
+        :fetch (lambda (request server)
+          (let* ((url (new globalThis.URL (nativeGet request "url"))) (path (nativeGet url "pathname")))
+            (cond
+              ((and hermes (= path "/api/ws") (= (js-call (nativeGet url "searchParams") :get "token") token))
+                (unless (js-call server :upgrade request) (new globalThis.Response "upgrade required" (js-object :status 400))))
+              ((and (not hermes) (= path "/"))
+                (unless (js-call server :upgrade request) (new globalThis.Response "upgrade required" (js-object :status 400))))
+              ((not (= (js-call (nativeGet request "headers") :get "authorization") (str "Bearer " token)))
+                (new globalThis.Response "forbidden" (js-object :status 403)))
+              ((= path "/api/sessions")
+                (js-call globalThis.Response :json (js-object :sessions (js-array (js-object
+                  :id session-id :title title :cwd directory :archived 0)) :total 1)))
+              ((= path (str "/api/sessions/" session-id))
+                (js-call globalThis.Response :json (js-object :id session-id :title title :cwd directory :archived 0)))
+              ((= path (str "/api/sessions/" session-id "/messages"))
+                (js-call globalThis.Response :json (js-object :session_id session-id :messages (js-array
+                  (js-object :message_uid "assistant-message" :role "assistant" :content "Recorded reply")))))
+              (t (new globalThis.Response "not found" (js-object :status 404))))))
+        :websocket (js-object
+          :open (lambda (socket)
+            (js-call socket :send (JSON/stringify
+              (if hermes (js-object :jsonrpc "2.0" :method "event" :params
+                  (js-object :type "gateway.ready" :payload (js-object :replay_epoch "fixture-boot")))
+                (js-object :type "event" :event "connect.challenge")))))
+          :message (lambda (socket raw)
+            (let* ((frame (JSON/parse raw)) (method (nativeGet frame "method")) (params (nativeGet frame "params"))
+              (openclaw-row (lambda () (js-object :key session-key :sessionId session-id :displayName title
+                :workspaceDir directory :hasActiveRun false)))
+              (result (cond
+                ((= method "connect")
+                  (unless (= (nativeGet (nativeGet params "auth") "token") token)
+                    (throw (new globalThis.Error "fixture authentication mismatch")))
+                  (js-object :protocol 4 :server (js-object :bootId "fixture-boot")
+                    :auth (js-object :scopes (js-array "operator.read" "operator.write"))))
+                ((= method "sessions.list") (js-object :sessions (js-array (funcall openclaw-row)) :hasMore false))
+                ((= method "sessions.describe") (js-object :session (funcall openclaw-row)))
+                ((= method "sessions.create") (setq title (nativeGet params "displayName"))
+                  (js-object :ok t :sessionId session-id :key session-key))
+                ((= method "sessions.patch") (setq title (nativeGet params "label")) (js-object :ok t))
+                ((= method "chat.send") (js-object :runId (nativeGet params "idempotencyKey") :status "started"))
+                ((= method "chat.history") (js-object :sessionId session-id :hasMore false :messages
+                  (js-array (js-object :__openclaw (js-object :id "assistant-message") :role "assistant"
+                    :content (js-array (js-object :type "text" :text "Recorded reply"))))))
+                ((= method "session.create") (js-object :stored_session_id session-id :session_id live-id
+                  :info (js-object :cwd directory)))
+                ((= method "session.active_list") (js-object :sessions (js-array)))
+                ((= method "session.resume") (js-object :session_key session-id :session_id live-id))
+                ((= method "session.title") (setq title (nativeGet params "title"))
+                  (js-object :pending false :title title))
+                ((= method "prompt.submit") (js-object :status "streaming" :user_row_id 37))
+                (t (throw (new globalThis.Error (str "Unknown fixture method " method)))))))
+              (unless (= method "connect") (js-call requests :set method params))
+              (js-call wires :add socket)
+              (js-call socket :send (JSON/stringify (if hermes
+                (js-object :jsonrpc "2.0" :id (nativeGet frame "id") :result result)
+                (js-object :type "res" :id (nativeGet frame "id") :ok t :payload result)))))))))))
+
+  (defasync exerciseGateway (tool)
+    (let* ((requests (new globalThis.Map)) (wires (new globalThis.Set))
+      (server (gatewayFixture tool requests wires))
+      (host (createHostPorts))
+      (endpoint (js-object :instance_id tool :native_namespace tool :workspace_scope "instance"
+        :directory directory :workspace_ref "fixture" :workspace_refs (js-array "fixture")
+        :base_url (str "http://127.0.0.1:" (nativeGet server "port")) :credential_ref "fixture-token"))
+      (port (createGatewayPort tool (js-array endpoint) host)) (context (js-object)))
+      (put host :credentials (js-object :resolve (async (ref) token)))
+      (try
+        (let* ((health (await (js-call port :probeInstance endpoint context)))
+          (epoch (nativeGet health "instance_epoch"))
+          (page (await (js-call port :listSessions (js-object) nil (js-object) context))))
+          (js-call (expect (nativeGet health "state")) :toBe "ready")
+          (js-call (expect (nativeGet (aref (nativeGet page "items") 0) "native_session_id")) :toBe session-id)
+          (put endpoint :instance_epoch epoch)
+          (put context :title "Fixture new chat")
+          (let* ((creation (await (js-call port :create endpoint "fixture" "create-fixture" context)))
+            (session (nativeGet creation "session"))
+            (renamed (await (js-call port :rename session "Fixture renamed chat" context)))
+            (sent (await (js-call port :submit session (js-object :schema_version 1 :kind "external_message" :origin "direct"
+              :allowed_actions (js-array) :content (js-object :type "text" :text "test input"))
+              "start_idle" "fixture-input" context)))
+            (history (await (js-call port :readMessages session nil (js-object) context))))
+            (js-call (expect (nativeGet creation "state")) :toBe "ready")
+            (js-call (expect (nativeGet (nativeGet renamed "session") "title")) :toBe "Fixture renamed chat")
+            (js-call (expect (nativeGet sent "state")) :toBe "accepted")
+            (js-call (expect (nativeGet (aref (nativeGet history "items") 0) "native_message_id")) :toBe "assistant-message")
+            (if (= tool "hermes")
+              (progn
+                (js-call (expect (nativeGet (js-call requests :get "session.resume") "session_id")) :toBe session-id)
+                (js-call (expect (nativeGet (js-call requests :get "prompt.submit") "session_id")) :toBe live-id))
+              (progn
+                (js-call (expect (nativeGet (js-call requests :get "chat.send") "sessionId")) :toBe session-id)
+                (js-call (expect (nativeGet (js-call requests :get "chat.send") "deliver")) :toBe false)))
+            (js-call (expect (nativeGet wires "size")) :toBe 1)))
+        (finally
+          (js-call port :close)
+          (await (js-call server :stop t))))))
+  (withCase "T38.local-agent-gateways.integration" (lambda () nil)
+    (async (unused)
+      (await (exerciseGateway "openclaw"))
+      (await (exerciseGateway "hermes")))
+    (lambda (unused) nil)))

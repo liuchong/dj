@@ -15,6 +15,9 @@ DJ 只连接已有进程的原生接口，核对实例、原生会话与工作�
 | Claude Code | 同用户进程的原生 UDS 登记与回调 | delivered/held/refused 与无 ACK 分开；普通 Claude Desktop 不替代 Code 会话 |
 | Antigravity | 原应用的 loopback HTTPS/RPC | 核对进程出生、原生会话、工作区及获准凭据；[原生接线](native-inboxes.md) |
 
+| OpenClaw | 本机 Gateway WebSocket | 核对原生会话键与 ID，投递留在对话；[接线指南](local-gateways.md) |
+| Hermes | 本机后台 WebSocket 和 HTTP | 用持久 ID 接续实时会话，区分运行句柄与历史 ID；[接线指南](local-gateways.md) |
+
 真实验证范围见[项目状态](../status.md)。工具列在表中不表示当前机器存在可投递实例，协议夹具也不替代真实接收证据。
 
 ## 能力与身份
@@ -35,7 +38,7 @@ DJ 只连接已有进程的原生接口，核对实例、原生会话与工作�
 
 ## 可选创建与实例生命周期
 
-`session.create` 仅在已有实例确实提供原生创建接口、获准工作区和身份核验通过时受理。创建为空，不附 prompt，不自动登记或订阅。缺少接口时，在生成无法执行的动作前返回 unsupported。
+`session.create` 仅在已有实例确实提供原生创建接口、获准工作区和身份核验通过时受理。可带调用方明确提供的首条消息，创建不自动登记或订阅。缺少接口时，在生成无法执行的动作前返回 unsupported。
 
 正式已有实例端口不因 DJ 停机而关闭用户的客户端。实例启动或停止的接口描述存在，不代表当前配置装配了可执行端口；以能力与权限检查为准。
 
