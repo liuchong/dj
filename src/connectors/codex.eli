@@ -58,7 +58,7 @@
            (socket-path (join root (str (nativeGet options "owner_pid") "-" (js-call epoch :slice 0 13) ".sock")))
            (manifest-path (join root (str (nativeGet options "owner_pid") ".json")))
            (staging-path (join root (str ".register-" epoch)))
-           (server nil) (socket-inode nil) (manifest-inode nil) (closed false) (close nil))
+           (server nil) (socket-inode nil) (closed false) (close nil))
       (unless (and (Number/isSafeInteger (nativeGet options "owner_pid")) (> (nativeGet options "owner_pid") 0)
                    (= (nativeTypeOf (nativeGet options "owner_birth")) "string")
                    (> (js-length (nativeGet options "owner_birth")) 0)
@@ -92,11 +92,13 @@
           (when server
             (js-call server :closeAllConnections)
             (await (new globalThis.Promise (lambda (done) (js-call server :close done)))))
-          (let ((paths (js-array (js-array socket-path socket-inode) (js-array manifest-path manifest-inode))))
-            (await (Promise/all (js-call paths :map (async (pair)
-              (when (aref pair 1)
-                (try (let ((info (await (lstat (aref pair 0)))))
-                  (when (= (nativeGet info "ino") (aref pair 1)) (await (unlink (aref pair 0))))) (catch missing nil)))))))))))
+          ;; The manifest is a replaceable pointer shared by all registrations
+          ;; for this App PID. Old owners must never unlink it during close.
+          (when socket-inode
+            (try
+              (let ((info (await (lstat socket-path))))
+                (when (= (nativeGet info "ino") socket-inode) (await (unlink socket-path))))
+              (catch missing nil))))))
       (await (mkdir root (js-object :recursive t :mode 448)))
       (let ((info (await (lstat root))))
         (unless (and (js-call info :isDirectory) (not (js-call info :isSymbolicLink))
@@ -193,7 +195,6 @@
           :apiVersion "dj-native-control" :process_role "native_app_owner" :pid (nativeGet options "owner_pid") :token token
           :processBirth (nativeGet options "owner_birth") :socketPath socket-path :instanceEpoch epoch :caller_thread_id (nativeGet caller "threadId")))
           (js-object :flag "wx" :mode 384)))
-        (setq manifest-inode (nativeGet (await (lstat staging-path)) "ino"))
         (await (rename staging-path manifest-path))
         (js-object :manifest_path manifest-path :close close)
         (catch error

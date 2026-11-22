@@ -217,6 +217,7 @@
                    (instance (js-call repository :get "instances" (nativeGet session "instance_id")))
                    (port (agentPort context instance))
                    (recovery-allowed (and (not (nativeGet context "creation")) (not (nativeGet context "supervision"))
+                     (= (nativeGet session "tool") "codex")
                      (= (nativeGet (nativeGet args "delivery_policy") "offline") "hold")
                      (supportsNativeEpochRefresh instance port)))
                    (permission (requirePermission context action session))
