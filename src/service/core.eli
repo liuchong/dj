@@ -81,6 +81,7 @@
             (new globalThis.Map)
             :cursors
             (new globalThis.Map)
+            :route_receiver_backoff (new globalThis.Map)
             :routing_busy
             (new globalThis.Set)
             :catalog_sources

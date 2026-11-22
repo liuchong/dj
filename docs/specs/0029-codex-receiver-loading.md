@@ -10,6 +10,10 @@ Codex App 的 send_message_to_thread 经 sendFollowUpMessage 先执行原对话 
 
 每目标每分钟至多发一次加载事件，最多保存256个退避条目；同目标并发合并或明确等待。owner发现由DJ本地定时器限时1秒，不能只依赖原生timeoutMs；超时不证明不存在；加载后至多3次有界重查。取消、TTL、draining、失主和授权照常在提交事务中复核。加载不等于恢复业务；仅提交已获准的新输入。
 
+## 客户端重启
+
+如果 follower socket 已失联，DJ 只采用当前 Codex App 主进程已授权的原生工具宿主接收端。查找按当前 PID 及进程出生标识核验，同一原生会话的目录和 ID 必须经 `read_thread` 确认。送出正文后失去回执按 unknown 处理，只核对原投递。未注册时状态为 `target_receiver_unavailable`，同路下一次检查至少间隔五秒。登记由当前 Codex 原生工具宿主提供，DJ 自行发现已登记的新接收端并保留原会话队列。
+
 ## 工具性状态
 
 session.probe 提供新鲜 live_receiver、runtime_state、receiver_reason、observed_at/stale。session.get 的旧缓存不是当前接收端证据。delivery.get 暴露 blocked_reason、receiver_reason、submitted_at、accepted_at 与原生 receipts。ready/deferred 不等于送达，accepted 不等于模型处理或业务完成，unknown 不等于未发送。

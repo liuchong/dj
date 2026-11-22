@@ -583,6 +583,9 @@
                       claim
                       "deferred"
                       (cond
+                        ((and (not (= (nativeGet observation "live_receiver") t))
+                              (= (nativeGet session "tool") "codex"))
+                          "target_receiver_unavailable")
                         ((= (nativeGet observation "runtime_state") "waiting_permission")
                           "permission_pending")
                         (

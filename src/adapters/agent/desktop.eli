@@ -5,10 +5,11 @@
   (import "../../delivery/envelope.eli" renderEnvelope)
   (import "../../attachments/notification.eli" codexAttachmentInputs cursorAttachmentContext)
   (import "./codex-loader.eli" requestCodexLoad)
+  (import "./codex-control-client.eli" codexControlEndpoint codexControlRequest)
   (import "./cursor-control.eli" cursorCreationId)
   (import "./cursor-native.eli" cursorNativeRequest)
   (import "./cursor-recovery.eli" restartCursorProcess recoverCursorEndpoint)
-  (import "./desktop-transport.eli" desktopError desktopDeadline cursorRequest openCodexChannel readCursorManifest)
+  (import "./desktop-transport.eli" desktopError desktopDeadline cursorRequest openCodexChannel)
   (import "bun:sqlite" Database)
   (import "node:fs/promises" lstat)
   (import "node:path" isAbsolute)
@@ -208,7 +209,7 @@
              :observe "unsupported" :max_input_frame_bytes 262144))
            (endpointFor nil) (instanceScope nil) (workspaceFor nil) (sessionRecord nil) (cursorThreads nil)
            (codexSnapshot nil) (probeWith nil) (probe nil) (listSessions nil) (readMessages nil) (submit nil)
-           (probeInstance nil) (createSession nil) (nativeControl nil))
+           (probeInstance nil) (createSession nil) (nativeControl nil) (probeCodexControl nil))
       (setq endpointFor (lambda (target)
         (when closed (throw (desktopError "desktop_closed")))
         (when (and (nativeGet target "tool") (not (= (nativeGet target "tool") tool)))
@@ -287,6 +288,18 @@
                 (throw (desktopError "desktop_target_mismatch")))
               (await (funcall work channel result)))
             (finally (unless shared (js-call channel :close)))))))
+      (setq probeCodexControl (async (endpoint id context)
+        (let* ((header (await (confirmCodexHeader endpoint id context)))
+               (directory (nativeGet header "cwd")))
+          (unless header (throw (desktopError "desktop_target_mismatch")))
+          (let* ((control (await (codexControlEndpoint endpoint context host)))
+                 (response (await (codexControlRequest control
+                   (js-object :operation "read" :thread id :directory directory) context)))
+                 (row (nativeGet response "data")))
+            (unless (and (= (nativeGet row "id") id) (= (nativeGet row "cwd") directory))
+              (throw (desktopError "desktop_target_mismatch")))
+            (funcall sessionRecord endpoint id (nativeGet header "title" "")
+              (nativeGet row "runtime_state" "unknown") (nativeGet response "instance_epoch") nil directory)))))
       (setq probeWith (async (target binding context &optional shared)
         (try
           (let ((endpoint (funcall endpointFor binding)) (id (nativeGet target "native_session_id")))
@@ -317,9 +330,18 @@
           (catch unavailable
             ;; A saved chat without a loaded owner is still an exact historical
             ;; target. Publish its locator, never invent a live receiver or start it.
-            (let ((historical nil))
-              (when (and (= tool "codex") (or
-                (js-call (js-array "desktop_no_owner" "desktop_timeout" "desktop_owner_timeout" "desktop_rejected" "ENOENT") :includes (nativeGet unavailable "code"))
+            (let* ((historical nil) (controlled nil)
+                   (cause (nativeGet unavailable "code" "desktop_receiver_unavailable")))
+              (when (and (= tool "codex") (not shared))
+                (let ((endpoint (funcall endpointFor binding)))
+                  (when (nativeGet endpoint "control_manifest_path")
+                    (try (setq controlled (await (funcall probeCodexControl endpoint
+                      (nativeGet target "native_session_id") context)))
+                      (catch disconnected
+                        (when (= cause "desktop_transport")
+                          (setq cause (nativeGet disconnected "code" "receiver_control_unavailable"))))))))
+              (when (and (not controlled) (= tool "codex") (or
+                (js-call (js-array "desktop_no_owner" "desktop_timeout" "desktop_owner_timeout" "desktop_rejected" "desktop_transport" "ENOENT") :includes (nativeGet unavailable "code"))
                 (js-call (nativeGet unavailable "code" "") :startsWith "receiver_")))
                 (try
                   (let* ((endpoint (funcall endpointFor binding)) (id (nativeGet target "native_session_id"))
@@ -336,12 +358,11 @@
                           (if (= (nativeGet unavailable "code") "desktop_owner_timeout")
                             "receiver_discovery_timeout" "receiver_not_loaded")))))
                   (catch unreadable nil)))
-              (or historical (js-object :runtime_state
-            (if (js-call (js-array "ENOENT" "desktop_no_owner") :includes (nativeGet unavailable "code"))
-              "offline" "unknown") :live_receiver false :evidence_level "none"
-            :reason (if (js-call (js-array "desktop_bridge_disabled" "desktop_frame_limit")
-                            :includes (nativeGet unavailable "code"))
-              (nativeGet unavailable "code") "desktop_receiver_unavailable"))))))))
+              (when (and historical (js-call (js-array "desktop_transport" "receiver_control_unavailable" "receiver_control_ambiguous") :includes cause))
+                (put historical :receiver_reason cause))
+              (or controlled historical (js-object :runtime_state
+                (if (js-call (js-array "ENOENT" "desktop_no_owner" "desktop_transport") :includes cause) "offline" "unknown")
+                :live_receiver false :evidence_level "none" :reason cause :receiver_reason cause)))))))
       (setq probe (async (target binding context)
         (await (funcall probeWith target binding context))))
       (setq listSessions (async (scope cursor budget context)
@@ -478,7 +499,18 @@
                         (js-object :state "failed" :kind "rejected" :definite_not_sent t :retryable false
                           :evidence_level "native_protocol"))
                       (t (js-object :state "unknown" :kind "unknown" :definite_not_sent false :evidence_level "none")))))
-                (await (funcall codexSnapshot endpoint id context (async (channel result)
+                (if (js-call (nativeGet binding "instance_epoch" "") :startsWith "codex_control_")
+                  (let* ((directory (nativeGet (await (savedCodexHeader endpoint id)) "cwd"))
+                         (control (await (codexControlEndpoint endpoint context host))))
+                    (unless (and directory (= (nativeGet control "instance_epoch") (nativeGet binding "instance_epoch")))
+                      (throw (desktopError "desktop_target_changed")))
+                    (setq started t)
+                    (let ((result (await (codexControlRequest control
+                      (js-object :operation "send" :thread id :directory directory :text text) context))))
+                      (unless (= (nativeGet (nativeGet result "data") "state") "accepted")
+                        (throw (desktopError "desktop_control_send_unknown")))
+                      (js-object :state "accepted" :kind "accepted" :evidence_level "native_protocol")))
+                  (await (funcall codexSnapshot endpoint id context (async (channel result)
                   (unless (and (or (= (codexRuntime (nativeGet result "state")) "idle")
                                  (and (= mode "steer") (js-call (js-array "busy" "waiting_permission") :includes (codexRuntime (nativeGet result "state")))))
                                (= (nativeGet channel "instance_epoch") (nativeGet binding "instance_epoch")))
@@ -490,32 +522,21 @@
                     (answer (await (js-call channel :call (nativeGet request "method")
                       (nativeGet request "parameters") (nativeGet request "version") (nativeGet result "owner")))))
                     (js-object :state "accepted" :kind "accepted" :native_receipt_key (nativeGet answer "requestId")
-                      :evidence_level "native_protocol")))))))
+                      :evidence_level "native_protocol"))))))))
             (catch unavailable
               (js-object :state (if started "unknown" "failed") :kind (if started "unknown" "rejected")
                 :definite_not_sent (not started) :retryable (not started) :evidence_level "none"))))))
       (setq nativeControl (async (instance request context)
-          (let* ((endpoint (funcall endpointFor instance))
-                 (channel (await (openCodexChannel endpoint context))))
-            (try
-              (unless (= (nativeGet channel "instance_epoch") (nativeGet instance "instance_epoch"))
-                (throw (desktopError "desktop_target_changed")))
-              (let* ((transport (js-object :manifest_path (nativeGet endpoint "control_manifest_path")))
-                     (manifest (await (readCursorManifest transport)))
-                     (valid (unless (and (= (nativeGet manifest "tool") "codex")
-                                        (= (nativeGet manifest "apiVersion") "dj-native-control"))
-                              (throw (desktopError "desktop_control_manifest"))))
-                     (wire (await (cursorRequest transport (Object/assign (js-object) request
-                       (js-object :receiver_epoch (nativeGet manifest "instanceEpoch")))
-                       (Object/assign (js-object) context (js-object :expected_epoch nil)))))
-                     (response (js-object :data (nativeGet (nativeGet wire "data") "data")))
-                     (check (await (openCodexChannel endpoint context))))
-                (try
-                  (unless (= (nativeGet check "instance_epoch") (nativeGet channel "instance_epoch"))
-                    (throw (desktopError "desktop_target_changed")))
-                  (put response :instance_epoch (nativeGet channel "instance_epoch")) response
-                  (finally (js-call check :close))))
-              (finally (js-call channel :close))))))
+        (let* ((endpoint (funcall endpointFor instance))
+               (control (await (codexControlEndpoint endpoint context host)))
+               (epoch (nativeGet instance "instance_epoch"))
+               (follower (try (await (openCodexChannel endpoint context)) (catch offline nil))))
+          (try
+            (let ((actual (if follower (nativeGet follower "instance_epoch") (nativeGet control "instance_epoch"))))
+              (unless (= actual epoch) (throw (desktopError "desktop_target_changed")))
+              (let ((response (await (codexControlRequest control request context))))
+                (put response :instance_epoch actual) response))
+            (finally (when follower (js-call follower :close)))))))
       (setq createSession (async (instance workspace key context lookup)
         (if (= tool "codex")
           (let* ((endpoint (funcall endpointFor instance))
@@ -581,8 +602,14 @@
           (let* ((endpoint (funcall endpointFor instance))
                  (epoch (if (= tool "cursor")
                    (nativeGet (await (funcall cursorThreads endpoint context)) "instance_epoch")
-                   (let ((channel (await (openCodexChannel endpoint context))))
-                     (try (nativeGet channel "instance_epoch") (finally (js-call channel :close)))))))
+                   (try
+                     (let ((channel (await (openCodexChannel endpoint context))))
+                       (try (nativeGet channel "instance_epoch") (finally (js-call channel :close))))
+                     (catch offline
+                       (let* ((control (await (codexControlEndpoint endpoint context host)))
+                              (probe (await (codexControlRequest control (js-object :operation "probe") context))))
+                         (unless (= (nativeGet (nativeGet probe "data") "state") "ready") (throw offline))
+                         (nativeGet probe "instance_epoch")))))))
             (js-object :state "ready" :native_namespace (nativeGet endpoint "native_namespace")
               :instance_epoch epoch :evidence_level "native_protocol"))
           (catch unavailable (js-object :state
@@ -654,7 +681,9 @@
                     (try
                       (setq shared (await (openCodexChannel
                         (funcall endpointFor (aref (nativeGet result "items") 0)) context)))
-                      (catch offline (setq shared nil))))
+                      (catch offline
+                        (put result :coverage "partial")
+                        (put result :reason "receiver_discovery_unavailable"))))
                   (while (< index (js-length (nativeGet result "items")))
                     (let* ((row (aref (nativeGet result "items") index))
                            (current (if (and (= tool "codex") (not shared))

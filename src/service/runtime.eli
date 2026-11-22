@@ -525,13 +525,22 @@
                 (put turn :more t))
               (js-call rows :forEach (lambda (row)
                 (let* ((id (nativeGet row "key"))
-                  (key (str (if routes "route:" "outbound:") id)))
-                  (unless (js-call seen :has key)
+                  (key (str (if routes "route:" "outbound:") id))
+                  (backoffs (nativeGet runtime "route_receiver_backoff"))
+                  (now (js-call (nativeGet (nativeGet context "ports") "clock") :monoNow))
+                  (backoff (and routes (js-call backoffs :get id))))
+                  (unless (or (js-call seen :has key) (and backoff (< now backoff)))
                     (js-call seen :add key)
                     (when (launch context key
                       (async ()
                         (if routes
-                          (await (runRouteJob context id turn))
+                          (let* ((result (await (runRouteJob context id turn)))
+                                 (reason (nativeGet (nativeGet result "data") "reason")))
+                            (if (= reason "target_receiver_unavailable")
+                              (js-call backoffs :set id
+                                (+ (js-call (nativeGet (nativeGet context "ports") "clock") :monoNow) 5000))
+                              (js-call backoffs :delete id))
+                            result)
                           (let ((result (await (dispatchOutbound context id))))
                             (when (and (nativeGet result "ok")
                               (= (nativeGet (nativeGet result "data") "state") "accepted"))
@@ -550,6 +559,9 @@
           (when (< now (nativeGet runtime "maintenance_due" 0))
             (progn (setq djReturn7Value (success nil)) (throw djReturn7Token)))
           (put runtime :maintenance_due (+ now 60000))
+          (let ((backoffs (nativeGet runtime "route_receiver_backoff")))
+            (js-call backoffs :forEach (lambda (deadline route)
+              (when (<= deadline now) (js-call backoffs :delete route)))))
           (inTransaction
             context
             (lambda
