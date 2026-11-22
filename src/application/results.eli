@@ -431,10 +431,11 @@
       (addTypedFields
         (addTypedFields
           (strings
-            "session_key session_ref tool native_namespace native_session_id instance_id instance_epoch title workspace_ref workspace_label runtime_state created_at updated_at observed_at expires_at created_by coverage"
+            "session_key session_ref tool native_namespace native_session_id instance_id instance_epoch title runtime_state created_at updated_at observed_at expires_at created_by coverage"
             (js-object
               :receiver_reason nullableString
-              :surface stringSchema :project_id stringSchema :directory stringSchema
+              :surface nullableString :project_id nullableString :directory nullableString
+              :workspace_ref nullableString :workspace_label nullableString
               :model_selection (ref "model_selection")
               :agent_id
               nullableString
@@ -459,6 +460,7 @@
       (strings
         "instance_id tool tool_id native_namespace instance_epoch ownership profile_id state created_at checked_at workspace_ref directory"
         (js-object
+          :receiver_reason stringSchema
           :workspace_scope
           (js-object :type "string" :enum (js-array "directory" "instance"))
           :revision

@@ -94,7 +94,7 @@ OpenCode 使用当前 `/api/*` 本机服务协议；现有运行中服务由原�
 
 用户指明由某个本机工具接手，已有精确接收会话就用 session.send；只给工具且需要独立接手时，调用方可在已有原生实例直接 session.create，一次携带实际交接正文。先查一次目标实例和已知工作区，不扫描全历史、不先发给另一个助手代建。正文保留已有统一 Identity、任务、工作目录、当前进度与必要约束；Identity 已给出日志入口。
 
-Codex 的 instance.ready 和 session_create=supported 表示已有桌面进程与已配置能力。创建受理前 DJ 还会探测同代次原生创建接收端；入口过期、宿主退出或原生工具不可用时返回 unavailable，details.reason=native_creation_receiver_unavailable，未记录 lifecycle、未提交首条。此时可以修复原入口，或按授权用原生 Codex App Tools/已接通的 Agent Control 管理入口一次直接创建。命令返回 recorded 后须查原 lifecycle；unknown 仍按同一创建键或原生项目定点读回，不另建或换路重发。
+查询既有 Codex 实例时检查 `state` 和 `live_receiver`。创建受理前 DJ 还会探测同代次原生创建接收端；入口过期、宿主退出或原生工具不可用时返回 unavailable，details.reason=native_creation_receiver_unavailable，未记录 lifecycle、未提交首条。可修复原入口，或在原授权内使用其它可用的原生入口一次直接创建。命令返回 recorded 后查询原 lifecycle；unknown 仍按原创建键或原生项目定点读回。
 
 ```json
 {"instance_id":"inst_example","expected_instance_epoch":"epoch_example","workspace_ref":"wsp_example","title":"issue-123","content":{"type":"text","text":"请调查这个明确的问题。"},"idempotency_key":"create-with-input-example"}
@@ -107,6 +107,8 @@ Codex 的 instance.ready 和 session_create=supported 表示已有桌面进程�
 - alternative: DJ 达不到目的时，AI 可使用自身原生能力、其他可用接口或已安装 Skill 继续完成；无需特定外部工具。先核对原操作是否已生效，避免双路重发；准确原目标、授权与回复身份不变。
 
 ## Codex 原对话加载与送达核对
+
+已知准确原生 ID 时，`session.resolve` 可返回历史定位及短期 `session_ref`。接收端失联期间，带 `offline: hold` 的 `session.send` 仍可受理原目标的新输入，查 `delivery.get` 区分待投和受理。实例恢复后沿原投递续投。工具宿主被回收时，当前 App 没有 follower 的部署仍需要活的授权宿主重新注册。
 
 Codex 原生 send_message_to_thread 会先加载原对话；DJ 的 follower socket 只负责已有接收端。macOS 端点配置 receiver_loader_ref 与 process_helper_ref 后，已受理投递可向同一已验证 App 进程发送原对话链接，等待接收端出现，再从原 socket 发正文。不会启动 App、Agent CLI 或 App Server，不新建对话；客户端可能切到目标对话页。列表、resolve、probe 不自动加载。
 

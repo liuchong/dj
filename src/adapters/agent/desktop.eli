@@ -349,7 +349,7 @@
                     (when row
                       (setq historical (funcall sessionRecord endpoint id (nativeGet row "title" "")
                         (if (= (nativeGet unavailable "code") "desktop_owner_timeout") "unknown" "offline")
-                        (nativeGet endpoint "instance_epoch") nil (nativeGet row "cwd")))
+                        (nativeGet binding "instance_epoch") nil (nativeGet row "cwd")))
                       (put historical :live_receiver false) (put historical :visibility (js-array "history"))
                       (put historical :evidence_level "none")
                       (put historical :receiver_reason
@@ -613,11 +613,10 @@
             (js-object :state "ready" :native_namespace (nativeGet endpoint "native_namespace")
               :instance_epoch epoch :evidence_level "native_protocol"))
           (catch unavailable (js-object :state
-            (if (= (nativeGet unavailable "code") "ENOENT") "offline" "unknown")
+            (if (js-call (js-array "ENOENT" "desktop_transport" "receiver_control_unavailable") :includes
+                  (nativeGet unavailable "code")) "offline" "unknown")
             :evidence_level "none"
-            :reason (if (js-call (js-array "desktop_bridge_disabled" "desktop_frame_limit")
-                            :includes (nativeGet unavailable "code"))
-              (nativeGet unavailable "code") "desktop_receiver_unavailable"))))))
+            :reason (nativeGet unavailable "code" "desktop_receiver_unavailable"))))))
       (js-object
         :snapshotRestart (when (= tool "cursor") (async (instance context)
           (nativeGet (await (cursorNativeRequest (funcall endpointFor instance)

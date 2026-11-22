@@ -120,7 +120,7 @@
     (async () (let ((root (resolve ".local/tests" (str "codex-host-" (randomUUID)))))
       (await (mkdir root (js-object :recursive t :mode 448))) root))
     (async (root)
-      (let* ((path (join root "native.sock")) (creates 0) (renames 0) (sends 0) (receiver nil)
+      (let* ((path (join root "native.sock")) (creates 0) (renames 0) (sends 0) (receiver nil) (replacement nil)
              (server (createServer (lambda (socket)
                (let ((buffer (Buffer/alloc 0)))
                  (js-call socket :on "data" (lambda (bytes)
@@ -211,6 +211,13 @@
                 envelope "start_idle" "delivery-key" context))))
                 (js-call (expect (nativeGet sent "state")) :toBe "accepted")
                 (js-call (expect sends) :toBe 1))
+              (setq replacement (await (activateCodexControl (js-object :owner_pid pid :owner_birth "fixture-birth"
+                :root (join root "receiver") :pipe_path path :request_meta
+                (js-object :x-codex-turn-metadata (js-object :thread_id "caller-native" :turn_id "actual-turn"))))))
+              (await (js-call receiver :close))
+              (let ((next (await (js-call port :probeInstance target context))))
+                (js-call (expect (nativeGet next "state")) :toBe "ready")
+                (js-call (expect (= (nativeGet next "instance_epoch") epoch)) :toBe false))
               (put owner :birth "new-unregistered-app")
               (let ((stale (await (js-call port :submit (Object/assign (js-object) target (js-object :instance_epoch epoch))
                 envelope "start_idle" "delivery-key" context))))
@@ -218,6 +225,7 @@
                 (js-call (expect sends) :toBe 1)))
             (await (js-call port :close)))
           (finally
+            (when replacement (await (js-call replacement :close)))
             (when receiver (await (js-call receiver :close)))
             (await (new globalThis.Promise (lambda (done) (js-call server :close done))))))))
     (async (root) (await (rm root (js-object :recursive t :force t)))))

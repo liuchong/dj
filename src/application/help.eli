@@ -145,9 +145,9 @@
       :profile.list
       "列出获准启动的预配 profile/revision/workspace；不暴露 argv 或秘密。"
       :instance.list
-      "按工具和归属列举配置/托管实例；不启动实例。"
+      "按工具和归属列举配置/托管实例。对既有 Codex 实例只读探测接收端，live_receiver 为当前观测；不启动实例。"
       :instance.get
-      "读取实例当前 epoch/revision/状态；历史 lifecycle.ready 不替代当前事实。"
+      "读取实例 epoch/revision/状态。既有 Codex 实例附接收端当前 live_receiver，失联附 receiver_reason；不加载会话。"
       :catalog.refresh
       "受理有预算的只读原生目录/正文采集；不启动工具、输入消息或隐式无限续扫。"
       :catalog.get

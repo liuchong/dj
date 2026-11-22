@@ -500,13 +500,6 @@
                     djReturn4Value
                     (holdDelivery context record claim "deferred" "service_draining"))
                   (throw djReturn4Token)))
-              (let ((gate-check (assertGate tx (nativeGet session "instance_id")
-                      (nativeGet session "instance_epoch") "open")))
-                (unless (nativeGet gate-check "ok")
-                  (setq djReturn4Value (holdDelivery context record claim "deferred"
-                    (if (= (nativeGet instance "state") "stopping") "instance_stopping"
-                      (nativeGet (nativeGet gate-check "error") "code" "instance_not_ready"))))
-                  (throw djReturn4Token)))
               (if (= (nativeGet record "origin") "direct")
                 (progn
                   (when
@@ -572,6 +565,17 @@
                       (if (= state "coalesced") "same_native_notification" "notification_pending")))
                     (throw djReturn4Token))))
               (put record :receiver_reason (nativeGet observation "receiver_reason" nil))
+              (let ((gate-check (assertGate tx (nativeGet session "instance_id")
+                      (nativeGet session "instance_epoch") "open")))
+                (unless (nativeGet gate-check "ok")
+                  (setq djReturn4Value (holdDelivery context record claim "deferred"
+                    (cond
+                      ((= (nativeGet instance "state") "stopping") "instance_stopping")
+                      ((and (= (nativeGet instance "state") "offline")
+                            (= (nativeGet session "tool") "codex")
+                            (not (nativeGet observation "live_receiver"))) "target_receiver_unavailable")
+                      (t (nativeGet (nativeGet gate-check "error") "code" "instance_not_ready")))))
+                  (throw djReturn4Token)))
               (unless (exactObservation session observation
                 (and (= busy-policy "steer") (= (nativeGet capabilities "message_during_run") "supported")))
                 (progn

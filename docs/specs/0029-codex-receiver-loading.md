@@ -14,6 +14,8 @@ Codex App 的 send_message_to_thread 经 sendFollowUpMessage 先执行原对话 
 
 如果 follower socket 已失联，DJ 只采用当前 Codex App 主进程已授权的原生工具宿主接收端。查找按当前 PID 及进程出生标识核验，同一原生会话的目录和 ID 必须经 `read_thread` 确认。送出正文后失去回执按 unknown 处理，只核对原投递。未注册时状态为 `target_receiver_unavailable`，同路下一次检查至少间隔五秒。登记由当前 Codex 原生工具宿主提供，DJ 自行发现已登记的新接收端并保留原会话队列。
 
+主进程生存和文件存在只用来定位。实例查询确认当前接收端确能完成原生只读请求，失联则返回 `live_receiver: false` 和具体原因。历史读取不得提供新进程代次证据；对已定位会话，`offline: hold` 的明确发送在实例恢复期间仍入原路队列，最终发送必须再次验证活会话及当前实例门禁。工具宿主卸载后的短期参考仍按它签发时绑定的持久会话判断。新授权宿主用独立 socket 原子发布新登记，不依赖旧宿主退出清理。
+
 ## 工具性状态
 
 session.probe 提供新鲜 live_receiver、runtime_state、receiver_reason、observed_at/stale。session.get 的旧缓存不是当前接收端证据。delivery.get 暴露 blocked_reason、receiver_reason、submitted_at、accepted_at 与原生 receipts。ready/deferred 不等于送达，accepted 不等于模型处理或业务完成，unknown 不等于未发送。

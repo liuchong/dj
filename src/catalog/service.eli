@@ -607,6 +607,7 @@
                 (setq instance (js-call repository :get "instances" (nativeGet instance "instance_id")))
                 (when
                   (and
+                    (= (nativeGet native "live_receiver") t)
                     (nativeGet native "instance_epoch")
                     (not
                       (= (nativeGet native "instance_epoch") (nativeGet instance "instance_epoch"))))
@@ -901,7 +902,23 @@
           (let ((port (agentPort context record)))
             (when port (put result :capabilities (nativeGet port "capabilities" (js-object)))))))
       result))
-  (defun queryObjects
+  (defasync projectInstanceHealth (context instance projection)
+    (when (and (= (nativeGet instance "ownership") "existing")
+               (= (nativeGet instance "tool" (nativeGet instance "tool_id")) "codex")
+               (js-call (js-array "ready" "offline") :includes (nativeGet instance "state")))
+      (let ((port (agentPort context instance)))
+        (when (nativeGet port "probeInstance")
+          (let* ((report (try (await (js-call port :probeInstance instance (nativeCallContext context)))
+                           (catch unavailable nil)))
+                 (ready (and (= (nativeGet report "state") "ready")
+                             (= (nativeGet report "evidence_level") "native_protocol")
+                             (= (nativeGet report "native_namespace") (nativeGet instance "native_namespace")))))
+            (put projection :live_receiver (not (not ready)))
+            (put projection :state (if ready "ready" "offline"))
+            (put projection :checked_at (utcNow context))
+            (unless ready (put projection :receiver_reason (nativeGet report "reason" "desktop_receiver_unavailable")))))))
+    projection)
+  (defasync queryObjects
     (context operation args)
     (let ((djReturn10Token (js-object)) (djReturn10Value nil))
       (try
@@ -922,7 +939,9 @@
                   (setq djReturn10Value (failure "forbidden"))
                   (throw djReturn10Token)))
               (progn
-                (setq djReturn10Value (success (objectProjection kind record context)))
+                (setq djReturn10Value (success (if (= kind "instance")
+                  (await (projectInstanceHealth context record (objectProjection kind record context)))
+                  (objectProjection kind record context))))
                 (throw djReturn10Token))))
           (let*
             (
@@ -967,7 +986,9 @@
                       (or
                         (not (nativeGet filters "adapter_state"))
                         (= (nativeGet filters "adapter_state") (nativeGet record "adapter_state"))))
-                    (js-call items :push (objectProjection kind record context))
+                    (let ((projection (objectProjection kind record context)))
+                      (js-call items :push (if (= kind "instance")
+                        (projectInstanceHealth context record projection) projection)))
                     (js-call keys :push (js-object :resource_key last-key))))
                 (setq index (1+ index)))
               (advanceSnapshot
@@ -975,7 +996,7 @@
                 snapshot
                 (js-object
                   :items
-                  items
+                  (await (Promise/all items))
                   :result_keys
                   keys
                   :next_scan_key
@@ -1006,7 +1027,7 @@
             "instance.get")
           :includes
           operation)
-        (queryObjects context operation args))
+        (await (queryObjects context operation args)))
       (t (failure "invalid_argument"))))
   (export
     querySessions

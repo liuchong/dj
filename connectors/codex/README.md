@@ -17,4 +17,6 @@ nodeRepl.write({manifest_path: receiver.manifest_path});
 
 以上为原生宿主加载示例，不是仓库手写 JS 实现；业务与打包源都为 Eliscript。创建仅接受调用方明确给出的首条 `content`，工作区必须是该原生客户端实际列出的本地项目目录；没有首条消息时返回 `native_creation_requires_content`，不捏造占位任务。创建与首条输入由原生接口一起受理，生命周期的 `initial_input_state=native_queued` 和 `initial_input_receipt_key` 表示原生受理，不另建重复投递；随后通过准确新会话读回输入与状态。创建不登记 Agent、不建立订阅，不运行隐藏子智能体。
 
-接收端公开 probe/read/send/create/lookup_create/rename；鉴权、帧大小、超时、原生 ID 和私有 socket/manifest 都受限。最多保留 128 个创建键；请求发出前保留 unknown，未知结果不重建。宿主退出、原生管道失效或进程改变时能力不可用，既有通知 socket 保持独立。升级或卸载时先调用返回的 `receiver.close()`；仅删除本接收端自己拥有的 inode。Codex 主进程重启后，由当前获准的原生工具宿主重新注册。DJ 从已配置接收端所在的私有目录按当前主进程寻找新登记，校验 PID、出生标识与 socket 后接手原队列，无需更新旧 PID 文件路径。当前 App 未暴露 follower socket 且尚未注册时，DJ 保留队列并报告接收端不可用。
+接收端公开 probe/read/send/create/lookup_create/rename。probe 经原生接口读回调用会话，验证当前宿主确有可用的调用权限。创建请求发出前记录 unknown，未知结果不重建。
+
+原生工具宿主可随会话卸载或空闲回收退出，即使 Codex App 持续运行。退出后新的授权宿主可原子发布同一 PID 的新登记，每次登记有独立 socket，旧文件和旧宿主关闭均不会覆盖新接收端。DJ 核对 PID、出生标识、socket 和原生会话后恢复原队列。没有活 follower 或授权宿主时，实例查询如实显示离线，已有会话仍可按 `offline: hold` 入队。升级或卸载时调用返回的 `receiver.close()`，由接收端清理自身拥有的文件。

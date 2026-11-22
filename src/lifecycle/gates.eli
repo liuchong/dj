@@ -36,6 +36,20 @@
             :get
             instance-id)))
       (when row (JSON/parse (nativeGet row "payload")))))
+  (defun assertDirectAdmission (tx instance-id session-epoch recovery-allowed)
+    (if (not recovery-allowed)
+      (assertGate tx instance-id session-epoch "open")
+      (let ((gate (readGate tx instance-id)) (instance (readInstance tx instance-id)))
+        (cond
+          ((or (not instance) (not gate)
+               (not (= (nativeGet instance "instance_epoch") (nativeGet gate "instance_epoch"))))
+           (failure "stale_reference"))
+          ((and (not (nativeGet gate "stop_lifecycle_id"))
+                (or (and (= (nativeGet instance "state") "ready") (= (nativeGet gate "state") "open"))
+                    (and (= (nativeGet instance "state") "offline") (= (nativeGet gate "state") "closed")
+                         (= (nativeGet gate "reason") "recovery"))))
+           (success gate))
+          (t (failure "instance_not_ready"))))))
   (defun assertGate
     (tx instance-id expected-epoch required-state)
     (let ((djReturn1Token (js-object)) (djReturn1Value nil))
@@ -179,4 +193,4 @@
           (success slot))
         (catch djReturn4Error
           (if (eq djReturn4Error djReturn4Token) djReturn4Value (throw djReturn4Error))))))
-  (export supportsNativeEpochRefresh assertGate closeGate releaseSlot reserveSlot readGate))
+  (export supportsNativeEpochRefresh assertGate assertDirectAdmission closeGate releaseSlot reserveSlot readGate))
