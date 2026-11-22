@@ -471,20 +471,20 @@
     setup
     (async
       (f)
-      (let
-        ((list (await (js-call f :call (nativeGet f "S") "session.list" (js-object))))
-          (start
+      (let*
+        ((session (await (getSession f "s1" "S")))
+          (rename
             (await
               (js-call
                 f
                 :call
                 (nativeGet f "S")
-                "instance.start"
+                "session.rename"
                 (js-object
-                  :profile_id
-                  "oc-profile"
-                  :expected_profile_revision
-                  1
+                  :session_ref
+                  (nativeGet session "session_ref")
+                  :title
+                  "Unapproved name"
                   :idempotency_key
                   "not-delegated"))))
           (free-argv
@@ -496,16 +496,16 @@
                 "instance.start"
                 (js-object
                   :profile_id
-                  "oc-profile"
+                  "unconfigured-profile"
                   :expected_profile_revision
                   1
                   :argv
                   (js-array "unapproved")
                   :idempotency_key
                   "free-argv")))))
-        (js-call (expect (nativeGet list "ok")) :toBe t)
-        (js-call (expect (nativeGet start "ok")) :toBe false)
-        (js-call (expect (nativeGet (nativeGet start "error") "code")) :toBe "forbidden")
+        (js-call (expect (nativeGet session "native_session_id")) :toBe "s1")
+        (js-call (expect (nativeGet rename "ok")) :toBe false)
+        (js-call (expect (nativeGet (nativeGet rename "error") "code")) :toBe "forbidden")
         (js-call (expect (nativeGet (nativeGet free-argv "error") "code")) :toBe "invalid_argument")
         (js-call (expect (js-length (nativeGet (nativeGet f "opencode") "starts"))) :toBe 0)))
     closeFixture)

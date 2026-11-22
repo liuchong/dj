@@ -1402,8 +1402,8 @@
         "A19"
       ],
       "given": "F01/F10；integration/interfaces",
-      "when": "分别只授list/read/send/create/start，输入自由argv/路径/凭据",
-      "then": "各能力独立、越权拒绝、不复制权限或回显秘密；A04/A19"
+      "when": "有查询和发送权限的主体读取已存在的会话后尝试改名，并通过操作员身份向实例启动接口传入 argv",
+      "then": "读取成功，未授权改名返回 forbidden，任意 argv 返回 invalid_argument，不启动进程；A04/A19"
     },
     {
       "case_id": "T55.entry-equivalence.integration",
