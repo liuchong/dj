@@ -63,7 +63,7 @@
       :agent.rebind
       "为同一 tool/namespace/native_session 更新已核验 Binding；不能改绑到其他会话。"
       :agent.unregister
-      "关闭登记并暂停该会话槽位的在用订阅、取消提交点前待投项；保留共享 route、unknown 和独立直发。"
+      "主动退出接线：关闭登记，暂停该会话的在用订阅并取消尚未提交的订阅投递。重连或恢复接收端应调用 agent.probe。误注销后须重新登记同一原生会话，再显式恢复原订阅。"
       :subscription.preview
       "为目标（agent_id 或 group_id 二选一）预览唯一订阅逻辑线：spec.rules 支持 1..64 条分支（各带 id、enabled、sources、event_kinds、predicate 及可选 context_policy/instruction_policy；all/any/not 任意多条件组合及 text、text.first_line、text.lines 配合 eq/in/contains/prefix/suffix）。目标尚无订阅时 expected_revision 省略或传 0，已有订阅时传当前 revision；返回固定 preview_id、rule_sources 与样例命中分支 matched_rule_ids。"
       :subscription.set
@@ -75,7 +75,7 @@
       :subscription.pause
       "按 agent_id 或 group_id 暂停该目标唯一订阅并取消提交点前待投项；不撤回已提交原生输入。"
       :subscription.resume
-      "按 agent_id 或 group_id 以新 start_seq 恢复该目标唯一订阅；不补暂停期消息。"
+      "恢复该目标唯一的暂停订阅，沿用保存的规则，从新消息开始。原登记已注销时使用同一原生会话重新登记后取得的 agent_id；暂停期间的历史消息须另行显式重放。"
       :subscription.delete
       "按 agent_id 或 group_id 删除该目标唯一订阅并取消提交点前待投项；直发与已提交项保持原生命周期。"
       :subscription.replay

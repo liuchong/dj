@@ -8,6 +8,16 @@
 - multi_branch_merge: 同一事件命中本订阅的多条 `enabled=true` 分支时，只投递一次通知：`matched` 为 `{target_key, subscription_revision, rule_ids}`；`context_policy` 在命中分支间取并集（任一为 `recent` 则采用 `recent` 及最大 `max_events`/`max_bytes`）；`instructions` 先排线级公共 `instruction_policy`（一份），再按分支声明顺序附加本次命中分支的专属 `instruction_policy`（带 `scope="rule"` 与 `rule_id`）。
 - unknown: 缺失证据或截断内容保留 `indeterminate`，`not` 不会把未知变成命中。已知没有 thread/topic/引用的字段值为空字符串。
 
+## 通知排查与原订阅恢复
+
+1. 用来源连接的 `message.list` / `message.get` 核对事件入库时间及原生提及。再以 `delivery.list` 的 `filters.event_id` 查询该事件的投递。读取消息、订阅匹配和原生接收各有独立记录。
+2. 用 `subscription.get` 查准确目标的 `state` 和规则。只有 `active` 订阅能匹配新事件；暂停、删除及全局触发抑制都可能让消息保留在历史中而无投递。有投递再用 `delivery.get` 查待投、失败或受理原因。
+3. 活跃订阅遇到客户端重启或断线时，保留原登记和订阅，按 `agent.probe` / `session.probe` 重验接收端。Codex 的默认在线发现支持 follower IPC 和已授权的原生工具宿主；发现返回空页时查 `coverage`、`reason` 与 `next_cursor`。如已有原生会话 ID，可通过 `session.resolve` → `session.probe` 定点核验。
+4. `agent.unregister` 是主动注销，会关闭登记、暂停原会话的在用订阅、取消尚未提交的订阅投递。需要恢复时，重新登记同一原生会话与原接收主体，从新 `agent_id` 读取原有暂停槽位并按当前 `expected_revision` 执行 `subscription.resume`。原规则分支与会话持久规则可继续使用。配置管理的固定接线通过原配置流程恢复。
+5. 恢复从新入站事件生效。经授权补投暂停期间的某一条时，核对准确的 `event_id`、当前命中规则及是否已通过任何入口送到或处理，再按该 ID 调用 `subscription.replay`。查询随后产生的投递，避免切换入口重复交办。
+
+共享客户端身份时，操作审计只能确认实际认证主体。排查注销来源时，仅凭共享主体不能归因到某个对话。
+
 ## 字段与原生含义
 
 | 条件 | field | op / value示例 |

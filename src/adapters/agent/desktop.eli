@@ -288,11 +288,11 @@
                 (throw (desktopError "desktop_target_mismatch")))
               (await (funcall work channel result)))
             (finally (unless shared (js-call channel :close)))))))
-      (setq probeCodexControl (async (endpoint id context)
-        (let* ((header (await (confirmCodexHeader endpoint id context)))
+      (setq probeCodexControl (async (endpoint id context &optional verified-header shared-control)
+        (let* ((header (or verified-header (await (confirmCodexHeader endpoint id context))))
                (directory (nativeGet header "cwd")))
           (unless header (throw (desktopError "desktop_target_mismatch")))
-          (let* ((control (await (codexControlEndpoint endpoint context host)))
+          (let* ((control (or shared-control (await (codexControlEndpoint endpoint context host))))
                  (response (await (codexControlRequest control
                    (js-object :operation "read" :thread id :directory directory) context)))
                  (row (nativeGet response "data")))
@@ -670,29 +670,49 @@
                           (= (nativeGet page "instance_id") (nativeGet endpoint "instance_id"))))))))
             (js-object :items (js-array) :complete t :coverage "partial" :next_cursor nil
               :reason "desktop_visibility_unsupported")
-            (let ((result (await (funcall listSessions
-                   (js-object :instance_ids (js-array (nativeGet page "instance_id")))
-                   (nativeGet page "cursor") (js-object :max_records 100) context))))
-            (unless (= visibility "history")
-              (let ((items (js-array)) (index 0) (shared nil))
-                (try
-                  (when (and (= tool "codex") (> (js-length (nativeGet result "items")) 0))
-                    (try
-                      (setq shared (await (openCodexChannel
-                        (funcall endpointFor (aref (nativeGet result "items") 0)) context)))
-                      (catch offline
+            (let* ((scope (js-object :instance_ids (js-array (nativeGet page "instance_id"))))
+                   (cursor (nativeGet page "cursor"))
+                   (live (= visibility "live"))
+                   (codex (and live (= tool "codex")))
+                   (endpoint (when codex (funcall endpointFor page)))
+                   (channel nil) (control nil) (result nil))
+              (try
+                (when codex
+                  (try (setq channel (await (openCodexChannel endpoint context)))
+                    (catch offline
+                      (try (setq control (await (codexControlEndpoint endpoint context host)))
+                        (catch unavailable nil)))))
+                ;; The control socket uses one native read per row. A small
+                ;; page bounds this fan-out even if the history list is large.
+                (setq result (await (funcall listSessions scope cursor
+                  (js-object :max_records (if control 8 100)) context)))
+                (when live
+                  (let ((items (js-array)))
+                    (cond
+                      (control
+                        (let ((rows (await (Promise/all (js-call (nativeGet result "items") :map
+                          (async (row)
+                            (try
+                              (await (funcall probeCodexControl endpoint (nativeGet row "native_session_id") context
+                                (js-object :cwd (nativeGet row "directory") :title (nativeGet row "title")) control))
+                              (catch unavailable nil))))))))
+                          (setq items (js-call rows :filter (lambda (row) (= (nativeGet row "live_receiver") t))))
+                          (when (< (js-length items) (js-length rows))
+                            (put result :coverage "partial")
+                            (put result :reason "receiver_discovery_partial"))))
+                      ((and codex (not channel))
                         (put result :coverage "partial")
-                        (put result :reason "receiver_discovery_unavailable"))))
-                  (while (< index (js-length (nativeGet result "items")))
-                    (let* ((row (aref (nativeGet result "items") index))
-                           (current (if (and (= tool "codex") (not shared))
-                                      (js-object :live_receiver false)
-                                      (await (funcall probeWith row row context shared)))))
-                      (when (= (nativeGet current "live_receiver") t) (js-call items :push current)))
-                    (setq index (1+ index)))
-                  (finally (when shared (js-call shared :close))))
-                (put result :items items)))
-            result)))
+                        (put result :reason "receiver_discovery_unavailable"))
+                      (t
+                        (let ((rows (nativeGet result "items")) (index 0))
+                          (while (< index (js-length rows))
+                            (let* ((row (aref rows index))
+                                   (current (await (funcall probeWith row row context channel))))
+                              (when (= (nativeGet current "live_receiver") t) (js-call items :push current)))
+                            (setq index (1+ index))))))
+                    (put result :items items)))
+                result
+                (finally (when channel (js-call channel :close)))))))
         :lookup (async (binding key ref context)
           ;; Only a native user input with the exact immutable delivered text is proof.
           ;; Missing/partial history never proves that the send did not happen.

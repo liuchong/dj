@@ -15,7 +15,10 @@
 | 运行实例内新工作会话 | instance.get → session.create(instance_id,epoch,workspace_ref) → lifecycle.get → session.get/probe → 单独 send | create ready 只证明空会话存在，send/读取分别授权；缺少原生接口时明确 unsupported |
 | 新会话用于订阅 | 上述空会话 → 可信部署面接入 recipient/client profile/Skill → discover/register → 接收方 whoami/工具核对 → 来源发现/preview/set | 接收工具、订阅与回复分别有证据；不复制创建者绑定或权限 |
 | IM 自动触发与回复 | 入库去重 → 匹配规则分支 → canonical route 入队 → gate/权限/idle 检查 → submitting → 原会话开始 → 显式 message.reply → outbound.get | 固定原 IM 账号、消息与话题，按实际接线记录证据；不自动转发最后答案 |
-| 暂停、注销或停 DJ | pause/delete/unregister 取消未提交的订阅投递；DJ 停止先关 gate 再 drain | direct 与订阅相互不撤销；accepted 不重发，unknown 先核对；期限到明确仍在停止 |
+| 暂时断线或重启客户端 | agent.probe / session.probe 重验原接收端 | 登记与订阅保持有效，尚未提交的通知按原投递策略恢复 |
+| 暂停、退订或主动注销 | subscription.pause / delete 改变订阅状态；agent.unregister 关闭登记并暂停在用订阅 | 取消尚未提交的订阅投递；保留独立直发及已提交结果 |
+| 恢复误注销的订阅 | 登记同一原生会话与原接收主体 → 用新 agent_id 读原暂停槽位 → subscription.resume | 保留规则，从新消息开始；精确历史重放独立授权 |
+| 停 DJ | 先关提交门，再等待已开始的请求结束 | accepted 不重发，unknown 先核对 |
 
 只拥有原生 ID 时，resolve 可按精确地址作只读核验；仅有稳定 session_key 时 get 重取短期引用。session.probe 不写测试消息，发送提交点仍再核验，不能依赖上一步状态永远不变。检索正文未覆盖时，catalog.refresh(scope.session_keys,include_content=true) 是精确补取路径，不要求扫描整类工具。
 

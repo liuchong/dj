@@ -82,7 +82,7 @@ delivery_policy 仅 busy/offline/ttl_seconds，默认 steer/hold；busy=queue �
 
 不提供 content 则只创建会话；提供 content（纯文本）时要求额外 session.send 权限，创建成功后由持久 outbox 向准确新会话发送一次。lifecycle 的 ready 仅表示创建成功；initial_input_state=pending/queued/blocked 和 initial_delivery_id 分别表示待受理、已记入投递及被拒绝，具体送达看 delivery.get。进程恢复后用稳定幂等键找回首条投递，不另建对话或重复输入。也可在创建后单独 send。不得捏造占位 prompt、复制权限、安装 Skill 或注册订阅。Cursor 必须使用实际 Desktop 接口；CLI-only 证据不代替 Desktop。OpenCode 的创建也不证明新会话已成为桌面当前 Tab。
 
-要让新会话订阅IM，可使用已部署普通AI profile和Skill，自行discover/register准确原生目标 → whoami的bound_agent_ids核对 → preview/create。凭据与目标分离，一个主体可登记多个目标；不借用operator或其他受限profile，不自动替接收方建立业务订阅。若只要定向输入，直接 send，无须这段部署流程。
+要让新会话订阅IM，可使用已部署普通AI profile和Skill，自行discover/register准确原生目标 → whoami的bound_agent_ids核对 → `subscription.preview` / `subscription.set`。凭据与目标分离，一个主体可登记多个目标；不借用operator或其他受限profile，不自动替接收方建立业务订阅。若只要定向输入，直接 send，无须这段部署流程。
 
 普通调用身份的首次部署由可信宿主使用 `Core.reloadConfig` 或 standalone 私有配置/SIGHUP 完成；它不是普通 Agent 的 CLI/MCP 权限修改工具。只支持 principals/client_profiles 的原子重载，不能通过发送配置 JSON 改连接或启动参数；已有主体权限变化需提高 authorization_revision，注销 ID 不复用。
 

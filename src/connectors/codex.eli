@@ -130,7 +130,7 @@
                     (let* ((id (nativeGet body "thread"))
                            (cwd (nativeGet body "directory"))
                            (readback (await (funcall invoke "read_thread"
-                             (js-object :threadId id :turnLimit 1 :maxOutputCharsPerItem 256))))
+                             (js-object :threadId id :includeTurns false))))
                            (thread (nativeGet readback "thread")))
                       (unless (and (= (nativeGet thread "id") id) (= (nativeGet thread "kind") "codex")
                                    (= (nativeGet thread "hostId") "local") (= (nativeGet thread "cwd") cwd))

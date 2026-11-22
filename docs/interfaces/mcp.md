@@ -2,7 +2,7 @@
 
 ## 规范基线
 
-MCP 入口使用锁定的 `@modelcontextprotocol/server` 2.3.1 和 stdio 传输。协议协商、分帧与协议级错误由 SDK 处理，业务 schema、身份与权限由 DJ 校验。[官方现行规范](https://modelcontextprotocol.io/specification/latest)用于查阅协议要求，不代表 DJ 实现了所有可选扩展，也不因旧宿主而增加项目自己的兼容层。
+MCP 入口使用锁定的 `@modelcontextprotocol/server` 2.3.1 ，支持 stdio 与本机 Streamable HTTP。协议协商、分帧与协议级错误由 SDK 处理，业务 schema、身份与权限由 DJ 校验。[官方现行规范](https://modelcontextprotocol.io/specification/latest)用于查阅协议要求，不代表 DJ 实现了所有可选扩展，也不因旧宿主而增加项目自己的兼容层。
 
 宿主报告的版本、实际 SDK 支持与厂商扩展均需能力探测。服务的 Subscription、AgentTarget 是 DJ 应用状态，不能绑定 MCP 传输连接 ID，也不因客户端断线而删除。
 
@@ -31,7 +31,7 @@ MCP 入口使用锁定的 `@modelcontextprotocol/server` 2.3.1 和 stdio 传输�
 
 ## 传输与身份
 
-首轮本地 stdio 薄代理连接同一个常驻核心；stdout 只允许协议记录。远程 Streamable HTTP 为扩展候选，启用前实现认证、Origin/目的地校验与租户边界，按该版本传输/授权规范验证。代理不能用宿主自报名称决定 principal。[传输](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports)、[授权](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization)
+stdio 薄代理经私有 Unix socket 连接常驻服务，stdout 只用于协议。配置 `service.mcp_http_port` 可在同一服务进程监听 `127.0.0.1:<port>/mcp`，使用私有 Bearer 凭据，并检查 Host、Origin 和会话归属。支持 Streamable HTTP 的客户端可复用该监听；客户端断线后重新初始化 MCP 会话即可。[传输](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports)、[授权](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization)
 
 查询有预算，长时间等待不占用一次工具调用作为唯一状态容器。subscription.set 返回持久订阅状态；delivery.get/reconcile 获取受控状态。可选资源 URI 如 dj://deliveries/del_example 只提供授权投影，不提供任意文件访问；首轮工具集足够，无须依赖 Resources/Tasks 扩展才能工作。
 
@@ -65,7 +65,7 @@ subscription.preview 返回 preview_id。用 subscription.set 提交该引用及
 
 ## 实现与客户端接线
 
-Eliscript 调用锁定的 `@modelcontextprotocol/server` 2.3.1，使用 Server 与 `serveStdio(factory)`。主路径为 stdio → UDS → 现有 Core，不启动另一个服务或模型循环。依赖见[技术栈](../technical-stack.md)，各客户端配置与 CLI 备用入口见[客户端接线](../../skills/dj/references/clients.md)。共享配置不能证明当前会话身份，接收方仍需核对自己的 recipient 绑定。
+Eliscript 调用锁定的 `@modelcontextprotocol/server` 2.3.1，stdio 用 Server 与 `serveStdio(factory)` 经 UDS 接入 Core；本机 Streamable HTTP 由现有服务直接接入同一 Core。依赖见[技术栈](../technical-stack.md)，各客户端配置与 CLI 备用入口见[客户端接线](../../skills/dj/references/clients.md)。共享配置不能证明当前会话身份，接收方仍需核对自己的 recipient 绑定。
 
 tools/list 从 operationCatalog 投影严格 schema，tools/call 将合法协议壳的业务参数交给 DJ 权威校验，领域错误返回统一 envelope/isError。协议壳错误由 SDK 处理；不依赖高层默认校验生成另一套业务错误。代理核对服务 api_version/build_id/operation_catalog_digest，摘要不符明确拒绝。SDK 协议依据见[低层接口文档](https://ts.sdk.modelcontextprotocol.io/v2/advanced/low-level-server.html)；实际安装与运行证据见[当前状态](../status.md)。
 

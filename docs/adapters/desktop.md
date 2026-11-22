@@ -34,7 +34,7 @@ Codex IPC 的状态快照是不可分页的原生帧，长会话可能超过 1 M
 
 Codex 会话列表来自只读状态库，消息来自当前原生 owner 的会话快照。会话标题取原生名称 `threads.name`；未命名时留空，首条消息预览留在消息数据中。快照历史不完整时报告 partial，不读取或复制开发者自身的原始运行日志作为兼容证据。Cursor 列表有原生 200 条上限，达到上限保持 partial；Bridge 消息读取限于本机已有缓存，缺失项不伪造完整正文；native_api 列表只报告已加载对话；已知原生 ID 的核验、消息读取和提交可通过本机 localRepo.loadAgent 加载已有本机记录，前提是原生 header 为 local、记录存在且工作区 ID 精确匹配。请求结束释放临时引用；提交引用仍由原模型请求持有。不会为了列表批量加载，不创建新对话或提交额外输入，也不把滞后缓存的空列表当作终态。两者都保留有界分页及响应字节预算。单条消息自身超过页字节预算时明确拒绝，不返回无法推进游标的空页，也不静默截断正文。
 
-Cursor 的 native_api 可通过已有 LocalAgentRepository.createAgent 的 skipInitialSubmit 创建本地空对话，保留 require-trusted 检查，不发 prompt、不调用云端、不修改工作区信任。普通 Bridge 不具备创建能力；已有显式创建连接器保留其原生协议。Codex 当前已有 IPC 不提供空对话创建；App Tools 的创建同时提交首条消息，不满足本接口合同，仍明确 unsupported。端口不启动/停止用户客户端，也不以新进程替代现有实例。OpenCode、Antigravity、Kimi/DSH 的创建边界及统一工作区规则见[0030](../specs/0030-native-session-creation.md)。
+Cursor 的 native_api 可通过已有 LocalAgentRepository.createAgent 的 skipInitialSubmit 创建本地空对话，保留 require-trusted 检查，不发 prompt、不调用云端、不修改工作区信任。普通 Bridge 不具备创建能力；已有显式创建连接器保留其原生协议。Codex 的原生工具宿主支持带首条消息的创建，省略首条消息返回 `native_creation_requires_content`。端口不启动/停止用户客户端，也不以新进程替代现有实例。OpenCode、Antigravity、Kimi/DSH 的创建边界及统一工作区规则见[0030](../specs/0030-native-session-creation.md)。
 
 先完成两条主要业务链的必要功能验收，再补关键保护性测试。其他工具的完整验收矩阵不作为本次交付前置。
 
@@ -48,6 +48,8 @@ native_api 指定 inspector_url、process_id、process_origin、workspace_id；�
 
 
 macOS Codex 端点可配置 `receiver_loader_ref` 和 `process_helper_ref`，分别指向打包的 `libexec/dj-codex-loader` / `libexec/dj-process-info`。只有实际投递才尝试加载，查询保持只读。加载器由 Swift 通过定向到既有 PID 的系统 URL 事件打开准确原对话，可能切换客户端当前对话页；不调用启动 API，不把正文、模型或会话参数放入 Agent 启动命令。先核对 socket、同 UID 主进程与出生身份，再核对加载后的原生 owner/epoch/工作区。OS 拒绝事件或接收端尚未就绪时保留待投，返回明确 receiver_reason；不伪造已送达、不绕过权限。详见 [0029](../specs/0029-codex-receiver-loading.md)。
+
+已授权的 Codex 原生工具宿主可在 follower IPC 不可用时，为同一个桌面实例提供在线发现和精确定点探测。在线发现逐页核对历史条目的原生 ID 与工作区；只有经过当前宿主读回的会话才标记可投递。宿主随 App 退出或被回收时仍需重新登记接收端，休眠或重连不应调用 `agent.unregister`。
 
 ## 原生会话控制
 

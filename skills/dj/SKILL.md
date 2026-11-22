@@ -96,6 +96,10 @@ metadata:
 
 ## 登记与订阅回复流程
 
+- subscription_health: 收到消息、规则触发及原会话接受是三个检查点。有人 @ 却没收到通知时，先核对本地事件的原生提及，再查原目标的 `subscription.get.state` 及分支，最后按事件读 `delivery.list`。有事件但没有投递时，先确认订阅为 `active`，再查规则和全局触发过滤；有投递时再定位接收端。详见[订阅排障与恢复](references/subscriptions.md#通知排查与原订阅恢复)。
+- reconnect: 重启、短期断线或旧观测用 `agent.probe` / `session.probe`。只在明确退出接线时调用 `agent.unregister`，它会暂停在用订阅。误注销后确认原生实例、会话与接收主体，重新登记同一会话，再用新 `agent_id` 读取并恢复原暂停订阅；无需重写规则。仅在获准补投时按准确事件 ID 显式重放，核实此前有无送到或处理。
+
+
 | 步骤 | 动作 | 必要边界 |
 | --- | --- | --- |
 | 1 | service.status核对服务和能力，agent.whoami核对当前主体及绑定 | 按运行时与身份段落处理未绑定或只有历史的目标 |

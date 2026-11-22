@@ -19,12 +19,14 @@ dj status --client-profile PRIVATE_PROFILE --json
 依次核对：
 
 1. `connection.list` 的身份及 `connection.probe` 的源健康与事件覆盖。本人能在客户端看到，不等于某种开放事件已授权。
-2. `subscription.get` 的状态、准确目标、来源选择器和 predicate。省略来源表示获准范围的全部对话；原生 @ 与正文里打出的名字不同。
+2. 通过 `message.list` / `message.get` 核对事件及平台原生提及。随后查准确目标的 `subscription.get`，确认 `state=active`、来源和规则分支。省略来源时覆盖所有获准对话。
 3. `message.filter.get` 的触发策略。黑名单消息仍可入库、读取，但不会直接触发通知。
 4. `agent.probe` / `session.probe` 的真实 receiver、实例与会话。只有历史记录不代表已有活接收口。
-5. `delivery.get` 的状态和错误。`ready` 是排队，`blocked/deferred` 需读原因，`unknown` 必须先核对原提交。
+5. `delivery.list` 按事件和目标查记录，`delivery.get` 核对状态和错误。`ready` 是排队，`blocked/deferred` 需读原因，`unknown` 必须先核对原提交。
 
 已有客户端重启后，实例与会话缓存可能暂时属于不同进程代际。调度器收到同一原生会话、实例和工作区的新原生核验，并确认当前实例提交门已开放后，会在提交事务内刷新会话缓存。不会创建新会话或绕过关闭的门；确认刷新前也不会提交输入。检查时不要仅凭 `instance_stopping` 文案认定客户端正在退出，还要比对实例、门与会话的进程代际。
+
+`agent.unregister` 会关闭登记并暂停原订阅。只有明确退出接线时才调用它。重连应保留登记和订阅；需要恢复误注销的目标时，重新登记同一原生会话与接收主体，用新 `agent_id` 读取原槽位，按当前 `expected_revision` 调用 `subscription.resume`。规则继续使用，恢复点是新入站事件；个别漏收通知需按明确授权和准确事件 ID 单独处理。完整操作见[订阅排查](../../skills/dj/references/subscriptions.md#通知排查与原订阅恢复)。
 
 根据需要用 `message.context/history` 读取本地上下文；不要靠反复重放、平台历史轮询或换会话试发判断实时接线是否正常。
 

@@ -37,7 +37,13 @@
         :target "消息保留在本地缓存" :target-state "不向 Agent 发出本次通知"
         :action "消息继续接收和记录，之后仍可被其他消息带作上下文。"
         :outcome "禁止自动触发 ≠ 隐藏或删除消息" :icon "■" :avatar "存"
-        :log "收到消息 → 持久缓存 → 黑名单命中 → 不触发投递")))
+        :log "收到消息 → 持久缓存 → 黑名单命中 → 不触发投递")
+      (js-object :id "paused" :source "项目讨论群" :kind "Lark · 原生 @ 提及"
+        :message "@助手 这条你能看到吗？" :rule "原订阅已暂停"
+        :target "消息已收，助手没响" :target-state "本次没有助手投递"
+        :action "恢复原会话的订阅后，新消息会按原规则继续通知。"
+        :outcome "助手重连用探测，主动注销才会暂停接线" :icon "■" :avatar "停"
+        :log "收到消息 → 识别 @ → 订阅暂停 → 无投递")))
   (defconst scenario-buttons (js-call document :querySelectorAll "[data-scenario]"))
   (defconst interface-buttons (js-call document :querySelectorAll "[data-interface]"))
   (defconst interface-names (js-array "cli" "mcp" "gepo"))

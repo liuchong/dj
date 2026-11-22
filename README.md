@@ -63,7 +63,7 @@ Skill 安装先预览，再按实际目标执行：
 dj skill install --target codex --scope user --dry-run
 ```
 
-安装 Skill 不会自动建立订阅，也不会修改客户端信任或启动 AI。
+安装 Skill 不会自动建立订阅，也不会修改客户端信任或启动 AI。已有订阅时，遇到断线先探测原接收端。有人 @ 却没通知，按[收件、订阅、投递排查](docs/guides/troubleshooting.md#已收消息但没有通知-ai)。
 
 ### 固定账号接固定对话
 

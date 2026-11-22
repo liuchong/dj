@@ -92,6 +92,12 @@ flowchart LR
 - 信封中的 `matched` 简化为该目标唯一订阅的命中摘要：`{target_key, subscription_revision, rule_ids}`。
 - 当该目标唯一订阅执行 `set`（更新规则）、`pause`、`delete` 或 `agent.unregister` 时，提交点前（`ready` / `deferred` / `blocked`）属于旧 `revision` 的待投项直接原子标记为 `cancelled`（pull 待领项标记为 `revoked`）；已进入 `submitting` / `accepted` / `unknown` 的投递保持原义，不撤回、不重发。
 
+## 登记与订阅的恢复
+
+原生客户端重启、接收口离线或 DJ 重启不改变订阅状态。已有实例按 [0018](0018-offline-recovery.md) 重验接收端，继续处理仍有效且尚未提交的原会话投递。
+
+显式 `agent.unregister` 关闭登记并暂停该会话的活跃订阅，规则仍保存在同一 `session:<session_key>` 槽位。同一原生会话和接收主体重新登记后，应使用新 `agent_id` 读取槽位并显式 `subscription.resume`。恢复仅接收新入站事件，暂停期间的事件可由调用方按准确事件 ID 显式重放。
+
 ## 统一公开操作目录
 
 去掉 `subscription.create` 与 `subscription.update` 的双操作拆分及多 `subscription_id` 选择负担，所有订阅操作仅按目标（`agent_id` 或 `group_id` 严格二选一）定位：
