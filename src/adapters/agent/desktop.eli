@@ -109,36 +109,38 @@
         (desktopDeadline context)
         (setq header (await (savedCodexHeader endpoint id)) reads (1+ reads)))
       header))
-  (defasync resolveWakeThreadId (endpoint preferred-id)
-    (let ((found (when (and (= (nativeTypeOf preferred-id) "string") (js-call codexUuidPattern :test preferred-id))
-                   preferred-id)))
-      (when (and (not found) (nativeGet endpoint "control_manifest_path"))
+  (defasync resolveWakeCandidates (endpoint preferred-id)
+    (let* ((seen (new globalThis.Set))
+           (add (lambda (candidate)
+             (when (and (= (nativeTypeOf candidate) "string")
+                        (< (nativeGet seen "size") 16))
+               (let ((trimmed (js-call candidate :trim)))
+                 (when (js-call codexUuidPattern :test trimmed)
+                   (js-call seen :add trimmed)))))))
+      (funcall add preferred-id)
+      (when (nativeGet endpoint "control_manifest_path")
         (let ((dir (dirname (nativeGet endpoint "control_manifest_path"))))
           (try
             (let ((ctx (JSON/parse (await (readFile (join dir "caller-context.json") "utf8")))))
-              (when (and (= (nativeTypeOf (nativeGet ctx "thread_id")) "string")
-                         (js-call codexUuidPattern :test (nativeGet ctx "thread_id")))
-                (setq found (nativeGet ctx "thread_id"))))
+              (funcall add (nativeGet ctx "thread_id")))
             (catch ignored nil))
-          (unless found
-            (try
-              (let ((manifest (JSON/parse (await (readFile (nativeGet endpoint "control_manifest_path") "utf8")))))
-                (when (and (= (nativeTypeOf (nativeGet manifest "caller_thread_id")) "string")
-                           (js-call codexUuidPattern :test (nativeGet manifest "caller_thread_id")))
-                  (setq found (nativeGet manifest "caller_thread_id"))))
-              (catch ignored nil)))))
-      (when (and (not found) (nativeGet endpoint "history_database"))
+          (try
+            (let ((manifest (JSON/parse (await (readFile (nativeGet endpoint "control_manifest_path") "utf8")))))
+              (funcall add (nativeGet manifest "caller_thread_id")))
+            (catch ignored nil))))
+      (when (nativeGet endpoint "history_database")
         (let ((db (try (await (openHistory endpoint)) (catch ignored nil))))
           (when db
             (try
-              (let ((row (js-call (js-call db :query
-                      "SELECT id FROM threads WHERE archived=0 AND preview<>'' ORDER BY updated_at DESC LIMIT 1") :get)))
-                (when (and (= (nativeTypeOf (nativeGet row "id")) "string")
-                           (js-call codexUuidPattern :test (nativeGet row "id")))
-                  (setq found (nativeGet row "id"))))
+              (let ((rows (js-call (js-call db :query
+                      "SELECT id FROM threads WHERE archived=0 AND preview<>'' ORDER BY updated_at DESC LIMIT 12") :all)))
+                (when (= (js-length rows) 0)
+                  (setq rows (js-call (js-call db :query
+                    "SELECT id FROM threads WHERE archived=0 ORDER BY updated_at DESC LIMIT 12") :all)))
+                (js-call rows :forEach (lambda (row) (funcall add (nativeGet row "id")))))
               (catch ignored nil)
               (finally (js-call db :close))))))
-      found))
+      (Array/from seen)))
   (defasync assertCursorBridgeEnabled (endpoint)
     ;; A listening bridge can outlive the renderer's feature gate. Its empty
     ;; list in that state is not authoritative evidence of an empty catalog.
@@ -242,16 +244,50 @@
              :observe "unsupported" :max_input_frame_bytes 262144))
            (endpointFor nil) (instanceScope nil) (workspaceFor nil) (sessionRecord nil) (cursorThreads nil)
            (codexSnapshot nil) (probeWith nil) (probe nil) (listSessions nil) (readMessages nil) (submit nil)
-           (probeInstance nil) (createSession nil) (nativeControl nil) (probeCodexControl nil) (maybeWake nil))
+           (probeInstance nil) (createSession nil) (nativeControl nil) (probeCodexControl nil)
+           (wakeCursor (new globalThis.Map)) (nextWakeThreadId nil) (maybeWake nil) (wakeAndProbeCodex nil))
+      (setq nextWakeThreadId (async (endpoint preferred-id)
+        (let ((candidates (await (resolveWakeCandidates endpoint preferred-id))))
+          (when (> (js-length candidates) 0)
+            (let* ((key (or (nativeGet endpoint "instance_id") (nativeGet endpoint "endpoint_ref") "codex"))
+                   (len (js-length candidates))
+                   (idx (or (js-call wakeCursor :get key) 0))
+                   (pick (aref candidates (- idx (* (Math/floor (/ idx len)) len)))))
+              (when (>= (nativeGet wakeCursor "size") 64) (js-call wakeCursor :clear))
+              (js-call wakeCursor :set key (1+ idx))
+              pick)))))
       (setq maybeWake (lambda (endpoint error preferred-id context)
         (when (and (= tool "codex") (not closed)
                    (nativeGet endpoint "receiver_loader_ref")
                    (js-call codexWakeReasons :includes (nativeGet error "diagnostic_reason")))
           (js-call (funcall (async ()
-            (let ((wake-id (await (resolveWakeThreadId endpoint preferred-id))))
+            (let ((wake-id (await (funcall nextWakeThreadId endpoint preferred-id))))
               (when (and wake-id (not closed))
                 (await (requestCodexAppWake endpoint wake-id context host))))))
             :catch (lambda (ignored) nil)))))
+      (setq wakeAndProbeCodex (async (endpoint id context)
+        (when (and (= tool "codex") (not closed) (nativeGet endpoint "receiver_loader_ref"))
+          (let* ((remaining (try (desktopDeadline context) (catch expired 0)))
+                 (wait-budget (Math/min 7500 (- remaining 800))))
+            (when (>= wait-budget 300)
+              (let ((wake-id (await (funcall nextWakeThreadId endpoint id))))
+                (when wake-id
+                  (let ((woke t))
+                    (try
+                      (await (requestCodexAppWake endpoint wake-id context host (js-object :cooldown_ms 15000)))
+                      (catch wake-err
+                        (unless (and (= (nativeGet wake-err "code") "receiver_load_backoff")
+                                     (< (nativeGet wake-err "elapsed_ms" 99999) 8000))
+                          (setq woke false))))
+                    (when woke
+                      (let ((deadline (+ (performance/now) wait-budget)) (probed nil))
+                        (while (and (< (performance/now) deadline) (not probed) (not closed))
+                          (try
+                            (setq probed (await (funcall probeCodexControl endpoint id context)))
+                            (catch pending nil))
+                          (unless (or probed closed (>= (performance/now) deadline))
+                            (await (new globalThis.Promise (lambda (done) (nativeSetTimeout done 100))))))
+                        probed))))))))))
       (setq endpointFor (lambda (target)
         (when closed (throw (desktopError "desktop_closed")))
         (when (and (nativeGet target "tool") (not (= (nativeGet target "tool") tool)))
@@ -343,9 +379,10 @@
             (funcall sessionRecord endpoint id (nativeGet header "title" "")
               (nativeGet row "runtime_state" "unknown") (nativeGet response "instance_epoch") nil directory)))))
       (setq probeWith (async (target binding context &optional shared)
-        (try
-          (let ((endpoint (funcall endpointFor binding)) (id (nativeGet target "native_session_id")))
-            (cond
+        (let ((woke-attempted false))
+          (try
+            (let ((endpoint (funcall endpointFor binding)) (id (nativeGet target "native_session_id")))
+              (cond
               ((= tool "cursor")
                 (let* ((response (when (nativeGet endpoint "native_api")
                                   (await (cursorNativeRequest endpoint (js-object :operation "probe" :thread id) context))))
@@ -365,7 +402,6 @@
                 (try
                   (await (funcall probeCodexControl endpoint id context))
                   (catch control-unavailable
-                    (funcall maybeWake endpoint control-unavailable id context)
                     (try
                       (await (funcall codexSnapshot endpoint id context (async (channel result)
                         (let* ((state (nativeGet result "state"))
@@ -377,9 +413,15 @@
                               :reasoning_effort (nativeGet state "reasoningEffort" nil))
                             (nativeGet state "cwd")))) shared))
                       (catch fallback-unavailable
-                        (when (= (nativeGet control-unavailable "code") "receiver_control_ambiguous")
-                          (throw control-unavailable))
-                        (throw fallback-unavailable))))))
+                        (let ((recovered (when (js-call codexWakeReasons :includes (nativeGet control-unavailable "diagnostic_reason"))
+                                           (setq woke-attempted t)
+                                           (await (funcall wakeAndProbeCodex endpoint id context)))))
+                          (if recovered
+                            recovered
+                            (progn
+                              (when (= (nativeGet control-unavailable "code") "receiver_control_ambiguous")
+                                (throw control-unavailable))
+                              (throw fallback-unavailable)))))))))
               (t
                 (await (funcall codexSnapshot endpoint id context (async (channel result)
                   (let* ((state (nativeGet result "state"))
@@ -401,7 +443,8 @@
                     (try (setq controlled (await (funcall probeCodexControl endpoint
                       (nativeGet target "native_session_id") context)))
                       (catch disconnected
-                        (funcall maybeWake endpoint disconnected (nativeGet target "native_session_id") context)
+                        (unless woke-attempted
+                          (funcall maybeWake endpoint disconnected (nativeGet target "native_session_id") context))
                         (when (= cause "desktop_transport")
                           (setq cause (nativeGet disconnected "code" "receiver_control_unavailable"))))))))
               (when (and (not controlled) (= tool "codex") (or
@@ -426,7 +469,7 @@
                 (put historical :receiver_reason cause))
               (or controlled historical (js-object :runtime_state
                 (if (js-call (js-array "ENOENT" "desktop_no_owner" "desktop_transport") :includes cause) "offline" "unknown")
-                :live_receiver false :evidence_level "none" :reason cause :receiver_reason cause)))))))
+                :live_receiver false :evidence_level "none" :reason cause :receiver_reason cause))))))))
       (setq probe (async (target binding context)
         (await (funcall probeWith target binding context))))
       (setq listSessions (async (scope cursor budget context)
