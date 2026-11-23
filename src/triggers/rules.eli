@@ -65,11 +65,31 @@
                             (js-call ids :add id))))))))))
           (setq index (1+ index)))
         (or problem (success rules)))))
+  (defun normalizeChatIds (values)
+    (if (not (Array/isArray values))
+      (js-array)
+      (js-call (Array/from (new globalThis.Set values)) :sort)))
+  (defun normalizeMentionAllPolicy (policy)
+    (let ((raw (or policy (js-object))))
+      (js-object
+        :enabled (if (object-has? raw :enabled) (= (nativeGet raw "enabled") t) t)
+        :allow_chat_ids (normalizeChatIds (nativeGet raw "allow_chat_ids"))
+        :deny_chat_ids (normalizeChatIds (nativeGet raw "deny_chat_ids")))))
+  (defun mentionAllAllowed (policy event)
+    (let* ((normalized (normalizeMentionAllPolicy policy))
+           (chat (or (nativeGet (nativeGet event "conversation") "native_chat_id") ""))
+           (deny (nativeGet normalized "deny_chat_ids"))
+           (allow (nativeGet normalized "allow_chat_ids")))
+      (cond
+        ((js-call deny :includes chat) false)
+        ((js-call allow :includes chat) t)
+        (t (= (nativeGet normalized "enabled") t)))))
   (defun normalizeSubscriptionSpec (spec normalize-delivery-policy)
     (unless (object-has? spec :start) (put spec :start "now"))
     (unless (object-has? spec :delivery_mode) (put spec :delivery_mode "push"))
     (put spec :context_policy (normalizeContextPolicy (nativeGet spec "context_policy")))
     (put spec :delivery_policy (funcall normalize-delivery-policy (nativeGet spec "delivery_policy")))
+    (put spec :mention_all_policy (normalizeMentionAllPolicy (nativeGet spec "mention_all_policy")))
     (let ((raw-rules (if (object-has? spec :rules) (nativeGet spec "rules") (defaultSubscriptionRules))))
       (put spec :rules
         (js-call raw-rules :map (lambda (rule)
@@ -242,6 +262,14 @@
                   :matched_rule_ids matched-ids
                   :context_policy (effectiveContextPolicy (nativeGet version "context_policy") matched-rules)
                   :instruction_policies (effectiveInstructionPolicies version matched-rules)))
+              ((and (= (nativeGet event "mentions_all") t)
+                    (js-call (js-array "message.created" "message.edited") :includes (nativeGet event "event_kind"))
+                    (mentionAllAllowed (nativeGet version "mention_all_policy") event))
+                (js-object
+                  :result "match"
+                  :matched_rule_ids (js-array "mention_all")
+                  :context_policy (or (nativeGet version "context_policy") (normalizeContextPolicy nil))
+                  :instruction_policies (effectiveInstructionPolicies version (js-array))))
               (indeterminate
                 (js-object :result "indeterminate" :matched_rule_ids (js-array) :context_policy nil :instruction_policies (js-array)))
               (t
@@ -251,6 +279,8 @@
     supportedEventKinds
     defaultSubscriptionRules
     validateSubscriptionRules
+    normalizeMentionAllPolicy
+    mentionAllAllowed
     normalizeSubscriptionSpec
     rulesUsePerson
     resolveSubscriptionRules

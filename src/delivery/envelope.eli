@@ -27,6 +27,7 @@
       "resource"
       "people"
       "mentions"
+      "mentions_all"
       "reaction"
       "pin"
       "trigger_reasons"

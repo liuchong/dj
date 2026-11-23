@@ -24,6 +24,7 @@
   (import "./lark-http.eli" createLarkHttpTransport)
   (import "./lark-resources.eli" requestResource ensureUserNotices)
   (import "./lark-attachments.eli" createLarkAttachmentReader projectLarkContent)
+  (import "../../../packages/lark/src/messages.eli" larkMessageMentionsAll)
   (defun watchAddress
     (config watch)
     (js-object
@@ -256,7 +257,10 @@
                         (nativeGet message "root_id" nil) (nativeGet message "parent_id" nil)))
                       (when (Array/isArray (nativeGet message "mentions"))
                         (put event :mentions (js-call (nativeGet message "mentions") :filter (lambda (mention)
-                          (= (nativeGet mention "id_type" "open_id") "open_id")))))
+                          (and (= (nativeGet mention "id_type" "open_id") "open_id")
+                               (not (= (nativeGet mention "id") "all")))))))
+                      (put event :mentions_all (larkMessageMentionsAll (nativeGet message "parsed_content")
+                        (nativeGet message "mentions" (js-array))))
                       ;; HTTP transport returns normalized text; do not decode it twice.
                       (when (nativeGet sender "identities")
                         (put (nativeGet event "sender") :identities (nativeGet sender "identities")))

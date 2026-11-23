@@ -13,4 +13,5 @@ Lark 消息详情提供 `updated`、`update_time` 和真实 `mentions`。DJ 通�
 
 - 编辑事件 `mentions` 表示相对于上一次确认状态新增的真实提及；重复编辑正文、改显示名或删除 @ 不构成新的提及。两次分别观察到移除和重新加入，才认定为再次添加。新建默认订阅会识别编辑后新增的对当前身份的 @。已有指定 `event_kinds` 的订阅需显式加入 `message.edited`，并在原 @ 谓词允许此事件类型。
 - 编辑触发继续走同一套触发黑名单、订阅、双连接去重和原会话投递。被拦时仍保存编辑。只有获准匹配后才可能点处理中表情。纯编辑本身不重执行管理命令或推断该取消 AI 工作。
+- `@所有人`（飞书 `text` 中的 `@_all`、`post` 中的 `tag="at", user_id="all"` 或 `mentions[].id="all"`）统一解析为 `mentions_all: true`（新建与编辑均以当前消息为准，不与旧版本做差分，且不进入个人 `mentions`）；订阅通过 `mention_all_policy`（`enabled` 默认 `true`、`allow_chat_ids`、`deny_chat_ids`，优先级 `deny_chat_ids > allow_chat_ids > enabled`）控制群全员触发范围。
 - 通知列出 `message_edit`，新增提及另列 `edit_mention`。回复引用仍定位同一原生消息与话题，回复身份按当次编辑的完整原生提及和原交互证据解析，新增提及只用于触发。无法确认唯一出口时保留通知及来源证据；若首到视图暂未解析出唯一出口导致首次通知 `reply_context_id` 为空，后续对端同快照视图到达并确立唯一出口后，在原投递回复有效期内调用 `message.reply_context` 可按同一证据链补发回复引用并绑定交互身份。既有身份绑定不依靠收到副本的先后改写。

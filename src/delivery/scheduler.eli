@@ -410,6 +410,7 @@
               (put envelope :context (envelopeContext context recipient event context-policy)))
             (when (nativeGet event "people") (put envelope :people (nativeGet event "people")))
             (when (object-has? event :mentions) (put envelope :mentions (nativeGet event "mentions")))
+            (when (nativeGet event "mentions_all") (put envelope :mentions_all t))
             (when (nativeGet event "interaction") (put envelope :interaction (nativeGet event "interaction")))
             (when (nativeGet event "reaction") (put envelope :reaction (nativeGet event "reaction")))
             (put envelope :reply_route (js-object :status (if (and (= (nativeGet selected "status") "ready") (not reply)) "forbidden" (nativeGet selected "status"))

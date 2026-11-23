@@ -9,7 +9,8 @@
     resolveSubscriptionRules
     checkSubscriptionRules
     subscriptionIndexEntries
-    evaluateSubscriptionRules)
+    evaluateSubscriptionRules
+    normalizeMentionAllPolicy)
   (import "../application/context.eli"
     utcNow
     nextId
@@ -35,28 +36,31 @@
   (import "./groups.eli" resolveSubscriptionTarget groupFingerprint handleGroupOperation projectGroup)
   (import "../routing/group-selection.eli" distributionPolicy)
   (defun projectSubscription (record)
-    (safeFields
-      record
-      (js-array
-        "target_key"
-        "configuration_id"
-        "owner_principal_id"
-        "subscriber_model"
-        "subscriber"
-        "agent_id"
-        "group_id"
-        "distribution"
-        "rules"
-        "resolved_sources"
-        "rule_sources"
-        "context_policy"
-        "delivery_policy"
-        "instruction_policy"
-        "delivery_mode"
-        "start_seq"
-        "cutover_seq"
-        "state"
-        "revision")))
+    (let ((projected
+            (safeFields
+              record
+              (js-array
+                "target_key"
+                "configuration_id"
+                "owner_principal_id"
+                "subscriber_model"
+                "subscriber"
+                "agent_id"
+                "group_id"
+                "distribution"
+                "rules"
+                "resolved_sources"
+                "rule_sources"
+                "context_policy"
+                "delivery_policy"
+                "instruction_policy"
+                "delivery_mode"
+                "start_seq"
+                "cutover_seq"
+                "state"
+                "revision"))))
+      (put projected :mention_all_policy (normalizeMentionAllPolicy (nativeGet record "mention_all_policy")))
+      projected))
   (defun inspectSubscriptionAllowed (context record)
     (or (can context "subscription.manage" record)
       (and (nativeGet record "configuration_id")

@@ -122,6 +122,7 @@
               "event_kind"
               "connection_id"
               "conversation.native_chat_id" "native_message_id" "mentions.any"
+              "mentions.all"
               "sender.id"
               "sender.kind"
               "mentions.id"
@@ -166,6 +167,13 @@
         (integerSchema 1 20)
         :max_bytes
         (integerSchema 1 32768))))
+  (defconst mentionAllPolicySchema
+    (objectSchema
+      (js-object
+        :enabled booleanSchema
+        :allow_chat_ids (Object/assign (arraySchema idSchema 256 0) (js-object :uniqueItems t))
+        :deny_chat_ids (Object/assign (arraySchema idSchema 256 0) (js-object :uniqueItems t)))
+      (js-array)))
   (defconst ruleSourceSchema
     (Object/assign
       (objectSchema
@@ -205,6 +213,8 @@
         contextPolicySchema
         :delivery_policy
         deliveryPolicySchema
+        :mention_all_policy
+        mentionAllPolicySchema
         :instruction_policy
         instructionPolicySchema
         :delivery_mode

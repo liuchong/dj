@@ -3,6 +3,7 @@
   (import "../../core/types.eli" addSeconds)
   (import "../../application/context.eli" utcNow nativeCallContext)
   (import "../../connections/interactions.eli" resolveMessageInteraction)
+  (import "../../../packages/lark/src/messages.eli" larkMessageMentionsAll)
   (defconst editWindowSeconds 7200)
   (defconst editPollSeconds 15)
   (defconst editBatchSize 20)
@@ -63,7 +64,9 @@
                   (js-call (nativeGet previous "native_message_mentions" (nativeGet previous "mentions" (js-array)))
                     :map (lambda (mention) (nativeGet mention "id")))))
                (added (js-call all :filter
-                 (lambda (mention) (not (js-call known-ids :has (nativeGet mention "id"))))))
+                 (lambda (mention)
+                   (and (not (= (nativeGet mention "id") "all"))
+                        (not (js-call known-ids :has (nativeGet mention "id")))))))
                (original-address (nativeGet original "conversation"))
                (event (funcall normalize (Object/assign (js-object) message (js-object
                  :mentions added :root_id (nativeGet original "root_message_id")
@@ -77,6 +80,7 @@
           (put event :sender (nativeGet original "sender"))
           (when (nativeGet original "interaction")
             (put event :interaction (nativeGet original "interaction")))
+          (put event :mentions_all (larkMessageMentionsAll (nativeGet message "parsed_content") all))
           (put event :native_message_mentions all)
           event))))
 

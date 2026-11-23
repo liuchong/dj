@@ -322,13 +322,17 @@
                       (when (Array/isArray (nativeGet normalized "mentions"))
                         (put event :mentions (js-call (nativeGet normalized "mentions") :map (lambda (mention)
                           (safeFields mention (js-array "id" "name" "key"))))))
+                      (when (= (nativeGet normalized "mentions_all") t)
+                        (put event :mentions_all t))
                       (when (Number/isSafeInteger (nativeGet normalized "native_message_update_time"))
                         (put event :native_message_update_time (nativeGet normalized "native_message_update_time")))
                       (when (and (= (nativeGet event "event_kind") "message.edited")
                                  (Array/isArray (nativeGet normalized "native_message_mentions")))
                         (put event :native_message_mentions
                           (js-call (js-call (nativeGet normalized "native_message_mentions") :filter
-                            (lambda (mention) (= (nativeGet mention "id_type" "open_id") "open_id")))
+                            (lambda (mention)
+                              (and (= (nativeGet mention "id_type" "open_id") "open_id")
+                                   (not (= (nativeGet mention "id") "all")))))
                             :map (lambda (mention) (safeFields mention (js-array "id" "key"))))))
                       (when (nativeGet normalized "message_source")
                         (put event :message_source (nativeGet normalized "message_source"))

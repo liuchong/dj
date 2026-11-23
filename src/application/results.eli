@@ -242,6 +242,11 @@
       (js-object :busy stringSchema :offline stringSchema :ttl_seconds integerSchema)))
   (put
     definitions
+    :mention_all_policy
+    (obj
+      (js-object :enabled boolSchema :allow_chat_ids (arr stringSchema) :deny_chat_ids (arr stringSchema))))
+  (put
+    definitions
     :source
     (obj (js-object :connection_id stringSchema :conversation_ref stringSchema :include_threads boolSchema)))
   (put
@@ -634,7 +639,7 @@
     :subscriber_hints (obj (js-object :basis stringSchema :has_more boolSchema :instruction stringSchema
       :subscribers (arr (obj (Object/assign (js-object) (nativeGet (nativeGet definitions "subscriber") "properties")
         (js-object :agent_id stringSchema :display_name stringSchema))))))
-    :recipient (ref "subscriber") :conversation_rules (ref "conversation_rules") :people (arr (ref "mention")) :mentions (arr (ref "mention")) :reaction (ref "reaction") :pin (ref "pin") :trigger_reasons (arr (ref "trigger_reason")) :interaction (ref "interaction") :reply_route (ref "reply_route")
+    :recipient (ref "subscriber") :conversation_rules (ref "conversation_rules") :people (arr (ref "mention")) :mentions (arr (ref "mention")) :mentions_all boolSchema :reaction (ref "reaction") :pin (ref "pin") :trigger_reasons (arr (ref "trigger_reason")) :interaction (ref "interaction") :reply_route (ref "reply_route")
     :resource (ref "lark_resource") :context (ref "message_context") :topic (ref "topic") :ingress_evidence (ref "ingress_evidence")
     :message_source (ref "message_source")
     :instructions (arr (obj (js-object :target_key stringSchema :subscription_revision integerSchema
@@ -1115,6 +1120,7 @@
   (js-call (js-array "spec" "subscription") :forEach (lambda (key)
     (let ((properties (nativeGet (nativeGet definitions key) "properties")))
       (put properties :group_id nullableString) (put properties :distribution (ref "distribution"))
+      (put properties :mention_all_policy (ref "mention_all_policy"))
       (put properties :agent_id nullableString))))
   (put (nativeGet (nativeGet definitions "subscription") "properties") :subscriber (nullable (ref "subscriber")))
   (put (nativeGet (nativeGet definitions "preview") "properties") :target

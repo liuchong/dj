@@ -11,6 +11,7 @@
         :conversation.native_chat_id "string"
         :native_message_id "string"
         :mentions.any "boolean"
+        :mentions.all "boolean"
         :mentions.id "string"
         :interaction.kind "string"
         :interaction.state "string"
@@ -172,9 +173,10 @@
         (let ((raw (nativeGet (nativeGet event "content") "text")))
           (if (= (nativeTypeOf raw) "string") (js-call raw :split lineBreakPattern) raw)))
       ((= field "mentions.id") (nativeGet event "mentions"))
+      ((= field "mentions.all") (= (nativeGet event "mentions_all") t))
       ((= field "mentions.any")
         (cond
-          ((or (= (nativeGet event "addressed_self") t) (= (nativeGet event "addressed_bot") t)) t)
+          ((or (= (nativeGet event "addressed_self") t) (= (nativeGet event "addressed_bot") t) (= (nativeGet event "mentions_all") t)) t)
           ((Array/isArray (nativeGet event "mentions")) (> (js-length (nativeGet event "mentions")) 0))
           (t undefined)))
       ((= field "conversation.native_chat_id") (or (nativeGet (nativeGet event "conversation") "native_chat_id") ""))

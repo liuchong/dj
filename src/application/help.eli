@@ -65,7 +65,7 @@
       :agent.unregister
       "主动退出接线：关闭登记，暂停该会话的在用订阅并取消尚未提交的订阅投递。重连或恢复接收端应调用 agent.probe。误注销后须重新登记同一原生会话，再显式恢复原订阅。"
       :subscription.preview
-      "为目标（agent_id 或 group_id 二选一）预览唯一订阅逻辑线：spec.rules 支持 1..64 条分支（各带 id、enabled、sources、event_kinds、predicate 及可选 context_policy/instruction_policy；all/any/not 任意多条件组合及 text、text.first_line、text.lines 配合 eq/in/contains/prefix/suffix）。目标尚无订阅时 expected_revision 省略或传 0，已有订阅时传当前 revision；返回固定 preview_id、rule_sources 与样例命中分支 matched_rule_ids。Lark 编辑后新增原生 @ 时匹配 message.edited；显式 @ 分支须允许该事件类型。"
+      "为目标（agent_id 或 group_id 二选一）预览唯一订阅逻辑线：spec.rules 支持 1..64 条分支（各带 id、enabled、sources、event_kinds、predicate 及可选 context_policy/instruction_policy；all/any/not 任意多条件组合及 text、text.first_line、text.lines 配合 eq/in/contains/prefix/suffix）。可选 mention_all_policy 控制 @所有人 触发（enabled 默认 true，allow_chat_ids/deny_chat_ids 按群 chat_id 覆盖，优先级 deny_chat_ids > allow_chat_ids > enabled）。目标尚无订阅时 expected_revision 省略或传 0，已有订阅时传当前 revision；返回固定 preview_id、rule_sources 与样例命中分支 matched_rule_ids。Lark 编辑后新增原生 @ 时匹配 message.edited；显式 @ 分支须允许该事件类型。"
       :subscription.set
       "凭固定 preview_id 与 expected_revision（首次为 0，更新为当前 revision）原子创建或替换该目标的唯一订阅槽位（session:<session_key> 或 group:<group_id>），旧 revision 未提交待投项自动取消。"
       :subscription.list
@@ -310,7 +310,15 @@
               :offline
               "hold"
               :ttl_seconds
-              (nativeGet limits "ttl_default_seconds")))))
+              (nativeGet limits "ttl_default_seconds"))
+            :mention_all_policy
+            (js-object
+              :enabled
+              t
+              :allow_chat_ids
+              (js-array)
+              :deny_chat_ids
+              (js-array)))))
       defaults))
   (defun limitReferences
     (properties)

@@ -2256,6 +2256,29 @@
       "then": "消息删除源适配接通后再验证 message.deleted 正向触发"
     },
     {
+      "case_id": "T41.mention-all-policy.unit",
+      "parent_id": "T41",
+      "file": "tests/unit/rules.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-unit",
+      "requirements": [
+        "Q17"
+      ],
+      "acceptance_ids": [
+        "A03",
+        "A05"
+      ],
+      "given": "unit/rules",
+      "when": "验证 mentions.all 谓词、mentions.any 联动以及 mention_all_policy 的 deny > allow > enabled 优先级",
+      "then": "explicit assertions in rules.test.eli"
+    },
+    {
       "case_id": "T34.multipart-recovery.future",
       "parent_id": "T34",
       "file": "tests/integration/im.test.eli",
@@ -27429,6 +27452,29 @@
       "given": "启用编辑支持前已收到无提及原消息，随后通过 WebSocket 推送 im.message.updated_v1（含扁平与嵌套载荷、重复推送与未知消息）",
       "when": "编辑先后新增、重复触发、移除并再次添加自我提及",
       "then": "实时拉取权威快照并按 websocket 传输通道入库 message.edited 触发投递，重复更新与未知消息安全忽略且不与轮询重复"
+    },
+    {
+      "case_id": "T41.lark-mention-all-policy.integration",
+      "parent_id": "T41",
+      "file": "tests/integration/hybrid-inbox.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-integration",
+      "requirements": [
+        "Q17"
+      ],
+      "acceptance_ids": [
+        "A03",
+        "A05"
+      ],
+      "given": "Lark 群消息出现原生 @_all（text/post）或普通字面 @all，以及带默认开关和黑白名单配置的订阅",
+      "when": "按默认全局开启、群黑名单禁用、全局关闭配白名单放行与黑白名单冲突，分别测试新建、编辑保持及与个人提及共存",
+      "then": "原生 @所有人 在新建与任意编辑后稳定设为 mentions_all=true，按 deny > allow > enabled 生效且不影响直接 @我 及 reply_route"
     },
     {
       "case_id": "T41.hybrid-inbox-flow.integration",
