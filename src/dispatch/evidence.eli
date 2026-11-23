@@ -4,26 +4,30 @@
   (import "../connections/interactions.eli" messageInteraction)
   ;; Compare native identities only within one exact, retained message. A display
   ;; name is never an alias, and input records remain independent subscriptions.
+  (import "./events.eli" larkMessageSnapshot messageSnapshotStamp)
   (defun replyViews (context event)
     (let* ((views (js-array event)) (db (nativeGet (nativeGet context "store") "db"))
       (repository (nativeGet context "repository"))
       (source (js-call repository :get "connections" (nativeGet event "connection_id"))))
-      (when (and db (= (nativeGet source "platform") "lark")
-        (= (nativeGet event "event_kind") "message.created") (nativeGet event "native_message_id"))
+      (when (and db (larkMessageSnapshot source event) (nativeGet event "native_message_id"))
         (let* ((clock (nativeGet (nativeGet context "ports") "clock"))
           (now (if clock (js-call clock :utcNow) (js-call (new globalThis.Date) :toISOString)))
+          (stamp (messageSnapshotStamp event))
+          (iso (js-call (new globalThis.Date stamp) :toISOString))
           (rows (js-call (js-call db :query
-            "SELECT payload FROM events WHERE native_message_id=? AND event_kind='message.created' AND connection_id<>? AND tombstone=0 AND body_expires_at>? AND json_extract(payload,'$.conversation.native_chat_id')=? ORDER BY ingress_seq LIMIT 65")
+            "SELECT payload FROM events WHERE native_message_id=? AND event_kind IN ('message.created','message.edited') AND connection_id<>? AND tombstone=0 AND body_expires_at>? AND json_extract(payload,'$.conversation.native_chat_id')=? AND (json_extract(payload,'$.native_message_update_time')=? OR (json_extract(payload,'$.native_message_update_time') IS NULL AND json_extract(payload,'$.source_time')=?)) ORDER BY ingress_seq LIMIT 65")
             :all (nativeGet event "native_message_id") (nativeGet event "connection_id") now
-            (nativeGet (nativeGet event "conversation") "native_chat_id"))))
+            (nativeGet (nativeGet event "conversation") "native_chat_id") stamp iso)))
           (when (> (js-length rows) 64) (put views :overflow t))
           (js-call rows :forEach (lambda (row)
             (let* ((peer (JSON/parse (nativeGet row "payload")))
               (connection (js-call repository :get "connections" (nativeGet peer "connection_id"))))
               (when (and (sameReplyNetwork source connection)
                 (= (nativeGet peer "identity_revision") (nativeGet connection "identity_revision" (nativeGet connection "revision")))
-                (= (nativeGet peer "source_time") (nativeGet event "source_time")))
+                (= (messageSnapshotStamp peer) stamp))
                 (js-call views :push peer))))))) views))
+  (defun replyMentions (event)
+    (nativeGet event "native_message_mentions" (nativeGet event "mentions" (js-array))))
   (defun selectReplyRoute (context event session-key)
     (let* ((repository (nativeGet context "repository"))
       (source (js-call repository :get "connections" (nativeGet event "connection_id")))
@@ -31,7 +35,7 @@
       (slots (new globalThis.Map)) (defaults (new globalThis.Map))
       (private-recipients (new globalThis.Map)) (private-echoes (new globalThis.Map)) (stale false)
       (explicit (and (not (js-call (js-array "message.reaction.added" "message.pinned") :includes (nativeGet event "event_kind")))
-        (js-call views :some (lambda (view) (> (js-length (nativeGet view "mentions" (js-array))) 0)))))
+        (js-call views :some (lambda (view) (> (js-length (replyMentions view)) 0)))))
       (matched (js-array)) (add nil) (inspect nil))
       (when (and (nativeGet event "identity_revision")
         (not (= (nativeGet event "identity_revision") (nativeGet source "identity_revision" (nativeGet source "revision")))))
@@ -57,7 +61,7 @@
                   (funcall add slot destination) (setq stale t)))))))))
       (js-call views :forEach (lambda (view)
         (let* ((connection (js-call repository :get "connections" (nativeGet view "connection_id")))
-          (mentions (nativeGet view "mentions" (js-array))))
+          (mentions (replyMentions view)))
           (when connection
             (if explicit
               (js-call mentions :forEach (lambda (mention)
@@ -71,7 +75,11 @@
               (if (= (nativeGet view "chat_type") "p2p")
                 (js-call (if (nativeGet (messageInteraction connection view "reply") "addressed_self")
                   private-echoes private-recipients) :set (nativeGet connection "connection_id") connection)
-                (js-call defaults :set (nativeGet connection "connection_id") connection)))))))
+                (unless (or (= (nativeGet event "event_kind") "message.edited")
+                          (= (nativeGet view "event_kind") "message.edited")
+                          (and (larkMessageSnapshot connection view)
+                               (> (messageSnapshotStamp view) (Date/parse (nativeGet view "source_time")))))
+                  (js-call defaults :set (nativeGet connection "connection_id") connection))))))))
       ;; One private message may be both incoming to its recipient and a sender
       ;; echo on another connection. Only incoming views identify the recipient.
       ;; With no incoming view, retain self-chat behavior; never guess by name.

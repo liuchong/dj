@@ -27,7 +27,7 @@
         :get (nativeGet identity "context_id") (nativeGet identity "event_key"))))
       (previous (and db (js-call (js-call db :query
         "SELECT payload FROM dispatch_bindings WHERE context_id=? AND (source_time<? OR (source_time=? AND ingress_seq<=?)) ORDER BY source_time DESC,ingress_seq DESC,cause_key DESC LIMIT 1")
-        :get (nativeGet identity "context_id") (nativeGet event "source_time" (utcNow context)) (nativeGet event "source_time" (utcNow context)) order)))
+        :get (nativeGet identity "context_id") (nativeGet identity "source_time" (utcNow context)) (nativeGet identity "source_time" (utcNow context)) order)))
       (evidence (selectReplyRoute context event session-key))
       (explicit (or (js-call (js-array "native_mentions" "shared_native_message") :includes (nativeGet evidence "basis"))
         (and (= (nativeGet evidence "basis") "private_recipient") (= (nativeGet evidence "private_evidence") "incoming"))))
@@ -45,7 +45,7 @@
         (let* ((identity (contextIdentity context event)) (id (nativeGet identity "context_id"))
           (current (js-call repository :get "dispatch_contexts" id)) (connection (nativeGet selected "connection"))
           (binding (js-object :binding_id (str "identity_" (hashValue (js-array id (nativeGet identity "event_key"))))
-            :context_id id :cause_key (nativeGet identity "event_key") :ingress_seq (eventOrder context event) :source_time (nativeGet event "source_time" (utcNow context))
+            :context_id id :cause_key (nativeGet identity "event_key") :ingress_seq (eventOrder context event) :source_time (nativeGet identity "source_time" (utcNow context))
             :connection_id (nativeGet connection "connection_id") :identity (nativeGet connection "identity")
             :identity_revision (nativeGet connection "identity_revision" (nativeGet connection "revision"))
             :basis (nativeGet selected "basis") :state "reserved" :previous_binding_id (nativeGet current "binding_id" nil)

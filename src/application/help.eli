@@ -16,7 +16,7 @@
       "读取消息投递的持续IM身份绑定；delivery.get.notification列出同一通知的来源副本与归并关系。交互上下文不是AI任务或负责人。"
       :dispatch.context.transfer
       "仅在用户明确要求身份转移时调用；传context_id、当前expected_binding_id、目标connection_id、explicit=true及reason。只改变之后的交互，不改旧投递快照、订阅或退订状态。"
-      :message.reply_context "已认证的 DJ 调用方可用准确的 delivery_id 重取回复引用。重检原消息、领取代次和固定出口，返回原绝对 expires_at。reply_authority 的接收主体用于追踪通知；reply_context_expired 表示原期限已到。"
+      :message.reply_context "已认证的 DJ 调用方可用准确的 delivery_id 重取回复引用。重检原消息、领取代次和固定出口，返回原绝对 expires_at；若首次通知因暂缺对端视图未生成 reply_context_id，在对端同快照到达并确立唯一出口且原期限未到时可补建回复引用。reply_authority 的接收主体用于追踪通知；reply_context_expired 表示原期限已到。"
       :task.list "按当前管理员白名单或本人连接范围分页巡查任务；accepted 不代表完成。"
       :task.tree "展示原 IM 消息、准确 AI 会话与登记的子对话；未知关联明确标注。"
       :task.link "为已接收投递登记明确父子会话关系；未原生核验，不猜任务归属。"
@@ -43,7 +43,7 @@
       :connection.get
       "读取一个已配置 IM 连接的安全身份、能力和源健康摘要。"
       :connection.probe
-      "只读核对已配置连接；不改变账号、OAuth、webhook 或收件所有权。"
+      "只读核对已配置连接。Lark 近期消息编辑的批量回读状态见 event_source.poll_fallback.edit_poll。"
       :conversation.list
       "列出配置或本地已知且获准的 IM 对话/话题；不声明整个平台全量。"
       :conversation.resolve
@@ -65,7 +65,7 @@
       :agent.unregister
       "主动退出接线：关闭登记，暂停该会话的在用订阅并取消尚未提交的订阅投递。重连或恢复接收端应调用 agent.probe。误注销后须重新登记同一原生会话，再显式恢复原订阅。"
       :subscription.preview
-      "为目标（agent_id 或 group_id 二选一）预览唯一订阅逻辑线：spec.rules 支持 1..64 条分支（各带 id、enabled、sources、event_kinds、predicate 及可选 context_policy/instruction_policy；all/any/not 任意多条件组合及 text、text.first_line、text.lines 配合 eq/in/contains/prefix/suffix）。目标尚无订阅时 expected_revision 省略或传 0，已有订阅时传当前 revision；返回固定 preview_id、rule_sources 与样例命中分支 matched_rule_ids。"
+      "为目标（agent_id 或 group_id 二选一）预览唯一订阅逻辑线：spec.rules 支持 1..64 条分支（各带 id、enabled、sources、event_kinds、predicate 及可选 context_policy/instruction_policy；all/any/not 任意多条件组合及 text、text.first_line、text.lines 配合 eq/in/contains/prefix/suffix）。目标尚无订阅时 expected_revision 省略或传 0，已有订阅时传当前 revision；返回固定 preview_id、rule_sources 与样例命中分支 matched_rule_ids。Lark 编辑后新增原生 @ 时匹配 message.edited；显式 @ 分支须允许该事件类型。"
       :subscription.set
       "凭固定 preview_id 与 expected_revision（首次为 0，更新为当前 revision）原子创建或替换该目标的唯一订阅槽位（session:<session_key> 或 group:<group_id>），旧 revision 未提交待投项自动取消。"
       :subscription.list

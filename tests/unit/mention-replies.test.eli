@@ -3,6 +3,7 @@
   (import "../../src/messaging/reply-context.eli" resolveReply)
   (import "../../src/policy/handles.eli" createHandleAuthority issueHandle)
   (import "../../src/connections/replies.eli" normalizeReplyRoutes)
+  (import "../../src/dispatch/events.eli" equivalentEventKinds eventIdentity)
   (import "../../src/dispatch/evidence.eli" selectReplyRoute)
   (import "../../src/adapters/im/lark-events.eli" flattenLarkEvent normalizeLarkEvent)
   (import "../../src/triggers/predicate.eli" validatePredicate evaluatePredicate)
@@ -124,7 +125,40 @@
         (setq peer-row nil)
         (put bot-thread :connection_id "user")
         (put bot-thread :sender (js-object :id "native-user" :kind "human"))
-        (js-call (expect (nativeGet (selectReplyRoute dual-ctx bot-thread "session") "connection_id")) :toBe "user")))))
+        (js-call (expect (nativeGet (selectReplyRoute dual-ctx bot-thread "session") "connection_id")) :toBe "user")
+        ;; Equivalent event kinds & unified snapshot event_key across message.created(T1) and message.edited(T1),
+        ;; plus shared @key slot matching across distinct per-app open_ids.
+        (js-call (expect (equivalentEventKinds "message.created")) :toEqual (js-array "message.created" "message.edited"))
+        (js-call (expect (equivalentEventKinds "message.edited")) :toEqual (js-array "message.created" "message.edited"))
+        (js-call (expect (equivalentEventKinds "message.pinned")) :toEqual (js-array "message.pinned" "message.pinned"))
+        (let* ((t0 "2026-01-01T00:00:00.000Z")
+               (t1 (Date/parse "2026-01-01T00:01:00.000Z"))
+               (t2 (Date/parse "2026-01-01T00:02:00.000Z"))
+               (created-t0 (js-object :connection_id "source" :event_kind "message.created" :native_message_id "m-ed"
+                 :source_time t0 :conversation (js-object :connection_id "source" :native_chat_id "chat")))
+               (edited-t1 (js-object :connection_id "source" :event_kind "message.edited" :native_message_id "m-ed"
+                 :source_time "2026-01-01T00:01:00.000Z" :native_message_update_time t1
+                 :conversation (js-object :connection_id "source" :native_chat_id "chat")))
+               (late-http-t1 (js-object :connection_id "user" :event_kind "message.created" :native_message_id "m-ed"
+                 :source_time t0 :native_message_update_time t1
+                 :conversation (js-object :connection_id "user" :native_chat_id "chat")))
+               (edited-t2 (Object/assign (js-object) edited-t1 (js-object :native_message_update_time t2))))
+          (js-call (expect (nativeGet (eventIdentity dual-ctx late-http-t1) "event_key"))
+            :toBe (nativeGet (eventIdentity dual-ctx edited-t1) "event_key"))
+          (js-call (expect (= (nativeGet (eventIdentity dual-ctx created-t0) "event_key")
+            (nativeGet (eventIdentity dual-ctx edited-t1) "event_key"))) :toBe false)
+          (js-call (expect (= (nativeGet (eventIdentity dual-ctx edited-t2) "event_key")
+            (nativeGet (eventIdentity dual-ctx edited-t1) "event_key"))) :toBe false))
+        (put bot-thread :chat_type "group")
+        (put bot-thread :sender (js-object :id "human" :kind "human"))
+        (setq peer-row (Object/assign (JSON/parse (JSON/stringify bot-thread)) (js-object :connection_id "source")))
+        (put bot-thread :native_message_mentions (js-array
+          (js-object :key "@_user_1" :id "native-user")
+          (js-object :key "@_user_2" :id "native-bot-in-user-app")))
+        (put peer-row :native_message_mentions (js-array
+          (js-object :key "@_user_1" :id "native-user-in-bot-app")
+          (js-object :key "@_user_2" :id "native-bot")))
+        (js-call (expect (nativeGet (selectReplyRoute dual-ctx bot-thread "session") "status")) :toBe "ambiguous_target")))))
   (withUnitCase "T40.reply-context-expiry.unit" (async (unused)
     (let* ((owner (js-object :principal_id "recipient" :authorization_revision 1))
            (viewer (js-object :principal_id "observer" :authorization_revision 1))

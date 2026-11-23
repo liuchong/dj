@@ -48,10 +48,19 @@
         (let ((result-token (js-object)) (result nil))
         (try
           (let* ((path nil) (method "GET") (body nil)
-                 (thread (nativeGet parameters "thread_id")) (reading (js-call (js-array "list" "get") :includes command)))
+                 (thread (nativeGet parameters "thread_id"))
+                 (ids (nativeGet parameters "message_ids"))
+                 (reading (js-call (js-array "list" "get" "batch") :includes command)))
             (cond
               ((= command "get")
                 (setq path (str "/open-apis/im/v1/messages/" (nativeEncodeURIComponent (nativeGet parameters "message_id")))))
+              ((= command "batch")
+                (unless (and (Array/isArray ids) (> (js-length ids) 0) (<= (js-length ids) 20))
+                  (throw (new globalThis.RangeError "invalid Lark batch size")))
+                (let ((query (new globalThis.URLSearchParams)))
+                  (js-call query :set "user_id_type" "open_id")
+                  (js-call ids :forEach (lambda (id) (js-call query :append "message_ids" id)))
+                  (setq path (str "/open-apis/im/v1/messages/mget?" (js-call query :toString)))))
               ((= command "list")
                 (let ((query (new globalThis.URLSearchParams)))
                   (js-call query :set "container_id_type" (if thread "thread" "chat"))
@@ -106,12 +115,21 @@
                     ;; A merged forward returns its wrapper plus embedded messages.
                     ;; A keyed read represents only the requested native message;
                     ;; embedded messages are context, not independent inbox arrivals.
-                    (selected (if (and (= command "get") (Array/isArray items))
-                      (js-call items :filter (lambda (item)
-                        (= (nativeGet item "message_id") (nativeGet parameters "message_id")))) items)))
+                    (selected (cond
+                      ((not (Array/isArray items)) nil)
+                      ((= command "get") (js-call items :filter (lambda (item)
+                        (= (nativeGet item "message_id") (nativeGet parameters "message_id")))))
+                      ((= command "batch") (js-call items :filter (lambda (item)
+                        (and (not (nativeGet item "upper_message_id")) (js-call ids :includes (nativeGet item "message_id"))))))
+                      (t items))))
                   (if (and (Array/isArray selected)
-                           (if (= command "get") (= (js-length selected) 1) (<= (js-length selected) 50))
-                           (or (= command "get") (= (nativeTypeOf (nativeGet data "has_more")) "boolean")))
+                           (cond
+                             ((= command "get") (= (js-length selected) 1))
+                             ((= command "batch")
+                               (= (js-length selected) (nativeGet (new globalThis.Set
+                                 (js-call selected :map (lambda (item) (nativeGet item "message_id")))) "size")))
+                             (t (and (<= (js-length selected) 50)
+                               (= (nativeTypeOf (nativeGet data "has_more")) "boolean")))))
                     (success (js-object :ok t :identity (nativeGet config "identity") :data (js-object
                       :messages (js-call selected :map
                         (lambda (message) (formatLarkMessage message thread (nativeGet config "brand" "lark") application-id)))

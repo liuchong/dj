@@ -337,7 +337,7 @@
                         (js-array
                           (js-object :conversation_ref (nativeGet address "conversation_ref")))
                         :event_kinds
-                        (js-array "message.edited")
+                        (js-array "message.deleted")
                         :predicate
                         (js-object :all (js-array))))
                     :start

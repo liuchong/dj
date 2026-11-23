@@ -18,6 +18,10 @@
 
 共享客户端身份时，操作审计只能确认实际认证主体。排查注销来源时，仅凭共享主体不能归因到某个对话。
 
+### 编辑后补加 @
+
+新建默认订阅包含 `message.edited`，识别编辑新增的当前身份 @。显式规则若也要接收此类通知，在相应分支的 `event_kinds` 加入 `message.edited`，并更新谓词内限定 `event_kind=message.created` 的 @ 条件。私聊、引用和普通话题条件仍可只匹配初次发送。编辑信封的 `mentions` 是新增的原生提及，`event_id` 指向编辑记录，`native_message_id` 和回复位置仍为原消息。先读 `connection.probe.event_source.poll_fallback.edit_poll` 核对近期回读范围与授权，再查事件、触发黑名单及投递，区分历史空窗与规则不匹配。
+
 ## 字段与原生含义
 
 | 条件 | field | op / value示例 |

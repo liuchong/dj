@@ -23,7 +23,7 @@ user 与 bot 连接使用同一套 WebSocket＋HTTP 收件器，各自独立实�
 调用 subscription.preview：
 
 ```json
-{"spec":{"agent_id":"agent_example","rules":[{"id":"mentions","enabled":true,"sources":[{"conversation_ref":"conversation_example","include_threads":false}],"event_kinds":["message.created"],"predicate":{"field":"addressed_self","op":"eq","value":true}}],"delivery_policy":{"busy":"steer","offline":"hold","ttl_seconds":86400}},"expected_revision":0}
+{"spec":{"agent_id":"agent_example","rules":[{"id":"mentions","enabled":true,"sources":[{"conversation_ref":"conversation_example","include_threads":false}],"event_kinds":["message.created","message.edited"],"predicate":{"field":"addressed_self","op":"eq","value":true}}],"delivery_policy":{"busy":"steer","offline":"hold","ttl_seconds":86400}},"expected_revision":0}
 ```
 
 省略 rules 时使用默认触发分支。要只接一个会话内的明确提及，可使用上例。核对预览中的来源和目标后，调用 `subscription.set`：
@@ -47,6 +47,8 @@ user 与 bot 连接使用同一套 WebSocket＋HTTP 收件器，各自独立实�
 ## 5. 有 @ 却没有通知
 
 先核实 DJ 是否保存了原消息、是否识别到原生 @，再看原目标的订阅状态和事件投递。客户端掉线后用 `agent.probe` 或 `session.probe` 恢复原接收端。主动注销会暂停订阅；误注销后登记同一个原生会话，再恢复其原暂停槽位。步骤见[故障排查](troubleshooting.md#已收消息但没有通知-ai)。
+
+编辑原消息后补加 @ 时，查看独立的 `message.edited` 事件。DJ 批量回读近期已收消息，区分原消息已有的 @ 和本次编辑新增的 @。显式 IM 订阅须在 @ 分支包含 `message.edited`；查看编辑检查覆盖、延迟和失败原因见[消息编辑](../specs/0038-lark-message-edits.md)。
 
 ## 6. 主动读取与回复
 

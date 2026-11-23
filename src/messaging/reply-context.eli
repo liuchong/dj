@@ -1,12 +1,16 @@
 (module dj.messaging.reply-context
-  (import "../application/context.eli" can currentPrincipal inTransaction utcNow)
+  (import "../application/context.eli" can currentPrincipal inTransaction must nextId utcNow)
+  (import "../connections/manager.eli" imPort)
   (import "../core/errors.eli" success failure)
-  (import "../core/native.eli" nativeGet)
-  (import "../core/types.eli" sourceReadAction)
-  (import "../dispatch/contexts.eli" checkReplyIdentity)
+  (import "../core/limits.eli" limits)
+  (import "../core/native.eli" nativeGet nativeNullish)
+  (import "../core/types.eli" addSeconds nextRevision sourceReadAction)
+  (import "../dispatch/contexts.eli" activateIdentity checkReplyIdentity existingSelection prepareIdentity)
   (import "../ingestion/service.eli" allowedAddress)
   (import "../ingestion/visibility.eli" eventContentAvailable)
+  (import "../policy/authorize.eli" authorize)
   (import "../policy/handles.eli" issueHandle)
+  (import "../policy/principals.eli" configuredPrincipal)
 
   (defun replyFailure (code reason)
     (failure code (js-object :details (js-object :reason reason))))
@@ -96,19 +100,120 @@
            (reply (recordForReplyHandle context handle)))
       (validateReplyRecord context reply)))
 
+  (defun recipientAllows (recipient action address)
+    (and recipient
+         (nativeGet (authorize recipient action address (nativeGet recipient "authorization_revision")) "allowed")))
+
+  (defun recoverReplyRecord (context delivery)
+    (let* ((repository (nativeGet context "repository"))
+           (principal (currentPrincipal context))
+           (event (and delivery (js-call repository :get "events" (nativeGet delivery "event_id"))))
+           (route (and delivery (js-call repository :get "routes" (nativeGet delivery "route_id"))))
+           (agent (and delivery (js-call repository :get "agents" (nativeGet delivery "agent_id"))))
+           (session-key (nativeGet route "session_key"))
+           (source (nativeGet event "conversation"))
+           (source-connection (and source (js-call repository :get "connections" (nativeGet source "connection_id"))))
+           (recipient (and agent (configuredPrincipal (nativeGet (nativeGet context "config") "principals")
+                                   (nativeGet agent "recipient_principal_id")))))
+      (cond
+        ((or (not principal) (= (nativeGet principal "disabled") t)) (failure "forbidden"))
+        ((not (and delivery
+                   (not (nativeGet delivery "reply_context_id"))
+                   (= (nativeGet delivery "origin") "subscription_event")
+                   (js-call (js-array "submitting" "accepted" "unknown" "resolved") :includes (nativeGet delivery "state"))
+                   event
+                   (nativeGet event "native_message_id")
+                   (not (= (nativeGet source "kind") "resource"))
+                   session-key
+                   agent))
+          (replyFailure "stale_reference" "reply_context_unavailable"))
+        (t
+          (let* ((now-iso (utcNow context))
+                 (base (or (nativeGet delivery "submitted_at") (nativeGet delivery "accepted_at") now-iso))
+                 (limit-expiry (addSeconds base (nativeGet limits "reply_ttl_seconds")))
+                 (body-expiry (nativeGet event "body_expires_at"))
+                 (expiry (if (and body-expiry (> (Date/parse limit-expiry) (Date/parse body-expiry))) body-expiry limit-expiry)))
+            (cond
+              ((<= (Date/parse expiry) (Date/parse now-iso)) (failure "reply_context_expired"))
+              ((not (currentIdentity source-connection (nativeGet event "identity_revision")))
+                (replyFailure "stale_reference" "reply_connection_identity_changed"))
+              ((not (and (allowedAddress source-connection source)
+                         (can context (sourceReadAction source) source)
+                         (can context "message.reply" source)
+                         (recipientAllows recipient "message.reply" source)))
+                (replyFailure "forbidden" "reply_access_revoked"))
+              ((not (eventContentAvailable context event source-connection)) (failure "content_unavailable"))
+              (t
+                (let ((selected (existingSelection context delivery event session-key)))
+                  (if (not (= (nativeGet selected "status") "ready"))
+                    (failure "reply_identity_unresolved"
+                      (js-object :details (js-object :reason (nativeGet selected "status" "unmapped_target"))))
+                    (let* ((destination (nativeGet selected "destination"))
+                           (connection (js-call repository :get "connections" (nativeGet destination "connection_id")))
+                           (port (imPort context (nativeGet destination "connection_id")))
+                           (capabilities (nativeGet port "capabilities"))
+                           (threaded (not (nativeNullish (nativeGet destination "native_thread_id")))))
+                      (cond
+                        ((not (and connection
+                                   (allowedAddress connection destination)
+                                   (can context "message.reply" destination)
+                                   (recipientAllows recipient "message.reply" destination)))
+                          (replyFailure "forbidden" "reply_access_revoked"))
+                        ((not (and port
+                                   (not (= (nativeGet capabilities "send") "unsupported"))
+                                   (or (not threaded) (= (nativeGet capabilities "reply_thread") "supported"))))
+                          (replyFailure "stale_reference" "reply_context_unavailable"))
+                        (t
+                          (let* ((bound (prepareIdentity context delivery event session-key))
+                                 (id (nextId context "reply_context_record"))
+                                 (identity-revision (nativeGet connection "identity_revision" (nativeGet connection "revision")))
+                                 (handle (issueHandle context "reply_context" recipient id
+                                           (js-object :identity_revision identity-revision) expiry))
+                                 (reply (js-object
+                                   :reply_context_id id
+                                   :public_ref (nativeGet handle "ref")
+                                   :delivery_id (nativeGet delivery "delivery_id")
+                                   :event_id (nativeGet event "event_id")
+                                   :session_key session-key
+                                   :recipient_principal_id (nativeGet recipient "principal_id")
+                                   :source_destination (Object/assign (js-object) source)
+                                   :source_identity_revision (nativeGet event "identity_revision")
+                                   :destination (Object/assign (js-object) destination)
+                                   :native_reply_to (nativeGet event "native_message_id")
+                                   :identity_revision identity-revision
+                                   :allowed_actions (js-array "reply")
+                                   :expires_at expiry)))
+                            (when (nativeGet bound "identity_binding_id")
+                              (put reply :identity_binding_id (nativeGet bound "identity_binding_id"))
+                              (put reply :dispatch_context_id (nativeGet bound "dispatch_context_id")))
+                            (js-call repository :insert "reply_contexts" reply)
+                            (put delivery :reply_context_id (nativeGet reply "public_ref"))
+                            (put delivery :allowed_actions (js-array "reply"))
+                            (put delivery :revision (nextRevision (nativeGet delivery "revision")))
+                            (must (js-call repository :replaceProgress "deliveries" delivery))
+                            (when (= (nativeGet delivery "state") "accepted")
+                              (activateIdentity context delivery))
+                            (success reply))))))))))))))
+
   (defun currentReplyContext (context delivery-id)
     (inTransaction context (lambda (tx)
       (let* ((repository (nativeGet context "repository"))
              (delivery (js-call repository :get "deliveries" delivery-id))
              (handle (replyHandle context (nativeGet delivery "reply_context_id")))
-             (reply (recordForReplyHandle context handle))
-             (checked (validateReplyRecord context
-                        (when (= (nativeGet reply "delivery_id") delivery-id) reply))))
-        (if (not (nativeGet checked "ok")) checked
-          (let ((issued (issueHandle context "reply_context" (currentPrincipal context) (nativeGet reply "reply_context_id")
-            (js-object :identity_revision (nativeGet reply "identity_revision")) (nativeGet reply "expires_at"))))
-            (success (js-object :delivery_id delivery-id :reply_context_id (nativeGet issued "ref")
-              :expires_at (nativeGet issued "expires_at") :allowed_actions (js-array "reply")))))))))
+             (recovered (when (and delivery (not (nativeGet delivery "reply_context_id")))
+                          (recoverReplyRecord context delivery)))
+             (reply (cond
+               (recovered (and (nativeGet recovered "ok") (nativeGet recovered "data")))
+               (t (recordForReplyHandle context handle)))))
+        (if (and recovered (not (nativeGet recovered "ok")))
+          recovered
+          (let ((checked (validateReplyRecord context
+                           (when (= (nativeGet reply "delivery_id") delivery-id) reply))))
+            (if (not (nativeGet checked "ok")) checked
+              (let ((issued (issueHandle context "reply_context" (currentPrincipal context) (nativeGet reply "reply_context_id")
+                (js-object :identity_revision (nativeGet reply "identity_revision")) (nativeGet reply "expires_at"))))
+                (success (js-object :delivery_id delivery-id :reply_context_id (nativeGet issued "ref")
+                  :expires_at (nativeGet issued "expires_at") :allowed_actions (js-array "reply")))))))))))
 
   (defun replyAuthority (reply)
     (js-object :recipient_principal_id (nativeGet reply "recipient_principal_id")

@@ -1,5 +1,6 @@
 (module dj.delivery.service
   (import "../core/types.eli" sourceReadAction nextRevision addSeconds encodeSeq)
+  (import "../dispatch/events.eli" equivalentEventKinds eventIdentity)
   (import "../dispatch/notifications.eli" notificationSummary)
   (import "../messaging/reply-context.eli" projectReplyAccess)
   (import "../core/native.eli" nativeGet)
@@ -312,33 +313,37 @@
         (catch djReturn2Error
           (if (eq djReturn2Error djReturn2Token) djReturn2Value (throw djReturn2Error))))))
   (defun supersedePendingGroupSelections (context db event agent-id)
-    (let ((repository (nativeGet context "repository"))
-          (rows (js-call (js-call db :query
-            "SELECT g.payload FROM group_dispatches g JOIN events e ON e.event_id=g.event_id WHERE g.state='selected' AND json_extract(g.payload,'$.agent_id')=? AND (e.event_id=? OR (e.native_message_id=? AND e.event_kind=?))")
-            :all agent-id (nativeGet event "event_id") (nativeGet event "native_message_id") (nativeGet event "event_kind"))))
+    (let* ((repository (nativeGet context "repository"))
+           (identity (nativeGet (eventIdentity context event) "event_key"))
+           (kinds (equivalentEventKinds (nativeGet event "event_kind")))
+           (rows (js-call (js-call db :query
+             "SELECT g.payload AS work,e.payload AS event FROM group_dispatches g JOIN events e ON e.event_id=g.event_id WHERE g.state='selected' AND json_extract(g.payload,'$.agent_id')=? AND (e.event_id=? OR (e.native_message_id=? AND e.event_kind IN (?,?)))")
+             :all agent-id (nativeGet event "event_id") (nativeGet event "native_message_id") (aref kinds 0) (aref kinds 1))))
       (js-call rows :forEach (lambda (row)
-        (let* ((work (JSON/parse (nativeGet row "payload")))
-               (del-id (nativeGet work "delivery_id"))
-               (inb-id (nativeGet work "inbox_id"))
-               (del (and del-id (js-call repository :get "deliveries" del-id)))
-               (inb (and inb-id (js-call repository :get "inbox_entries" inb-id)))
-               (revoked false))
-          (when (and del (js-call (js-array "ready" "deferred" "blocked") :includes (nativeGet del "state")))
-            (js-call (js-call db :query
-              "UPDATE deliveries SET state='cancelled',revision=revision+1,payload=json_set(payload,'$.state','cancelled','$.revision',revision+1) WHERE delivery_id=? AND state IN ('ready','deferred','blocked')")
-              :run del-id)
-            (setq revoked t))
-          (when (and inb (= (nativeGet inb "state") "ready"))
-            (put inb :state "revoked")
-            (must (js-call repository :replace "inbox_entries" inb))
-            (setq revoked t))
-          (when revoked
-            (put work :delivery_id nil)
-            (put work :inbox_id nil)
-            (put work :agent_id nil)
-            (put work :state "waiting_member")
-            (put work :next_check_at (utcNow context))
-            (must (js-call repository :replace "group_dispatches" work))))))))
+        (let ((source (JSON/parse (nativeGet row "event"))))
+          (when (= identity (nativeGet (eventIdentity context source) "event_key"))
+            (let* ((work (JSON/parse (nativeGet row "work")))
+                   (del-id (nativeGet work "delivery_id"))
+                   (inb-id (nativeGet work "inbox_id"))
+                   (del (and del-id (js-call repository :get "deliveries" del-id)))
+                   (inb (and inb-id (js-call repository :get "inbox_entries" inb-id)))
+                   (revoked false))
+              (when (and del (js-call (js-array "ready" "deferred" "blocked") :includes (nativeGet del "state")))
+                (js-call (js-call db :query
+                  "UPDATE deliveries SET state='cancelled',revision=revision+1,payload=json_set(payload,'$.state','cancelled','$.revision',revision+1) WHERE delivery_id=? AND state IN ('ready','deferred','blocked')")
+                  :run del-id)
+                (setq revoked t))
+              (when (and inb (= (nativeGet inb "state") "ready"))
+                (put inb :state "revoked")
+                (must (js-call repository :replace "inbox_entries" inb))
+                (setq revoked t))
+              (when revoked
+                (put work :delivery_id nil)
+                (put work :inbox_id nil)
+                (put work :agent_id nil)
+                (put work :state "waiting_member")
+                (put work :next_check_at (utcNow context))
+                (must (js-call repository :replace "group_dispatches" work))))))))))
   (defun planDelivery (tx event version decision &optional read planning)
     (let ((djReturn4Token (js-object)) (djReturn4Value nil))
       (try
@@ -579,6 +584,7 @@
     queueCapacity
     allocateSequence
     isSubscriptionDeliveryEffective
+    supersedePendingGroupSelections
     projectDelivery
     deliveryAccess
     handleOperation))

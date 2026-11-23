@@ -22,7 +22,25 @@
     (let* ((original globalThis.WebSocket) (clock nil) (f nil)
       (sockets (new globalThis.Map)) (messages (new globalThis.Map))
       (marks (new globalThis.Map)) (calls (js-array)) (replies (js-array))
-      (state (js-object :acks 0 :reaction_seq 0 :enabled false :root nil)))
+      (state (js-object :acks 0 :reaction_seq 0 :enabled false :root nil
+        :user_only_ids (new globalThis.Set) :bot_lag_ids (new globalThis.Map) :app_open_id nil))
+      (project-message (lambda (message bot)
+        (when message
+          (let* ((id (nativeGet message "message_id"))
+                 (source (if (and bot (js-call (nativeGet state "bot_lag_ids") :has id))
+                           (js-call (nativeGet state "bot_lag_ids") :get id)
+                           message))
+                 (map-id (nativeGet state "app_open_id")))
+            (unless (and bot (js-call (nativeGet state "user_only_ids") :has id))
+              (if (not map-id)
+                source
+                (let* ((sender (nativeGet source "sender"))
+                       (next-sender (if (= (nativeGet sender "sender_type") "user")
+                                      (Object/assign (js-object) sender (js-object :id (funcall map-id (nativeGet sender "id") bot)))
+                                      sender))
+                       (next-mentions (js-call (nativeGet source "mentions" (js-array)) :map (lambda (m)
+                         (Object/assign (js-object) m (js-object :id (funcall map-id (nativeGet m "id") bot)))))))
+                  (Object/assign (js-object) source (js-object :sender next-sender :mentions next-mentions))))))))))
       (put state :pins (js-object :user (js-array) :bot (js-array)))
       (put socketFactory :make (lambda (address)
         (let* ((url (new globalThis.URL address)) (app (js-call (nativeGet url "searchParams") :get "app"))
@@ -71,7 +89,9 @@
                 (detail (js-call path :match (new globalThis.RegExp "/messages/([^/]+)$")))
                 (reply (js-call path :match (new globalThis.RegExp "/messages/([^/]+)/reply$")))
                 (selected (js-array)))
-                (js-call calls :push (js-object :key key :path path :method method))
+                (js-call calls :push (if (= path "/open-apis/im/v1/messages/mget")
+                  (js-object :key key :path path :method method :query_ids (js-call query :getAll "message_ids"))
+                  (js-object :key key :path path :method method)))
                 (cond
                   ((js-call path :endsWith "/ws/endpoint")
                     (Response/json (js-object :code 0 :data (js-object
@@ -102,9 +122,18 @@
                     (js-call replies :push (js-object :key key :message_id (aref reply 1) :body body))
                     (Response/json (js-object :code 0 :data (js-object :message_id "reply-native"
                       :chat_id (nativeGet (js-call messages :get (aref reply 1)) "chat_id")))))
+                  ((= path "/open-apis/im/v1/messages/mget")
+                    (js-call (expect (js-call query :get "user_id_type")) :toBe "open_id")
+                    (let* ((keys (js-call query :getAll "message_ids"))
+                           (items (js-call keys :map (lambda (id) (funcall project-message (js-call messages :get id) bot)))))
+                      (if (js-call keys :includes (nativeGet state "edit_denied_id" ""))
+                        (Response/json (js-object :code 230013) (js-object :status 403))
+                        (Response/json (js-object :code 0 :data (js-object :items
+                          (js-call items :filter (lambda (message) message))))))))
                   (detail (Response/json (js-object :code 0 :data (js-object
-                    :items (js-call (js-array (js-call messages :get (aref detail 1))) :concat
-                      (nativeGet (nativeGet state "embedded" (js-object)) (aref detail 1) (js-array))) :has_more false))))
+                    :items (js-call (let ((item (funcall project-message (js-call messages :get (aref detail 1)) bot)))
+                                      (if item (js-array item) (js-array)))
+                             :concat (nativeGet (nativeGet state "embedded" (js-object)) (aref detail 1) (js-array))) :has_more false))))
                   ((= path "/open-apis/im/v1/chats")
                     (Response/json (js-object :code 0 :data (js-object
                       :items (js-call (js-array (js-object :chat_id "c1")) :concat (nativeGet state "extra_chats" (js-array)))
@@ -131,7 +160,8 @@
                           (when (and (>= stamp start) (< stamp end)
                             (if bot (= chat (js-call query :get "container_id"))
                               (and (not (= chat "bot-dm")) (= private (= (nativeGet body "chat_type") "p2p_chat")))))
-                            (js-call selected :push (if bot message (nativeGet message "message_id"))))))))
+                            (let ((projected (if bot (funcall project-message message bot) (nativeGet message "message_id"))))
+                              (when projected (js-call selected :push projected))))))))
                     (Response/json (js-object :code 0 :data (js-object :items selected :has_more false))))
                   ;; User document-notice setup is unrelated to IM collection.
                   (t (Response/json (js-object :code 99991663))))))))
@@ -164,20 +194,332 @@
     (when f (try (await (closeFixture f))
       (finally (put NativeGlobal :WebSocket (nativeGet f "original_socket"))))))
   (defun emit (f app id)
-    (let* ((message (js-call (nativeGet f "messages") :get id))
+    (let* ((bot (= app "cli_bot"))
+      (message (js-call (nativeGet f "messages") :get id))
+      (map-id (nativeGet (nativeGet f "hybrid_state") "app_open_id"))
+      (sender (nativeGet message "sender"))
+      (sender-id (if (and map-id (= (nativeGet sender "sender_type") "user"))
+                   (funcall map-id (nativeGet sender "id") bot)
+                   (nativeGet sender "id")))
       (wire (js-object :header (js-object :event_id (str app ":" id) :event_type "im.message.receive_v1" :app_id app)
-        :event (js-object :sender (js-object :sender_id (js-object :open_id (nativeGet (nativeGet message "sender") "id"))
-          :sender_type (if (= (nativeGet (nativeGet message "sender") "sender_type") "user") "user" "app"))
+        :event (js-object :sender (js-object :sender_id (js-object :open_id sender-id)
+          :sender_type (if (= (nativeGet sender "sender_type") "user") "user" "app"))
           :message (Object/assign (js-object) message (js-object :message_type "text" :chat_type
             (if (= (nativeGet message "chat_id") "c1") "group" "p2p")
             :content (nativeGet (nativeGet message "body") "content")
-            :mentions (js-call (nativeGet message "mentions") :map
-              (lambda (m) (js-object :id (js-object :open_id (nativeGet m "id"))))))))))
+            :mentions (js-call (nativeGet message "mentions") :map (lambda (m)
+              (let ((mention (js-object :id (js-object :open_id
+                      (if map-id (funcall map-id (nativeGet m "id") bot) (nativeGet m "id"))))))
+                (when (nativeGet m "key") (put mention :key (nativeGet m "key")))
+                mention))))))))
       (bytes (encodeLarkFrame (js-object :seq 1 :service 1 :method 1
         :headers (js-array (js-object :key "type" :value "event") (js-object :key "message_id" :value (str app ":" id)))
         :payload (Buffer/from (JSON/stringify wire) "utf8")))))
       (js-call (js-call (nativeGet f "wire_sockets") :get app) :dispatchEvent
         (new globalThis.MessageEvent "message" (js-object :data bytes)))))
+
+  (withCase "T41.lark-edited-mentions.integration" setup (async (f)
+    (let* ((agent (await (bindRecipient f))) (clock (nativeGet f "clock"))
+           (state (nativeGet f "hybrid_state"))
+           (messages (nativeGet f "messages")) (inputs (nativeGet (nativeGet f "opencode") "inputs"))
+           (db (new Database (resolve (nativeGet f "root") "state/dj.sqlite") (js-object :readonly t)))
+           (sub nil) (filter nil)
+           (timestamp (lambda () (str (Date/parse (js-call clock :utcNow)))))
+           (edit (lambda (id text mentions)
+             (let ((message (js-call messages :get id)))
+               (put message :body (js-object :content (JSON/stringify (js-object :text text))))
+               (put message :updated t) (put message :update_time (funcall timestamp))
+               (put message :mentions (js-call mentions :map (lambda (person index)
+                 (js-object :key (str "@_user_" (1+ index)) :id person :id_type "open_id"))))))))
+      (try
+        (put state :app_open_id (lambda (id bot)
+          (cond
+            ((= id "ou_self") (if bot "ou_self_in_bot_app" "ou_self"))
+            ((= id "ou_bot") (if bot "ou_bot" "ou_bot_in_user_app"))
+            ((= id "ou_other") (if bot "ou_other_in_bot_app" "ou_other"))
+            ((= id "ou_blocked") (if bot "ou_blocked_in_bot_app" "ou_blocked"))
+            ((= id "ou_sample_blocked") (if bot "ou_sample_blocked_in_bot_app" "ou_sample_blocked"))
+            (t id))))
+        (let ((p (await (callOk f "A" "subscription.preview" (js-object
+                   :expected_revision 0 :spec (js-object :agent_id (nativeGet agent "agent_id")))))))
+          (setq sub (await (callOk f "A" "subscription.set" (js-object :preview_id (nativeGet p "preview_id")
+            :expected_revision 0 :idempotency_key "edit-subscribe")))))
+        (let ((p (await (callOk f "O" "message.filter.get" (js-object)))))
+          (setq filter (await (callOk f "O" "message.filter.update" (js-object :expected_revision (nativeGet p "revision")
+            :idempotency_key "edit-filter" :rules (js-array (js-object :id "blocked-author" :enabled t
+              :effect "suppress_trigger" :predicate (js-object :field "sender.id" :op "in"
+                :value (js-array "ou_blocked" "ou_blocked_in_bot_app")))))))))
+        (js-call messages :set "before-activation" (js-object :message_id "before-activation" :chat_id "c1"
+          :create_time (str (- (Date/parse (funcall timestamp)) 10000))
+          :msg_type "text" :body (js-object :content "{\"text\":\"before activation\"}")
+          :sender (js-object :id "ou_other" :id_type "open_id" :sender_type "user") :mentions (js-array)))
+        (emit f "cli_user" "before-activation") (emit f "cli_bot" "before-activation")
+        (js-call (js-array "new-at" "both-at" "blocked-at" "denied-at" "late-at") :forEach (lambda (id)
+          (js-call messages :set id (js-object :message_id id :chat_id "c1" :create_time (funcall timestamp)
+            :msg_type "text" :body (js-object :content "{\"text\":\"@Name rendered as plain text\"}")
+            :sender (js-object :id (if (= id "blocked-at") "ou_blocked" "ou_other") :id_type "open_id" :sender_type "user")
+            :mentions (js-array)))
+          (emit f "cli_user" id) (unless (= id "late-at") (emit f "cli_bot" id))))
+        (put state :edit_denied_id "denied-at")
+        (await (advance f 5))
+        (js-call (expect (js-length inputs)) :toBe 0)
+        (funcall edit "before-activation" "edited a historical message" (js-array "ou_self"))
+        (funcall edit "new-at" "added a native user mention" (js-array "ou_self"))
+        (funcall edit "both-at" "added both mentions" (js-array "ou_self" "ou_bot"))
+        (funcall edit "blocked-at" "blocked sender added a mention" (js-array "ou_self" "ou_bot"))
+        (funcall edit "denied-at" "API refuses this message" (js-array "ou_self"))
+        (funcall edit "late-at" "second connection first sees this edit" (js-array "ou_self" "ou_bot"))
+        (put state :enabled t)
+        (await (advance f 35))
+        (js-call (expect (js-length inputs)) :toBe 3)
+        (js-call (expect (nativeGet (js-call (js-call db :query
+          "SELECT count(*) AS n FROM events WHERE event_kind='message.edited'") :get) "n")) :toBe 7)
+        (js-call (expect (nativeGet (js-call (js-call db :query
+          "SELECT count(*) AS n FROM events WHERE native_message_id='late-at' AND event_kind='message.created' AND json_extract(payload,'$.native_message_update_time') IS NOT NULL") :get) "n")) :toBe 1)
+        (js-call (expect (js-length (js-call inputs :filter (lambda (input)
+          (= (nativeGet (nativeGet (nativeGet input "envelope") "source") "native_message_id") "late-at"))))) :toBe 1)
+        (let* ((both (js-call inputs :find (lambda (input)
+                 (= (nativeGet (nativeGet (nativeGet input "envelope") "source") "native_message_id") "both-at"))))
+               (both-env (nativeGet both "envelope"))
+               (both-reply (await (js-call f :call (nativeGet f "A") "message.reply_context"
+                 (js-object :delivery_id (nativeGet both-env "delivery_id"))))))
+          (js-call (expect (js-call (js-array "ambiguous_target" "unmapped_target") :includes
+            (nativeGet (nativeGet both-env "reply_route") "status"))) :toBe t)
+          (js-call (expect (nativeGet both-env "reply_context_id")) :toBe nil)
+          (js-call (expect (nativeGet both-reply "ok")) :toBe false)
+          (js-call (expect (nativeGet (nativeGet both-reply "error") "code")) :toBe "reply_identity_unresolved")
+          (js-call (expect (nativeGet (nativeGet (nativeGet both-reply "error") "details") "reason")) :toBe "ambiguous_target"))
+        (let* ((only-user (js-call inputs :find (lambda (input)
+          (= (nativeGet (nativeGet (nativeGet input "envelope") "source") "native_message_id") "new-at"))))
+          (envelope (nativeGet only-user "envelope")))
+          (js-call (expect (nativeGet (nativeGet envelope "reply_route") "connection_id")) :toBe "lark")
+          (js-call (expect (nativeGet envelope "reply_context_id")) :toBeTruthy)
+          (js-call (expect (js-call (nativeGet envelope "trigger_reasons") :some
+            (lambda (r) (= (nativeGet r "code") "edit_mention")))) :toBe t))
+        (funcall edit "new-at" "modified wording only" (js-array "ou_self"))
+        (await (advance f 22))
+        (js-call (expect (js-length inputs)) :toBe 3)
+        (funcall edit "new-at" "removed the mention" (js-array))
+        (await (advance f 22))
+        (js-call (expect (js-length inputs)) :toBe 3)
+        (funcall edit "new-at" "added the native mention again" (js-array "ou_self"))
+        (await (advance f 24))
+        (js-call (expect (js-length inputs)) :toBe 4)
+        (let* ((last (aref inputs 3))
+               (event-id (nativeGet (nativeGet last "envelope") "event_id"))
+               (view (await (callOk f "A" "message.context" (js-object :event_id event-id :before 10)))))
+          (js-call (expect (nativeGet (nativeGet (nativeGet view "anchor") "content") "text"))
+            :toBe "added the native mention again")
+          (js-call (expect (js-call (nativeGet view "messages") :some (lambda (item)
+            (= (nativeGet item "native_message_id") "new-at")))) :toBe false))
+        (await (restartNative f))
+        (await (advance f 20))
+        (js-call (expect (js-length inputs)) :toBe 4)
+        (js-call (expect (nativeGet (js-call (js-call db :query
+          "SELECT count(*) AS n FROM events WHERE event_kind='message.edited'") :get) "n")) :toBe 13)
+        (put state :edit_denied_id "")
+        (await (advance f 20))
+        (js-call (expect (js-length inputs)) :toBe 5)
+        (js-call (expect (nativeGet (nativeGet (nativeGet (aref inputs 4) "envelope") "source") "native_message_id")) :toBe "denied-at")
+        ;; 1) Existing @Bot message later edited to @Bot @User turns ambiguous and preserves initial bot binding.
+        (js-call messages :set "bot-then-both" (js-object :message_id "bot-then-both" :chat_id "c1"
+          :create_time (funcall timestamp) :msg_type "text"
+          :body (js-object :content "{\"text\":\"@Bot initial\"}")
+          :sender (js-object :id "ou_other" :id_type "open_id" :sender_type "user")
+          :mentions (js-array (js-object :key "@_user_1" :id "ou_bot" :id_type "open_id"))))
+        (emit f "cli_user" "bot-then-both") (emit f "cli_bot" "bot-then-both")
+        (await (advance f 6))
+        (js-call (expect (js-length inputs)) :toBe 6)
+        (let* ((first-bot (nativeGet (aref inputs 5) "envelope"))
+               (ctx-id (nativeGet (nativeGet first-bot "dispatch_context") "context_id")))
+          (js-call (expect (nativeGet (nativeGet first-bot "reply_route") "connection_id")) :toBe "lark-bot")
+          (js-call (expect (nativeGet first-bot "reply_context_id")) :toBeTruthy)
+          (funcall edit "bot-then-both" "@Bot @User added user mention" (js-array "ou_bot" "ou_self"))
+          (await (advance f 20))
+          (js-call (expect (js-length inputs)) :toBe 7)
+          (let* ((second-both (nativeGet (aref inputs 6) "envelope"))
+                 (second-reply (await (js-call f :call (nativeGet f "A") "message.reply_context"
+                   (js-object :delivery_id (nativeGet second-both "delivery_id")))))
+                 (ctx-row (JSON/parse (nativeGet (js-call (js-call db :query
+                   "SELECT payload FROM dispatch_contexts WHERE context_id=?") :get ctx-id) "payload")))
+                 (bound (JSON/parse (nativeGet (js-call (js-call db :query
+                   "SELECT payload FROM dispatch_bindings WHERE binding_id=?")
+                   :get (nativeGet ctx-row "binding_id")) "payload"))))
+            (js-call (expect (nativeGet (nativeGet second-both "source") "native_message_id")) :toBe "bot-then-both")
+            (js-call (expect (js-call (js-array "ambiguous_target" "unmapped_target") :includes
+              (nativeGet (nativeGet second-both "reply_route") "status"))) :toBe t)
+            (js-call (expect (nativeGet second-both "reply_context_id")) :toBe nil)
+            (js-call (expect (nativeGet second-reply "ok")) :toBe false)
+            (js-call (expect (nativeGet (nativeGet second-reply "error") "code")) :toBe "reply_identity_unresolved")
+            (js-call (expect (nativeGet (nativeGet (nativeGet second-reply "error") "details") "reason")) :toBe "ambiguous_target")
+            (js-call (expect (nativeGet bound "connection_id")) :toBe "lark-bot")))
+        ;; 2) Wording-only edit on a reply to bot must not re-trigger default subscription.
+        (js-call messages :set "reply-parent" (js-object :message_id "reply-parent" :chat_id "c1"
+          :create_time (funcall timestamp) :msg_type "text"
+          :body (js-object :content "{\"text\":\"bot original message\"}")
+          :sender (js-object :id "cli_bot" :id_type "app_id" :sender_type "app") :mentions (js-array)))
+        (emit f "cli_user" "reply-parent") (emit f "cli_bot" "reply-parent")
+        (await (advance f 4))
+        (js-call (expect (js-length inputs)) :toBe 7)
+        (js-call messages :set "reply-edit-only" (js-object :message_id "reply-edit-only" :chat_id "c1"
+          :create_time (funcall timestamp) :msg_type "text"
+          :parent_id "reply-parent" :root_id "reply-parent"
+          :body (js-object :content "{\"text\":\"reply initial wording\"}")
+          :sender (js-object :id "ou_other" :id_type "open_id" :sender_type "user") :mentions (js-array)))
+        (emit f "cli_user" "reply-edit-only") (emit f "cli_bot" "reply-edit-only")
+        (await (advance f 5))
+        (js-call (expect (js-length inputs)) :toBe 8)
+        (funcall edit "reply-edit-only" "reply edited wording only" (js-array))
+        (await (advance f 20))
+        (js-call (expect (nativeGet (js-call (js-call db :query
+          "SELECT COUNT(*) AS n FROM events WHERE native_message_id='reply-edit-only' AND event_kind='message.edited'") :get) "n")) :toBe 2)
+        (js-call (expect (js-length inputs)) :toBe 8)
+        ;; 3) >20 recent messages: newest edit is scanned in the first newest-first batch.
+        (let ((si 1))
+          (while (<= si 22)
+            (let ((sid (str "sweep-" (js-call (str si) :padStart 2 "0"))))
+              (js-call messages :set sid (js-object :message_id sid :chat_id "c1"
+                :create_time (funcall timestamp) :msg_type "text"
+                :body (js-object :content (JSON/stringify (js-object :text sid)))
+                :sender (js-object :id "ou_other" :id_type "open_id" :sender_type "user") :mentions (js-array)))
+              (emit f "cli_user" sid) (emit f "cli_bot" sid)
+              (await (advance f 1)))
+            (setq si (1+ si))))
+        (js-call messages :set "sweep-newest" (js-object :message_id "sweep-newest" :chat_id "c1"
+          :create_time (funcall timestamp) :msg_type "text"
+          :body (js-object :content "{\"text\":\"sweep newest\"}")
+          :sender (js-object :id "ou_other" :id_type "open_id" :sender_type "user") :mentions (js-array)))
+        (emit f "cli_user" "sweep-newest") (emit f "cli_bot" "sweep-newest")
+        (await (advance f 3))
+        (let ((before-mget (js-length (nativeGet f "native_calls"))))
+          (funcall edit "sweep-newest" "sweep newest now mentions user" (js-array "ou_self"))
+          (await (advance f 22))
+          (js-call (expect (js-length inputs)) :toBe 9)
+          (js-call (expect (nativeGet (nativeGet (nativeGet (aref inputs 8) "envelope") "source") "native_message_id")) :toBe "sweep-newest")
+          (let* ((new-calls (js-call (nativeGet f "native_calls") :slice before-mget))
+                 (first-sweep-mget (js-call new-calls :find (lambda (c)
+                   (and (= (nativeGet c "path") "/open-apis/im/v1/messages/mget")
+                        (js-call (nativeGet c "query_ids" (js-array)) :some (lambda (qid) (js-call qid :startsWith "sweep-"))))))))
+            (js-call (expect first-sweep-mget) :toBeTruthy)
+            (js-call (expect (js-call (nativeGet first-sweep-mget "query_ids") :includes "sweep-newest")) :toBe t)))
+        ;; 4) Weak-view-first notification arrives with reply_context_id:null; after peer edit coalesces,
+        ;; message.reply_context recovers reply_context_id and replies via bot.
+        (let* ((extra-rule (js-object :id "user-sees-bot-edit" :enabled t
+                 :event_kinds (js-array "message.edited")
+                 :predicate (js-object :all (js-array
+                   (js-object :field "connection_id" :op "eq" :value "lark")
+                   (js-object :field "mentions.id" :op "eq" :value "ou_bot_in_user_app")))))
+               (rules (js-call (nativeGet sub "rules") :concat (js-array extra-rule)))
+               (p (await (callOk f "A" "subscription.preview" (js-object
+                 :expected_revision (nativeGet sub "revision")
+                 :spec (js-object :agent_id (nativeGet agent "agent_id") :rules rules))))))
+          (setq sub (await (callOk f "A" "subscription.set" (js-object
+            :preview_id (nativeGet p "preview_id")
+            :expected_revision (nativeGet sub "revision")
+            :idempotency_key "edit-weak-sub")))))
+        (let ((weak-initial (js-object :message_id "weak-first" :chat_id "c1" :create_time (funcall timestamp)
+                :msg_type "text" :body (js-object :content "{\"text\":\"before bot edit\"}")
+                :sender (js-object :id "ou_other" :id_type "open_id" :sender_type "user") :mentions (js-array))))
+          (js-call messages :set "weak-first" weak-initial)
+          (emit f "cli_user" "weak-first") (emit f "cli_bot" "weak-first")
+          (await (advance f 4))
+          (js-call (nativeGet state "bot_lag_ids") :set "weak-first" (JSON/parse (JSON/stringify weak-initial)))
+          (funcall edit "weak-first" "user sees @Bot first" (js-array "ou_bot"))
+          (await (advance f 20))
+          (js-call (expect (js-length inputs)) :toBe 10)
+          (let* ((weak-env (nativeGet (aref inputs 9) "envelope"))
+                 (weak-did (nativeGet weak-env "delivery_id")))
+            (js-call (expect (nativeGet (nativeGet weak-env "source") "native_message_id")) :toBe "weak-first")
+            (js-call (expect (nativeGet (nativeGet weak-env "reply_route") "status")) :toBe "unmapped_target")
+            (js-call (expect (nativeGet weak-env "reply_context_id")) :toBe nil)
+            (let ((unresolved (await (js-call f :call (nativeGet f "A") "message.reply_context"
+                    (js-object :delivery_id weak-did)))))
+              (js-call (expect (nativeGet unresolved "ok")) :toBe false)
+              (js-call (expect (nativeGet (nativeGet unresolved "error") "code")) :toBe "reply_identity_unresolved")
+              (js-call (expect (nativeGet (nativeGet (nativeGet unresolved "error") "details") "reason")) :toBe "unmapped_target"))
+            (js-call (nativeGet state "bot_lag_ids") :delete "weak-first")
+            (await (advance f 20))
+            (js-call (expect (js-length inputs)) :toBe 10)
+            (let* ((recovered (await (callOk f "A" "message.reply_context" (js-object :delivery_id weak-did))))
+                   (reply-ref (nativeGet recovered "reply_context_id")))
+              (js-call (expect reply-ref) :toBeTruthy)
+              (js-call (expect (nativeGet recovered "allowed_actions")) :toEqual (js-array "reply"))
+              (await (callOk f "A" "message.reply" (js-object
+                :reply_context_id reply-ref
+                :content (js-object :type "text" :text "weak view recovered")
+                :idempotency_key "weak-first-reply")))
+              (await (advance f 4 20))
+              (let ((sent (js-call (nativeGet f "replies") :find (lambda (r) (= (nativeGet r "message_id") "weak-first")))))
+                (js-call (expect sent) :toBeTruthy)
+                (js-call (expect (nativeGet sent "key")) :toBe "bot")))))
+        ;; 5) Sanitized user-HTTP-only missed-capture sample with scoped sender.person_id blacklist before/after control.
+        (let ((sample-people (js-array (js-object :id "person_blocked_sample"
+                :identities (js-array (js-object :platform "lark" :scope "app:cli_user:open_id" :id "ou_sample_blocked")))))
+              (blocked-author-rule (js-object :id "blocked-author" :enabled t
+                :effect "suppress_trigger" :predicate (js-object :field "sender.id" :op "in"
+                  :value (js-array "ou_blocked" "ou_blocked_in_bot_app"))))
+              (sample-rule (js-object :id "sample-blocked-author" :enabled t
+                :effect "suppress_trigger" :predicate (js-object :field "sender.person_id" :op "eq"
+                  :value "person_blocked_sample"))))
+          (setq filter (await (callOk f "O" "message.filter.update" (js-object
+            :expected_revision (nativeGet filter "revision")
+            :idempotency_key "sample-blacklist-on"
+            :people sample-people
+            :rules (js-array blocked-author-rule sample-rule)))))
+          (js-call (nativeGet state "user_only_ids") :add "sample-blocked-edit")
+          (js-call messages :set "sample-blocked-edit" (js-object :message_id "sample-blocked-edit" :chat_id "c1"
+            :create_time (funcall timestamp) :msg_type "text"
+            :body (js-object :content "{\"text\":\"plain group message\"}")
+            :sender (js-object :id "ou_sample_blocked" :id_type "open_id" :sender_type "user")
+            :mentions (js-array)))
+          (await (advance f 10))
+          (let ((created-row (js-call (js-call db :query
+                  "SELECT e.event_id,e.payload,m.result FROM events e JOIN match_decisions m ON m.event_id=e.event_id WHERE e.native_message_id='sample-blocked-edit' AND e.event_kind='message.created' LIMIT 1") :get)))
+            (js-call (expect created-row) :toBeTruthy)
+            (js-call (expect (nativeGet (JSON/parse (nativeGet created-row "payload")) "receive_transport")) :toBe "poll")
+            (js-call (expect (nativeGet created-row "result")) :toBe "no_match"))
+          (js-call (expect (js-length inputs)) :toBe 10)
+          (js-call (expect (js-call (nativeGet f "marks") :has "user:sample-blocked-edit")) :toBe false)
+          (funcall edit "sample-blocked-edit" "edited with @self" (js-array "ou_self"))
+          (await (advance f 22 20))
+          (js-call (expect (nativeGet (js-call (js-call db :query
+            "SELECT COUNT(*) AS n FROM events WHERE connection_id='lark' AND native_message_id='sample-blocked-edit'") :get) "n")) :toBe 2)
+          (js-call (expect (nativeGet (js-call (js-call db :query
+            "SELECT COUNT(*) AS n FROM events WHERE native_message_id='sample-blocked-edit' AND event_kind='message.edited'") :get) "n")) :toBe 1)
+          (js-call (expect (js-length inputs)) :toBe 10)
+          (js-call (expect (js-call (nativeGet f "marks") :has "user:sample-blocked-edit")) :toBe false)
+          (js-call (expect (nativeGet (js-call (js-call db :query
+            "SELECT COUNT(*) AS n FROM work_marks WHERE json_extract(payload,'$.native_message_id')='sample-blocked-edit'") :get) "n")) :toBe 0)
+          ;; Control: same user-HTTP-only path with blacklist disabled delivers once & marks Typing.
+          (put sample-rule :enabled false)
+          (setq filter (await (callOk f "O" "message.filter.update" (js-object
+            :expected_revision (nativeGet filter "revision")
+            :idempotency_key "sample-blacklist-off"
+            :people sample-people
+            :rules (js-array blocked-author-rule sample-rule)))))
+          (js-call (nativeGet state "user_only_ids") :add "sample-control-edit")
+          (js-call messages :set "sample-control-edit" (js-object :message_id "sample-control-edit" :chat_id "c1"
+            :create_time (funcall timestamp) :msg_type "text"
+            :body (js-object :content "{\"text\":\"plain control message\"}")
+            :sender (js-object :id "ou_sample_blocked" :id_type "open_id" :sender_type "user")
+            :mentions (js-array)))
+          (await (advance f 10))
+          (js-call (expect (nativeGet (js-call (js-call db :query
+            "SELECT m.result FROM events e JOIN match_decisions m ON m.event_id=e.event_id WHERE e.native_message_id='sample-control-edit' AND e.event_kind='message.created' LIMIT 1") :get) "result")) :toBe "no_match")
+          (js-call (expect (js-length inputs)) :toBe 10)
+          (funcall edit "sample-control-edit" "control edited with @self" (js-array "ou_self"))
+          (await (advance f 22 20))
+          (js-call (expect (js-length inputs)) :toBe 11)
+          (let ((ctrl-env (nativeGet (aref inputs 10) "envelope")))
+            (js-call (expect (nativeGet (nativeGet ctrl-env "source") "native_message_id")) :toBe "sample-control-edit")
+            (js-call (expect (nativeGet (nativeGet ctrl-env "reply_route") "connection_id")) :toBe "lark")
+            (js-call (expect (nativeGet ctrl-env "reply_context_id")) :toBeTruthy)
+            (js-call (expect (js-call (nativeGet ctrl-env "trigger_reasons") :some
+              (lambda (r) (= (nativeGet r "code") "edit_mention")))) :toBe t)
+            (js-call (expect (js-call (nativeGet f "marks") :has "user:sample-control-edit")) :toBe t)
+            (js-call (expect (nativeGet (js-call (js-call db :query
+              "SELECT COUNT(*) AS n FROM work_marks WHERE json_extract(payload,'$.native_message_id')='sample-control-edit'") :get) "n")) :toBe 1)))
+        (finally (js-call db :close))))) cleanup)
 
   (withCase "T41.hybrid-inbox-flow.integration" setup (async (f)
     (let* ((agent (await (bindRecipient f))) (state (nativeGet f "hybrid_state"))

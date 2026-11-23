@@ -82,9 +82,11 @@
         (js-object :field "event_kind" :op "eq" :value "message.created")
         (js-object :field "chat_type" :op "eq" :value "p2p")))
       (js-object :all (js-array
+        (js-object :field "event_kind" :op "eq" :value "message.created")
         (js-object :field "interaction.addressed_self" :op "eq" :value t)
         (js-object :field "interaction.kind" :op "eq" :value "reply")))
       (js-object :all (js-array
+        (js-object :field "event_kind" :op "eq" :value "message.created")
         (js-object :field "interaction.addressed_self" :op "eq" :value t)
         (js-object :field "interaction.kind" :op "eq" :value "thread")))
       (js-object :all (js-array
@@ -291,7 +293,7 @@
         (catch djReturn3Error
           (if (eq djReturn3Error djReturn3Token) djReturn3Value (throw djReturn3Error))))))
   (defconst defaultEventKinds
-    (Object/freeze (js-array "message.created" "message.pinned" "message.reaction.added")))
+    (Object/freeze (js-array "message.created" "message.edited" "message.pinned" "message.reaction.added")))
   (defun defaultSubscriptionRules ()
     (js-array
       (js-object

@@ -5,6 +5,8 @@
   (import "../../src/core/availability.eli" quotaFailure)
   (import "../../src/adapters/agent/antigravity.eli" createAntigravityPort)
   (import "../../src/application/schema.eli" validateRequest)
+  (import "../../src/delivery/service.eli" supersedePendingGroupSelections)
+  (import "bun:sqlite" Database)
   (import "../support/case.eli" withUnitCase)
   (import "bun:test" expect)
   (withUnitCase "T33.group-selection.unit" (lambda ()
@@ -27,7 +29,52 @@
       (js-call (expect (quotaEligible "require_available" "available")) :toBe t)
       (js-call (expect (quotaEligible "ignore" "exhausted")) :toBe t)
       (js-call (expect (nativeGet (validateRequest "subscription.preview" (js-object :spec
-        (js-object :agent_id "a" :group_id "g"))) "ok")) :toBe false))))
+        (js-object :agent_id "a" :group_id "g"))) "ok")) :toBe false))
+    ;; supersedePendingGroupSelections matches canonical event_key so T1 edit never revokes T0,
+    ;; while same-snapshot T1 peer view supersedes T1 group dispatch.
+    (let* ((db (new Database ":memory:"))
+           (conn (js-object :connection_id "lark" :platform "lark" :brand "lark" :identity "user" :identity_revision 1))
+           (conn-bot (js-object :connection_id "lark-bot" :platform "lark" :brand "lark" :identity "bot" :identity_revision 1))
+           (ev-t0 (js-object :event_id "e-t0" :connection_id "lark" :event_kind "message.created" :native_message_id "m-cross"
+             :source_time "2026-01-01T00:00:00.000Z" :conversation (js-object :connection_id "lark" :native_chat_id "c1")))
+           (ev-t1 (js-object :event_id "e-t1" :connection_id "lark" :event_kind "message.edited" :native_message_id "m-cross"
+             :source_time "2026-01-01T00:01:00.000Z" :native_message_update_time (Date/parse "2026-01-01T00:01:00.000Z")
+             :conversation (js-object :connection_id "lark" :native_chat_id "c1")))
+           (ev-t1-late (js-object :event_id "e-t1-late" :connection_id "lark-bot" :event_kind "message.created" :native_message_id "m-cross"
+             :source_time "2026-01-01T00:00:00.000Z" :native_message_update_time (Date/parse "2026-01-01T00:01:00.000Z")
+             :conversation (js-object :connection_id "lark-bot" :native_chat_id "c1")))
+           (del-t0 (js-object :delivery_id "d-t0" :state "ready" :revision 1))
+           (work-t0 (js-object :target_key "group:g1" :event_id "e-t0" :state "selected" :agent_id "a1" :delivery_id "d-t0"))
+           (del-t1 (js-object :delivery_id "d-t1" :state "ready" :revision 1))
+           (work-t1 (js-object :target_key "group:g1" :event_id "e-t1" :state "selected" :agent_id "a1" :delivery_id "d-t1"))
+            (replaced-works (js-array))
+            (ctx (js-object :store (js-object :db db) :ports (js-object :clock (js-object :utcNow (lambda () "2026-01-01T00:02:00.000Z")))
+              :repository (js-object
+                :get (lambda (table id)
+                  (cond
+                    ((= table "connections") (if (= id "lark") conn conn-bot))
+                    ((= table "deliveries") (if (= id "d-t0") del-t0 del-t1))))
+                :replace (lambda (table row)
+                  (put row :replaced t)
+                  (when (= table "group_dispatches") (js-call replaced-works :push row))
+                  (js-object :ok t :data row))))))
+      (try
+        (js-call db :exec "CREATE TABLE events(event_id TEXT,native_message_id TEXT,event_kind TEXT,payload TEXT); CREATE TABLE group_dispatches(event_id TEXT,target_key TEXT,state TEXT,payload TEXT); CREATE TABLE deliveries(delivery_id TEXT,state TEXT,revision INTEGER,payload TEXT);")
+        (js-call (js-call db :query "INSERT INTO events VALUES(?,?,?,?)") :run "e-t0" "m-cross" "message.created" (JSON/stringify ev-t0))
+        (js-call (js-call db :query "INSERT INTO events VALUES(?,?,?,?)") :run "e-t1" "m-cross" "message.edited" (JSON/stringify ev-t1))
+        (js-call (js-call db :query "INSERT INTO group_dispatches VALUES(?,?,?,?)") :run "e-t0" "group:g1" "selected" (JSON/stringify work-t0))
+        (js-call (js-call db :query "INSERT INTO deliveries VALUES(?,?,?,?)") :run "d-t0" "ready" 1 (JSON/stringify del-t0))
+        (supersedePendingGroupSelections ctx db ev-t1 "a1")
+        (js-call (expect (nativeGet (js-call (js-call db :query "SELECT state FROM deliveries WHERE delivery_id='d-t0'") :get) "state")) :toBe "ready")
+        (js-call (expect (js-length replaced-works)) :toBe 0)
+        (js-call (js-call db :query "INSERT INTO group_dispatches VALUES(?,?,?,?)") :run "e-t1" "group:g1" "selected" (JSON/stringify work-t1))
+        (js-call (js-call db :query "INSERT INTO deliveries VALUES(?,?,?,?)") :run "d-t1" "ready" 1 (JSON/stringify del-t1))
+        (supersedePendingGroupSelections ctx db ev-t1-late "a1")
+        (js-call (expect (nativeGet (js-call (js-call db :query "SELECT state FROM deliveries WHERE delivery_id='d-t1'") :get) "state")) :toBe "cancelled")
+        (js-call (expect (nativeGet (js-call (js-call db :query "SELECT state FROM deliveries WHERE delivery_id='d-t0'") :get) "state")) :toBe "ready")
+        (js-call (expect (js-length replaced-works)) :toBe 1)
+        (js-call (expect (nativeGet (aref replaced-works 0) "state")) :toBe "waiting_member")
+        (finally (js-call db :close))))))
   (withUnitCase "T33.group-quota-evidence.unit" (lambda ()
     (let* ((session (js-object :instance_id "app" :instance_epoch "epoch" :native_namespace "local"
         :native_session_id "one" :model_selection (js-object :provider_id "p" :model_id "m" :observed_at "earlier")))

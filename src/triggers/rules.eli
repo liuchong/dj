@@ -17,7 +17,7 @@
   (import "./sources.eli" matchesSource normalizeRuleSources resolveSources checkSources)
   (import "./suppression.eli" readFilterPolicy evaluatePredicateWithPeople)
   (defconst supportedEventKinds
-    (Object/freeze (js-array "message.created" "message.pinned" "message.reaction.added" "resource.changed")))
+    (Object/freeze (js-array "message.created" "message.edited" "message.pinned" "message.reaction.added" "resource.changed")))
   (defun normalizeContextPolicy (policy)
     (let ((mode (if (and policy (= (nativeGet policy "mode") "current")) "current" "recent")))
       (Object/assign

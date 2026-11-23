@@ -39,14 +39,29 @@
       (or canonical
         (if has-rid (js-array "reaction_id" rid)
           (js-array "reaction" emoji actor-key (nativeGet rx "action_time"))))))
+  ;; A Lark HTTP first sighting may already carry the same edit observed by a peer.
+  (defun messageSnapshotStamp (event)
+    (or (nativeGet event "native_message_update_time") (Date/parse (nativeGet event "source_time"))))
+  (defun larkMessageSnapshot (connection event)
+    (and (= (nativeGet connection "platform") "lark")
+      (js-call (js-array "message.created" "message.edited") :includes (nativeGet event "event_kind"))))
+  (defun equivalentEventKinds (kind)
+    (if (js-call (js-array "message.created" "message.edited") :includes kind)
+      (js-array "message.created" "message.edited")
+      (js-array kind kind)))
   ;; Native identifiers and platform namespaces only; never compare body text.
   (defun eventIdentity (context event)
     (let* ((source (js-call (nativeGet context "repository") :get "connections" (nativeGet event "connection_id")))
       (address (nativeGet event "conversation"))
       (network (replyNetworkKey context source address))
       (chat (nativeGet address "native_chat_id" nil))
-      (kind (nativeGet event "event_kind"))
+      (original-kind (nativeGet event "event_kind"))
+      (snapshot (larkMessageSnapshot source event))
+      (stamp (and snapshot (messageSnapshotStamp event)))
+      (kind (if (and stamp (> stamp (Date/parse (nativeGet event "source_time"))))
+        "message.edited" original-kind))
       (discriminator (cond
+        ((and snapshot (= kind "message.edited")) stamp)
         ((= kind "message.created") (nativeGet event "source_time" nil))
         ((and (= kind "message.pinned") (nativeGet event "pin"))
           (js-array "pin" (canonicalReactionActor context source (nativeGet (nativeGet event "pin") "operator"))
@@ -55,6 +70,8 @@
           (reactionEventDiscriminator context source network chat event))
         (t (nativeGet event "source_key" (nativeGet event "event_id"))))))
       (js-object :network network :chat chat
+          :source_time (if (and snapshot (= kind "message.edited"))
+          (js-call (new globalThis.Date stamp) :toISOString) (nativeGet event "source_time"))
         :event_key (hashValue (js-array network chat (nativeGet event "native_message_id") kind discriminator)))))
   ;; A sent reply may never return as an inbox echo. Its native receipt still
   ;; links the quoted message to the original interaction without body matching.
@@ -108,13 +125,14 @@
       (put identity :anchor anchor) identity))
   (defun eventOrder (context event)
     (let* ((db (nativeGet (nativeGet context "store") "db")) (key (nativeGet (eventIdentity context event) "event_key"))
+      (kinds (equivalentEventKinds (nativeGet event "event_kind")))
       (value (js-call (str (nativeGet event "ingress_seq" "0")) :padStart 20 "0")))
       (when db
         (js-call (js-call (js-call db :query
-          "SELECT payload FROM events WHERE native_message_id=? AND event_kind=? ORDER BY ingress_seq LIMIT 64")
-          :all (nativeGet event "native_message_id") (nativeGet event "event_kind")) :forEach (lambda (row)
+          "SELECT payload FROM events WHERE native_message_id=? AND event_kind IN (?,?) ORDER BY ingress_seq LIMIT 64")
+          :all (nativeGet event "native_message_id") (aref kinds 0) (aref kinds 1)) :forEach (lambda (row)
           (let ((prior (JSON/parse (nativeGet row "payload"))))
             (when (= key (nativeGet (eventIdentity context prior) "event_key"))
               (let ((sequence (js-call (str (nativeGet prior "ingress_seq" "0")) :padStart 20 "0")))
                 (when (or (= value "00000000000000000000") (< (js-call sequence :localeCompare value) 0)) (setq value sequence)))))))) value))
-  (export eventIdentity contextIdentity eventOrder))
+  (export eventIdentity contextIdentity eventOrder equivalentEventKinds larkMessageSnapshot messageSnapshotStamp))

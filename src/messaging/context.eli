@@ -35,7 +35,7 @@
       (nativeGet limits "handle_ttl_seconds"))) "ref"))
   (defun localMessage (context address id &optional reference)
     (let* ((db (nativeGet (nativeGet context "store") "db"))
-      (row (js-call (js-call db :query "SELECT payload FROM events WHERE connection_id=? AND native_message_id=? LIMIT 1") :get (nativeGet address "connection_id") id))
+      (row (js-call (js-call db :query "SELECT payload FROM events WHERE connection_id=? AND native_message_id=? AND event_kind IN ('message.created','message.edited') AND tombstone=0 ORDER BY ingress_seq DESC LIMIT 1") :get (nativeGet address "connection_id") id))
       (event (and row (JSON/parse (nativeGet row "payload")))))
       (cond (event (and (matchesAddress address event reference) (eventReadable context event) event))
         (t (let* ((connection (scopedConnection context address))
@@ -99,7 +99,7 @@
       (topic-values (if narrow (js-array root root root) (js-array)))
       (event-key "COALESCE(json_extract(payload,'$.source_time'),received_at)||'/'||native_message_id")
       (cache-key "source_time||'/'||native_message_id")
-      (rows (js-call (js-call db :query (str "SELECT payload," event-key " AS scan_key FROM events WHERE connection_id=? AND conversation_key=? AND COALESCE(json_extract(payload,'$.source_time'),received_at)>=? AND COALESCE(json_extract(payload,'$.source_time'),received_at)<?"
+      (rows (js-call (js-call db :query (str "SELECT payload," event-key " AS scan_key FROM events WHERE connection_id=? AND conversation_key=? AND event_kind IN ('message.created','message.edited') AND tombstone=0 AND NOT EXISTS (SELECT 1 FROM events newer WHERE newer.connection_id=events.connection_id AND newer.native_message_id=events.native_message_id AND newer.event_kind IN ('message.created','message.edited') AND newer.tombstone=0 AND newer.ingress_seq>events.ingress_seq) AND COALESCE(json_extract(payload,'$.source_time'),received_at)>=? AND COALESCE(json_extract(payload,'$.source_time'),received_at)<?"
         topic-clause (if last-key (str " AND (" event-key ")" operator "?") "") " ORDER BY scan_key" direction " LIMIT ?"))
         :all (js-call (js-array (nativeGet address "connection_id") (conversationKey address) from until) :concat
           topic-values (if last-key (js-array last-key cap) (js-array cap)))))
@@ -118,7 +118,7 @@
         (setq bytes (+ bytes (utf8Bytes (nativeGet row "payload"))))
         (when (<= bytes 1048576)
           (let* ((event (JSON/parse (nativeGet row "payload")))
-            (existing (js-call (js-call db :query "SELECT payload FROM events WHERE connection_id=? AND native_message_id=? LIMIT 1") :get (nativeGet address "connection_id") (nativeGet event "native_message_id"))))
+            (existing (js-call (js-call db :query "SELECT payload FROM events WHERE connection_id=? AND native_message_id=? AND event_kind IN ('message.created','message.edited') AND tombstone=0 ORDER BY ingress_seq DESC LIMIT 1") :get (nativeGet address "connection_id") (nativeGet event "native_message_id"))))
             (unless (or (js-call messages :has (nativeGet event "native_message_id")) existing)
               (js-call messages :set (nativeGet event "native_message_id") event))))))
       (let ((items (js-call (js-call (Array/from (js-call messages :values)) :filter (lambda (event) event)) :sort
@@ -226,8 +226,8 @@
         (let* ((key (messageKey anchor))
           (older (if (> before 0) (localHistory context address key false before nil (if (= (nativeGet args "scope" "topic") "topic") (trackedTopic context anchor) nil)) (js-array)))
           (newer (if (> after 0) (localHistory context address key t after nil (if (= (nativeGet args "scope" "topic") "topic") (trackedTopic context anchor) nil)) (js-array))))
-          (js-call (js-call older :slice (Math/max 0 (- (js-length older) before))) :forEach (lambda (row) (funcall append row "messages")))
-          (js-call (js-call newer :slice 0 after) :forEach (lambda (row) (funcall append row "messages"))))
+          (js-call (js-call older :slice (Math/max 0 (- (js-length older) before))) :forEach (lambda (row) (unless (= (nativeGet row "native_message_id") (nativeGet anchor "native_message_id")) (funcall append row "messages"))))
+          (js-call (js-call newer :slice 0 after) :forEach (lambda (row) (unless (= (nativeGet row "native_message_id") (nativeGet anchor "native_message_id")) (funcall append row "messages")))))
       )
       (when (> budget 256)
         (let ((related (relatedRecipients context anchor budget)))

@@ -9,6 +9,10 @@
         (js-call reasons :push (js-object :code code :label label))))
       (cond
         ((= kind "message.pinned") (funcall add "chat_pin" "消息被 Pin 到对话"))
+        ((= kind "message.edited")
+          (funcall add "message_edit" "消息已编辑")
+          (when (> (js-length (nativeGet event "mentions" (js-array))) 0)
+            (funcall add "edit_mention" "编辑新增原生 @")))
         ((= kind "message.reaction.added")
           (let ((emoji (nativeGet (nativeGet event "reaction") "emoji_type" "")))
             (funcall add (if (js-call (js-array "Pin" "pushpin") :includes emoji) "reaction_pin" "reaction")
