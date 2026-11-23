@@ -178,7 +178,7 @@
                   (cond ((js-call entry :isDirectory) (await (visit path)))
                     ((and (js-call entry :isFile) (not (js-call entry :isSymbolicLink)))
                       (await
-                        (chmod path (if (js-call (js-array "bin/dj" "libexec/dj-codex-loader" "libexec/dj-cursor-restart" "libexec/dj-process-info" "libexec/dj-status-bar")
+                        (chmod path (if (js-call (js-array "bin/dj" "connectors/codex/launch-mcp.sh" "libexec/dj-codex-loader" "libexec/dj-cursor-restart" "libexec/dj-process-info" "libexec/dj-status-bar")
                           :includes (relative root path)) 448 384)))
                       (js-call
                         files
@@ -303,6 +303,7 @@
       (await (copyTree "skills/dj" staging "skills/dj"))
       (await (copyTree "connectors/codex" staging "connectors/codex"))
       (await (writeNativeConnectorBundle "codex" (resolve staging "connectors/codex/control.mjs")))
+      (await (writeNativeConnectorBundle "codex" (resolve staging "connectors/codex/mcp.mjs") "codex-mcp" "mcp.mjs"))
       (await (copyTree "connectors/pi" staging "connectors/pi"))
       (await (writeNativeConnectorBundle "pi" (resolve staging "connectors/pi/control.mjs")))
       (await (writeConnectorEntry "pi" (resolve staging "connectors/pi/extension.mjs")))

@@ -29963,9 +29963,33 @@
       "acceptance_ids": [
         "CREATE01"
       ],
-      "given": "Codex native receiver supervisors sharing an app owner pid with kernel leader and standby flock locks and real x-codex-turn-metadata",
-      "when": "A 3rd supervisor launches while leader and standby slots are held, then the leader stops, and a replacement standby joins after promotion",
-      "then": "The 3rd supervisor exits immediately with receiver_standby_full, standby promotes cleanly to a new epoch, probe/read/send verify real caller metadata, and standby capacity refills to 2"
+      "given": "Codex native receiver supervisors sharing an app owner pid with single kernel flock lock and caller resolver or turn metadata",
+      "when": "A leader holds the single lock, a waiting supervisor uses resolve_caller, the leader stops, and additional waiting supervisors join",
+      "then": "The waiting supervisor promotes cleanly to a new epoch via resolve_caller, probe/read/send verify caller metadata, no standby.lock is created, and extra waiting supervisors wait without receiver_standby_full"
+    },
+    {
+      "case_id": "T53.codex-mcp-proxy.integration",
+      "parent_id": "T53",
+      "file": "tests/integration/native-host-control.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {
+        "mechanism": "codex-mcp-proxy"
+      },
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "requirements": [
+        "0030"
+      ],
+      "acceptance_ids": [
+        "CREATE01"
+      ],
+      "given": "A Codex stdio MCP proxy bridging to DJ Streamable-HTTP MCP with private 0600 bearer token file, caller-context cache, and Codex state_5.sqlite",
+      "when": "Codex sends initialize, tools/list, tools/call with _meta turn metadata, and triggers HTTP 404 session expiration after DJ restart",
+      "then": "The proxy authenticates over Bearer token, decodes SSE and JSON responses, captures thread_id into caller-context.json, orders caller candidates safely, and transparently reinitializes on 404"
     },
     {
       "case_id": "T53.native-initial-input.sqlite",

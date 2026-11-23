@@ -1,0 +1,409 @@
+(module dj.connectors.codex-mcp
+  (import "../core/native.eli" nativeGet nativeTypeOf nativeBitAnd nativeSetTimeout)
+  (import "./codex.eli" superviseCodexControl pipeCall toolResult)
+  (import "node:fs" existsSync realpathSync)
+  (import "node:fs/promises" mkdir lstat readFile writeFile rename unlink)
+  (import "node:path" dirname join resolve)
+  (import "node:os" homedir userInfo)
+  (import "node:crypto" randomUUID)
+  (import "node:sqlite" DatabaseSync)
+  (import "node:url" fileURLToPath)
+
+  (defconst maxLineBytes 8388608)
+  (defconst uuidPattern (new globalThis.RegExp "^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$" "i"))
+
+  (defun validMcpUrl (value)
+    (let ((url (new globalThis.URL value)))
+      (unless (and (= (nativeGet url "protocol") "http:")
+                   (= (nativeGet url "hostname") "127.0.0.1")
+                   (nativeGet url "port")
+                   (= (nativeGet url "pathname") "/mcp")
+                   (= (nativeGet url "username") "")
+                   (= (nativeGet url "password") "")
+                   (= (nativeGet url "search") "")
+                   (= (nativeGet url "hash") ""))
+        (throw (new globalThis.TypeError "MCP requires a numeric loopback URL and /mcp path")))
+      (js-call url :toString)))
+
+  (defasync readPrivateToken (token-path)
+    (let* ((resolved (resolve token-path))
+           (info (await (lstat resolved))))
+      (unless (and (js-call info :isFile)
+                   (not (js-call info :isSymbolicLink))
+                   (= (nativeGet info "uid") (js-call globalThis.process :getuid))
+                   (= (nativeBitAnd (nativeGet info "mode") 511) 384))
+        (throw (new globalThis.Error "MCP token file must be a private 0600 file owned by current user")))
+      (let ((token (js-call (await (readFile resolved "utf8")) :trim)))
+        (unless (> (js-length token) 0)
+          (throw (new globalThis.Error "MCP token file is empty")))
+        token)))
+
+  (defasync saveCallerContext (root thread-id)
+    (when (and (= (nativeTypeOf thread-id) "string") (> (js-length thread-id) 0))
+      (try
+        (await (mkdir root (js-object :recursive t :mode 448)))
+        (let ((info (await (lstat root))))
+          (when (and (js-call info :isDirectory)
+                     (not (js-call info :isSymbolicLink))
+                     (= (nativeGet info "uid") (js-call globalThis.process :getuid))
+                     (= (nativeBitAnd (nativeGet info "mode") 511) 448))
+            (let ((staging (join root (str ".caller-" (randomUUID))))
+                  (target (join root "caller-context.json")))
+              (await (writeFile staging
+                (JSON/stringify (js-object :thread_id thread-id
+                  :updated_at (js-call (new globalThis.Date) :toISOString)))
+                (js-object :flag "wx" :mode 384)))
+              (try (await (rename staging target))
+                (catch error
+                  (try (await (unlink staging)) (catch ignored nil)))))))
+        (catch ignored nil))))
+
+  (defun queryRecentThreads (db-path)
+    (let ((ids (js-array)) (db nil))
+      (try
+        (when (existsSync db-path)
+          (setq db (new DatabaseSync db-path (js-object :readOnly t)))
+          (let* ((stmt-visible (js-call db :prepare
+                   "SELECT id FROM threads WHERE archived=0 AND preview<>'' ORDER BY updated_at DESC LIMIT 8"))
+                 (rows (js-call stmt-visible :all)))
+            (when (= (js-length rows) 0)
+              (let ((stmt-any (js-call db :prepare
+                      "SELECT id FROM threads WHERE archived=0 ORDER BY updated_at DESC LIMIT 8")))
+                (setq rows (js-call stmt-any :all))))
+            (js-call rows :forEach (lambda (row)
+              (when (nativeGet row "id") (js-call ids :push (nativeGet row "id")))))))
+        (catch ignored nil)
+        (finally (when db (try (js-call db :close) (catch ignored nil)))))
+      ids))
+
+  (defasync collectCallerCandidates (root owner-pid codex-home live-caller)
+    (let* ((seen (new globalThis.Set))
+           (add (lambda (id)
+             (when (and (= (nativeTypeOf id) "string") (< (nativeGet seen "size") 16))
+               (let ((trimmed (js-call id :trim)))
+                 (when (> (js-length trimmed) 0) (js-call seen :add trimmed)))))))
+      (when live-caller (funcall add (nativeGet live-caller "thread_id")))
+      (try
+        (let ((ctx (JSON/parse (await (readFile (join root "caller-context.json") "utf8")))))
+          (funcall add (nativeGet ctx "thread_id")))
+        (catch ignored nil))
+      (when owner-pid
+        (try
+          (let ((manifest (JSON/parse (await (readFile (join root (str owner-pid ".json")) "utf8")))))
+            (funcall add (nativeGet manifest "caller_thread_id")))
+          (catch ignored nil)))
+      (js-call (queryRecentThreads (join codex-home "state_5.sqlite")) :forEach add)
+      (Array/from seen)))
+
+  (defasync verifyCallerThread (pipe thread-id &optional turn-id)
+    (let* ((effective-turn (if (and (= (nativeTypeOf turn-id) "string") (> (js-length turn-id) 0))
+                             turn-id
+                             (str "mcp-turn-" (randomUUID))))
+           (reply (await (pipeCall pipe "tools/call" (js-object
+             :callerSource "codex" :namespace "codex_app" :hostId "local"
+             :threadId thread-id :turnId effective-turn
+             :callId (randomUUID) :tool "read_thread"
+             :arguments (js-object :threadId thread-id :includeTurns false)))))
+           (readback (toolResult reply))
+           (thread (nativeGet readback "thread")))
+      (unless (and (= (nativeGet thread "id") thread-id)
+                   (= (nativeGet thread "hostId") "local")
+                   (= (nativeGet thread "kind") "codex"))
+        (throw (new globalThis.Error "native_caller_unavailable")))
+      (js-object :x-codex-turn-metadata (js-object :thread_id thread-id :turn_id effective-turn))))
+
+  (defun extractTurnMeta (msg)
+    (when (= (nativeGet msg "method") "tools/call")
+      (let* ((params (nativeGet msg "params"))
+             (meta (nativeGet params "_meta"))
+             (raw-turn (nativeGet meta "x-codex-turn-metadata"))
+             (turn (cond
+                     ((and raw-turn (= (nativeTypeOf raw-turn) "object")) raw-turn)
+                     ((= (nativeTypeOf raw-turn) "string")
+                       (try (JSON/parse raw-turn) (catch ignored nil)))
+                     (t nil)))
+             (tid (or (nativeGet turn "thread_id")
+                      (nativeGet meta "openai/threadId")
+                      (nativeGet meta "openai/thread_id")
+                      (nativeGet meta "codexThreadId")
+                      (nativeGet meta "thread_id")))
+             (turn-id (or (nativeGet turn "turn_id")
+                          (nativeGet meta "openai/turnId")
+                          (nativeGet meta "turn_id"))))
+        (when (and (= (nativeTypeOf tid) "string") (> (js-length (js-call tid :trim)) 0))
+          (js-object :thread_id (js-call tid :trim)
+            :turn_id (when (and (= (nativeTypeOf turn-id) "string") (> (js-length (js-call turn-id :trim)) 0))
+                       (js-call turn-id :trim)))))))
+
+  (defun parseSseMessages (text)
+    (let ((messages (js-array)) (data-lines (js-array))
+          (lines (js-call text :split (new globalThis.RegExp "\\r?\\n"))) (i 0))
+      (let ((flush (lambda ()
+              (when (> (js-length data-lines) 0)
+                (let ((payload (js-call (js-call data-lines :join "\n") :trim)))
+                  (setq data-lines (js-array))
+                  (when (> (js-length payload) 0) (js-call messages :push payload)))))))
+        (while (< i (js-length lines))
+          (let ((line (aref lines i)))
+            (cond
+              ((= line "") (funcall flush))
+              ((js-call line :startsWith "data:")
+                (let ((rest (js-call line :slice 5)))
+                  (js-call data-lines :push (if (js-call rest :startsWith " ") (js-call rest :slice 1) rest))))))
+          (setq i (1+ i)))
+        (funcall flush))
+      messages))
+
+  (defun createCodexMcpProxy (options)
+    (let* ((url (validMcpUrl (nativeGet options "url")))
+           (static-token (nativeGet options "token"))
+           (load-token (or (nativeGet options "load_token")
+                           (when (nativeGet options "token_file")
+                             (let ((file (nativeGet options "token_file")))
+                               (lambda () (readPrivateToken file))))))
+           (stdin (or (nativeGet options "stdin") (nativeGet globalThis.process "stdin")))
+           (stdout (or (nativeGet options "stdout") (nativeGet globalThis.process "stdout")))
+           (receiver-root (resolve (or (nativeGet options "receiver_root") (join (homedir) ".dj/codex-receivers"))))
+           (codex-home (resolve (or (nativeGet options "codex_home")
+             (nativeGet (nativeGet globalThis.process "env") "CODEX_HOME") (join (homedir) ".codex"))))
+           (fetch-fn (or (nativeGet options "fetch_fn") globalThis.fetch))
+           (start-control (or (nativeGet options "start_control") superviseCodexControl))
+           (verify-caller (or (nativeGet options "verify_caller") verifyCallerThread))
+           (save-caller (or (nativeGet options "save_caller") saveCallerContext))
+           (disable-control (= (nativeGet options "disable_control") t))
+           (cached-token static-token)
+           (session-id nil) (init-request nil) (reinit-promise nil)
+           (live-caller nil) (closed false)
+           (pending (new globalThis.Set))
+           (stop-control (js-object :stopped false :reason nil :stop nil))
+           (control-promise nil)
+           (line-buffer (Buffer/alloc 0))
+           (stopped-resolve nil)
+           (stopped-promise (new globalThis.Promise (lambda (resolve) (setq stopped-resolve resolve))))
+           (write-line nil) (post-http nil) (reinitialize nil)
+           (emit-response nil) (handle-message nil) (on-data nil) (on-end nil) (close nil))
+
+      (setq write-line (lambda (text)
+        (unless closed
+          (js-call stdout :write (str text "\n")))))
+
+      (setq post-http (async (body sid)
+        (unless cached-token
+          (unless load-token (throw (new globalThis.Error "MCP auth token missing")))
+          (setq cached-token (await (funcall load-token))))
+        (let ((headers (js-object
+                :content-type "application/json"
+                :accept "application/json, text/event-stream"
+                :authorization (str "Bearer " cached-token))))
+          (when sid (put headers :mcp-session-id sid))
+          (let* ((resp (await (funcall fetch-fn url (js-object
+                   :method "POST" :headers headers :body (JSON/stringify body)))))
+                 (resp-headers (nativeGet resp "headers"))
+                 (next-sid (and resp-headers (js-call resp-headers :get "mcp-session-id")))
+                 (ct (js-call (or (and resp-headers (js-call resp-headers :get "content-type")) "") :toLowerCase))
+                 (text (await (js-call resp :text))))
+            (js-object :status (nativeGet resp "status") :session_id next-sid :content_type ct :text text)))))
+
+      (setq reinitialize (async ()
+        (cond
+          ((not init-request) false)
+          (reinit-promise (await reinit-promise))
+          (t
+            (setq reinit-promise (funcall (async ()
+              (try
+                (let* ((req (Object/assign (js-object) init-request (js-object :id (str "dj-reinit-" (randomUUID)))))
+                       (res (await (funcall post-http req nil)))
+                       (sid (nativeGet res "session_id")))
+                  (unless (and (>= (nativeGet res "status") 200) (< (nativeGet res "status") 300) sid)
+                    (throw (new globalThis.Error "mcp_reinitialize_failed")))
+                  (setq session-id sid)
+                  (await (funcall post-http (js-object :jsonrpc "2.0" :method "notifications/initialized") session-id))
+                  t)
+                (finally (setq reinit-promise nil))))))
+            (await reinit-promise)))))
+
+      (setq emit-response (lambda (res req-id has-id)
+        (when (and has-id (not (= (nativeGet res "status") 202)))
+          (let ((ct (nativeGet res "content_type" "")) (text (js-call (nativeGet res "text" "") :trim)))
+            (cond
+              ((js-call ct :includes "text/event-stream")
+                (js-call (parseSseMessages (nativeGet res "text" "")) :forEach (lambda (item)
+                  (funcall write-line item))))
+              ((> (js-length text) 0)
+                (try
+                  (progn
+                    (JSON/parse text)
+                    (funcall write-line text))
+                  (catch non-json
+                    (funcall write-line (JSON/stringify (js-object :jsonrpc "2.0" :id req-id
+                      :error (js-object :code -32000 :message (str "DJ MCP HTTP error " (nativeGet res "status")))))))))
+              ((>= (nativeGet res "status") 400)
+                (funcall write-line (JSON/stringify (js-object :jsonrpc "2.0" :id req-id
+                  :error (js-object :code -32000 :message (str "DJ MCP HTTP error " (nativeGet res "status"))))))))))))
+
+      (setq handle-message (async (msg)
+        (let* ((captured (extractTurnMeta msg))
+               (has-id (js-call globalThis.Object :hasOwn msg "id"))
+               (req-id (when has-id (nativeGet msg "id")))
+               (method (nativeGet msg "method")))
+          (when captured
+            (setq live-caller captured)
+            (js-call (funcall save-caller receiver-root (nativeGet captured "thread_id")) :catch (lambda (ignored) nil)))
+          (try
+            (if (= method "initialize")
+              (progn
+                (setq init-request (js-object :jsonrpc (nativeGet msg "jsonrpc" "2.0")
+                  :method "initialize" :params (nativeGet msg "params")))
+                (let ((res (await (funcall post-http msg nil))))
+                  (when (nativeGet res "session_id") (setq session-id (nativeGet res "session_id")))
+                  (funcall emit-response res req-id has-id)))
+              (let ((res (await (funcall post-http msg session-id))))
+                (when (and (= (nativeGet res "status") 404) session-id init-request)
+                  (when (await (funcall reinitialize))
+                    (setq res (await (funcall post-http msg session-id)))))
+                (when (nativeGet res "session_id") (setq session-id (nativeGet res "session_id")))
+                (funcall emit-response res req-id has-id)))
+            (catch error
+              (when (and has-id (not closed))
+                (funcall write-line (JSON/stringify (js-object :jsonrpc "2.0" :id req-id
+                  :error (js-object :code -32000 :message (or (nativeGet error "message") "DJ MCP proxy unavailable")))))))))))
+
+      (setq on-data (lambda (chunk)
+        (let ((buf (if (Buffer/isBuffer chunk) chunk (Buffer/from chunk "utf8"))))
+          (setq line-buffer (Buffer/concat (js-array line-buffer buf)))
+          (let ((nl (js-call line-buffer :indexOf 10)))
+            (while (>= nl 0)
+              (let ((line-bytes (js-call line-buffer :subarray 0 nl)))
+                (setq line-buffer (js-call line-buffer :subarray (1+ nl)))
+                (if (> (js-length line-bytes) maxLineBytes)
+                  (funcall write-line (JSON/stringify (js-object :jsonrpc "2.0" :id nil
+                    :error (js-object :code -32600 :message "MCP request exceeds frame limit"))))
+                  (let ((line (js-call (js-call (js-call line-bytes :toString "utf8") :replace (new globalThis.RegExp "\\r$") "") :trim)))
+                    (when (> (js-length line) 0)
+                      (try
+                        (let* ((parsed (JSON/parse line))
+                               (items (if (Array/isArray parsed) parsed (js-array parsed))))
+                          (js-call items :forEach (lambda (item)
+                            (when (and item (= (nativeTypeOf item) "object"))
+                              (let ((task nil))
+                                (setq task (js-call (funcall handle-message item) :finally (lambda ()
+                                  (js-call pending :delete task))))
+                                (js-call pending :add task))))))
+                        (catch bad-json
+                          (funcall write-line (JSON/stringify (js-object :jsonrpc "2.0" :id nil
+                            :error (js-object :code -32700 :message "Parse error"))))))))))
+              (setq nl (js-call line-buffer :indexOf 10)))
+            (when (> (js-length line-buffer) maxLineBytes)
+              (setq line-buffer (Buffer/alloc 0))
+              (funcall write-line (JSON/stringify (js-object :jsonrpc "2.0" :id nil
+                :error (js-object :code -32600 :message "MCP request exceeds frame limit")))))))))
+
+      (setq close (async (&optional reason)
+        (unless closed
+          (setq closed t)
+          (js-call stdin :removeListener "data" on-data)
+          (js-call stdin :removeListener "end" on-end)
+          (js-call stdin :removeListener "close" on-end)
+          (put stop-control :stopped t)
+          (put stop-control :reason (or reason "proxy_closed"))
+          (when (nativeGet stop-control "stop")
+            (funcall (nativeGet stop-control "stop") (or reason "proxy_closed")))
+          (let ((tasks (Array/from pending)))
+            (when control-promise (js-call tasks :push control-promise))
+            (when (> (js-length tasks) 0)
+              (await (Promise/race (js-array
+                (Promise/allSettled tasks)
+                (new globalThis.Promise (lambda (done) (nativeSetTimeout done 2500)))))))))))
+
+      (unless disable-control
+        (setq control-promise (js-call (funcall start-control (js-object
+          :root receiver-root
+          :stop_control stop-control
+          :resolve_caller (async (pipe owner-pid)
+            (let* ((candidates (await (collectCallerCandidates receiver-root owner-pid codex-home live-caller)))
+                   (verified nil) (i 0))
+              (while (and (< i (js-length candidates)) (not verified))
+                (let* ((cid (aref candidates i))
+                       (turn-id (when (and live-caller (= (nativeGet live-caller "thread_id") cid))
+                                  (nativeGet live-caller "turn_id"))))
+                  (try
+                    (setq verified (await (funcall verify-caller pipe cid turn-id)))
+                    (catch rejected nil)))
+                (setq i (1+ i)))
+              (unless verified (throw (new globalThis.Error "native_caller_unavailable")))
+              verified))))
+          :catch (lambda (error)
+            (let ((msg (nativeGet error "message" "")))
+              (unless (js-call (js-array "codex_native_owner_missing" "codex_native_origin_unavailable") :includes msg)
+                (js-call (nativeGet globalThis.process "stderr") :write (str "DJ Codex receiver error: " msg "\n"))))))))
+
+      (setq on-end (lambda ()
+        (js-call (funcall close "stdin_closed") :finally (lambda ()
+          (when stopped-resolve (funcall stopped-resolve nil))))))
+      (js-call stdin :on "data" on-data)
+      (js-call stdin :once "end" on-end)
+      (js-call stdin :once "close" on-end)
+      (js-object :start (lambda () stopped-promise)
+        :close (async (&optional reason)
+          (await (funcall close reason))
+          (when stopped-resolve (funcall stopped-resolve nil)))
+        :sessionId (lambda () session-id)
+        :liveCaller (lambda () live-caller))))
+
+  (defun parseProxyArgs (argv)
+    (let ((url nil) (token-file nil) (receiver-root nil) (codex-home nil) (i 2))
+      (while (< i (js-length argv))
+        (let ((arg (aref argv i)))
+          (cond
+            ((or (= arg "--help") (= arg "-h"))
+              (throw (js-object :help t)))
+            ((and (js-call (js-array "--url" "--token-file" "--receiver-root" "--codex-home") :includes arg)
+                  (< (1+ i) (js-length argv)))
+              (setq i (1+ i))
+              (let ((val (aref argv i)))
+                (cond
+                  ((= arg "--url") (setq url val))
+                  ((= arg "--token-file") (setq token-file val))
+                  ((= arg "--receiver-root") (setq receiver-root val))
+                  ((= arg "--codex-home") (setq codex-home val)))))
+            (t (throw (new globalThis.TypeError (str "Unknown argument: " arg))))))
+        (setq i (1+ i)))
+      (unless (and url token-file)
+        (throw (new globalThis.TypeError "Usage: mcp.mjs --url <http://127.0.0.1:PORT/mcp> --token-file <path>")))
+      (js-object :url url :token_file token-file :receiver_root receiver-root :codex_home codex-home)))
+
+  (defasync main ()
+    (try
+      (let* ((opts (parseProxyArgs (nativeGet globalThis.process "argv")))
+             (proxy nil)
+             (sig-handler nil))
+        (await (readPrivateToken (nativeGet opts "token_file")))
+        (setq proxy (createCodexMcpProxy opts))
+        (setq sig-handler (lambda ()
+          (js-call (js-call proxy :close "signal") :finally (lambda ()
+            (js-call globalThis.process :exit 0)))))
+        (js-call globalThis.process :once "SIGTERM" sig-handler)
+        (js-call globalThis.process :once "SIGINT" sig-handler)
+        (try
+          (await (js-call proxy :start))
+          (finally
+            (js-call globalThis.process :removeListener "SIGTERM" sig-handler)
+            (js-call globalThis.process :removeListener "SIGINT" sig-handler))))
+      (catch err
+        (cond
+          ((nativeGet err "help")
+            (js-call (nativeGet globalThis.process "stdout") :write
+              "Usage: mcp.mjs --url <http://127.0.0.1:PORT/mcp> --token-file <path>\n"))
+          (t
+            (js-call (nativeGet globalThis.process "stderr") :write
+              (str (or (nativeGet err "message") "DJ Codex MCP failed") "\n"))
+            (put globalThis.process :exitCode 1))))))
+
+  (let ((entry (aref (nativeGet globalThis.process "argv") 1)))
+    (when (and (= (nativeTypeOf entry) "string") (> (js-length entry) 0))
+      (try
+        (when (= (realpathSync entry) (realpathSync (fileURLToPath (js* "import.meta.url"))))
+          (main))
+        (catch ignored nil))))
+
+  (export createCodexMcpProxy collectCallerCandidates verifyCallerThread saveCallerContext parseSseMessages validMcpUrl readPrivateToken))

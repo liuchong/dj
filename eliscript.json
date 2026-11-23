@@ -12,7 +12,8 @@
     "packages/lark/src/index.eli",
     "packages/slack/src/index.eli",
     "src/controller/platform/darwin/main.eli",
-    "src/connectors/codex.eli"
+    "src/connectors/codex.eli",
+    "src/connectors/codex-mcp.eli"
   ],
   "outDir": "dist"
 }

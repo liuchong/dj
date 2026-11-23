@@ -300,7 +300,7 @@
                 (try (await (funcall close reason)) (catch ignored nil))))))
           (nativeGet options "watchdog_ms" 15000)))
         (when (and watchdog (nativeGet watchdog "unref")) (js-call watchdog :unref))
-        (setq handle (js-object :manifest_path manifest-path :socket_path socket-path :pipe_path pipe :epoch epoch
+        (setq handle (js-object :manifest_path manifest-path :socket_path socket-path :pipe_path pipe :epoch epoch :caller caller
           :isClosed (lambda () closed) :close close))
         (js-call activeControls :set control-key handle)
         handle
@@ -322,20 +322,23 @@
   (defasync superviseCodexControl (options)
     (let* ((meta (nativeGet options "request_meta"))
            (turn (nativeGet meta "x-codex-turn-metadata"))
-           (caller (js-object :callerSource "codex" :namespace "codex_app" :hostId "local"
-             :threadId (nativeGet turn "thread_id") :turnId (nativeGet turn "turn_id"))))
-      (unless (and (= (nativeTypeOf (nativeGet caller "threadId")) "string")
-                   (> (js-length (nativeGet caller "threadId")) 0)
-                   (= (nativeTypeOf (nativeGet caller "turnId")) "string")
-                   (> (js-length (nativeGet caller "turnId")) 0))
+           (resolver (nativeGet options "resolve_caller"))
+           (caller (when turn (js-object :callerSource "codex" :namespace "codex_app" :hostId "local"
+             :threadId (nativeGet turn "thread_id") :turnId (nativeGet turn "turn_id")))))
+      (unless (or (= (nativeTypeOf resolver) "function")
+                  (and (= (nativeTypeOf (nativeGet caller "threadId")) "string")
+                       (> (js-length (nativeGet caller "threadId")) 0)
+                       (= (nativeTypeOf (nativeGet caller "turnId")) "string")
+                       (> (js-length (nativeGet caller "turnId")) 0)))
         (throw (new globalThis.TypeError "actual Codex native tool request metadata required")))
-      (await (supervise options activateCodexControl (async (pipe)
-        (let* ((reply (await (pipeCall pipe "tools/call" (Object/assign (js-object) caller
+      (await (supervise options activateCodexControl (async (pipe &optional active-caller)
+        (let* ((target (or active-caller caller))
+               (reply (await (pipeCall pipe "tools/call" (Object/assign (js-object) target
                  (js-object :callId (randomUUID) :tool "read_thread"
-                   :arguments (js-object :threadId (nativeGet caller "threadId") :includeTurns false))))))
+                   :arguments (js-object :threadId (nativeGet target "threadId") :includeTurns false))))))
                (readback (toolResult reply))
                (thread (nativeGet readback "thread")))
-          (unless (and (= (nativeGet thread "id") (nativeGet caller "threadId"))
+          (unless (and (= (nativeGet thread "id") (nativeGet target "threadId"))
                        (= (nativeGet thread "hostId") "local")
                        (= (nativeGet thread "kind") "codex"))
             (throw (new globalThis.Error "native_caller_unavailable")))
