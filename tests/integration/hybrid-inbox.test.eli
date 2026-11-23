@@ -1041,7 +1041,8 @@
         (js-call (expect (js-call (nativeGet (nativeGet (aref inputs 0) "envelope") "trigger_reasons") :some
           (lambda (r) (= (nativeGet r "code") "mention_all")))) :toBe t)
         (js-call (expect (nativeGet (nativeGet (aref inputs 1) "envelope") "mentions_all")) :toBe t)
-        ;; 3. Editing unmentioned message to add @_all triggers immediately over WebSocket.
+        ;; 3. Editing unmentioned message to add @_all triggers immediately over WebSocket
+        ;; and preserves source_default reply_context_id + Typing working mark.
         (funcall emit-msg "edit-add-all" "c1" "text" "{\"text\":\"initial no mention\"}" (js-array))
         (await (advance f 4 5))
         (js-call (expect (js-length inputs)) :toBe 2)
@@ -1049,10 +1050,19 @@
           (put msg :body (js-object :content "{\"text\":\"edited with @_all added\"}"))
           (put msg :updated t) (put msg :update_time (funcall timestamp)))
         (emitUpdate f "cli_user" "edit-add-all" false "ws-add-all")
-        (await (advance f 5 5))
+        (await (advance f 8 20))
         (js-call (expect (js-length inputs)) :toBe 3)
-        (js-call (expect (nativeGet (nativeGet (aref inputs 2) "envelope") "mentions_all")) :toBe t)
-        ;; 4. Editing a message that ALREADY had @_all still marks mentions_all=true and triggers.
+        (let ((edit-env (nativeGet (aref inputs 2) "envelope")))
+          (js-call (expect (nativeGet edit-env "mentions_all")) :toBe t)
+          (js-call (expect (nativeGet (nativeGet edit-env "reply_route") "status")) :toBe "ready")
+          (js-call (expect (nativeGet (nativeGet edit-env "reply_route") "connection_id")) :toBe "lark")
+          (js-call (expect (nativeGet edit-env "reply_context_id")) :toBeTruthy)
+          (js-call (expect (nativeGet edit-env "allowed_actions")) :toEqual (js-array "reply"))
+          (js-call (expect (js-call (nativeGet f "marks") :has "user:edit-add-all")) :toBe t)
+          (js-call (expect (nativeGet (js-call (js-call db :query
+            "SELECT COUNT(*) AS n FROM work_marks WHERE json_extract(payload,'$.native_message_id')='edit-add-all'") :get) "n")) :toBe 1))
+        ;; 4. Editing a message that ALREADY had @_all still marks mentions_all=true, triggers,
+        ;; and retains reply_route/reply_context_id.
         (funcall emit-msg "edit-keep-all" "c1" "text" "{\"text\":\"@_all v1\"}" (js-array))
         (await (advance f 4 5))
         (js-call (expect (js-length inputs)) :toBe 4)
@@ -1060,8 +1070,11 @@
           (put msg :body (js-object :content "{\"text\":\"@_all v2 typo fixed\"}"))
           (put msg :updated t) (put msg :update_time (funcall timestamp)))
         (emitUpdate f "cli_user" "edit-keep-all" false "ws-keep-all")
-        (await (advance f 5 5))
+        (await (advance f 6 20))
         (js-call (expect (js-length inputs)) :toBe 5)
+        (let ((keep-env (nativeGet (aref inputs 4) "envelope")))
+          (js-call (expect (nativeGet (nativeGet keep-env "reply_route") "status")) :toBe "ready")
+          (js-call (expect (nativeGet keep-env "reply_context_id")) :toBeTruthy))
         ;; 5. Coexisting @self + @_all preserves individual reply_route cleanly.
         (funcall emit-msg "both-self-all" "c1" "text" "{\"text\":\"@_user_1 @_all 请看\"}"
           (js-array (js-object :key "@_user_1" :id "ou_self" :id_type "open_id")
@@ -1069,25 +1082,67 @@
         (await (advance f 4 5))
         (js-call (expect (js-length inputs)) :toBe 6)
         (js-call (expect (nativeGet (nativeGet (nativeGet (aref inputs 5) "envelope") "reply_route") "status")) :toBe "ready")
+        ;; 5b. Dual-view edited @_all (both bot & user receive update) selects unique bot reply route
+        ;; and first-seen-already-edited @_all keeps source_default + Typing working mark.
+        (js-call messages :set "dual-edit-all" (js-object :message_id "dual-edit-all" :chat_id "c1" :chat_type "group"
+          :create_time (funcall timestamp) :msg_type "text"
+          :body (js-object :content "{\"text\":\"3\"}")
+          :sender (js-object :id "ou_other" :id_type "open_id" :sender_type "user")
+          :mentions (js-array)))
+        (emit f "cli_user" "dual-edit-all") (emit f "cli_bot" "dual-edit-all")
+        (await (advance f 4 5))
+        (js-call (expect (js-length inputs)) :toBe 6)
+        (let ((msg (js-call messages :get "dual-edit-all")))
+          (put msg :body (js-object :content "{\"text\":\"<p>4 @_all</p>\"}"))
+          (put msg :updated t) (put msg :update_time (funcall timestamp)))
+        (emitUpdate f "cli_user" "dual-edit-all" false "ws-dual-user-all")
+        (emitUpdate f "cli_bot" "dual-edit-all" false "ws-dual-bot-all")
+        (await (advance f 8 20))
+        (js-call (expect (js-length inputs)) :toBe 7)
+        (let ((dual-env (nativeGet (aref inputs 6) "envelope")))
+          (js-call (expect (nativeGet (nativeGet dual-env "source") "native_message_id")) :toBe "dual-edit-all")
+          (js-call (expect (nativeGet dual-env "mentions_all")) :toBe t)
+          (js-call (expect (nativeGet (nativeGet dual-env "reply_route") "status")) :toBe "ready")
+          (js-call (expect (nativeGet (nativeGet dual-env "reply_route") "connection_id")) :toBe "lark-bot")
+          (js-call (expect (nativeGet dual-env "reply_context_id")) :toBeTruthy)
+          (js-call (expect (nativeGet dual-env "allowed_actions")) :toEqual (js-array "reply"))
+          (js-call (expect (js-call (nativeGet f "marks") :has "bot:dual-edit-all")) :toBe t))
+        (let ((created-ts (funcall timestamp)))
+          (js-call clock :advance 5000)
+          (js-call messages :set "late-edit-all" (js-object :message_id "late-edit-all" :chat_id "c1" :chat_type "group"
+            :create_time created-ts :updated t :update_time (funcall timestamp) :msg_type "text"
+            :body (js-object :content "{\"text\":\"<p>4 @_all</p>\"}")
+            :sender (js-object :id "ou_other" :id_type "open_id" :sender_type "user")
+            :mentions (js-array)))
+          (emit f "cli_user" "late-edit-all"))
+        (await (advance f 8 20))
+        (js-call (expect (js-length inputs)) :toBe 8)
+        (let ((late-env (nativeGet (aref inputs 7) "envelope")))
+          (js-call (expect (nativeGet (nativeGet late-env "source") "native_message_id")) :toBe "late-edit-all")
+          (js-call (expect (nativeGet late-env "mentions_all")) :toBe t)
+          (js-call (expect (nativeGet (nativeGet late-env "reply_route") "status")) :toBe "ready")
+          (js-call (expect (nativeGet (nativeGet late-env "reply_route") "connection_id")) :toBe "lark")
+          (js-call (expect (nativeGet late-env "reply_context_id")) :toBeTruthy)
+          (js-call (expect (js-call (nativeGet f "marks") :has "user:late-edit-all")) :toBe t))
         ;; 6. Blacklist deny_chat_ids blocks @all in c1 without blocking direct @self in c1.
         (await (funcall set-sub 1 "all-sub-deny" (js-object :enabled t :deny_chat_ids (js-array "c1"))))
         (funcall emit-msg "deny-c1-all" "c1" "text" "{\"text\":\"@_all in denied chat\"}" (js-array))
         (funcall emit-msg "deny-c1-self" "c1" "text" "{\"text\":\"@_user_1 direct in denied chat\"}"
           (js-array (js-object :key "@_user_1" :id "ou_self" :id_type "open_id")))
         (await (advance f 5 5))
-        (js-call (expect (js-length inputs)) :toBe 7)
-        (js-call (expect (nativeGet (nativeGet (nativeGet (aref inputs 6) "envelope") "source") "native_message_id")) :toBe "deny-c1-self")
+        (js-call (expect (js-length inputs)) :toBe 9)
+        (js-call (expect (nativeGet (nativeGet (nativeGet (aref inputs 8) "envelope") "source") "native_message_id")) :toBe "deny-c1-self")
         ;; 7. Whitelist allow_chat_ids enables @all in c1 even when enabled=false, while c2 stays blocked.
         (await (funcall set-sub 2 "all-sub-allow" (js-object :enabled false :allow_chat_ids (js-array "c1"))))
         (funcall emit-msg "allow-c1-all" "c1" "text" "{\"text\":\"@_all whitelisted\"}" (js-array))
         (funcall emit-msg "block-c2-all" "c2" "text" "{\"text\":\"@_all other chat\"}" (js-array))
         (await (advance f 5 5))
-        (js-call (expect (js-length inputs)) :toBe 8)
-        (js-call (expect (nativeGet (nativeGet (nativeGet (aref inputs 7) "envelope") "source") "native_message_id")) :toBe "allow-c1-all")
+        (js-call (expect (js-length inputs)) :toBe 10)
+        (js-call (expect (nativeGet (nativeGet (nativeGet (aref inputs 9) "envelope") "source") "native_message_id")) :toBe "allow-c1-all")
         ;; 8. Overlap (allow + deny + enabled=true) -> deny_chat_ids always wins.
         (await (funcall set-sub 3 "all-sub-overlap" (js-object :enabled t :allow_chat_ids (js-array "c1") :deny_chat_ids (js-array "c1"))))
         (funcall emit-msg "overlap-c1-all" "c1" "text" "{\"text\":\"@_all overlap\"}" (js-array))
         (await (advance f 4 5))
-        (js-call (expect (js-length inputs)) :toBe 8)
+        (js-call (expect (js-length inputs)) :toBe 10)
         (finally (js-call db :close))))) cleanup)
 )

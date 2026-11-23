@@ -158,7 +158,48 @@
         (put peer-row :native_message_mentions (js-array
           (js-object :key "@_user_1" :id "native-user-in-bot-app")
           (js-object :key "@_user_2" :id "native-bot")))
-        (js-call (expect (nativeGet (selectReplyRoute dual-ctx bot-thread "session") "status")) :toBe "ambiguous_target")))))
+        (js-call (expect (nativeGet (selectReplyRoute dual-ctx bot-thread "session") "status")) :toBe "ambiguous_target")
+        ;; Edited and first-seen-already-edited @all events preserve source_default reply routing,
+        ;; while dual bot+user @all views deterministically prefer the unique bot connection.
+        (setq peer-row nil)
+        (let* ((t-edit-ms (Date/parse "2026-01-01T00:01:00.000Z"))
+               (edited-all (js-object :connection_id "source" :identity_revision 1 :event_kind "message.edited"
+                 :native_message_id "m-all-1" :source_time "2026-01-01T00:01:00.000Z"
+                 :native_message_update_time t-edit-ms :chat_type "group"
+                 :conversation (js-object :connection_id "source" :native_chat_id "chat")
+                 :mentions (js-array) :mentions_all t))
+               (late-all (js-object :connection_id "user" :identity_revision 1 :event_kind "message.created"
+                 :native_message_id "m-all-2" :source_time "2026-01-01T00:00:00.000Z"
+                 :native_message_update_time t-edit-ms :chat_type "group"
+                 :conversation (js-object :connection_id "user" :native_chat_id "chat")
+                 :mentions (js-array) :mentions_all t))
+               (edited-no-all (js-object :connection_id "source" :identity_revision 1 :event_kind "message.edited"
+                 :native_message_id "m-no-all" :source_time "2026-01-01T00:01:00.000Z"
+                 :native_message_update_time t-edit-ms :chat_type "group"
+                 :conversation (js-object :connection_id "source" :native_chat_id "chat")
+                 :mentions (js-array)))
+               (picked-edited (selectReplyRoute dual-ctx edited-all "session"))
+               (picked-late (selectReplyRoute dual-ctx late-all "session")))
+          (js-call (expect (nativeGet picked-edited "status")) :toBe "ready")
+          (js-call (expect (nativeGet picked-edited "connection_id")) :toBe "source")
+          (js-call (expect (nativeGet picked-edited "basis")) :toBe "source_default")
+          (js-call (expect (nativeGet picked-late "status")) :toBe "ready")
+          (js-call (expect (nativeGet picked-late "connection_id")) :toBe "user")
+          (js-call (expect (nativeGet picked-late "basis")) :toBe "source_default")
+          (js-call (expect (nativeGet (selectReplyRoute dual-ctx edited-no-all "session") "status")) :toBe "unmapped_target")
+          (setq peer-row (Object/assign (js-object) edited-all
+            (js-object :native_message_id "m-all-2")))
+          (let ((picked-dual (selectReplyRoute dual-ctx late-all "session")))
+            (js-call (expect (nativeGet picked-dual "status")) :toBe "ready")
+            (js-call (expect (nativeGet picked-dual "connection_id")) :toBe "source")
+            (js-call (expect (nativeGet picked-dual "basis")) :toBe "source_default"))
+          (let* ((bot2 (Object/assign (js-object) source (js-object :connection_id "bot2")))
+                 (two-bot-ctx (Object/assign (js-object) dual-ctx (js-object :repository (js-object :get (lambda (table key)
+                   (cond ((= table "session_rules") policy) ((= key "source") source) ((= key "user") user) ((= key "bot2") bot2))))))))
+            (setq peer-row (Object/assign (js-object) edited-all
+              (js-object :connection_id "bot2" :conversation (js-object :connection_id "bot2" :native_chat_id "chat"))))
+            (js-call (expect (nativeGet (selectReplyRoute two-bot-ctx edited-all "session") "status")) :toBe "ambiguous_target"))
+          (setq peer-row nil))))))
   (withUnitCase "T40.reply-context-expiry.unit" (async (unused)
     (let* ((owner (js-object :principal_id "recipient" :authorization_revision 1))
            (viewer (js-object :principal_id "observer" :authorization_revision 1))
