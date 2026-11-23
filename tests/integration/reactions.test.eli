@@ -165,10 +165,11 @@
         (default-rule (aref (nativeGet normalized "rules") 0))
         (predicate (nativeGet default-rule "predicate")))
         (js-call (expect (nativeGet default-rule "event_kinds"))
-          :toEqual (js-array "message.created" "message.pinned" "message.reaction.added"))
+          :toEqual (js-array "message.created" "message.edited" "message.pinned" "message.reaction.added"))
         (js-call (expect (js-length (nativeGet predicate "any"))) :toBe 6)
         (js-call (js-array
           (js-object :event_kind "message.created" :addressed_self t)
+          (js-object :event_kind "message.edited" :addressed_self t)
           (js-object :event_kind "message.created" :chat_type "p2p")
           (js-object :event_kind "message.created" :interaction (js-object :addressed_self t :kind "reply"))
           (js-object :event_kind "message.created" :interaction (js-object :addressed_self t :kind "thread"))
