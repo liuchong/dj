@@ -303,30 +303,50 @@
       (setq probeWith (async (target binding context &optional shared)
         (try
           (let ((endpoint (funcall endpointFor binding)) (id (nativeGet target "native_session_id")))
-            (if (= tool "cursor")
-              (let* ((response (when (nativeGet endpoint "native_api")
-                                (await (cursorNativeRequest endpoint (js-object :operation "probe" :thread id) context))))
-                     (page (if response
-                             (js-object :instance_epoch (nativeGet response "instance_epoch")
-                               :items (js-array (nativeGet (nativeGet response "data") "thread")))
-                             (await (funcall cursorThreads endpoint context))))
-                     (matches (js-call (nativeGet page "items") :filter
-                       (lambda (row) (and (= (nativeGet row "id") id)
-                         (= (nativeGet row "source") "local") (= (nativeGet row "windowId") (nativeGet endpoint "window_id")))))))
-                (unless (= (js-length matches) 1) (throw (desktopError "desktop_no_owner")))
-                (let ((row (aref matches 0)))
-                  (funcall sessionRecord endpoint id (nativeGet row "title" "")
-                    (cursorRuntime row) (nativeGet page "instance_epoch")
-                    (js-object :model_id (nativeGet row "model" nil) :provider_id (nativeGet row "modelProvider" nil)))))
-              (await (funcall codexSnapshot endpoint id context (async (channel result)
-                (let* ((state (nativeGet result "state"))
-                       ;; Codex stores the chat name separately from its first-message preview.
-                       (header (try (await (confirmCodexHeader endpoint id context)) (catch unreadable nil))))
-                  (funcall sessionRecord endpoint id (nativeGet header "title" "")
-                    (codexRuntime state) (nativeGet channel "instance_epoch")
-                    (js-object :provider_id (nativeGet state "modelProvider" nil) :model_id (nativeGet state "model" nil)
-                      :reasoning_effort (nativeGet state "reasoningEffort" nil))
-                    (nativeGet state "cwd")))) shared))))
+            (cond
+              ((= tool "cursor")
+                (let* ((response (when (nativeGet endpoint "native_api")
+                                  (await (cursorNativeRequest endpoint (js-object :operation "probe" :thread id) context))))
+                       (page (if response
+                               (js-object :instance_epoch (nativeGet response "instance_epoch")
+                                 :items (js-array (nativeGet (nativeGet response "data") "thread")))
+                               (await (funcall cursorThreads endpoint context))))
+                       (matches (js-call (nativeGet page "items") :filter
+                         (lambda (row) (and (= (nativeGet row "id") id)
+                           (= (nativeGet row "source") "local") (= (nativeGet row "windowId") (nativeGet endpoint "window_id")))))))
+                  (unless (= (js-length matches) 1) (throw (desktopError "desktop_no_owner")))
+                  (let ((row (aref matches 0)))
+                    (funcall sessionRecord endpoint id (nativeGet row "title" "")
+                      (cursorRuntime row) (nativeGet page "instance_epoch")
+                      (js-object :model_id (nativeGet row "model" nil) :provider_id (nativeGet row "modelProvider" nil))))))
+              ((and (= tool "codex") (not shared) (nativeGet endpoint "control_manifest_path"))
+                (try
+                  (await (funcall probeCodexControl endpoint id context))
+                  (catch control-unavailable
+                    (try
+                      (await (funcall codexSnapshot endpoint id context (async (channel result)
+                        (let* ((state (nativeGet result "state"))
+                               ;; Codex stores the chat name separately from its first-message preview.
+                               (header (try (await (confirmCodexHeader endpoint id context)) (catch unreadable nil))))
+                          (funcall sessionRecord endpoint id (nativeGet header "title" "")
+                            (codexRuntime state) (nativeGet channel "instance_epoch")
+                            (js-object :provider_id (nativeGet state "modelProvider" nil) :model_id (nativeGet state "model" nil)
+                              :reasoning_effort (nativeGet state "reasoningEffort" nil))
+                            (nativeGet state "cwd")))) shared))
+                      (catch fallback-unavailable
+                        (when (= (nativeGet control-unavailable "code") "receiver_control_ambiguous")
+                          (throw control-unavailable))
+                        (throw fallback-unavailable))))))
+              (t
+                (await (funcall codexSnapshot endpoint id context (async (channel result)
+                  (let* ((state (nativeGet result "state"))
+                         ;; Codex stores the chat name separately from its first-message preview.
+                         (header (try (await (confirmCodexHeader endpoint id context)) (catch unreadable nil))))
+                    (funcall sessionRecord endpoint id (nativeGet header "title" "")
+                      (codexRuntime state) (nativeGet channel "instance_epoch")
+                      (js-object :provider_id (nativeGet state "modelProvider" nil) :model_id (nativeGet state "model" nil)
+                        :reasoning_effort (nativeGet state "reasoningEffort" nil))
+                      (nativeGet state "cwd")))) shared)))))
           (catch unavailable
             ;; A saved chat without a loaded owner is still an exact historical
             ;; target. Publish its locator, never invent a live receiver or start it.
@@ -530,7 +550,8 @@
         (let* ((endpoint (funcall endpointFor instance))
                (control (await (codexControlEndpoint endpoint context host)))
                (epoch (nativeGet instance "instance_epoch"))
-               (follower (try (await (openCodexChannel endpoint context)) (catch offline nil))))
+               (follower (if (js-call (or epoch "") :startsWith "codex_control_") nil
+                 (try (await (openCodexChannel endpoint context)) (catch offline nil)))))
           (try
             (let ((actual (if follower (nativeGet follower "instance_epoch") (nativeGet control "instance_epoch"))))
               (unless (= actual epoch) (throw (desktopError "desktop_target_changed")))
@@ -600,16 +621,27 @@
       (setq probeInstance (async (instance context)
         (try
           (let* ((endpoint (funcall endpointFor instance))
-                 (epoch (if (= tool "cursor")
-                   (nativeGet (await (funcall cursorThreads endpoint context)) "instance_epoch")
-                   (try
-                     (let ((channel (await (openCodexChannel endpoint context))))
-                       (try (nativeGet channel "instance_epoch") (finally (js-call channel :close))))
-                     (catch offline
+                 (epoch (cond
+                   ((= tool "cursor")
+                     (nativeGet (await (funcall cursorThreads endpoint context)) "instance_epoch"))
+                   ((nativeGet endpoint "control_manifest_path")
+                     (try
                        (let* ((control (await (codexControlEndpoint endpoint context host)))
                               (probe (await (codexControlRequest control (js-object :operation "probe") context))))
-                         (unless (= (nativeGet (nativeGet probe "data") "state") "ready") (throw offline))
-                         (nativeGet probe "instance_epoch")))))))
+                         (unless (= (nativeGet (nativeGet probe "data") "state") "ready")
+                           (throw (desktopError "receiver_control_unavailable")))
+                         (nativeGet probe "instance_epoch"))
+                       (catch control-unavailable
+                         (try
+                           (let ((channel (await (openCodexChannel endpoint context))))
+                             (try (nativeGet channel "instance_epoch") (finally (js-call channel :close))))
+                           (catch fallback-unavailable
+                             (when (= (nativeGet control-unavailable "code") "receiver_control_ambiguous")
+                               (throw control-unavailable))
+                             (throw fallback-unavailable))))))
+                   (t
+                     (let ((channel (await (openCodexChannel endpoint context))))
+                       (try (nativeGet channel "instance_epoch") (finally (js-call channel :close))))))))
             (js-object :state "ready" :native_namespace (nativeGet endpoint "native_namespace")
               :instance_epoch epoch :evidence_level "native_protocol"))
           (catch unavailable (js-object :state
@@ -678,10 +710,15 @@
                    (channel nil) (control nil) (result nil))
               (try
                 (when codex
-                  (try (setq channel (await (openCodexChannel endpoint context)))
-                    (catch offline
+                  (if (nativeGet endpoint "control_manifest_path")
+                    (progn
                       (try (setq control (await (codexControlEndpoint endpoint context host)))
-                        (catch unavailable nil)))))
+                        (catch unavailable nil))
+                      (unless control
+                        (try (setq channel (await (openCodexChannel endpoint context)))
+                          (catch offline nil))))
+                    (try (setq channel (await (openCodexChannel endpoint context)))
+                      (catch offline nil))))
                 ;; The control socket uses one native read per row. A small
                 ;; page bounds this fan-out even if the history list is large.
                 (setq result (await (funcall listSessions scope cursor

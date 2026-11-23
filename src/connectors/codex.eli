@@ -1,13 +1,54 @@
 (module dj.connectors.codex
-  (import "../core/native.eli" nativeGet nativeTypeOf)
+  (import "../core/native.eli" nativeGet nativeTypeOf nativeSetTimeout nativeClearTimeout nativeSetInterval nativeClearInterval)
   (import "../host/bun/response.eli" readJson)
   (import "node:net" createConnection)
   (import "node:http" createServer)
   (import "node:stream" Readable)
-  (import "node:fs/promises" mkdir readdir lstat writeFile chmod unlink rename)
+  (import "node:fs/promises" mkdir readdir lstat readFile writeFile chmod unlink rename)
   (import "node:path" resolve join)
   (import "node:os" homedir userInfo platform)
   (import "node:crypto" randomUUID randomBytes timingSafeEqual)
+  (defconst appToolsAllowed (js-array "list_projects" "list_threads" "read_thread" "send_message_to_thread" "create_thread" "set_thread_title" "move_thread_to_project"))
+  (defconst activeControls (new globalThis.Map))
+  (defun processAlive (pid)
+    (try (js-call globalThis.process :kill pid 0) t
+      (catch error (not (= (nativeGet error "code") "ESRCH")))))
+  (defasync probeSocketDead (path)
+    (new globalThis.Promise (lambda (done)
+      (let ((socket (createConnection path)) (settled false) (timer nil) (finish nil))
+        (setq finish (lambda (dead)
+          (unless settled
+            (setq settled t)
+            (when timer (nativeClearTimeout timer))
+            (js-call socket :destroy)
+            (funcall done dead))))
+        (setq timer (nativeSetTimeout (lambda () (funcall finish false)) 150))
+        (js-call socket :once "connect" (lambda () (funcall finish false)))
+        (js-call socket :once "error" (lambda (error)
+          (funcall finish (js-call (js-array "ECONNREFUSED" "ENOENT") :includes (nativeGet error "code")))))))))
+  (defasync cleanupStaleReceivers (root owner-pid active-socket)
+    (try
+      (let* ((entries (await (readdir root)))
+             (json-re (new globalThis.RegExp "^([0-9]+)\\.json$"))
+             (sock-re (new globalThis.RegExp "^([0-9]+)(?:-[a-f0-9-]+)?\\.sock$"))
+             (index 0))
+        (while (< index (js-length entries))
+          (let* ((name (aref entries index))
+                 (jm (js-call json-re :exec name))
+                 (sm (js-call sock-re :exec name)))
+            (cond
+              (jm
+                (let ((pid (globalThis.Number (aref jm 1))))
+                  (when (and (not (= pid owner-pid)) (not (processAlive pid)))
+                    (try (await (unlink (join root name))) (catch ignored nil)))))
+              (sm
+                (let ((pid (globalThis.Number (aref sm 1))) (sock (join root name)))
+                  (unless (= sock active-socket)
+                    (when (or (and (not (= pid owner-pid)) (not (processAlive pid)))
+                              (and (= pid owner-pid) (await (probeSocketDead sock))))
+                      (try (await (unlink sock)) (catch ignored nil))))))))
+          (setq index (1+ index))))
+      (catch ignored nil)))
   ;; Load explicitly in the already running Codex native Node tool host. The
   ;; official pipe still authenticates the real signed peer on every request.
   ;; DJ never starts an App Server, impersonates a signature or sends prompt argv.
@@ -58,7 +99,8 @@
            (socket-path (join root (str (nativeGet options "owner_pid") "-" (js-call epoch :slice 0 13) ".sock")))
            (manifest-path (join root (str (nativeGet options "owner_pid") ".json")))
            (staging-path (join root (str ".register-" epoch)))
-           (server nil) (socket-inode nil) (closed false) (close nil))
+           (server nil) (socket-inode nil) (watchdog nil) (closed false) (close nil) (handle nil)
+           (control-key (str root ":" (nativeGet options "owner_pid"))))
       (unless (and (Number/isSafeInteger (nativeGet options "owner_pid")) (> (nativeGet options "owner_pid") 0)
                    (= (nativeTypeOf (nativeGet options "owner_birth")) "string")
                    (> (js-length (nativeGet options "owner_birth")) 0)
@@ -89,6 +131,9 @@
       (setq close (async ()
         (unless closed
           (setq closed t)
+          (when watchdog (nativeClearInterval watchdog) (setq watchdog nil))
+          (when (and handle (eq (js-call activeControls :get control-key) handle))
+            (js-call activeControls :delete control-key))
           (when server
             (js-call server :closeAllConnections)
             (await (new globalThis.Promise (lambda (done) (js-call server :close done)))))
@@ -182,22 +227,73 @@
                               (await (funcall invoke "set_thread_title" (js-object :threadId (nativeGet created "threadId")
                                 :title (nativeGet body "title")))))))))
                     (unless result (setq result (js-object :state "unknown"))))
+                  ((= operation "app_tools")
+                    (let ((method (nativeGet body "method")) (params (nativeGet body "params" (js-object))))
+                      (cond
+                        ((= method "tools/list")
+                          (setq result (await (pipeCall pipe "tools/list" (js-object :threadStartKind "all")))))
+                        ((= method "tools/call")
+                          (let ((tool (nativeGet params "tool")) (args (nativeGet params "arguments" (js-object))))
+                            (unless (and (= (nativeGet params "namespace") "codex_app")
+                              (js-call appToolsAllowed :includes tool)
+                              (= (nativeTypeOf args) "object") (not (Array/isArray args)))
+                              (throw (new globalThis.TypeError "native_control_tool_forbidden")))
+                            (setq result (await (pipeCall pipe "tools/call"
+                              (Object/assign (js-object) caller (js-object :callId (randomUUID) :tool tool :arguments args)))))))
+                        (t (throw (new globalThis.TypeError "native_control_method"))))))
                   (t (throw (new globalThis.TypeError "native_control_operation"))))
                 (setq reply (js-object :ok t :data result)))
               (catch error (setq status 400 reply (js-object :ok false :code "native_control_rejected"))))
             (js-call response :writeHead status (js-object :content-type "application/json" :connection "close"))
             (js-call response :end (JSON/stringify reply))))))
+        (await (cleanupStaleReceivers root (nativeGet options "owner_pid") socket-path))
         (put server :maxConnections 8) (put server :requestTimeout 15000) (put server :headersTimeout 5000)
         (await (new globalThis.Promise (lambda (done failed)
           (js-call server :once "error" failed) (js-call server :listen socket-path done))))
         (await (chmod socket-path 384)) (setq socket-inode (nativeGet (await (lstat socket-path)) "ino"))
         (await (writeFile staging-path (JSON/stringify (js-object :protocolVersion 1 :tool "codex"
           :apiVersion "dj-native-control" :process_role "native_app_owner" :pid (nativeGet options "owner_pid") :token token
-          :processBirth (nativeGet options "owner_birth") :socketPath socket-path :instanceEpoch epoch :caller_thread_id (nativeGet caller "threadId")))
+          :processBirth (nativeGet options "owner_birth") :socketPath socket-path :instanceEpoch epoch
+          :caller_thread_id (nativeGet caller "threadId")
+          :capabilities (js-array "probe" "read" "send" "rename" "create" "lookup_create" "app_tools")))
           (js-object :flag "wx" :mode 384)))
         (await (rename staging-path manifest-path))
-        (js-object :manifest_path manifest-path :close close)
+        (setq watchdog (nativeSetInterval (async ()
+          (if closed
+            (when watchdog (nativeClearInterval watchdog) (setq watchdog nil))
+            (let ((keep t))
+              (unless (processAlive (nativeGet options "owner_pid")) (setq keep false))
+              (when keep
+                (try
+                  (let ((info (await (lstat socket-path))))
+                    (unless (= (nativeGet info "ino") socket-inode) (setq keep false)))
+                  (catch missing (setq keep false))))
+              (when keep
+                (try
+                  (let ((current (JSON/parse (await (readFile manifest-path "utf8")))))
+                    (unless (= (nativeGet current "instanceEpoch") epoch) (setq keep false)))
+                  (catch unreadable (unless (= (nativeGet unreadable "code") "ENOENT") (setq keep false)))))
+              (when (and (not keep) (not closed))
+                (try (await (funcall close)) (catch ignored nil))))))
+          (nativeGet options "watchdog_ms" 15000)))
+        (when (and watchdog (nativeGet watchdog "unref")) (js-call watchdog :unref))
+        (setq handle (js-object :manifest_path manifest-path :socket_path socket-path :pipe_path pipe :epoch epoch
+          :isClosed (lambda () closed) :close close))
+        (js-call activeControls :set control-key handle)
+        handle
         (catch error
           (try (await (unlink staging-path)) (catch absent nil))
           (await (funcall close)) (throw error)))))
-  (export activateCodexControl pipeCall toolResult))
+  (defasync ensureCodexControl (options)
+    (let* ((root (resolve (nativeGet options "root" (join (homedir) ".dj/codex-receivers"))))
+           (key (str root ":" (nativeGet options "owner_pid")))
+           (existing (js-call activeControls :get key))
+           (pipe (nativeGet options "pipe_path")))
+      (if (and existing (not (js-call existing :isClosed))
+               (or (not pipe) (= (nativeGet existing "pipe_path") pipe))
+               (not (await (probeSocketDead (nativeGet existing "socket_path")))))
+        existing
+        (progn
+          (when existing (try (await (js-call existing :close)) (catch ignored nil)))
+          (await (activateCodexControl options))))))
+  (export activateCodexControl ensureCodexControl pipeCall toolResult cleanupStaleReceivers))

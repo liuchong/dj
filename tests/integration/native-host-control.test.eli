@@ -1,6 +1,6 @@
 (module dj.tests.integration.native-host-control
   (import "../../src/core/native.eli" nativeGet)
-  (import "../../src/connectors/codex.eli" activateCodexControl)
+  (import "../../src/connectors/codex.eli" activateCodexControl ensureCodexControl)
   (import "../../src/adapters/agent/desktop.eli" createDesktopPort)
   (import "bun:sqlite" Database)
   (import "node:net" createServer)
@@ -11,6 +11,7 @@
   (import "../support/case.eli" withCase)
   (import "../support/fixtures.eli" createFixture closeFixture callOk)
   (import "node:vm" runInNewContext)
+  (import "node:fs" existsSync)
   (import "node:fs/promises" mkdir readdir rm readFile writeFile)
   (import "node:path" resolve join)
   (import "node:crypto" randomUUID)
@@ -163,15 +164,38 @@
 )
         (try
           (await (new globalThis.Promise (lambda (done failed) (js-call server :once "error" failed) (js-call server :listen path done))))
+          (await (mkdir (join root "receiver") (js-object :recursive t :mode 448)))
+          (await (writeFile (join root "receiver" "99999999.json") "{}" (js-object :mode 384)))
+          (await (writeFile (join root "receiver" "99999999-deaddead.sock") "" (js-object :mode 384)))
           (setq receiver (await (activateCodexControl (js-object :owner_pid (nativeGet globalThis.process "pid") :owner_birth "fixture-birth"
-            :root (join root "receiver") :pipe_path path :request_meta
+            :watchdog_ms 40 :root (join root "receiver") :pipe_path path :request_meta
               (js-object :x-codex-turn-metadata (js-object :thread_id "caller-native" :turn_id "actual-turn"))))))
+          (js-call (expect (existsSync (join root "receiver" "99999999.json"))) :toBe false)
+          (js-call (expect (existsSync (join root "receiver" "99999999-deaddead.sock"))) :toBe false)
+          (let* ((reused (await (ensureCodexControl (js-object :owner_pid (nativeGet globalThis.process "pid") :owner_birth "fixture-birth"
+                   :root (join root "receiver") :pipe_path path :request_meta
+                     (js-object :x-codex-turn-metadata (js-object :thread_id "caller-native" :turn_id "actual-turn")))))))
+            (js-call (expect (nativeGet reused "epoch")) :toBe (nativeGet receiver "epoch")))
           (let* ((manifest (JSON/parse (await (readFile (nativeGet receiver "manifest_path") "utf8"))))
                  (endpoint (js-object :manifest_path (nativeGet receiver "manifest_path")))
                  (args (js-object :operation "create" :receiver_epoch (nativeGet manifest "instanceEpoch") :key "new"
                    :directory root :title "QA native" :content (js-object :type "text" :text "Explicit initial input")))
                  (context (lambda () (js-object :deadline (+ (performance/now) 5000))))
                  (created (await (cursorRequest endpoint args (funcall context)))))
+            (js-call (expect (js-call (nativeGet manifest "capabilities") :includes "app_tools")) :toBe t)
+            (let* ((app-list (await (cursorRequest endpoint (js-object :operation "app_tools"
+                     :receiver_epoch (nativeGet manifest "instanceEpoch") :method "tools/list" :params (js-object)) (funcall context))))
+                   (app-call (await (cursorRequest endpoint (js-object :operation "app_tools"
+                     :receiver_epoch (nativeGet manifest "instanceEpoch") :method "tools/call"
+                     :params (js-object :namespace "codex_app" :tool "list_projects" :arguments (js-object))) (funcall context))))
+                   (rejected-tool nil))
+              (js-call (expect (js-length (nativeGet (nativeGet (nativeGet app-list "data") "data") "tools"))) :toBe 5)
+              (js-call (expect (nativeGet (nativeGet (nativeGet app-call "data") "data") "success")) :toBe t)
+              (try (await (cursorRequest endpoint (js-object :operation "app_tools"
+                :receiver_epoch (nativeGet manifest "instanceEpoch") :method "tools/call"
+                :params (js-object :namespace "codex_app" :tool "arbitrary_tool" :arguments (js-object))) (funcall context)))
+                (catch err (setq rejected-tool (nativeGet err "code"))))
+              (js-call (expect rejected-tool) :toBeDefined))
             (js-call (expect (nativeGet (nativeGet (nativeGet created "data") "data") "thread_id")) :toBe "created-native")
             (await (cursorRequest endpoint args (funcall context)))
             (js-call (expect creates) :toBe 1)
@@ -235,6 +259,8 @@
               (setq replacement (await (activateCodexControl (js-object :owner_pid pid :owner_birth "fixture-birth"
                 :root (join root "receiver") :pipe_path path :request_meta
                 (js-object :x-codex-turn-metadata (js-object :thread_id "caller-native" :turn_id "actual-turn"))))))
+              (await (new globalThis.Promise (lambda (resolve) (globalThis.setTimeout resolve 120))))
+              (js-call (expect (js-call receiver :isClosed)) :toBe t)
               (await (js-call receiver :close))
               (let ((next (await (js-call port :probeInstance target context))))
                 (js-call (expect (nativeGet next "state")) :toBe "ready")
