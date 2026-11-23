@@ -177,4 +177,4 @@
                       (js-object :events (js-array (await (resolveMessageInteraction config edit application base normalize-message)))
                         :reason nil)))))))))))
 
-  (export pollLarkEdits resolveLarkMessageUpdate findOriginalMessage storedLarkEdit editWindowSeconds editPollSeconds))
+  (export pollLarkEdits resolveLarkMessageUpdate findOriginalMessage storedLarkEdit permanentMessageRefusal editWindowSeconds editPollSeconds))

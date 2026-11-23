@@ -125,11 +125,11 @@
         :field_errors
         10
         :lark_read_concurrency
-        2
+        3
         :lark_read_launches_per_second
-        2
+        4
         :lark_read_launch_burst
-        2
+        4
         :lark_read_timeout_seconds
         15
         :lark_poll_pages_per_turn

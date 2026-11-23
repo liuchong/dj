@@ -1087,14 +1087,19 @@
                       (js-object :items (js-array "private-message" "websocket-known" "old-message")
                         :has_more t :page_token "next")))))))
             :history (async (parameters context)
-              (let ((id (nativeGet parameters "message_id")))
-                (js-call reads :push id)
-                (success (js-object :messages (js-array (js-object :message_id id
-                  :chat_id (if (= id "group-message") "group-chat" "private-chat") :msg_type "text"
-                  :create_time (if (= id "old-message") "1767225599000" "1767225605000")
-                  :content "native @self" :sender (js-object :id "ou_sender" :id_type "open_id" :sender_type "user")
-                  :mentions (js-array (js-object :id "ou_self" :id_type "open_id" :name "self"))
-                  :thread_id (when (= id "group-message") "thread-one") :root_id "original-root"))))))))
+              (let* ((messageIds (nativeGet parameters "message_ids"))
+                     (singleId (nativeGet parameters "message_id"))
+                     (ids (if messageIds messageIds (when singleId (js-array singleId)))))
+                (if ids
+                  (success (js-object :messages (js-call ids :map (lambda (id)
+                    (js-call reads :push id)
+                    (js-object :message_id id
+                      :chat_id (if (= id "group-message") "group-chat" "private-chat") :msg_type "text"
+                      :create_time (if (= id "old-message") "1767225599000" "1767225605000")
+                      :content "native @self" :sender (js-object :id "ou_sender" :id_type "open_id" :sender_type "user")
+                      :mentions (js-array (js-object :id "ou_self" :id_type "open_id" :name "self"))
+                      :thread_id (when (= id "group-message") "thread-one") :root_id "original-root")))))
+                  (success (js-object :messages (js-array) :has_more false)))))))
           (step (async ()
             (js-call clock :advance 1000) (js-call poller :pump)
             (let ((n 0))

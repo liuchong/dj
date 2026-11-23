@@ -27504,6 +27504,32 @@
       "then": "History retains all visible messages, each connection/message key is unique, only matching nonblocked messages reach the recipient and every Typing marker is removed"
     },
     {
+      "case_id": "T41.lark-user-low-latency-intake.integration",
+      "parent_id": "T41",
+      "file": "tests/integration/hybrid-inbox.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {
+        "transport": "user-hot-lane-and-mget-batch"
+      },
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated",
+      "requirements": [
+        "Q01",
+        "Q03"
+      ],
+      "acceptance_ids": [
+        "A03",
+        "A05"
+      ],
+      "given": "Independent user and bot Lark connections with hot-lane tracking, mget batching, WS-covered skip, and 429 Retry-After pause",
+      "when": "Deliver batch search results with a permanently refused item, post topic replies behind search lag, emit bot WS on c1, and inject a 429 response",
+      "then": "Pending batches consolidate into mget with clean single-get fallback, non-WS active threads poll fast without touching c1, and 429 pauses read-limited traffic globally until expiry"
+    },
+    {
       "case_id": "T24.default-communication.integration",
       "parent_id": "T24",
       "file": "tests/integration/im.test.eli",

@@ -41,29 +41,37 @@
     (let
       ((active 0)
         (tokens (nativeGet limits "lark_read_launch_burst"))
-        (last (js-call clock :monoNow)))
+        (last (js-call clock :monoNow))
+        (until 0))
       (js-object
+        :pause
+        (lambda
+          (seconds)
+          (let* ((wait (if (and (Number/isFinite seconds) (> seconds 0)) seconds 1))
+            (next (+ (js-call clock :monoNow) (* (Math/max 1 wait) 1000))))
+            (setq until (Math/max until next) tokens 0 last until)))
         :acquire
         (lambda
           ()
           (let ((now (js-call clock :monoNow)))
-            (setq
-              tokens
-              (Math/min
-                (nativeGet limits "lark_read_launch_burst")
-                (+
-                  tokens
-                  (*
-                    (/ (Math/max 0 (- now last)) 1000)
-                    (nativeGet limits "lark_read_launches_per_second")))))
-            (setq last now)
-            (if (and (< active (nativeGet limits "lark_read_concurrency")) (>= tokens 1))
+            (when (>= now last)
+              (setq
+                tokens
+                (Math/min
+                  (nativeGet limits "lark_read_launch_burst")
+                  (+
+                    tokens
+                    (*
+                      (/ (- now last) 1000)
+                      (nativeGet limits "lark_read_launches_per_second"))))
+                last now))
+            (if (and (>= now until) (< active (nativeGet limits "lark_read_concurrency")) (>= tokens 1))
               (progn (setq active (1+ active) tokens (- tokens 1)) t)
               false)))
         :release
         (lambda () (setq active (Math/max 0 (1- active))))
         :status
-        (lambda () (js-object :active active :tokens tokens)))))
+        (lambda () (js-object :active active :tokens tokens :retry_until_mono until)))))
   (defun planPollWindow
     (checkpoint now)
     (let ((djReturn1Token (js-object)) (djReturn1Value nil))
