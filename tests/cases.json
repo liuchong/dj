@@ -27408,6 +27408,29 @@
       "then": "受限轮询角色轮转确保编辑检查不被饿死，状态就绪、成功入库 message.edited 并触发一次投递"
     },
     {
+      "case_id": "T41.lark-message-updated-websocket.integration",
+      "parent_id": "T41",
+      "file": "tests/integration/hybrid-inbox.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-integration",
+      "requirements": [
+        "Q17"
+      ],
+      "acceptance_ids": [
+        "A03",
+        "A05"
+      ],
+      "given": "启用编辑支持前已收到无提及原消息，随后通过 WebSocket 推送 im.message.updated_v1（含扁平与嵌套载荷、重复推送与未知消息）",
+      "when": "编辑先后新增、重复触发、移除并再次添加自我提及",
+      "then": "实时拉取权威快照并按 websocket 传输通道入库 message.edited 触发投递，重复更新与未知消息安全忽略且不与轮询重复"
+    },
+    {
       "case_id": "T41.hybrid-inbox-flow.integration",
       "parent_id": "T41",
       "file": "tests/integration/hybrid-inbox.test.eli",

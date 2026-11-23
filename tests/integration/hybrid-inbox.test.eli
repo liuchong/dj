@@ -218,6 +218,17 @@
       (js-call (js-call (nativeGet f "wire_sockets") :get app) :dispatchEvent
         (new globalThis.MessageEvent "message" (js-object :data bytes)))))
 
+  (defun emitUpdate (f app id &optional nested event-id)
+    (let* ((key (or event-id (str app ":update:" id)))
+           (body (if nested (js-object :message (js-object :message_id id)) (js-object :message_id id)))
+           (wire (js-object :header (js-object :event_id key :event_type "im.message.updated_v1" :app_id app)
+             :event body))
+           (bytes (encodeLarkFrame (js-object :seq 1 :service 1 :method 1
+             :headers (js-array (js-object :key "type" :value "event") (js-object :key "message_id" :value key))
+             :payload (Buffer/from (JSON/stringify wire) "utf8")))))
+      (js-call (js-call (nativeGet f "wire_sockets") :get app) :dispatchEvent
+        (new globalThis.MessageEvent "message" (js-object :data bytes)))))
+
   (withCase "T41.lark-edited-mentions.integration" setup (async (f)
     (let* ((agent (await (bindRecipient f))) (clock (nativeGet f "clock"))
            (state (nativeGet f "hybrid_state"))
@@ -930,5 +941,65 @@
           "SELECT count(*) AS n FROM events WHERE connection_id='lark' AND native_message_id='starve-edit-target' AND event_kind='message.edited'") :get) "n")) :toBe 1)
         (js-call (expect (js-length inputs)) :toBe 1)
         (js-call (expect (nativeGet (nativeGet (nativeGet (aref inputs 0) "envelope") "source") "native_message_id")) :toBe "starve-edit-target")
+        (finally (js-call db :close))))) cleanup)
+
+  (withCase "T41.lark-message-updated-websocket.integration" setup (async (f)
+    (let* ((agent (await (bindRecipient f))) (clock (nativeGet f "clock"))
+           (messages (nativeGet f "messages")) (inputs (nativeGet (nativeGet f "opencode") "inputs"))
+           (db (new Database (resolve (nativeGet f "root") "state/dj.sqlite") (js-object :readonly t)))
+           (timestamp (lambda () (str (Date/parse (js-call clock :utcNow)))))
+           (edit (lambda (id text mentions)
+             (let ((msg (js-call messages :get id)))
+               (put msg :body (js-object :content (JSON/stringify (js-object :text text))))
+               (put msg :updated t) (put msg :update_time (funcall timestamp))
+               (put msg :mentions (js-call mentions :map (lambda (person index)
+                 (js-object :key (str "@_user_" (1+ index)) :id person :id_type "open_id"))))))))
+      (try
+        (let ((p (await (callOk f "A" "subscription.preview" (js-object
+                   :expected_revision 0 :spec (js-object :agent_id (nativeGet agent "agent_id")))))))
+          (await (callOk f "A" "subscription.set" (js-object :preview_id (nativeGet p "preview_id")
+            :expected_revision 0 :idempotency_key "ws-update-edit-sub"))))
+        ;; Message arrived before edit_poll activation_at and has no mentions.
+        (js-call messages :set "before-activation-ws" (js-object :message_id "before-activation-ws" :chat_id "c1"
+          :create_time (str (- (NativeNumber (funcall timestamp)) 10000)) :msg_type "text"
+          :body (js-object :content "{\"text\":\"initial before activation\"}")
+          :sender (js-object :id "ou_other" :id_type "open_id" :sender_type "user") :mentions (js-array)))
+        (emit f "cli_user" "before-activation-ws")
+        (await (advance f 4 5))
+        (js-call (expect (js-length inputs)) :toBe 0)
+        ;; Add self mention and push flat WebSocket im.message.updated_v1 event.
+        (funcall edit "before-activation-ws" "edited before activation adding mention" (js-array "ou_self"))
+        (emitUpdate f "cli_user" "before-activation-ws" false "ws-upd-1")
+        (await (advance f 5 5))
+        (js-call (expect (js-length inputs)) :toBe 1)
+        (js-call (expect (js-call (nativeGet (nativeGet (aref inputs 0) "envelope") "trigger_reasons") :some
+          (lambda (r) (= (nativeGet r "code") "edit_mention")))) :toBe t)
+        (js-call (expect (nativeGet (js-call (js-call db :query
+          "SELECT json_extract(payload,'$.receive_transport') AS rt FROM events WHERE connection_id='lark' AND native_message_id='before-activation-ws' AND event_kind='message.edited'") :get) "rt")) :toBe "websocket")
+        ;; Duplicate update_time WS event and periodic edit_poll advance must not duplicate events or deliveries.
+        (emitUpdate f "cli_user" "before-activation-ws" false "ws-upd-dup")
+        (await (advance f 20 5))
+        (js-call (expect (js-length inputs)) :toBe 1)
+        (js-call (expect (nativeGet (js-call (js-call db :query
+          "SELECT count(*) AS n FROM events WHERE connection_id='lark' AND native_message_id='before-activation-ws' AND event_kind='message.edited'") :get) "n")) :toBe 1)
+        (js-call (expect (nativeGet (js-call (js-call db :query
+          "SELECT state,last_error FROM lark_event_receipts WHERE connection_id='lark' AND event_id='ws-upd-dup'") :get) "last_error")) :toBe "edit_already_recorded")
+        ;; Remove mention, then re-add via nested event.message.message_id payload.
+        (funcall edit "before-activation-ws" "removed mention" (js-array))
+        (emitUpdate f "cli_user" "before-activation-ws" t "ws-upd-remove")
+        (await (advance f 5 5))
+        (js-call (expect (js-length inputs)) :toBe 1)
+        (funcall edit "before-activation-ws" "re-added mention" (js-array "ou_self"))
+        (emitUpdate f "cli_user" "before-activation-ws" t "ws-upd-readd")
+        (await (advance f 5 5))
+        (js-call (expect (js-length inputs)) :toBe 2)
+        (js-call (expect (nativeGet (js-call (js-call db :query
+          "SELECT count(*) AS n FROM events WHERE connection_id='lark' AND native_message_id='before-activation-ws' AND event_kind='message.edited'") :get) "n")) :toBe 3)
+        ;; Unknown message update is safely ignored without crashing the inbox.
+        (emitUpdate f "cli_user" "unknown-ws-msg" false "ws-upd-unknown")
+        (await (advance f 4 5))
+        (js-call (expect (nativeGet (js-call (js-call db :query
+          "SELECT state,last_error FROM lark_event_receipts WHERE connection_id='lark' AND event_id='ws-upd-unknown'") :get) "last_error")) :toBe "edited_message_unknown")
+        (js-call (expect (js-length inputs)) :toBe 2)
         (finally (js-call db :close))))) cleanup)
 )

@@ -1,10 +1,33 @@
 (module dj.adapters.im.lark-edits
-  (import "../../core/native.eli" nativeGet NativeNumber)
+  (import "../../core/native.eli" nativeGet nativeTypeOf NativeNumber)
   (import "../../core/types.eli" addSeconds)
-  (import "../../application/context.eli" utcNow)
-  (defconst editWindowSeconds 1800)
+  (import "../../application/context.eli" utcNow nativeCallContext)
+  (import "../../connections/interactions.eli" resolveMessageInteraction)
+  (defconst editWindowSeconds 7200)
   (defconst editPollSeconds 15)
   (defconst editBatchSize 20)
+
+  (defun permanentMessageRefusal (error)
+    (let* ((details (nativeGet error "details"))
+           (status (nativeGet details "http_status")))
+      (and (js-call (js-array 200 400 403 404) :includes status)
+           (= (nativeGet details "reason") "native_api_rejected")
+           (= (js-length (nativeGet details "missing_scopes" (js-array))) 0)
+           (not (js-call (js-array 99991661 99991663 99991664 99991668 99991672)
+                  :includes (nativeGet details "native_code"))))))
+
+  (defun findOriginalMessage (db connection id revision)
+    (let ((stored (js-call (js-call db :query
+            "SELECT payload FROM events WHERE connection_id=? AND native_message_id=? AND event_kind='message.created' AND tombstone=0 AND json_extract(payload,'$.identity_revision')=? ORDER BY ingress_seq DESC LIMIT 1")
+            :get connection id revision)))
+      (if stored
+        (JSON/parse (nativeGet stored "payload"))
+        (let ((pending (js-call (js-call db :query
+                "SELECT payload FROM im_event_inbox WHERE connection_id=? AND source_key=?")
+                :get connection (str id ":created"))))
+          (when pending
+            (let ((parsed (JSON/parse (nativeGet pending "payload"))))
+              (when (= (nativeGet parsed "source_identity_revision") revision) parsed)))))))
 
   (defun editTime (record)
     (or (nativeGet record "native_message_update_time") (Date/parse (nativeGet record "source_time"))))
@@ -92,7 +115,6 @@
                (response (await (js-call base :history (js-object :message_ids keys) context)))
                (error (nativeGet response "error"))
                (details (nativeGet error "details"))
-               (status (nativeGet details "http_status"))
                (by-id (new globalThis.Map)))
           (if (nativeGet response "ok")
             (progn
@@ -104,11 +126,7 @@
                        (edit (and message (normalizeEdit original (previousEdit db connection original) message activation normalize))))
                   (when edit (js-call events :push edit))))))
             ;; Split an explicitly refused batch without launching extra requests in this turn.
-            (if (and (js-call (js-array 200 400 403 404) :includes status)
-                     (= (nativeGet details "reason") "native_api_rejected")
-                     (= (js-length (nativeGet details "missing_scopes" (js-array))) 0)
-                     (not (js-call (js-array 99991661 99991663 99991664 99991668 99991672)
-                            :includes (nativeGet details "native_code"))))
+            (if (permanentMessageRefusal error)
               (progn
                 (setq problem (js-object :code (nativeGet details "native_code" -1) :missing_scopes (js-array)))
                 (when (> (js-length rows) 1)
@@ -123,4 +141,33 @@
       (put checkpoint :last_success_at (if problem (nativeGet checkpoint "last_success_at") now))
       (put checkpoint :native_error problem)
       events))
-  (export pollLarkEdits editWindowSeconds editPollSeconds))
+
+  (defasync resolveLarkMessageUpdate (config wire application base normalize-inbox normalize-message)
+    (let* ((event (nativeGet wire "event"))
+           (id (or (nativeGet event "message_id") (nativeGet (nativeGet event "message") "message_id"))))
+      (unless (and (= (nativeTypeOf id) "string") (> (js-length id) 0) (<= (js-length id) 256))
+        (throw (new globalThis.TypeError "invalid native message update event")))
+      (let* ((db (nativeGet (nativeGet application "store") "db"))
+             (connection (nativeGet config "connection_id"))
+             (revision (nativeGet config "identity_revision"))
+             (original (findOriginalMessage db connection id revision)))
+        (if (not original)
+          (js-object :events (js-array) :reason "edited_message_unknown")
+          (let ((response (await (js-call base :history (js-object :message_ids (js-array id)) (nativeCallContext application)))))
+            (if (not (nativeGet response "ok"))
+              (let ((error (nativeGet response "error")))
+                (if (permanentMessageRefusal error)
+                  (js-object :events (js-array) :reason "edited_message_unavailable")
+                  (throw error)))
+              (let ((message (js-call (nativeGet (nativeGet response "data") "messages" (js-array)) :find
+                      (lambda (item) (= (nativeGet item "message_id") id)))))
+                (if (or (not message) (nativeGet message "deleted"))
+                  (js-object :events (js-array) :reason "edited_message_unavailable")
+                  (let ((edit (normalizeEdit original (previousEdit db connection original) message 0
+                          (lambda (item chat-type) (funcall normalize-inbox config item chat-type normalize-message)))))
+                    (if (not edit)
+                      (js-object :events (js-array) :reason "edit_already_recorded")
+                      (js-object :events (js-array (await (resolveMessageInteraction config edit application base normalize-message)))
+                        :reason nil)))))))))))
+
+  (export pollLarkEdits resolveLarkMessageUpdate editWindowSeconds editPollSeconds))
