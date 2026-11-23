@@ -21,4 +21,6 @@ nodeRepl.write({manifest_path: receiver.manifest_path});
 
 接收端公开 probe/read/send/create/lookup_create/rename。probe 经原生接口读回调用会话，验证当前宿主确有可用的调用权限。创建请求发出前记录 unknown，未知结果不重建。
 
-原生工具宿主可随会话卸载或空闲回收退出，即使 Codex App 持续运行。退出后新的授权宿主可原子发布同一 PID 的新登记，每次登记有独立 socket，旧文件和旧宿主关闭均不会覆盖新接收端。DJ 核对 PID、出生标识、socket 和原生会话后恢复原队列。没有活 follower 或授权宿主时，实例查询如实显示离线，已有会话仍可按 `offline: hold` 入队。升级或卸载时调用 `receiver.close()`，关闭并清理该登记的 socket。PID 对应的共享指针由下一次登记覆盖。
+原生工具宿主可随会话卸载或空闲回收退出，即使 Codex App 持续运行。长期保活可调用 `control.superviseCodexControl({ request_meta: nodeRepl.requestMeta })`：由当前宿主提供真实 `x-codex-turn-metadata` 并周期性通过原生 `read_thread` 校验证明调用权限，以 `<owner_pid>.lock` 与 `<owner_pid>.standby.lock` 两把内核文件锁实现自动主备切换，并严格将同一 Codex App PID 下的监督进程上限锁定为 2 个（1 主 1 备；第 3 次启动检测到双锁已满会立即以 `receiver_standby_full` 退出，避免进程堆积）。
+
+退出后新的授权宿主可原子发布同一 PID 的新登记，每次登记有独立 socket，旧文件和旧宿主关闭均不会覆盖新接收端。DJ 核对 PID、出生标识、socket 和原生会话后恢复原队列。没有活 follower 或授权宿主时，实例查询如实显示离线，已有会话仍可按 `offline: hold` 入队。升级或卸载时调用 `receiver.close()`，关闭并清理该登记的 socket。PID 对应的共享指针由下一次登记覆盖。

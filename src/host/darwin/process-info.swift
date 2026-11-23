@@ -99,7 +99,79 @@ func writeDesktopCredential(pid: pid_t, birth: String, parentPID: pid_t, parentB
     }
 }
 
+func openPrivateLockFile(_ path: String) -> Int32 {
+    let fd = Darwin.open(path, O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0o600)
+    guard fd >= 0 else { return -1 }
+    var st = Darwin.stat()
+    guard fstat(fd, &st) == 0, st.st_uid == getuid(),
+          (st.st_mode & S_IFMT) == S_IFREG, (st.st_mode & 0o777) == 0o600 else {
+        Darwin.close(fd)
+        return -1
+    }
+    return fd
+}
+
+func acquireNonBlockingLock(_ fd: Int32) -> Int32 {
+    while flock(fd, LOCK_EX | LOCK_NB) != 0 {
+        if errno == EINTR { continue }
+        return errno
+    }
+    return 0
+}
+
+func holdReceiverLease(_ path: String, standbyPath: String? = nil) -> Int32 {
+    let fd = openPrivateLockFile(path)
+    guard fd >= 0 else { return 3 }
+    defer { Darwin.close(fd) }
+    var standbyFd: Int32 = -1
+    defer {
+        if standbyFd >= 0 {
+            _ = flock(standbyFd, LOCK_UN)
+            Darwin.close(standbyFd)
+        }
+    }
+    if let standbyPath {
+        let leaderResult = acquireNonBlockingLock(fd)
+        if leaderResult != 0 {
+            guard leaderResult == EWOULDBLOCK else { return 3 }
+            standbyFd = openPrivateLockFile(standbyPath)
+            guard standbyFd >= 0 else { return 3 }
+            let standbyResult = acquireNonBlockingLock(standbyFd)
+            if standbyResult != 0 {
+                Darwin.close(standbyFd)
+                standbyFd = -1
+                if standbyResult == EWOULDBLOCK {
+                    _ = Darwin.write(STDOUT_FILENO, [UInt8(2)], 1)
+                    return 4
+                }
+                return 3
+            }
+            while flock(fd, LOCK_EX) != 0 {
+                guard errno == EINTR else { return 3 }
+            }
+            _ = flock(standbyFd, LOCK_UN)
+            Darwin.close(standbyFd)
+            standbyFd = -1
+        }
+    } else {
+        while flock(fd, LOCK_EX) != 0 {
+            guard errno == EINTR else { return 3 }
+        }
+    }
+    guard Darwin.write(STDOUT_FILENO, [UInt8(1)], 1) == 1 else { return 3 }
+    var byte: UInt8 = 0
+    while true {
+        let result = Darwin.read(STDIN_FILENO, &byte, 1)
+        if result == 0 { return 0 }
+        if result < 0 && errno != EINTR { return 3 }
+    }
+}
+
 let arguments = CommandLine.arguments
+if (arguments.count == 3 || arguments.count == 4) && arguments[1] == "codex-receiver-lease" {
+    let standby = arguments.count == 4 ? arguments[3] : nil
+    exit(holdReceiverLease(arguments[2], standbyPath: standby))
+}
 if arguments.count == 6 && arguments[1] == "antigravity-credential" {
     guard let pid = Int32(arguments[2]), pid > 0, let parent = Int32(arguments[4]), parent > 0 else { exit(2) }
     exit(writeDesktopCredential(pid: pid, birth: arguments[3], parentPID: parent, parentBirth: arguments[5]) ? 0 : 3)
@@ -108,7 +180,7 @@ if arguments.count == 6 && arguments[1] == "antigravity-credential" {
 guard arguments.count == 2, let pid = Int32(arguments[1]), pid > 0 else { exit(2) }
 guard let process = processIdentity(pid) else { exit(1) }
 let record: [String: Any] = [
-    "pid": pid, "uid": getuid(),
+    "pid": pid, "parent": process.parent, "uid": getuid(),
     "birth": process.birth, "caught": process.catchesInspectorSignal, "executable": process.executable
 ]
 guard let data = try? JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]) else { exit(1) }
