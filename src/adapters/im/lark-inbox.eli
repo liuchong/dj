@@ -39,6 +39,7 @@
       (id (nativeGet config "connection_id")) (user (= (nativeGet config "identity") "user"))
       (limiter (createReadLimiter (nativeGet host "clock")))
       (policy (reactionPollPolicy config)) (running (new globalThis.Map))
+      (limited-roles (js-array "messages" "edits" "pins")) (limited-cursor 0)
       (idle-until (new globalThis.Map))
       (observations (createReactionObservationCache (nativeGet host "clock") policy))
       (application nil) (closed false)
@@ -278,7 +279,11 @@
         (when (and application (not closed))
           ;; Independent message, fast-reaction and archive jobs use
           ;; independent checkpoints, while the HTTP transport owns app-wide quotas.
-          (js-call (js-array "messages" "reaction-fast" "reaction-archive" "pins" "edits") :forEach (lambda (role)
+          (let ((roles (js-array "reaction-fast" "reaction-archive"
+                  (aref limited-roles limited-cursor)
+                  (aref limited-roles (% (+ limited-cursor 1) (js-length limited-roles)))
+                  (aref limited-roles (% (+ limited-cursor 2) (js-length limited-roles))))))
+          (js-call roles :forEach (lambda (role)
             (unless (js-call running :has role)
               (let* ((reaction (js-call role :startsWith "reaction-")) (pins (= role "pins"))
                 (rows (js-call (js-call (nativeGet (nativeGet application "store") "db") :query
@@ -299,6 +304,10 @@
                 (checkpoint (nativeGet candidate "checkpoint"))
                 (saved (and checkpoint (JSON/stringify checkpoint))))
                 (when (and checkpoint (or reaction (js-call limiter :acquire)))
+                  (unless reaction
+                    (let ((slot (js-call limited-roles :indexOf role)))
+                      (when (>= slot 0)
+                        (setq limited-cursor (% (1+ slot) (js-length limited-roles))))))
                   (js-call running :set role t)
                   (let ((job (funcall turn checkpoint)))
                     (setq job (js-call job :catch (async (error)
@@ -325,7 +334,7 @@
                           (catch stale (setq closed t) (put status :state "blocked"))))))))
                     (js-call job :finally (lambda ()
                       (unless reaction (js-call limiter :release))
-                      (js-call running :delete role))))))))))))
+                      (js-call running :delete role)))))))))))))
       (js-object :pump pump :status (lambda ()
         (put (nativeGet status "reaction_poll") :observations (js-call observations :status))
         (let ((failed (when application (js-call (js-call (nativeGet (nativeGet application "store") "db") :query

@@ -27385,6 +27385,29 @@
       "then": "编辑单独入库，新增提及通知准确会话，双连接去重，保留身份和回复引用"
     },
     {
+      "case_id": "T41.lark-edit-poll-no-starvation.integration",
+      "parent_id": "T41",
+      "file": "tests/integration/hybrid-inbox.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-integration",
+      "requirements": [
+        "Q17"
+      ],
+      "acceptance_ids": [
+        "A03",
+        "A05"
+      ],
+      "given": "用户连接已有大量超期群置顶检查点饱和占用读取配额，期间收到未提及原消息并在随后编辑新增自我提及",
+      "when": "按轮询限流推进事件循环",
+      "then": "受限轮询角色轮转确保编辑检查不被饿死，状态就绪、成功入库 message.edited 并触发一次投递"
+    },
+    {
       "case_id": "T41.hybrid-inbox-flow.integration",
       "parent_id": "T41",
       "file": "tests/integration/hybrid-inbox.test.eli",

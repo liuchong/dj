@@ -880,4 +880,55 @@
               (await (advance f 25 20))
               ;; All 3 views (bot WS, bot HTTP, user HTTP) coalesce into 1 Pin notification (total inputs = 2, not 4 or 5)!
               (js-call (expect (js-length inputs)) :toBe 2)))
-          (finally (js-call db :close))))) cleanup))
+          (finally (js-call db :close))))) cleanup)
+
+  (withCase "T41.lark-edit-poll-no-starvation.integration" setup (async (f)
+    (let* ((agent (await (bindRecipient f))) (clock (nativeGet f "clock"))
+           (state (nativeGet f "hybrid_state"))
+           (messages (nativeGet f "messages")) (inputs (nativeGet (nativeGet f "opencode") "inputs"))
+           (db (new Database (resolve (nativeGet f "root") "state/dj.sqlite") (js-object :readonly t)))
+           (timestamp (lambda () (str (Date/parse (js-call clock :utcNow))))))
+      (try
+        (let ((p (await (callOk f "A" "subscription.preview" (js-object
+                   :expected_revision 0
+                   :spec (js-object :agent_id (nativeGet agent "agent_id")
+                     :rules (js-array (js-object :id "mentions-only" :enabled t
+                       :event_kinds (js-array "message.created" "message.edited")
+                       :predicate (js-object :all (js-array
+                         (js-object :field "event_kind" :op "in" :value (js-array "message.created" "message.edited"))
+                         (js-object :field "mentions.id" :op "in" :value (js-array "ou_self"))))))))))))
+          (await (callOk f "A" "subscription.set" (js-object :preview_id (nativeGet p "preview_id")
+            :expected_revision 0 :idempotency_key "starvation-edit-sub"))))
+        ;; Create 35 distinct chats so user pin polling stays permanently overdue under the 2/s read limiter.
+        (let ((index 0))
+          (while (< index 35)
+            (let ((id (str "pin-chat-" index)) (chat (str "busy-chat-" index)))
+              (js-call messages :set id (js-object :message_id id :chat_id chat :create_time (funcall timestamp)
+                :msg_type "text" :body (js-object :content "{\"text\":\"ordinary chat\"}")
+                :sender (js-object :id "ou_other" :id_type "open_id" :sender_type "user") :mentions (js-array)))
+              (emit f "cli_user" id))
+            (setq index (1+ index))))
+        (js-call messages :set "starve-edit-target" (js-object :message_id "starve-edit-target" :chat_id "c1"
+          :create_time (funcall timestamp) :msg_type "text"
+          :body (js-object :content "{\"text\":\"initial without mention\"}")
+          :sender (js-object :id "ou_other" :id_type "open_id" :sender_type "user") :mentions (js-array)))
+        (emit f "cli_user" "starve-edit-target")
+        (put state :enabled t)
+        (await (advance f 20))
+        (js-call (expect (js-length inputs)) :toBe 0)
+        (let ((msg (js-call messages :get "starve-edit-target")))
+          (put msg :body (js-object :content "{\"text\":\"edited to mention self\"}"))
+          (put msg :updated t)
+          (put msg :update_time (funcall timestamp))
+          (put msg :mentions (js-array (js-object :key "@_user_1" :id "ou_self" :id_type "open_id"))))
+        (await (advance f 25))
+        (let* ((probe (await (callOk f "O" "connection.probe" (js-object :connection_id "lark"))))
+               (edit-poll (nativeGet (nativeGet (nativeGet probe "event_source") "poll_fallback") "edit_poll")))
+          (js-call (expect (nativeGet edit-poll "state")) :toBe "ready")
+          (js-call (expect (not (not (nativeGet edit-poll "last_success_at")))) :toBe t))
+        (js-call (expect (nativeGet (js-call (js-call db :query
+          "SELECT count(*) AS n FROM events WHERE connection_id='lark' AND native_message_id='starve-edit-target' AND event_kind='message.edited'") :get) "n")) :toBe 1)
+        (js-call (expect (js-length inputs)) :toBe 1)
+        (js-call (expect (nativeGet (nativeGet (nativeGet (aref inputs 0) "envelope") "source") "native_message_id")) :toBe "starve-edit-target")
+        (finally (js-call db :close))))) cleanup)
+)
