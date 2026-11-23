@@ -6,7 +6,7 @@
 
 通过 `bun install --frozen-lockfile` 取得锁定的 Eliscript 0.1.3 与 Bun 依赖。执行 `bun run build:tools`、`bun run build`，再运行 `bun run package:directory`。打包器校验已安装编译器和当前源码、产物摘要，只写入新的私有目录包。详见[开发与打包](https://github.com/liuchong/dj/blob/master/docs/guides/development.md)。
 
-目录包含 `bin/dj`、`dist/src/{service/main,interfaces/cli,interfaces/mcp,library}.mjs` 及共享 chunks/source map、`dist/build-identity.json`、Skill、两份配置示例、项目 `LICENSE`、第三方 `licenses/` 和 `package-manifest.json`。manifest 记录 build_id、相对文件摘要、固定编译器身份、Bun 版本和生产依赖。SDK/Ajv/语言运行时被打入 ESM；成品不带构建器、测试、编译器、Emacs、node_modules、账号或数据库。source map 的源码名称转换为包内逻辑路径。
+目录包含 `bin/dj`、`connectors/codex/{launch-mcp.sh,mcp.mjs,control.mjs}`、`libexec/{dj-codex-loader,dj-process-info}`（macOS）、`dist/src/{service/main,interfaces/cli,interfaces/mcp,library}.mjs` 及共享 chunks/source map、`dist/build-identity.json`、Skill、两份配置示例、项目 `LICENSE`、第三方 `licenses/` 和 `package-manifest.json`。manifest 记录 build_id、相对文件摘要、固定编译器身份、Bun 版本和生产依赖。SDK/Ajv/语言运行时被打入 ESM；成品不带构建器、测试、编译器、Emacs、node_modules、账号或数据库。source map 的源码名称转换为包内逻辑路径。
 
 目标运行环境为 macOS arm64、Bun 1.4.4；Bun 由可信宿主提供。Codex 使用已有 Desktop IPC，Cursor 使用已有 Desktop Bridge 或显式配置的 native_api 原生版本适配通道；其他工具也必须连接实际运行中的客户端或 CLI 接口。Lark/飞书机器人通过私有 App ID/Secret 与精确 watch 接入；本人身份通过独立 OAuth 凭据使用已授权的官方接收、读取与发送接口。不得新建 Agent 子进程作为消息通道。外部客户端、模型服务和授权不包含在 DJ 包内。包内 `bin/dj` 从 PATH 找 Bun；非交互宿主可直接用确定的 Bun 可执行文件运行对应 ESM。目录可移至其他持久位置，不能依赖构建仓库作为 cwd。
 
@@ -69,13 +69,13 @@ AI 工具可主动启动 DJ MCP 薄客户端，这是 AI→DJ 请求，不是 DJ
 
 `connectors/cursor` 的扩展胶水调用由 Eliscript 编译的受限控制模块。完整构建后运行 `bun run package:cursor` 生成独立VSIX和文件摘要；打包不安装、不启用、不创建对话。扩展默认关闭，需另行批准安装并仅在专用本地单根工作区设置enabled/workspaceRef，详见连接器README。
 
-Cursor endpoint只有全部配置了control_manifest_path才声明session_create支持；manifest引用由私有控制目录提供，directory必须精确匹配。调用仍经过主体/工作区/epoch/幂等审查，原生命令只创建空对话，不提交prompt。连接器先持久记issued，再调用固定命令；重放和reconcile不重复命令。只有既有原生Bridge读回同epoch/window下的固定ID才ready，否则unknown；连接器调用结束、目录包或协议夹具通过均不能证明真实客户端创建成功。Codex的原生创建接口仍未接入，不沿用此能力声明。
+Cursor endpoint只有全部配置了control_manifest_path才声明session_create支持；manifest引用由私有控制目录提供，directory必须精确匹配。调用仍经过主体/工作区/epoch/幂等审查，原生命令只创建空对话，不提交prompt。连接器先持久记issued，再调用固定命令；重放和reconcile不重复命令。只有既有原生Bridge读回同epoch/window下的固定ID才ready，否则unknown；连接器调用结束、目录包或协议夹具通过均不能证明真实客户端创建成功。Codex 的原生创建、改名与读写经 `control_manifest_path` 接入运行在已启动桌面端 `codex app-server` 内的控制接收端（推荐通过 `connectors/codex/launch-mcp.sh` / `mcp.mjs` 启动，需提供非空首条 `content`），详见 [Codex 接收端](../connectors/codex/README.md)；未接入该控制接收端时不激活此能力声明。
 
 ## Skill 与 AI 客户端配置
 
 目录包内含完整 skills/dj。运行 `bin/dj skill targets` 选择本机工具目录；用 `skill install --target cursor --scope project --project PROJECT --dry-run` 预览，再显式安装。`skill check` 不写入；不同的已有文件或链接不会覆盖。更新冲突由操作者审阅旧版本后另行处理，失败不伪报成功。
 
-`bin/dj skill config --target codex --client-profile PRIVATE_PROFILE` 生成当前目录包路径对应的 MCP 片段，手动合并 dj 项并保留其他配置。它不读取 token、不注册 MCP 或启动客户端；Pi/shared 使用 CLI。完整逐工具目录、MCP 与 GEPO 指引位于 skills/dj/references/clients.md。AI→DJ 接口不依赖 Inspector；GEPO 复用私有 UDS，不是 MCP HTTP endpoint。
+`bin/dj skill config --target codex --client-profile PRIVATE_PROFILE --mcp-url http://127.0.0.1:<PORT>/mcp` 生成指向当前目录包 `connectors/codex/launch-mcp.sh`、`--token-file`（`0600` 私密凭据文件）及必需 `env_vars` 的 `[mcp_servers.dj]` TOML 片段，可在保持 Codex 原生 App Tools 进程树归属的同时连接 DJ HTTP MCP；省略 `--mcp-url` 时回退为通用 `bin/dj mcp serve --transport stdio`。手动合并 `dj` 项并保留其他配置，命令本身不读取 token、不改写客户端配置或启动客户端；Pi/shared 使用 CLI。完整逐工具目录、MCP 与 GEPO 指引位于 `skills/dj/references/clients.md`。AI→DJ 接口不依赖 Inspector；GEPO 复用私有 UDS，不是 MCP HTTP endpoint。
 
 
 ## Pi 已有进程接线

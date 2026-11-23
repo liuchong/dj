@@ -79,4 +79,13 @@ Lark 自动沿持久 HTTP 断点补收，`source_health.state=catching_up` 与 `
 
 常驻服务向标准错误写入结构化日志，默认安装可查 `~/.dj/logs/service.stderr.log`。按 `connection_id`、`event_id`、`delivery_id` 和 `route_id` 串查收件、订阅判定与投递状态。用 `receiver_unavailable` 和 `receiver_recovered` 判断目标实例的接收端变化，用 `lark_websocket_unavailable` 和 `lark_poll_unavailable` 区分两条收件路径。
 
-Codex 原生接收端另外在其私有登记目录写 `receiver.ndjson`，标记登记、关闭原因和原生管道异常，保留当前和上一段。强制结束的进程可能来不及写退出日志，服务侧仍会记录下一次探测结果。日志不包含消息正文、请求元数据和令牌。
+Codex 原生接收端另外在其私有登记目录（如 `~/.dj/codex-receivers/`）写 `receiver.ndjson`，标记登记、关闭原因和原生管道异常，保留当前和上一段。强制结束的进程可能来不及写退出日志，服务侧仍会记录下一次探测结果。日志不包含消息正文、请求元数据和令牌。
+
+## Codex 桌面接收端（`launch-mcp.sh` / `mcp.mjs`）离线或未切换
+
+当 `codex-inbox-01` 等桌面端点长期离线，或升级 `[mcp_servers.dj]` 为 `launch-mcp.sh` 代理后仍未见到活接收端时，依次排查：
+
+1. 检查 `~/.codex/config.toml` 的 `[mcp_servers.dj]` 是否使用包内 `connectors/codex/launch-mcp.sh`，`args` 指向本机 `http://127.0.0.1:<PORT>/mcp` 与 `0600` 权限的 `--token-file`（位于 `0700` 目录），且 `env_vars` 包含 `CODEX_APP_TOOLS_PIPE_PATH`、`CODEX_MCP_NODE_PATH`、`CODEX_HOME`。
+2. 确认运行中的桌面客户端 `codex app-server` 进程树下存在 `mcp.mjs` 子进程，私有接收端目录存在 `<owner_pid>.json` 与单把 `<owner_pid>.lock`（新版本不再使用 `.standby.lock`；如升级前残留旧 `.standby.lock` 或死 `.sock` 文件，可先清理）。
+3. **老会话缓存注意**：在更新 `config.toml` *之前*已加载并运行过的 Codex 对话会继续复用当时缓存的旧 MCP 客户端连接池，不会立刻启动新的 `launch-mcp.sh`。新建或开启一个尚未缓存的冷线程会话，或待旧会话闲置卸载后再唤醒、重启桌面客户端后，新会话回合即可持久驻留 `mcp.mjs`。
+4. **全闲置冷启动**：当桌面客户端内没有任何已加载线程时，不要手工进对话执行后台命令；通过 `dj session probe` / `dj session send` 触发投递时，`wakeAndProbeCodex` 会经 `dj-codex-loader` 轮换唤醒未归档冷线程并在目录探测窗口内同步捕获 `mcp.mjs`，随即恢复投递与持久驻留。

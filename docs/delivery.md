@@ -40,7 +40,7 @@ dj status --client-profile PRIVATE_PROFILE --json
 
 | 工具 | 接线入口 |
 | --- | --- |
-| Codex / Cursor | [Desktop 配置](adapters/desktop.md)；Cursor 按需 Inspector 只用于 DJ 主动通知方向 |
+| Codex / Cursor | [Desktop 配置](adapters/desktop.md) 与 [Codex 接收端](../connectors/codex/README.md)；Codex 桌面端推荐按下方 `dj skill config --target codex --mcp-url ...` 接入内置控制接收端的 stdio MCP 代理；Cursor 按需 Inspector 只用于 DJ 主动通知方向 |
 | OpenCode | 已运行实例的本机 HTTP 接口与准确工作区，见[Agent 适配](adapters/agent-tools.md) |
 | Pi | [原进程接收扩展](../connectors/pi/README.md)，显式加载到已有 TUI |
 | Claude Code / Antigravity | [原生接收端](adapters/native-inboxes.md)与 `dj native configure` |
@@ -59,7 +59,7 @@ dj skill config --target codex --client-profile PRIVATE_PROFILE
 
 先检查预览，再按实际目标安装。默认安装不会覆盖不同内容；升级已安装副本使用 `dj skill install --target TOOL --scope user --update`，可先加 `--dry-run`。共享根使用 `--target dj`，链接与非Markdown资产仍拒绝替换；`skill check` 核对文件，`skill config` 只生成 MCP 片段供显式合并，不修改客户端信任或启动模型。完整位置与流程见[客户端接线](../skills/dj/references/clients.md)。
 
-CLI、本地 API、MCP 和 GEPO 共用操作目录和权限。MCP 优先使用已配置的本机 Streamable HTTP；不支持该传输的客户端使用 stdio 薄代理连接原服务。GEPO 使用私有 UDS。不要为接线临时开放无认证公网端口。
+CLI、本地 API、MCP 和 GEPO 共用操作目录和权限。MCP 优先使用已配置的本机 Streamable HTTP；其中 Codex Desktop 必须让控制接收端随已运行的 `codex app-server`（自带签名 `cua_node`）驻留，因此对 `target=codex` 传入 `--mcp-url http://127.0.0.1:<PORT>/mcp` 时会生成指向包内 `connectors/codex/launch-mcp.sh` 的 stdio-to-HTTP 薄代理片段（配合 `0600` `--token-file` 与 `env_vars`），在桥接 DJ MCP 的同时保持原生控制接收端持久在线。不支持 HTTP 的客户端同样使用 stdio 薄代理连接原服务。GEPO 使用私有 UDS。不要为接线临时开放无认证公网端口。
 
 ## 5. 订阅、上下文与回复
 

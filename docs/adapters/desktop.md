@@ -14,6 +14,7 @@
 | 历史库 | `history_database` 指向当前 `state_*.sqlite` | Bridge 使用 `history_database`；native_api 读取原生内存，不需要历史库 |
 | 目标范围 | 默认 `directory` 必须等于目标原生线程的 `cwd`；显式设置 `workspace_scope: "instance"` 时覆盖该实例全部本地工作区线程并保留各自真实 `directory` | `window_id` 必须等于原生窗口；native_api 另核对原 PID/origin、workspace_id；自动开关另核对 process_birth 与只读 helper |
 | 原生帧预算 | 可显式设置 `snapshot_max_bytes`，1–64 MiB；省略时沿用调用方响应预算 | 原生响应仍受调用方响应预算约束 |
+| 控制与唤醒 | 可选 `control_manifest_path`（指向私密接收端目录的 `<pid>.json` 引用）、`receiver_loader_ref`（包内 `libexec/dj-codex-loader`）与 `process_helper_ref`（包内 `libexec/dj-process-info`） | `native_api` 按需开关时另配 `process_birth` 与 `process_helper_ref` |
 | 工作区引用 | 明确配置 `workspace_ref` / `workspace_refs` | 明确配置 `workspace_ref` / `workspace_refs`；它们是部署者为该窗口分配的范围标签 |
 
 服务只读打开原生历史库。Cursor manifest 的 token 仅在内存中用于原生请求，不进入配置投影、投递信封或日志。socket 必须属于当前用户；原生 socket 身份变化形成新的 instance epoch，旧绑定不会直接当成新进程的绑定使用。
@@ -49,8 +50,8 @@ native_api 指定 inspector_url、process_id、process_origin、workspace_id；�
 
 macOS Codex 端点可配置 `receiver_loader_ref` 和 `process_helper_ref`，分别指向打包的 `libexec/dj-codex-loader` / `libexec/dj-process-info`。只有实际投递才尝试加载，查询保持只读。加载器由 Swift 通过定向到既有 PID 的系统 URL 事件打开准确原对话，可能切换客户端当前对话页；不调用启动 API，不把正文、模型或会话参数放入 Agent 启动命令。先核对 socket、同 UID 主进程与出生身份，再核对加载后的原生 owner/epoch/工作区。OS 拒绝事件或接收端尚未就绪时保留待投，返回明确 receiver_reason；不伪造已送达、不绕过权限。详见 [0029](../specs/0029-codex-receiver-loading.md)。
 
-已授权的 Codex 原生工具宿主可在 follower IPC 不可用时，为同一个桌面实例提供在线发现和精确定点探测。在线发现逐页核对历史条目的原生 ID 与工作区；只有经过当前宿主读回的会话才标记可投递。宿主随 App 退出或被回收时仍需重新登记接收端，休眠或重连不应调用 `agent.unregister`。
+已授权的 Codex 原生工具宿主可在 follower IPC 不可用时，为同一个桌面实例提供在线发现和精确定点探测。推荐通过 `~/.codex/config.toml` 的 `[mcp_servers.dj]` 运行包内 `connectors/codex/launch-mcp.sh`（`mcp.mjs`），随 `codex app-server` 原生生命周期维持持久进程、自动发现候选调用线程，并以单把文件锁 `<owner_pid>.lock`（无 `.standby.lock`）协调唯一主接收端。当全部已加载对话长时间闲置卸载或刚冷启动时，DJ 在投递前的 `probeWith` 路径可通过 `dj-codex-loader` 轮换唤醒未归档冷线程并同步捕获短暂拉起的 `mcp.mjs` 窗口，随即提交正文并触发 `turn_input` 重建持久驻留，无需人工进对话执行脚本或重启客户端。休眠或重连均不应调用 `agent.unregister`。
 
 ## 原生会话控制
 
-Codex 的创建与改名通过显式加载在已有原生 Node 工具宿主内的 DJ 接收端，配置 `control_manifest_path`，普通通知保持原 follower socket。此路径不需要 Inspector、不启动替代 App Server，平台仍核验真实宿主来源。加载与生命周期见 [Codex 接收端](../../connectors/codex/README.md)。Cursor 保持原 native_api 和按需 Inspector；两者共用统一 session.create/rename 与持久生命周期，但原生传输分开，不能相互冒充。
+Codex 的创建、改名与原生 App Tools 读写由运行在已启动桌面端 `codex app-server` 进程树内的接收端承担（推荐为 `~/.codex/config.toml` `[mcp_servers.dj]` 启动的 `connectors/codex/launch-mcp.sh`，手动排障时亦可显式加载 `control.mjs`），并在 `service.json` 配置 `control_manifest_path`；普通通知在有 follower socket 时保持兼容。此路径不需要 Inspector、不启动替代 App Server，平台仍核验真实宿主来源。安装配置与生命周期详见 [Codex 接收端](../../connectors/codex/README.md)。Cursor 保持原 native_api 和按需 Inspector；两者共用统一 session.create/rename 与持久生命周期，但原生传输分开，不能相互冒充。

@@ -430,6 +430,16 @@
                (parsed (js-call (nativeGet globalThis.Bun "TOML") :parse (nativeGet config "config"))))
           (js-call (expect (aref (nativeGet (nativeGet (nativeGet parsed "mcp_servers") "dj") "args") 5)) :toBe profile)
           (js-call (expect (nativeGet config "client_config_modified")) :toBe false))
+        (let* ((profile "profile with \"quotes\" and\nnewline")
+               (codex-http (nativeGet (skillConfig "codex" "/opt/dj/bin/dj" profile "http://127.0.0.1:53270/mcp") "data"))
+               (parsed-http (js-call (nativeGet globalThis.Bun "TOML") :parse (nativeGet codex-http "config")))
+               (dj-http (nativeGet (nativeGet parsed-http "mcp_servers") "dj")))
+          (js-call (expect (nativeGet dj-http "command")) :toBe "/opt/dj/connectors/codex/launch-mcp.sh")
+          (js-call (expect (nativeGet dj-http "args")) :toEqual
+            (js-array "--url" "http://127.0.0.1:53270/mcp" "--token-file" "<PRIVATE_MCP_TOKEN_FILE>"))
+          (js-call (expect (nativeGet dj-http "env_vars")) :toEqual
+            (js-array "CODEX_APP_TOOLS_PIPE_PATH" "CODEX_MCP_NODE_PATH" "CODEX_HOME"))
+          (js-call (expect (nativeGet codex-http "client_config_modified")) :toBe false))
         (js-call (expect (nativeGet (nativeGet (skillConfig "pi" "dj" "private-profile") "data") "config")) :toBe nil))
       (let* ((calls (js-array)) (visible (js-array "session.send"))
              (core (js-object :authenticate (lambda (token)

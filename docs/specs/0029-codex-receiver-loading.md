@@ -36,3 +36,11 @@ session.probe 提供新鲜 live_receiver、runtime_state、receiver_reason、obs
 未加载对话与队列未消费是两种状态。旧历史IPC、外部CLI队列或单一MCP连接失败不能直接归为DJ加载失败；以准确目标的DJ受理记录、receiver_reason、提交切点、原生接收及实际读回定位。单一MCP目录不兼容时先检查最新已安装CLI，CLI可用继续原授权操作。外部CLI入队后若无法resume，不算Desktop送达，DJ也不自动接管该外部队列。
 
 再次实测：已有专用对话起初由原生App列表返回notLoaded，DJ只读resolve返回receiver_discovery_timeout；随后通过正式session.send自动加载，无人工点击，约4.2秒记录原生accepted，并从原会话读回唯一诊断标记。此为单次当前安装链路证据，不保证所有外部队列或客户端状态均相同，也不构成时延承诺。
+
+## 轮换冷线程唤醒与短暂目录窗口捕获（2026-11-24）
+
+Codex Desktop 仅在会话导航/目录发现（`mcpServerStatus/list`）时短暂拉起配置为 stdio MCP 的接收代理（`connectors/codex/launch-mcp.sh` / `mcp.mjs`），并在该次会话实际执行 `turn_input` 后将其转为长期驻留子进程。为此：
+
+- `requestCodexAppWake` 支持显式 `cooldown_ms` 并返回退避已过时长 `elapsed_ms`，便于短窗口轮询与后台退避（默认 60 秒）分别控制节奏。
+- `resolveWakeCandidates` / `nextWakeThreadId` 从优先目标、`caller-context.json`、`control_manifest_path` 登记文件及只读 `state_5.sqlite`（非归档最新线程）组装去重候选列表并按端点游标轮换唤醒，避免单一已打开标签重复导航无效。
+- `probeWith` 在本地控制与 IPC 快照均不可达时触发 `wakeAndProbeCodex`（上限 7.5 秒、留足截止余量），在唤醒后以 100 ms 间隔轮询捕获新登记的 `<owner_pid>.json`，使紧随其后的投递直接提交正文并由原会话 `turn_input` 接续持久驻留；同时将 Codex 原生接收端监督收敛为单把 `<owner_pid>.lock`，消除双锁上限退出现象。

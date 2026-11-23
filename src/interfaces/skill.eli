@@ -141,7 +141,7 @@
               (setq i (1+ i)))))
         (success (js-object :state state :target (nativeGet options "target") :destination destination
           :files rows :client_config_modified false :agent_started false :client_adoption "unverified")))))
-  (defun httpSkillConfig (target value)
+  (defun httpSkillConfig (target value &optional command)
     (let* ((url (new globalThis.URL value))
       (headers (js-object :Authorization "Bearer <DJ_CLIENT_TOKEN>"))
       (endpoint (js-object :url value :headers headers)))
@@ -151,8 +151,15 @@
         (= (nativeGet url "password") "") (= (nativeGet url "search") "") (= (nativeGet url "hash") ""))
         (throw (new globalThis.TypeError "MCP requires a numeric loopback URL and /mcp path")))
       (cond
-        ((= target "codex") (str "[mcp_servers.dj]\nurl = " (JSON/stringify value)
-          "\nhttp_headers = { Authorization = \"Bearer <DJ_CLIENT_TOKEN>\" }\n"))
+        ((= target "codex")
+          (let ((launcher (if (and (= (nativeTypeOf command) "string") (js-call command :endsWith "/bin/dj"))
+                            (resolve (dirname (dirname command)) "connectors/codex/launch-mcp.sh")
+                            "connectors/codex/launch-mcp.sh"))
+                (proxy-args (js-array "--url" value "--token-file" "<PRIVATE_MCP_TOKEN_FILE>"))
+                (proxy-env (js-array "CODEX_APP_TOOLS_PIPE_PATH" "CODEX_MCP_NODE_PATH" "CODEX_HOME")))
+            (str "[mcp_servers.dj]\ncommand = " (JSON/stringify launcher)
+              "\nargs = " (JSON/stringify proxy-args)
+              "\nenv_vars = " (JSON/stringify proxy-env) "\n")))
         ((= target "opencode") (js-object :mcp (js-object :servers
           (js-object :dj (Object/assign endpoint (js-object :type "remote" :oauth false :pool t))))))
         ((= target "openclaw") (js-object :mcp (js-object :servers
@@ -171,7 +178,7 @@
     (let* ((args (js-array "mcp" "serve" "--transport" "stdio" "--client-profile" profile))
            (server (js-object :command command :args args))
            (config (cond
-             (mcp-url (httpSkillConfig target mcp-url))
+             (mcp-url (httpSkillConfig target mcp-url command))
              ((= target "codex") (str "[mcp_servers.dj]\ncommand = " (JSON/stringify command)
                "\nargs = " (JSON/stringify args) "\n"))
              ((= target "opencode") (js-object :mcp (js-object :dj (js-object :type "local"
@@ -183,7 +190,9 @@
       (success (js-object :target target :format (if (= target "codex") "toml" "json")
         :config config :cli_command command :client_profile profile
         :instructions (if mcp-url
-          "Merge the dj entry into the private client configuration and substitute the selected profile token without exposing it in prompts or logs."
+          (if (= target "codex")
+            "Store the selected client profile Bearer token in a 0600 file inside a 0700 directory as --token-file, then merge [mcp_servers.dj] into ~/.codex/config.toml without printing tokens or restarting the Codex app."
+            "Merge the dj entry into the private client configuration and substitute the selected profile token without exposing it in prompts or logs.")
           "Merge only the dj entry into local client configuration, preserving all other entries and approval policy. Pi/shared targets use CLI unless the host supplies an MCP client. See references/clients.md. GEPO uses the private UDS; it is not an MCP HTTP endpoint.")
         :client_config_modified false :agent_started false))))
   (defasync runSkillCommand (argv io root &optional command-root)

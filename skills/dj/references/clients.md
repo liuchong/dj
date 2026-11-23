@@ -24,14 +24,14 @@ Kimi Work / Code Web 与 DSH Desktop / Web 的形态、既有实例接收及调�
 ## 调用身份与 MCP
 
 - profile: 部署时为获准本机AI准备普通local-ai client profile，默认~/.dj/client.json；一个profile可用于多个对话，管理profile单独保存。凭据文件保持私有。不要在 Skill、项目文件、模型正文或 MCP 参数中写 token；参数里只有 profile 路径。
-- loopback_mcp: DJ 服务配置含 `service.mcp_http_port` 时，优先让支持 Streamable HTTP 的客户端直连 `http://127.0.0.1:<port>/mcp`。执行 `dj skill config --target TOOL --client-profile PRIVATE_PROFILE --mcp-url URL` 生成目标配置。根据私有 profile 填入同一主体的 Bearer token，应用只在其私有配置里读取，避免打印或传到对话中。切换时更新原有 dj 项，避免同时保留命令和 URL。用 `service.status.mcp_http` 检查活跃会话。
+- loopback_mcp: DJ 服务配置含 `service.mcp_http_port` 时，优先让支持 Streamable HTTP 的客户端直连 `http://127.0.0.1:<port>/mcp`。执行 `dj skill config --target TOOL --client-profile PRIVATE_PROFILE --mcp-url URL` 生成目标配置。对于 `target=codex`，为保活嵌入 `codex app-server` 进程树内的原生 App Tools 控制接收端，`skill config` 会生成指向包内 `connectors/codex/launch-mcp.sh`、`--token-file <PRIVATE_MCP_TOKEN_FILE>` 及 `env_vars`（`CODEX_APP_TOOLS_PIPE_PATH`、`CODEX_MCP_NODE_PATH`、`CODEX_HOME`）的 stdio-to-HTTP 代理配置，将私有 profile 的 Bearer token 纯文本写入独立的 `0600` 文件；其他直连 HTTP 的客户端则在私有配置里填同一主体的 Bearer header，始终避免在日志或对话里回显 token。切换时更新原有 `dj` 项，避免同一工具同时保留旧命令与旧 `url`。用 `service.status.mcp_http` 检查活跃会话。
 - generate: `~/.dj/current/bin/dj skill config --target cursor --client-profile PRIVATE_PROFILE` 输出 MCP 配置片段。通过稳定软链入口调用时自动保留稳定 `bin/dj` 启动路径，不固化单次版本发布目录。命令只打印，不安装配置、不读取凭据；按本机实际路径合并 dj 项，不覆盖原文件。移动安装根后需要重新生成。
 - process: MCP 启动的只是 DJ 薄代理，连接原服务 Core；它不启动 AI 或新建对话。stdout 只用于 MCP 协议。所有接口仍重新执行 DJ 主体权限校验。
 - binding: 全局MCP配置只确定调用身份，不自动识别当前对话。agent.whoami返回bound_agent_ids；AI核对自身准确原生ID和实例，agent.discover/register后以显式agent_id订阅。一个调用身份可登记多个目标，不需操作员逐对话接线；受限profile仍遵守target_constraint，不借用其他身份。
 
 | 工具 | MCP 配置位置/结构 | 最小使用方式 |
 |---|---|---|
-| Codex | ~/.codex/config.toml 的 mcp_servers.dj；项目配置遵守原客户端信任范围 | 将 config 命令 data.config 的 TOML 合并，再查看工具目录 |
+| Codex | ~/.codex/config.toml 的 mcp_servers.dj；项目配置遵守原客户端信任范围 | 将 `dj skill config --target codex --mcp-url ...` 输出的 `launch-mcp.sh` TOML 片段与 `0600` `--token-file` 合并（取代旧直连 `url`），再查看工具目录 |
 | Cursor | .cursor/mcp.json 或 ~/.cursor/mcp.json 的 mcpServers.dj | 合并 JSON dj 项；在 Desktop 核对 dj_service_status，不用 Agent CLI 代验 |
 | Claude Code | 项目 .mcp.json 的 mcpServers.dj；用户级使用原生 MCP 设置 | 合并 JSON dj 项，保留原审批；不改 settings 权限 |
 | OpenClaw | openclaw.json 的 mcp.servers.dj | 以本机 stdio 连接 DJ |
@@ -93,7 +93,7 @@ The service supports an existing Claude Code native inbox and an existing Antigr
 
 ## 现有桌面宿主与 Pi 创建
 
-- native_host: Codex 通过已有原生 Node 工具宿主加载 DJ 接收端并配置 control_manifest_path；保留原 socket_path 与 history_database，参见运行包 connectors/codex/README.md。Claude Desktop 通过 `dj native configure` 的 `surface=desktop` 绑定 PID 出生身份、窗口与 origin，按需使用并关闭本机 Inspector；均不新建 Agent CLI/App Server。不要把 Claude inbox 端点当成 Desktop 创建入口。
+- native_host: Codex Desktop 推荐通过 `~/.codex/config.toml` 的 `[mcp_servers.dj]` 运行包内 `connectors/codex/launch-mcp.sh`（`mcp.mjs`），在已运行桌面端 `codex app-server` 进程树内运行 stdio-to-HTTP MCP 代理及单内核文件锁（`<owner_pid>.lock`，无 `standby.lock`）原生控制接收端，并在 `service.json` 的 Codex 端点配置 `control_manifest_path`、`receiver_loader_ref`、`process_helper_ref` 与 `history_database`；独立 `control.mjs` 仅保留作原生 Node 工具宿主内的短时手工诊断。全闲置卸载后，DJ 会在 `probe` / 投递路径由 `dj-codex-loader` 轮换唤醒未归档冷线程并同步捕获 `mcp.mjs` 恢复驻留。Claude Desktop 通过 `dj native configure` 的 `surface=desktop` 绑定 PID 出生身份、窗口与 origin，按需使用并关闭本机 Inspector；均不新建 Agent CLI/App Server。不要把 Claude inbox 端点当成 Desktop 创建入口。
 - pi_host: Pi 接收扩展在已有宿主中创建独立原生 SDK 会话，保留原交互对话，原生 ID 可沿 DJ 继续输入、读取和改名。Pi 在首条 assistant 后才保存历史；空会话可在宿主内使用，但不能承诺退出后仍存在。生成入口与完整运行包保持相对位置。
 - confirmation: 创建 ready、initial_delivery_id 的 accepted、模型输出和业务完成是不同结果。工具缺失运行实例时先完成配置说明，不能新开 CLI 冒充已有接收端。
 
