@@ -1,4 +1,5 @@
 (module dj.adapters.im.lark-events
+  (import "../../application/diagnostics.eli" recordDiagnostic)
   (import "./lark-resource-events.eli" resourceEvents normalizeResourceEvents)
   (import "./lark-reactions.eli" resolveLarkReaction)
   (import "./lark-event-inbox.eli" createLarkEventInbox)
@@ -87,7 +88,7 @@
            (application nil) (inbox nil) (socket nil) (running nil) (closed false)
            (ready false) (state "connecting") (reason "event_connecting") (permissions (js-object))
            (last-received nil) (last-reaction nil) (notice-checked false) (notice-status (js-object :state "not_requested")) (timer nil) (heartbeat nil) (request-abort nil) (stop nil) (loop nil)
-           (signal nil) (capabilities (Object/assign (js-object) (nativeGet base "capabilities")
+           (signal nil) (reported nil) (capabilities (Object/assign (js-object) (nativeGet base "capabilities")
              (js-object :replay "bounded_unacknowledged" :ack_control t :receive_events "supported"))))
       (setq inbox (createLarkEventInbox config (async (native)
         (let* ((header (nativeGet native "header")) (type (nativeGet header "event_type"))
@@ -166,7 +167,10 @@
                 (put socket :binaryType "arraybuffer")
                 (setq finished (new globalThis.Promise (lambda (resolve)
                   (js-call socket :addEventListener "close" (lambda () (funcall resolve nil)) (js-object :once t)))))
-                (js-call socket :addEventListener "open" (lambda () (setq ready t state "connected" reason nil)))
+                (js-call socket :addEventListener "open" (lambda ()
+                  (setq ready t state "connected" reason nil reported nil)
+                  (recordDiagnostic application (js-object :code "lark_websocket_connected" :state state
+                    :connection_id (nativeGet config "connection_id") :transport "websocket"))))
                 (js-call socket :addEventListener "error" (lambda () (setq reason "event_network_error") (js-call socket :close)))
                 (js-call socket :addEventListener "message" (lambda (message)
                   (let ((bytes (Buffer/from (nativeGet message "data"))) (arrived (Date/now)))
@@ -230,7 +234,16 @@
             (finally
               (when timer (nativeClearTimeout timer)) (setq timer nil)
               (when heartbeat (nativeClearInterval heartbeat)) (setq heartbeat nil)
-              (when socket (js-call socket :close)) (setq socket nil ready false)))
+              (when socket (js-call socket :close))
+              (when (and (not ready) (= reason "event_connecting")) (setq reason "event_endpoint_unavailable"))
+              (when (not closed) (setq state "disconnected"))
+              (let ((cause (or reason "event_socket_closed")))
+                (unless (or (= state "stopped") (= reported cause))
+                  (setq reported cause)
+                  (recordDiagnostic application (js-object :code "lark_websocket_unavailable" :state state
+                    :connection_id (nativeGet config "connection_id") :transport "websocket" :reason cause
+                    :native_code (str (nativeGet permissions "native_code" ""))))))
+              (setq socket nil ready false)))
           (unless closed (await (new globalThis.Promise (lambda (resolve) (setq timer (nativeSetTimeout resolve 3000)))))))))
       (Object/assign (js-object) base (js-object :capabilities capabilities :pollDueSources nil
         :initialize (lambda (context)

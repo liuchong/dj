@@ -16,6 +16,7 @@
       "读取消息投递的持续IM身份绑定；delivery.get.notification列出同一通知的来源副本与归并关系。交互上下文不是AI任务或负责人。"
       :dispatch.context.transfer
       "仅在用户明确要求身份转移时调用；传context_id、当前expected_binding_id、目标connection_id、explicit=true及reason。只改变之后的交互，不改旧投递快照、订阅或退订状态。"
+      :message.recover "操作员按同一连接下的准确原生消息 ID 补收，需幂等键。history_only=true 时可补录漏掉的消息或更新的 Lark 编辑快照，只修复历史，不启动订阅投递、命令或表情。"
       :message.reply_context "已认证的 DJ 调用方可用准确的 delivery_id 重取回复引用。重检原消息、领取代次和固定出口，返回原绝对 expires_at；若首次通知因暂缺对端视图未生成 reply_context_id，在对端同快照到达并确立唯一出口且原期限未到时可补建回复引用。reply_authority 的接收主体用于追踪通知；reply_context_expired 表示原期限已到。"
       :task.list "按当前管理员白名单或本人连接范围分页巡查任务；accepted 不代表完成。"
       :task.tree "展示原 IM 消息、准确 AI 会话与登记的子对话；未知关联明确标注。"

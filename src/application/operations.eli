@@ -613,7 +613,7 @@
     (js-object :attachment_ref idSchema :corpus (enumSchema "local" "native"))
     (js-object :result "attachment"))
   (addOperation "message.recover" "message_recovery" (js-array "connection_id" "native_message_ids" "reason")
-    (js-object :connection_id idSchema :native_message_ids (arraySchema idSchema 16 1) :reason idSchema)
+    (js-object :connection_id idSchema :native_message_ids (arraySchema idSchema 16 1) :reason idSchema :history_only booleanSchema)
     (js-object :effect "accept" :result "message_recovery"))
   (addOperation "resource.resolve" "resources" (js-array "connection_id" "url")
     (js-object :connection_id idSchema :url (js-object :type "string" :minLength 1 :maxLength 2048) :corpus (enumSchema "local" "native"))

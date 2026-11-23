@@ -111,7 +111,7 @@
         (catch djReturn1Error
           (if (eq djReturn1Error djReturn1Token) djReturn1Value (throw djReturn1Error))))))
   (defun acceptEvent
-    (context connection-id normalized source-cursor)
+    (context connection-id normalized source-cursor &optional history-only)
     (let ((djReturn2Token (js-object)) (djReturn2Value nil))
       (try
         (let*
@@ -367,12 +367,12 @@
                       (put event :topic (topicOf event))
                       (put event :trigger_reasons (triggerReasons event))
                       (js-call repository :insert "events" event)
-                      (stageRecipientCommand context event)
+                      (unless history-only (stageRecipientCommand context event))
                       (let*
                         (
-                          (command (stageCommand context event))
+                          (command (and (not history-only) (stageCommand context event)))
                           (backpressure
-                            (>=
+                            (and (not history-only) (>=
                               (nativeGet
                                 (js-call
                                   (js-call
@@ -381,7 +381,7 @@
                                     "SELECT COUNT(*) AS n FROM routing_work WHERE state IN ('ready','held','blocked')")
                                   :get)
                                 "n")
-                              (nativeGet limits "global_queue")))
+                              (nativeGet limits "global_queue"))))
                           (work
                             (js-object
                               :event_id
@@ -389,13 +389,13 @@
                               :ingress_seq
                               sequence
                               :state
-                              (if command "done" (if backpressure "blocked" "ready"))
+                              (if (or history-only command) "done" (if backpressure "blocked" "ready"))
                               :last_target_key
                               nil
                               :last_revision
                               nil
                               :reason
-                              (if command "task_command" (if backpressure "ingress_capacity" nil)))))
+                              (cond (history-only "history_repair") (command "task_command") (backpressure "ingress_capacity")))))
                         (js-call repository :insert "routing_work" work)
                         (let
                           (

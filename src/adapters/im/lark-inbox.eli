@@ -3,6 +3,7 @@
   (import "../../core/errors.eli" success)
   (import "../../application/context.eli" inTransaction must utcNow nativeCallContext)
   (import "../../application/write-batch.eli" enqueueWrite)
+  (import "../../application/diagnostics.eli" recordDiagnostic)
   (import "../../service/ownership.eli" ownerGuard)
   (import "./lark.eli" createReadLimiter)
   (import "./lark-reactions.eli" pollLarkReactions)
@@ -325,6 +326,10 @@
                       (when reaction
                         (put (nativeGet (nativeGet status "reaction_poll") "lanes")
                           (nativeGet checkpoint "reaction_lane" "archive") (js-object :state "degraded")))
+                      (when (not (= (nativeGet (nativeGet checkpoint "native_error") "code") (nativeGet problem "code")))
+                        (recordDiagnostic application (js-object :code "lark_poll_unavailable" :connection_id id
+                          :state "degraded" :job_kind role :native_code (str (nativeGet problem "code"))
+                          :reason (nativeGet (nativeGet error "details") "reason" "request_failed"))))
                       (put health :native_error problem)
                       (let* ((retry (JSON/parse saved))
                         (minimum (if edits editPollSeconds 5))

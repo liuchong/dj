@@ -74,3 +74,9 @@ dj status --client-profile PRIVATE_PROFILE --json
 Lark 自动沿持久 HTTP 断点补收，`source_health.state=catching_up` 与 `lag_seconds` 表示尚在追赶；`ready` 只说明收件请求可用，不能据此认定消息收齐。长时间离线的新窗口最多一天，分页、重叠去重及请求预算继续生效。
 
 明确未发送且可重试的 AI 通知自动退避恢复，TTL 到期后不补发。Codex 的 `unknown` 会从原会话 IPC 正向核实完整原输入；查不到仍为 `unknown`，不要换键补投。客户端离线时不会自动启动替代进程，原客户端恢复后继续原队列。完整边界见 [0018](../specs/0018-offline-recovery.md)。
+
+## 收件与接收端故障日志
+
+常驻服务向标准错误写入结构化日志，默认安装可查 `~/.dj/logs/service.stderr.log`。按 `connection_id`、`event_id`、`delivery_id` 和 `route_id` 串查收件、订阅判定与投递状态。用 `receiver_unavailable` 和 `receiver_recovered` 判断目标实例的接收端变化，用 `lark_websocket_unavailable` 和 `lark_poll_unavailable` 区分两条收件路径。
+
+Codex 原生接收端另外在其私有登记目录写 `receiver.ndjson`，标记登记、关闭原因和原生管道异常，保留当前和上一段。强制结束的进程可能来不及写退出日志，服务侧仍会记录下一次探测结果。日志不包含消息正文、请求元数据和令牌。

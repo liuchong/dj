@@ -1,0 +1,6 @@
+(module dj.application.diagnostics
+  (import "../core/native.eli" nativeGet)
+  (defun recordDiagnostic (context event)
+    (let ((audit (nativeGet (nativeGet context "ports") "audit")))
+      (when audit (try (js-call audit :record event) (catch unavailable nil)))))
+  (export recordDiagnostic))

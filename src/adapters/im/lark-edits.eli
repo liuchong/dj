@@ -84,6 +84,9 @@
           (put event :native_message_mentions all)
           event))))
 
+  (defun storedLarkEdit (db connection original message normalize)
+    (normalizeEdit original (previousEdit db connection original) message 0 normalize))
+
   (defun rememberPage (checkpoint rows more now sweep)
     (if more
       (let ((last (aref rows (1- (js-length rows)))))
@@ -167,11 +170,11 @@
                       (lambda (item) (= (nativeGet item "message_id") id)))))
                 (if (or (not message) (nativeGet message "deleted"))
                   (js-object :events (js-array) :reason "edited_message_unavailable")
-                  (let ((edit (normalizeEdit original (previousEdit db connection original) message 0
+                  (let ((edit (storedLarkEdit db connection original message
                           (lambda (item chat-type) (funcall normalize-inbox config item chat-type normalize-message)))))
                     (if (not edit)
                       (js-object :events (js-array) :reason "edit_already_recorded")
                       (js-object :events (js-array (await (resolveMessageInteraction config edit application base normalize-message)))
                         :reason nil)))))))))))
 
-  (export pollLarkEdits resolveLarkMessageUpdate editWindowSeconds editPollSeconds))
+  (export pollLarkEdits resolveLarkMessageUpdate findOriginalMessage storedLarkEdit editWindowSeconds editPollSeconds))

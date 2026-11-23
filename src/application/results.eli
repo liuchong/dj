@@ -607,7 +607,7 @@
           :delivery_mode stringSchema
           :submitted_count integerSchema))))
   (put definitions :message_recovery (obj (strings "recovery_id connection_id" (js-object :identity_revision integerSchema
-    :event_ids (arr stringSchema) :native_message_ids (arr stringSchema) :created_count integerSchema :recovered_count integerSchema :realtime boolSchema))))
+    :event_ids (arr stringSchema) :native_message_ids (arr stringSchema) :created_count integerSchema :edited_count integerSchema :history_only boolSchema :recovered_count integerSchema :realtime boolSchema))))
   (put definitions :lark_resource (obj (strings "connection_id kind token node_token space_id title url resource_ref conversation_ref event_type action recipient_id comment_id"
     (js-object :table_id nullableString :record_id nullableString :reply_id nullableString :is_mentioned boolSchema))))
   (put definitions :resource_page (obj (strings "text format as_of"
@@ -625,7 +625,7 @@
   (put definitions :trigger_reason (obj (strings "code label")))
   (put definitions :pin (obj (strings "action_time" (js-object :message_source_time nullableString
     :operator (obj (strings "id kind" (js-object :is_self boolSchema :identities (arr (obj (strings "platform scope id"))))))))))
-  (put definitions :ingress_evidence (obj (strings "kind operation_id requested_by reason recovered_at")))
+  (put definitions :ingress_evidence (obj (strings "kind operation_id requested_by reason recovered_at" (js-object :history_only boolSchema))))
   (put definitions :topic (obj (strings "topic_key kind root_message_id" (js-object :native_thread_id nullableString :parent_message_id nullableString))))
   (put definitions :reply_authority (obj (strings "recipient_principal_id expires_at")))
   (put definitions :inbox_envelope (obj (js-object

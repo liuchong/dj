@@ -13,6 +13,7 @@
     agentPort
     nativeCallContext)
   (import "../application/write-batch.eli" enqueueWrite)
+  (import "../application/diagnostics.eli" recordDiagnostic)
   (import "../connections/manager.eli" imPort dispatchIm)
   (import "../ingestion/service.eli" acceptEvent persistProgress)
   (import "../tasks/commands.eli" processCommands)
@@ -61,14 +62,9 @@
                 :catch
                 (lambda
                   (error)
-                  (js-call
-                    (nativeGet (nativeGet context "ports") "audit")
-                    :record
-                    (js-object
-                      :code
-                      "background_work_unavailable"
-                      :state
-                      (nativeGet runtime "state")))
+                  (recordDiagnostic context (js-object :code "background_work_unavailable"
+                    :job_kind (aref (js-call key :split ":" 1) 0)
+                    :state (nativeGet runtime "state")))
                   (failure "unavailable"))))
             (js-call
               (nativeGet entry "promise")
@@ -123,7 +119,14 @@
         (let ((result (acceptEvent context (nativeGet event "connection_id") event cursor)))
           (unless (nativeGet result "ok")
             (progn (setq djReturn3Value result) (throw djReturn3Token)))
-          (await (fault context "event.after_commit_before_ack" (nativeGet result "data")))
+          (let ((data (nativeGet result "data")))
+            (unless (nativeGet data "duplicate")
+              (recordDiagnostic context (js-object
+                :code (if (nativeGet data "accepted") "im_ingress_accepted" "im_ingress_rejected")
+                :event_id (nativeGet data "event_id") :event_kind (nativeGet event "event_kind")
+                :connection_id (nativeGet event "connection_id")
+                :reason (nativeGet data "reason") :transport (nativeGet event "receive_transport"))))
+            (await (fault context "event.after_commit_before_ack" data)))
           (let*
             (
               (port
@@ -496,6 +499,7 @@
                   (nativeGet head "state")))))))
         (when running
           (setq result (await (dispatchRoute context route-id)))
+          (traceRouteResult context route-id result)
           (when (and progress (nativeGet result "ok")
             (= (nativeGet (nativeGet result "data") "state") "accepted"))
             (put progress :dispatched (1+ (nativeGet progress "dispatched"))))
@@ -503,6 +507,26 @@
           (setq running (and (nativeGet result "ok")
             (js-call (js-array "accepted" "coalesced") :includes (nativeGet (nativeGet result "data") "state"))))))
       result))
+  (defun traceRouteResult (context route-id result)
+    (let* ((data (nativeGet result "data"))
+           (delivery-id (nativeGet data "delivery_id"))
+           (state (nativeGet data "state"))
+           (reason (or (nativeGet data "reason") (nativeGet (nativeGet result "error") "code")))
+           (states (nativeGet (nativeGet context "runtime") "route_diagnostic_state")))
+      (when (and delivery-id (or state reason))
+        (let* ((repository (nativeGet context "repository"))
+               (delivery (js-call repository :get "deliveries" delivery-id))
+               (receiver-reason (nativeGet delivery "receiver_reason"))
+               (stamp (JSON/stringify (js-array delivery-id state reason receiver-reason))))
+          (unless (= stamp (js-call states :get route-id))
+            (when (>= (nativeGet states "size") 1024)
+              (js-call states :delete (nativeGet (js-call (js-call states :keys) :next) "value")))
+            (if (js-call (js-array "accepted" "coalesced" "cancelled" "expired" "failed") :includes state)
+              (js-call states :delete route-id)
+              (js-call states :set route-id stamp))
+            (recordDiagnostic context (js-object :code "delivery_transition" :route_id route-id
+              :delivery_id delivery-id :event_id (nativeGet delivery "event_id")
+              :state state :reason reason :receiver_reason receiver-reason)))))))
   (defun queueWriteJobs
     (context route-first seen)
     (let* ((runtime (nativeGet context "runtime"))
@@ -741,6 +765,8 @@
                                         (put current-gate :revision (nextRevision (nativeGet current-gate "revision")))
                                         (must (js-call repository :replace "instances" current))
                                         (must (js-call repository :replace "instance_gates" current-gate))
+                                        (recordDiagnostic context (js-object :code "receiver_recovered" :instance_id id
+                                          :tool (nativeGet current "tool") :state "ready"))
                                         (let ((backoffs (nativeGet runtime "route_receiver_backoff"))
                                           (routes (js-call (js-call (nativeGet tx "db") :query
                                             "SELECT r.route_id FROM routes r JOIN sessions s ON s.session_key=r.session_key WHERE s.instance_id=?")
@@ -754,7 +780,10 @@
                                         (put current-gate :reason "recovery")
                                         (put current-gate :revision (nextRevision (nativeGet current-gate "revision")))
                                         (must (js-call repository :replace "instances" current))
-                                        (must (js-call repository :replace "instance_gates" current-gate))))))
+                                        (must (js-call repository :replace "instance_gates" current-gate))
+                                        (recordDiagnostic context (js-object :code "receiver_unavailable" :instance_id id
+                                          :tool (nativeGet current "tool") :state "offline"
+                                          :reason (nativeGet probe "diagnostic_reason" (nativeGet probe "reason"))))))))
                                 (success nil)))))))))))
                   (setq index (1+ index)))
               (success nil)))))))))

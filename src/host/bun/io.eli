@@ -125,7 +125,19 @@
                   "resource_id"
                   "principal_id"
                   "code"
-                  "state")
+                  "state"
+                  "reason"
+                  "connection_id"
+                  "event_id"
+                  "event_kind"
+                  "delivery_id"
+                  "route_id"
+                  "instance_id"
+                  "tool"
+                  "transport"
+                  "receiver_reason"
+                  "job_kind"
+                  "native_code")
                 :forEach
                 (lambda
                   (key)

@@ -9,6 +9,7 @@
   (import "../delivery/service.eli" planDelivery)
   (import "../delivery/planning-scope.eli" withEventPlans)
   (import "../application/write-batch.eli" enqueueWrite)
+  (import "../application/diagnostics.eli" recordDiagnostic)
   (import "../delivery/group-dispatch.eli" queueGroupDispatch)
   (defconst storeVersionCaches (new globalThis.WeakMap))
   (defun storeVersionCache (context)
@@ -317,7 +318,12 @@
                                  :state (nativeGet current "state")
                                  :processed_candidates position
                                  :character_visits characters
-                                 :complete (= (nativeGet current "state") "done"))))
+                                 :complete (= (nativeGet current "state") "done")
+                                 :decision (cond
+                                   ((= echo "echo") "own_echo")
+                                   ((js-call decisions :some (lambda (d) (= (nativeGet d "result") "match"))) "match")
+                                   ((js-call decisions :some (lambda (d) (= (nativeGet d "result") "indeterminate"))) "indeterminate")
+                                   (t "no_match")))))
                            (catch djReturn3Error
                              (if (eq djReturn3Error djReturn3Token) djReturn3Value (throw djReturn3Error))))))
                        (and (nativeNullish (nativeGet work "last_target_key"))
@@ -326,6 +332,11 @@
                        t
                        capacity-state))))))
               (when (nativeGet result "ok")
+                (let ((data (nativeGet result "data")))
+                  (when (nativeGet data "complete")
+                    (recordDiagnostic context (js-object :code "subscription_evaluated" :event_id event-id
+                      :event_kind (nativeGet event "event_kind") :connection_id (nativeGet event "connection_id")
+                      :state (nativeGet data "state") :reason (nativeGet data "decision")))))
                 (publishMatchMetrics context meter started cpu-ms
                   (nativeGet (nativeGet result "data") "processed_candidates" 0)))
               result)))
