@@ -116,7 +116,7 @@
       :message.acknowledge.get
       "读取收到确认的持久状态；native_acknowledged为true才已核实原生Get存在。"
       :message.reply
-      "已认证的DJ调用方可用reply_context_id或outbound_id（二选一）。前者沿原投递的固定身份回复，后者以已accepted且只有一个原生消息ID的出站消息为锚点。Lark可设reply_in_thread=true在普通群创建话题，已有话题始终沿原话题；不另传目的地。outbound.get返回native_reply_to/native_thread_id。force_send=true仅供用户明确要求的单次收件人屏蔽豁免，不绕过身份或平台权限。"
+      "从reply_context_id、outbound_id、native_anchor三选一。前两者分别沿原投递或已accepted的单条出站消息回复。Lark的native_anchor={conversation_ref,native_message_id}绑定已核验的原会话与账号，DJ回读原消息后才受理。reply_in_thread=true可在普通群创建话题，已有话题保持原位置。outbound.get返回原生回复和话题位置。force_send=true仅供用户明确要求的单次收件人屏蔽豁免，不绕过身份或平台权限。"
       :outbound.get
       "读取 IM 出站台账、parts 和原生消息 ID；accepted 仅表示平台接受。"
       :outbound.reconcile
@@ -205,6 +205,8 @@
       "subscription.preview 的固定票据"
       :reply_context_id
       "external_message/delivery.get，绑定 recipient 与原话题"
+      :native_anchor
+      "仅 Lark：用 conversation.list/resolve 的 conversation_ref 和该会话中已知的 native_message_id；DJ 原生回读"
       :agent_id
       "agent.register/list/get，代表单会话"
       :group_id

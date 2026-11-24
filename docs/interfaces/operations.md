@@ -48,7 +48,7 @@ request_id 可选，用于追踪；所有受理变更要求 idempotency_key。�
 | message.context | event_id/message_ref/context_ref之一、before?、after?、reference_depth?、max_bytes?、corpus? | 锚点、前后文、引用链及context_ref | read；默认DJ缓存 |
 | message.history | context_ref/conversation_ref之一、limit?、cursor?、order?、time_range?、max_bytes?、corpus? | 同会话历史分页 | read；默认DJ缓存 |
 | message.send | destination_ref、content、force_send? | Outbound、state、revision、force_send | send；创建出站意图，强制仅限用户明确要求的本条 |
-| message.reply | reply_context_id 或 outbound_id（二选一）、content、force_send? | Outbound、state、revision、force_send | reply，已认证调用方使用固定目的地和身份 |
+| message.reply | reply_context_id、outbound_id 或 Lark native_anchor（三选一）、content、reply_in_thread?、force_send? | Outbound、state、revision、原生回复及话题位置 | reply，使用固定目的地和身份。native_anchor 另需原消息读取权限 |
 | message.reply_context | delivery_id | reply_context_id、原 expires_at、allowed_actions | reply，已认证调用方可按准确的投递 ID 在原期限内重取 |
 | message.acknowledge | reply_context_id | 表情确认状态 | reply；与文字回复共享引用校验 |
 | message.recipient_policy.get/set | connection_id；set另需expected_revision、policy | 出站黑白名单；get含分页退订记录 | connection.manage；白名单不解除退订 |

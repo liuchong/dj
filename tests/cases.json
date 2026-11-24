@@ -29162,6 +29162,24 @@
       "then": "Native thread IDs, original identity, durable send cuts, idempotency, uncertainty, actions and recipient blocking remain enforced"
     },
     {
+      "case_id": "T40.native-topic-reply.integration",
+      "parent_id": "T40",
+      "file": "tests/integration/message-actions.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "requirements": ["Q11", "Q12"],
+      "acceptance_ids": ["A05"],
+      "given": "A visible Lark group message with neither a DJ delivery nor an outbound record",
+      "when": "Create a topic from its verified native anchor",
+      "then": "Confirm the root, parent and thread IDs and enforce idempotency, conversation scope and author opt-out"
+    },
+    {
       "case_id": "T41.chat-pins.integration",
       "parent_id": "T41",
       "file": "tests/integration/hybrid-inbox.test.eli",

@@ -8,7 +8,7 @@
 ## 消息能力与边界
 
 - topics: message.send发群主消息，再message.reply(outbound_id, reply_in_thread=true)创建话题；也可用原reply_context_id创建话题。完整调用见[群简讯与话题详情](workflows.md#群简讯与话题详情)。话题并非CLI专属能力。结果native_thread_id来自官方回执，不能把om_消息ID当作omt_话题ID。
-- replies: 已在话题内的回复保持原话题。只有conversation_ref/thread_id而没有原消息锚点时，不支持直接message.send进入Lark话题；使用有效reply_context_id或已accepted的outbound_id。新话题不是新建群、不是AI对话、也不修改订阅。
+- replies: 已在话题内的回复保持原话题。使用有效reply_context_id、已accepted的outbound_id，或在获准会话内指定native_anchor={conversation_ref,native_message_id}。只有conversation_ref/thread_id时，需要先定位要回复的原消息。
 - content: message.send/reply支持content={type:"text"或"markdown",text:"正文"}；markdown由DJ包装为Lark原生post/md，不是把Markdown写进纯文本后期待自动渲染。标题、列表、表格、代码块及链接由平台渲染。message.edit同样支持Markdown，但须匹配原消息的text/post类型，不在编辑时转换格式。图片/文件/卡片尚无受控发送接口；通用API上传成功不等于已发送文件，不能绕过输出规则。
 - errors: invalid_argument表示参数形状不符；unsupported表示该操作组合未实现；forbidden或原生permission_violations表示当前主体/账号权限问题；reply_identity_unresolved表示原身份复核失败；recipient_opted_out/recipient_blocked表示服务端输出屏蔽。不要把所有失败概括为DJ不能发消息，不把CLI当成必需品。
 

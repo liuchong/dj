@@ -650,8 +650,10 @@
     "messaging"
     (js-array "content")
     (js-object :reply_context_id idSchema :outbound_id idSchema :reply_in_thread booleanSchema
+      :native_anchor (objectSchema (js-object :conversation_ref idSchema :native_message_id idSchema)
+        (js-array "conversation_ref" "native_message_id"))
       :content messageContentSchema :force_send booleanSchema)
-    (js-object :effect "accept" :exclusive (js-array "reply_context_id" "outbound_id") :result "outbound"))
+    (js-object :effect "accept" :exclusive (js-array "reply_context_id" "outbound_id" "native_anchor") :result "outbound"))
   (defconst recipientListSchema (objectSchema (js-object
     :recipient_ids (Object/assign (arraySchema idSchema 256 0) (js-object :uniqueItems t))
     :chat_ids (Object/assign (arraySchema idSchema 256 0) (js-object :uniqueItems t)))

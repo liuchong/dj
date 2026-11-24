@@ -824,18 +824,33 @@
                                       (throw djReturn12Token)))
                                   (let ((response (await (js-call http :perform (if original "reply" "send") parameters context))))
                                     (if (nativeGet response "ok")
-                                      (let ((message (nativeGet (nativeGet response "data") "data")))
+                                      (let* ((message (nativeGet (nativeGet response "data") "data"))
+                                             (message-id (nativeGet message "message_id"))
+                                             (anchor-root (nativeGet outbound "reply_anchor_root"))
+                                             (topic (nativeGet parameters "reply_in_thread")))
+                                        (when (and anchor-root (= (nativeTypeOf message-id) "string") (> (js-length message-id) 0)
+                                                   (= (nativeGet message "chat_id") (nativeGet destination "native_chat_id"))
+                                                   (or (not (nativeGet message "parent_id"))
+                                                       (and topic (or (not (nativeGet message "root_id")) (not (nativeGet message "thread_id"))))))
+                                          (let* ((readback (await (js-call http :perform "get" (js-object :message_id message-id) context)))
+                                                 (items (nativeGet (nativeGet (nativeGet readback "data") "data") "messages")))
+                                            (when (and (nativeGet readback "ok") (Array/isArray items) (= (js-length items) 1))
+                                              (setq message (aref items 0)))))
                                         (if
                                           (and
                                             (=
                                               (nativeTypeOf (nativeGet message "message_id"))
                                               "string")
                                             (> (js-length (nativeGet message "message_id")) 0)
+                                            (= (nativeGet message "message_id") message-id)
                                             (=
                                               (nativeGet message "chat_id")
                                               (nativeGet destination "native_chat_id"))
                                             (or (not (nativeGet outbound "reply_thread_id"))
                                               (= (nativeGet outbound "reply_thread_id") (nativeGet message "thread_id")))
+                                            (or (not anchor-root)
+                                              (and (= (nativeGet message "parent_id") original)
+                                                (or (not topic) (= (nativeGet message "root_id") anchor-root))))
                                             (or (not (nativeGet parameters "reply_in_thread"))
                                               (and (= (nativeTypeOf (nativeGet message "thread_id")) "string")
                                                 (> (js-length (nativeGet message "thread_id")) 0))))
@@ -846,6 +861,10 @@
                                             (nativeGet message "message_id")
                                             :native_thread_id
                                             (nativeGet message "thread_id" nil)
+                                            :native_parent_id (if (= (nativeTypeOf (nativeGet message "parent_id")) "string")
+                                                                (nativeGet message "parent_id") nil)
+                                            :native_root_id (if (= (nativeTypeOf (nativeGet message "root_id")) "string")
+                                                              (nativeGet message "root_id") nil)
                                             :evidence_level
                                             "native_protocol")
                                           (js-object
