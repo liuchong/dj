@@ -5,9 +5,28 @@ DJ将Lark `Typing`（敲键盘）作为已交给接收会话处理的标记，�
 ## 状态与接口
 
 - 每条delivery持久保存独立处理租约，同一出口身份、版本和原消息共享一个原生reaction，多个接收方均结束才撤销。
-- `delivery.working(delivery_id)`查询处理状态及cleanup_state；`delivery.complete(delivery_id,reason,idempotency_key)`显式报告completed/no_reply/failed/cancelled，仅原接收主体或获准operator可操作。无需IM文字回复时，显式Get确认在同一事务自动收尾；未走自动收尾的通知仍须调用complete，不能用普通文本或最终回答代替。
-- 原消息回复通过DJ获得原生accepted时自动结束对应处理租约。已绑定的原生ended/settled/turn_finished等结束观察亦可结束；不会将这些观察作为自动IM回复指令。
-- 30分钟处理租约到期触发回收，避免客户端退出、异常、模型未调用complete等情况永久遗留。服务停止持久登记撤销意图，重启继续清理，不依赖对话上下文。长时间业务可继续推进，但过期后不再显示working。
+- `delivery.working(delivery_id)`查询处理状态及cleanup_state；`delivery.complete(delivery_id,reason,idempotency_key)`显式报告completed/no_reply/failed/cancelled，必须保留仅原接收主体（`actor.principal_id === delivery.recipient_principal_id`）或获准operator的主体相等门禁（加`delivery.inspect`权限），不放宽门禁，不为该需求给共享MCP新造每对话独立认证或独立进程，也不信任通知原文、自报`thread_id`、`reply_context_id`或通用`delivery.inspect: ["*"]`读权限作为调用身份。
+- 区分正常同身份入口与身份/权限不匹配：当调用方已直接认证为该投递的接收主体且`delivery.working`返回`ok=true`时，可经同身份MCP或CLI直接完成；当全局/共享MCP（如`local-ai`）等调用方返回`forbidden`（`effect_state=none`）时，**仅表明当前认证主体未被授权操作该`delivery_id`**（主体、投递ID或授权本身均可引起不匹配，不得仅据此反推原对话必定绑定了独立受限主体）。即使`delivery.get`可通过共享读权限读出投递详情，`delivery.working`与`delivery.complete`仍会严格按主体相等门禁拒绝越权调用。
+- 显式`delivery.complete(...,reason="no_reply")`只结束本条`Working`并撤销`Typing`，**不添加`Get`**、不发送IM文字；无需IM文字回复且按规则决定显式点`Get`时，`message.acknowledge`在同一事务以`no_reply`自动收尾，不必再调`delivery.complete`。
+- 原消息回复通过DJ获得原生accepted时自动结束对应处理租约，不必再补调`delivery.complete`或补点`Get`。已绑定的原生ended/settled/turn_finished等结束观察亦可结束；不会将这些观察作为自动IM回复指令。
+- 30分钟处理租约到期触发回收（`reason="lease_expired"`），避免客户端退出、异常、模型未调用complete等情况永久遗留`Typing`。它是防止挂标的兜底清理，**不等同于AI业务完成或显式收尾**；到期后仍可补调`delivery.complete`显式记录`completed`/`no_reply`/`failed`/`cancelled`。服务停止持久登记撤销意图，重启继续清理，不依赖对话上下文。长时间业务可继续推进，但过期后不再显示working。
+
+## 可信身份、专用 Profile 与调用方收尾边界
+
+- **安装方配置与专用 Profile 交付**：需为受限接收会话单独隔离主体时，管理员在`service.json`的`principals`配置`kind="agent"`、`target_constraint`（精确固定`tool`、`native_namespace`、`native_session_id`）以及最小授权集合：`delivery.inspect: ["self"]`、`operation.inspect: ["self"]`和仅绑定同一`{tool, native_namespace, native_session_id}`的`session.rules.read`/`session.rules.manage`（无需依赖`agent.get`/`agent.bind`历史单ID grant）。在`0700`私有目录下建立独立的`0600`token文件与`0600`专用client profile JSON（指向服务私有UDS），并将绑定该原对话的这一行专用profile路径记入该对话的私有持久`session.rules`并读回确认：**可由原对话使用自身专用profile保存，或由经用户明确授权（如安装/重装任务）且具备该准确目标`session.rules.manage`权限的安装调用方以自身真实主体仅追加保存该profile接线说明并读回（严格保留对方原有正文与`reply_routes`，仅写路径不写token，不代改其他业务规则）**；私密路径、真实会话绑定与token绝不提交公开Git仓库。两类权限严格分离：安装期写规则的`session.rules.manage`权限不赋予运行时完结投递资格，**运行时`delivery.complete`仍只能由原接收主体（或服务规定的获准`operator`）执行**。
+- **OS 文件权限与实际隔离边界**：同OS UID下把专用profile和token设为`0600`（置于`0700`目录）可防止其他OS用户读取、并将专用凭据从默认共享`client.json`分离，**但不对同OS UID下的其他进程构成操作系统级权限隔离**；跨会话授权边界由DJ服务端的凭据认证、`target_constraint`与`delivery.working`/`delivery.complete`主体相等门禁保证。
+- **AI 可执行身份核验与收尾序列**：
+  1. 入口判定：**若本对话的私有`session.rules`（或通知`conversation_rules`）已记录了专用CLI `--client-profile`路径，应主动直接使用该专用CLI入口执行核验与收尾，不必先用共享MCP撞一次`forbidden`**。若尚未配置已知专用profile，则使用当前入口的`agent.whoami`与`delivery.working(delivery_id)`；一致且成功即可直接完成，若返回`forbidden`（`effect_state=none`）且无已知专用profile配置，立刻停止并准确报告未获准原因（不凭`forbidden`猜测存在其他受限profile、不遍历目录猜测文件、不借用`operator`）。
+  2. 以专用profile向DJ Core执行三点交叉核对：
+     - `agent.whoami`：核对`kind="agent"`、`principal_id`、`binding_state="bound"`与非空`bound_agent_ids`（有`reply_authority.recipient_principal_id`时须匹配）。
+     - `session.rules.get`（传准确`session_key`）：经服务端授权读回`session_key`、`tool`、`native_namespace`、`native_session_id`及私有持久规则记录的专用profile路径行，确认与当前原生对话一致。
+     - `delivery.working`（传准确`delivery_id`；若当前身份可见也可结合`delivery.get`核对`agent_id`与`session_key`）：由服务直接确认该主体确为本投递受理接收方。
+  3. 执行完成与读回：凭准确`delivery_id`、明确`reason`与本次逻辑动作的稳定`idempotency_key`调用`delivery.complete`；完成后调用`delivery.working`读回，**同时核对`state`、实际`reason`与`cleanup_state`**：
+     - 仅当原消息确实跟踪过工作表情（`state != "not_marked"`）且`cleanup_state="done"`时，才能确认该投递关联的`Typing`已撤销；
+     - `state="not_marked"`时的`cleanup_state="done"`仅表示本投递本无待清理的工作表情，**不能宣称确实删除过`Typing`**；
+     - 同一原消息存在多个接收方共享同一个`Typing`标记时，本接收方完成后`state="completed"`（`reason`为对应明确值）即可成立，而在其余接收方完成或租约到期前，`cleanup_state`可暂时保持未到`done`。
+     遇传输超时或`unknown`时保留原键查`operation.get(operation="delivery.complete", idempotency_key=...)`。
+  4. 失败准确停止：若`agent.whoami`、`session.rules.get`、`delivery.working`、`delivery.complete`返回`forbidden`/`unauthenticated`，或出现`idempotency_conflict`（同键改参数），必须立刻停止并如实报告；严禁借用`operator`、换新键掩盖冲突，或为清除`Typing`强发多余IM消息或补点`Get`。
 
 ## 外部副作用与清理保证
 
@@ -44,4 +63,8 @@ Get是持久内容确认，Typing是临时处理中。原生Get创建与Typing�
 
 ## 当前策略验收
 
-定向集成6项通过：真实SQLite/Core与明确替换的原生表情端口验证确认意图和Working结束原子提交、失败回滚、补充不结束原任务、多接收方共享标记、submitting期确认不被后到accepted复活、丢失原生响应及重启后清理。36项保护检查、331条断言通过。此证据不冒充真实平台的表情删除时延；原生Get和清理仍分别以官方读回及cleanup_state确认。
+- 历史确认策略基线：定向集成 6 项通过，验证确认意图与 Working 结束原子提交、失败回滚、补充不结束原任务、多接收方共享标记、submitting 期确认不被后到 accepted 复活、丢失原生响应及重启后清理；保护检查 36 项、331 条断言通过。
+- 本轮受限接收者 CLI 收尾与规范回归（隔离 SQLite / UDS API / `0600` 私有 profile / `runCli` / 受控模拟 Lark 表情端口，共 4 个测试文件 53 项通过、0 失败、556 条断言）：
+  - `working.test.mjs` 集成 9 项（含新增 `T40.restricted-recipient-cli-complete.integration`：验证授权安装方保存专用 profile 路径并保留原文与 `reply_routes`、共享主体虽可 `delivery.get` 仍被 `delivery.working`/`delivery.complete` 返回 `forbidden`、`no_reply` 三点核对与 `agent.get` 无关完成、同键幂等/冲突、`operation.get`、`not_marked`、多接收方共享标记与同身份完成）；
+  - `resources.test.mjs` 集成 7 项、`working.test.mjs` 单元 4 项（含新增 `T38.working-lease-vs-complete.unit`：验证 `lease_expired` 后显式完成可覆盖为 `no_reply` 且不被二次覆写、更新后的 `config/service.example.json` 通过 `validateStructure`）、`contract.test.mjs` 单元 33 项。
+- 边界声明：以上全部为隔离夹具、真实 UDS 与受控替换端口的本地证据，**不冒充真实 Lark 平台收发、线上表情删除时延或常驻服务真机采用**；线上原生 `Get` 与 `Typing` 清理仍分别以官方读回及 `delivery.working` 的 `state`、`reason` 与 `cleanup_state` 确认为准。

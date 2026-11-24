@@ -6,7 +6,7 @@ Kimi Work / Code Web 与 DSH Desktop / Web 的形态、既有实例接收及调�
 
 - inspect: 使用已生成目录包的 bin/dj；先运行 `dj skill targets` 查看目录，再选择目标与 scope。安装不会修改客户端设置、启动模型或建立订阅。
 - project: `dj skill install --target cursor --scope project --project PROJECT --dry-run` 先预览；确认目标正确后去掉 `--dry-run`。PROJECT 必须是已存在的真实目录。
-- user: `dj skill install --target codex --scope user --dry-run`；显式安装后可用相同参数的 `dj skill check` 核对。共享目录只需安装一次，不要为每个客户端重复创建同名 Skill。
+- user: `dj skill install --target codex --scope user --dry-run`；显式安装后可用相同参数的 `dj skill check` 核对。注意 `--target codex` 安装到 `~/.agents/skills/dj`，而 `--target dj` 安装到 `~/.dj/skills/dj`；若本机如 `~/.codex/skills/dj` 通过软链指向 `~/.dj/skills/dj`，升级时须同时刷新 `--target dj` 与 `--target codex`/`--target agents`（并使用新构建仓库或新发布目录包的 `bin/dj`，勿误用旧版 `~/.dj/current/bin/dj`）。共享目录只需安装一次，不要为每个客户端重复创建同名 Skill。
 - conflict: 所有引用随目录复制，报告逐文件 SHA256。已存在且字节一致返回 unchanged；默认不覆盖不同文件；共享安装根使用 `--target dj --scope user` 更新 `~/.dj/skills/dj`；升级既有完整 Markdown Skill 目录时显式传 `dj skill install --update`（可先配 `--dry-run`），任何软链接或非普通 Markdown 资产仍拒绝替换。部分写入失败不报告安装成功，先检查目标再决定清理或恢复。
 - adoption: 文件安装成功仅证明文件可用。随后在客户端查看 dj 是否可发现，显式加载正文与所需 references，并执行 service.status/agent.whoami。不要用一个 OK 回复证明采用，不自动重启原对话。
 
@@ -28,6 +28,15 @@ Kimi Work / Code Web 与 DSH Desktop / Web 的形态、既有实例接收及调�
 - generate: `~/.dj/current/bin/dj skill config --target cursor --client-profile PRIVATE_PROFILE` 输出 MCP 配置片段。通过稳定软链入口调用时自动保留稳定 `bin/dj` 启动路径，不固化单次版本发布目录。命令只打印，不安装配置、不读取凭据；按本机实际路径合并 dj 项，不覆盖原文件。移动安装根后需要重新生成。
 - process: MCP 启动的只是 DJ 薄代理，连接原服务 Core；它不启动 AI 或新建对话。stdout 只用于 MCP 协议。所有接口仍重新执行 DJ 主体权限校验。
 - binding: 全局MCP配置只确定调用身份，不自动识别当前对话。agent.whoami返回bound_agent_ids；AI核对自身准确原生ID和实例，agent.discover/register后以显式agent_id订阅。一个调用身份可登记多个目标，不需操作员逐对话接线；受限profile仍遵守target_constraint，不借用其他身份。
+
+### 受限接收会话的专用 CLI Profile
+
+- **何时需要**：当管理员在 `service.json` 为某接收对话分配了独立的受限 `agent` 主体（而非共用 `local-ai`）时，若通过共享 MCP（通常是 `local-ai`）调用 `delivery.working` / `delivery.complete`，即使共享主体拥有 `delivery.inspect: ["*"]` 能读通 `delivery.get`，仍会被 DJ 主体门禁拒绝并返回 `forbidden`（`effect_state=none`）。注意 `forbidden` 本身仅证明当前认证主体对该 `delivery_id` 未获准（不得仅据此反推会话必然绑定了独立受限主体）；但**已知**本对话私有持久规则中记录了专用 CLI `--client-profile` 时，应主动直接使用该专用入口，不必先在共享 MCP 上撞 `forbidden`。DJ 不放宽该门禁，也不为单个需求在共享 MCP 上增设每对话动态身份切换或独立 MCP 进程；仅当原对话本身已直接认证为该 `recipient_principal_id` 时，同身份 MCP/CLI 才可直接完成。
+- **安装方配置与交付**：
+  1. 在 `service.json` 的该受限主体上配置 `kind="agent"`、`target_constraint`（固定 `tool`、`native_namespace`、`native_session_id`）及最小权限：`delivery.inspect: ["self"]`、`operation.inspect: ["self"]`，以及仅限同一 `{tool, native_namespace, native_session_id}` 目标的 `session.rules.read` 与 `session.rules.manage`（参见 `config/service.example.json`；不再依赖 `agent.get` / `agent.bind` 单 ID grant）。
+  2. 在 `0700` 私有配置目录下建立 `0600` token 文件与引用该 token 及同一服务 UDS 的 `0600` 专用 client profile JSON（参考 `config/client.example.json` 结构，使用实际文件路径而非提交进公开仓库）。
+  3. 将绑定该原对话的这一行专用 CLI profile 路径记入其私有持久 `session.rules` 并读回：**可由原对话使用自身专用 profile 保存并读回，或由经用户明确授权（例如安装任务）且持有该准确目标 `session.rules.manage` 权限的安装调用方以自身真实主体仅追加保存该 profile 接线说明并读回（完整保留原有 `text` 与 `reply_routes`，只写路径不存 token，不代改其他业务规则）**；私密路径、token 和真实会话绑定绝不入公开 Git 仓库。两类权限保持独立：安装/配置侧的 `session.rules.manage` 权限不授予运行时完结投递资格，运行时 `delivery.complete` 仍严格只能由原接收主体（或服务规定的获准 `operator`）执行。
+- **安全边界与实话原则**：同操作系统 UID 下把专用 profile 与凭据文件设为 `0600`（并放入 `0700` 目录）只阻挡其他 OS 用户访问，并将受限凭据从默认共享 `client.json` 分离以免常规工具误用；**同 UID `0600` 文件本身不对同 UID 下的其他进程提供操作系统级权限隔离**。真正的权限边界来自 DJ 服务侧的凭据认证、`target_constraint` 与 `delivery.working` / `delivery.complete` 主体相等门禁；调用方不得依赖通知原文、自报 `thread_id`、`reply_context_id` 或共享读权限充当身份，缺失专用 profile 或核对失败须立刻停止。
 
 | 工具 | MCP 配置位置/结构 | 最小使用方式 |
 |---|---|---|

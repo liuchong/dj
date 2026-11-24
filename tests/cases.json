@@ -30745,6 +30745,52 @@
       "given": "Single registered agent slot with multi-branch IM and resource.changed rules",
       "when": "Exercise expected_revision=0 conflict, rule disable toggle, resource+IM routing, and agent unregister/re-register on same session_key",
       "then": "Single target_key=session:<session_key> slot persists across rule edits and re-registration without duplicate subscriptions"
+    },
+    {
+      "case_id": "T40.restricted-recipient-cli-complete.integration",
+      "parent_id": "T40",
+      "file": "tests/integration/working.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 20000,
+      "resource_group": "isolated-sqlite",
+      "acceptance_ids": [
+        "A01",
+        "A03"
+      ],
+      "requirements": [
+        "SPEC-0006"
+      ],
+      "given": "Isolated Core with UDS API, 0600 restricted recipient CLI profile without agent.get grant, and shared local-ai/installer CLI profile with wildcard delivery/session.rules grants",
+      "when": "Verify authorized installer saves profile wiring note while preserving text/reply_routes, shared principal is denied working/complete despite delivery.get access, restricted recipient verifies identity via whoami + session.rules.get + delivery.working and runs no_reply completion/replay/conflict/operation.get/read-back, and verify not_marked, shared multi-recipient mark, and same-identity completion",
+      "then": "Only the recipient principal completes Working without adding Get, lease/multi-recipient cleanup states project accurately, and principal gating rejects cross-principal attempts"
+    },
+    {
+      "case_id": "T38.working-lease-vs-complete.unit",
+      "parent_id": "T38",
+      "file": "tests/unit/working.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 5000,
+      "resource_group": "isolated-memory",
+      "acceptance_ids": [
+        "A01",
+        "A03"
+      ],
+      "requirements": [
+        "SPEC-0006"
+      ],
+      "given": "A completed work_items row with fallback reason=lease_expired and updated config/service.example.json",
+      "when": "Invoke finishWorking with explicit reason=no_reply then reason=completed, and validate config/service.example.json structure",
+      "then": "Explicit completion overrides lease_expired without being overwritten again, and config/service.example.json passes validateStructure"
     }
   ],
   "source_extension_base": "c1eb7b1"

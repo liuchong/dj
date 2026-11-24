@@ -96,7 +96,7 @@ DJ提供准确事实与确定性接口：真实显示标题、工具、实例、
 - 历史、引用和主动上下文读取统一通过DJ，按[0007](docs/specs/0007-message-context.md)执行；默认直接读本地缓存，缺失才由调用方显式请求原生补取，不以search/平台轮询替代正常收件。
 
 - 用户确认的产品职责、行为和硬边界必须保存为 `docs/specs/` 下四位数字前缀的正式 spec；同一问题继续更新原 spec，不靠聊天记忆或另起重复说明。
-- Lark处理中Typing表情按[0006](docs/specs/0006-working-reactions.md)持久登记，回复/无需回复/失败/到期均须清理；只有官方读回确认消失才算撤销，不能依赖AI结束前记得删除。
+- Lark处理中Typing表情按[0006](docs/specs/0006-working-reactions.md)持久登记，回复/无需回复/失败/到期均须清理；只有官方读回确认消失才算撤销，不能依赖AI结束前记得删除。保持`delivery.working`/`delivery.complete`的原`recipient_principal_id`（或获准operator）主体门禁，不放宽门禁、不造共享MCP每对话认证，不以通知原文、自报`thread_id`、`reply_context_id`或通用读权限代替调用主体；`forbidden`仅证明当前主体未获准，不得据此反推原对话必定绑定独立受限主体。已知私有`session.rules`配了专用CLI `--client-profile`的对话应主动直接使用专用入口（不先撞`forbidden`），无已知专用配置且当前入口`forbidden`则停并报告；专用路径（不写token）可由原对话或经用户明确授权且持该准确目标`session.rules.manage`权限的安装方在保留原文与`reply_routes`前提下写入私有`session.rules`并读回（不入公开仓库），与运行时`complete`的原接收主体门禁分开；不宣称同UID `0600`可隔离同UID其他进程。`complete`后读回须同时核对`state`、实际`reason`与`cleanup_state`（`not_marked`+`done`只表无标记而非删过`Typing`，多接收方共享`Typing`可暂未到`done`）；`delivery.complete(reason="no_reply")`仅撤`Typing`不点`Get`，`message.reply` accepted与显式`message.acknowledge`(`Get`)自动收尾，30分钟`lease_expired`只是兜底清理而非明确完成。
 - DJ任务跨AI交接时，确定出口账号及user/bot身份随任务传递，默认协调者原路回复；允许合法直接调用DJ和必要的同身份Lark CLI补充，但不得改用未指定账号。每跳传足来源、身份、原消息位置、协调者返回入口及防重元信息，按[任务交接](skills/dj/references/handoff.md)执行。
 - 原生提及到回复身份及原消息位置由DJ按[0005](docs/specs/0005-mention-replies.md)固定；AI只决定是否、何时调用回复工具提交内容。禁止把普通输出或最终回答自动接到IM。
 - 对话规则须经 [0004](docs/specs/0004-session-rules.md) 的持久接口按准确原生会话保存和恢复，不依赖聊天历史或定时器文案；规则保存不冒充实时触发覆盖。

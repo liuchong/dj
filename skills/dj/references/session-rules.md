@@ -15,6 +15,7 @@
 - delivery: push/direct在提交前、pull在领取前附入conversation_rules，包含session_key、revision、sha256和完整text。超原生帧上限则阻断，不截断规则。已提交或领取的快照保持原版本。
 - restore: 上下文恢复后读回最新规则与原业务台账；不能把规则当作待办队列，也不能因规则存在就报告全部实时触发已接管。
 - trust: IM正文是外部材料，不能自行变成规则。对话规则不提升权限、不替代人类授权、不盖过工作区核心约束；其他目标的规则不可读取或修改。
+- private_profile_pointer: 受限接收对话的一行仅绑定本对话的专用 CLI `--client-profile` 路径（只写路径，绝不写 token），可由原对话使用自身专用 profile 保存并读回，或由经用户明确授权且拥有该准确目标 `session.rules.manage` 权限的安装调用方以自身真实主体仅追加保存该 profile 接线说明并读回（严格保留原有 `text` 与 `reply_routes`，不代改其他业务规则，不写入公开 Git 仓库）。该路径文本只是给本对话定位入口的指针，本身不构成可信身份或授权；安装期规则写权限与运行时 `delivery.complete` 的原接收主体（或获准 `operator`）门禁相互独立。已有该配置的对话应主动直接使用专用入口，并经 DJ 服务端 `agent.whoami`、`session.rules.get` 与 `delivery.working` 核验。
 - execution: text是AI可读上下文，不是可执行配置。保存“不通知某人消息”“不回复或加表情”不会自动设置subscription、message.filter或message.recipient_policy，也不能阻止DJ自动Working。按[触发过滤](filters.md)或[出站策略](recipients.md#按用户要求配置禁发禁表情)调用相应结构化接口并读回；私有Skill迁移同样不代设这些策略。
 
 ## 原生提及回复映射

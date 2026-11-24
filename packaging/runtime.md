@@ -26,11 +26,11 @@ Cursor 主动调用 DJ 的 MCP/API 不依赖 Inspector，不触发上述开启/�
 
 Lark/飞书实时连接显式配置 source_delivery=events、event_app_id、event_subject_id、event_scope 及 credential_ref。应用密钥文件保存 app_id/app_secret，直接连接官方 WebSocket；本人发送另外使用已授权 OAuth 文件与 user_identity 锚点。所有消息读写直接使用官方 HTTPS API，不依赖 SDK、外部 IM CLI 或桌面。详见[IM 接入](https://github.com/liuchong/dj/blob/master/docs/adapters/im.md)。示例全部为占位值，managed_profiles 必须为空。
 
-客户端复制 `config/client.example.json`，普通本机AI共用local-ai身份和私有profile；operator profile单独保存，仅给管理操作使用。需要隔离时可显式配置受限主体。AI自行核对准确原生目标并登记，一个身份允许多个接收对话。CLI与MCP共用profile，参数只传文件引用，不传token。
+客户端复制 `config/client.example.json`，普通本机AI共用local-ai身份和私有profile；operator profile单独保存，仅给管理操作使用。需要为特定接收会话配置受限主体时，由管理员按 `service.example.json` 的 `target_constraint` 授予 `delivery.inspect: ["self"]`、`operation.inspect: ["self"]` 及精确绑定同一 `{tool, native_namespace, native_session_id}` 的 `session.rules.read`/`session.rules.manage`，在 `0700` 目录下建立 `0600` token 与专用 profile，并将这一行专用 profile 路径（不含 token）由原对话或经用户明确授权且持该目标 `session.rules.manage` 权限的安装方在保留原有正文与 `reply_routes` 前提下保存至该对话私有 `session.rules` 并读回（不入公开仓库，不混同于运行时 `delivery.complete` 的原接收主体门禁）；同一 OS UID 下的 `0600` 只防其他用户读取并隔离默认配置，不宣称隔离同 UID 其他进程，实际权限边界由服务侧主体门禁保证。AI自行核对准确原生目标并登记，一个身份允许多个接收对话。CLI与MCP共用profile，参数只传文件引用，不传token。
 
 ## 原生 Agent 的 DJ 工具身份
 
-Codex/Cursor/OpenCode等可使用同一普通本机AI profile；MCP薄代理只连接已有DJ服务，不启动AI。原生配置显式选择profile，保留工具信任与权限；共享profile不识别当前对话，须核对原生ID并显式agent_id。
+Codex/Cursor/OpenCode等可使用同一普通本机AI profile；MCP薄代理只连接已有DJ服务，不启动AI。原生配置显式选择profile，保留工具信任与权限；共享profile不识别当前对话，须核对原生ID并显式agent_id。当对话私有规则已配置专用 CLI `--client-profile` 时，应主动直接使用专用入口，经 `agent.whoami`、`session.rules.get --session-key` 和 `delivery.working --delivery` 三点交叉核对后执行 `delivery.complete` 并读回 `state`、`reason` 与 `cleanup_state`（无需先撞共享 MCP `forbidden`）；无已知专用配置且当前入口返回 `forbidden` 时不得据此反推受限主体，须立刻停止并报告。
 
 已有会话及获准创建的空会话均可由AI通过discover/register自主登记，再preview/create订阅；不要求逐对话新增recipient或修改target_constraint。whoami返回bound_agent_ids，原生目标、实例epoch和动作授权仍核对。原有其他订阅可以并存，DJ不分配协作职责。
 

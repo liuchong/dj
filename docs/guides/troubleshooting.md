@@ -50,7 +50,9 @@ dj status --client-profile PRIVATE_PROFILE --json
 
 ## 处理中表情没有消失
 
-处理结束、无需回复或失败时，接收方应以原 delivery 调用 `delivery.complete`。查询清理状态，只有官方读回确认后才算清理完成；不要依赖 AI 最后一条自然语言回复来撤销表情。详见[处理中表情](../specs/0006-working-reactions.md)。
+处理结束、无需回复或失败时，接收方应以原 delivery 调用 `delivery.complete`（`reason=no_reply` 只撤 `Typing`、不会添加 `Get`；已通过 DJ `message.reply` 获 `accepted` 或已调用 `message.acknowledge` 点 `Get` 时由服务自动结束本条租约；30 分钟 `lease_expired` 只是防永久挂标的兜底清理，不等同明确完成）。查询 `delivery.working` 时须同时核对 `state`、实际 `reason` 与 `cleanup_state`：`state!="not_marked"` 且 `cleanup_state=done` 才确认已撤除工作表情（`state=not_marked` 的 `done` 仅表示无标记，多接收方共享标记时 `cleanup_state` 可暂时未到 `done`）；不要依赖 AI 最后一条自然语言回复来撤销表情，也不要为了消掉 `Typing` 补点 `Get` 或硬发文字。
+
+若调用 `delivery.working` 或 `delivery.complete` 返回 `forbidden`（`effect_state=none`），**仅证明当前认证主体未获准操作该投递**（主体、投递 ID 或授权不符均会拒绝，即使共享 `delivery.inspect` 能读出 `delivery.get` 也不能越主体完成；不得据此反推原对话必定绑定了独立受限主体）。已知本对话私有 `session.rules` 中记录了专用 CLI `--client-profile` 的对话应主动直接使用专用入口（不必先在共享 MCP 撞 `forbidden`），按 `agent.whoami` → `session.rules.get --session-key` → `delivery.working --delivery` 核对后执行 `delivery.complete` 并读回；无已知专用配置且仍遇 `forbidden` 立即停止并报告，不借用 `operator`。详见[处理中表情](../specs/0006-working-reactions.md)与[受限接收者完成流程](../../skills/dj/references/workflows.md#受限接收者完成投递与身份核验)。
 
 ## 规则或回复格式奇怪
 

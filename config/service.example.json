@@ -93,6 +93,26 @@
           "resources": [
             "self"
           ]
+        },
+        {
+          "action": "session.rules.read",
+          "resources": [
+            {
+              "tool": "codex",
+              "native_namespace": "codex-local",
+              "native_session_id": "replace-codex-thread-id"
+            }
+          ]
+        },
+        {
+          "action": "session.rules.manage",
+          "resources": [
+            {
+              "tool": "codex",
+              "native_namespace": "codex-local",
+              "native_session_id": "replace-codex-thread-id"
+            }
+          ]
         }
       ]
     },
@@ -156,6 +176,26 @@
           "action": "subscription.consume",
           "resources": [
             "self"
+          ]
+        },
+        {
+          "action": "session.rules.read",
+          "resources": [
+            {
+              "tool": "cursor",
+              "native_namespace": "cursor-window",
+              "native_session_id": "replace-cursor-thread-id"
+            }
+          ]
+        },
+        {
+          "action": "session.rules.manage",
+          "resources": [
+            {
+              "tool": "cursor",
+              "native_namespace": "cursor-window",
+              "native_session_id": "replace-cursor-thread-id"
+            }
           ]
         }
       ]
