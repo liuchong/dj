@@ -6,7 +6,7 @@
   (import "../tasks/commands.eli" taskOutboundAllowed)
   (import "./topics.eli" topicOf trackedTopic)
   (import "../delivery/working.eli" finishWorking queueAcknowledgement)
-  (import "../core/native.eli" nativeNullish nativeTypeOf nativeGet)
+  (import "../core/native.eli" nativeNullish nativeTypeOf nativeGet nonEmptyString)
   (import "../core/errors.eli" success failure)
   (import "../core/triggers.eli" triggerReasons)
   (import "../core/types.eli"
@@ -38,6 +38,7 @@
   (import "../ingestion/visibility.eli" eventReadable)
   (import "../catalog/snapshots.eli" openSnapshot resumeSnapshot advanceSnapshot)
   (import "../connections/manager.eli" imPort dispatchIm)
+  (import "../connections/network.eli" sameReplyNetwork replyNetworkKey)
   (defun addressOf
     (connection chat thread)
     (js-object
@@ -906,7 +907,25 @@
           (success (Object/assign (js-object) original (js-object :destination address :native_reply_to native-id
             :native_thread_id (nativeGet record "native_thread_id")
             :reply_anchor_author (nativeGet record "reply_anchor_author")
+            :reply_anchor_root (and (nativeGet record "reply_anchor_author")
+              (or (nonEmptyString (nativeGet record "native_root_id")) native-id))
             :reply_context_id (nativeGet record "reply_record_id" nil) :inbox_id inbox)))))))
+  (defun nativeReplyAllowed (context connection address message-id root)
+    (let* ((repository (nativeGet context "repository"))
+           (db (nativeGet (nativeGet context "store") "db"))
+           (chat (nativeGet address "native_chat_id"))
+           (network (replyNetworkKey context connection address))
+           (key (str "interaction_" (hashValue (js-array network chat root))))
+           (matched (js-call (js-call db :query
+             "SELECT DISTINCT e.connection_id FROM events e WHERE e.native_message_id IN (?,?) AND json_extract(e.payload,'$.conversation.native_chat_id')=? AND EXISTS(SELECT 1 FROM match_decisions m WHERE m.event_id=e.event_id AND m.result='match')")
+             :all message-id root chat)))
+      (if (or (js-call repository :get "dispatch_contexts" key)
+              (js-call matched :some (lambda (row)
+                (let ((source (js-call repository :get "connections" (nativeGet row "connection_id"))))
+                  (and source (sameReplyNetwork
+                    (Object/assign (js-object) source (js-object :disabled false)) connection))))))
+        (failure "reply_identity_unresolved" (js-object :details (js-object :reason "subscription_reply_requires_context")))
+        (success nil))))
   (defasync resolveNativeReply (context anchor)
     (let* ((ref (nativeGet anchor "conversation_ref"))
            (resolved (must (resolveConversation context ref "message.reply")))
@@ -921,27 +940,33 @@
                    (= (nativeTypeOf (nativeGet (imPort context id) "history")) "function"))
         (must (failure "unsupported")))
       (must (requirePermission context "message.read" address))
-      (let* ((response (must (await (dispatchIm context id "history"
-                 (js-array (js-object :message_id message-id :identity_revision revision) (nativeCallContext context))))))
+      (let* ((response (must (try (await (dispatchIm context id "history"
+                 (js-array (js-object :message_id message-id :identity_revision revision) (nativeCallContext context))))
+                 (catch unavailable
+                   (let ((current (resolveConversation context ref "message.reply")))
+                     (if (nativeGet current "ok") (failure "unavailable") current))))))
+             (current (must (resolveConversation context ref "message.reply")))
              (messages (nativeGet response "messages"))
              (message (and (Array/isArray messages) (= (js-length messages) 1) (aref messages 0)))
              (sender (nativeGet message "sender"))
-             (author (nativeGet sender "id"))
-             (root (nativeGet message "root_id")))
+             (author (nonEmptyString (nativeGet sender "id")))
+             (parent (nonEmptyString (nativeGet message "parent_id")))
+             (root (nonEmptyString (nativeGet message "root_id"))))
         (unless (and (= (nativeGet message "message_id") message-id)
                      (= (nativeGet message "chat_id") (nativeGet address "native_chat_id"))
-                     (= (or (nativeGet message "thread_id") nil) thread)
+                     (= (nonEmptyString (nativeGet message "thread_id")) thread)
                      (not (nativeGet message "deleted"))
-                     (not (nativeGet message "upper_message_id"))
-                     (= (nativeTypeOf author) "string") (> (js-length author) 0)
-                     (not (= author "unknown"))
-                     (or (not (= (nativeGet sender "sender_type") "user"))
-                         (= (nativeGet sender "id_type" "open_id") "open_id"))
-                     (or (not thread) root)
-                     (or (not root) (= (nativeTypeOf root) "string")))
+                     (not (nonEmptyString (nativeGet message "upper_message_id")))
+                     author (not (= author "unknown"))
+                     (or (= (nativeGet sender "sender_type") "app")
+                         (and (= (nativeGet sender "sender_type") "user")
+                              (= (nativeGet sender "id_type") "open_id")))
+                     (or (not thread) (not parent) root))
           (must (failure "content_unavailable")))
+        (setq root (or root parent message-id))
+        (must (nativeReplyAllowed context (nativeGet current "connection") address message-id root))
         (success (js-object :destination address :native_reply_to message-id :reply_anchor_author author
-          :reply_anchor_root (or root message-id) :identity_revision revision)))))
+          :reply_anchor_root root :identity_revision revision)))))
   (defasync acceptOutbound
     (context operation args)
     (let ((djReturn10Token (js-object)) (djReturn10Value nil))
@@ -1019,8 +1044,10 @@
                         (unless (= (nativeGet reply "identity_revision")
                                    (nativeGet connection "identity_revision" (nativeGet connection "revision")))
                           (must (failure "stale_reference")))
-                        (must (resolveConversation context (nativeGet (nativeGet args "native_anchor") "conversation_ref") action))
-                        (must (requirePermission context "message.read" address)))
+                        (let ((current (must (resolveConversation context (nativeGet (nativeGet args "native_anchor") "conversation_ref") action))))
+                          (must (requirePermission context "message.read" address))
+                          (must (nativeReplyAllowed context (nativeGet current "connection") address
+                            (nativeGet reply "native_reply_to") (nativeGet reply "reply_anchor_root")))))
                       (t (must (resolveOutboundReply context (nativeGet args "outbound_id") (nativeGet args "force_send" false))))))
                   (must (checkRecipients context address (nativeGet reply "native_reply_to") (nativeGet args "content")
                     (nativeGet args "force_send" false) (nativeGet reply "reply_anchor_author")))
@@ -1052,6 +1079,7 @@
                           (nativeGet args "outbound_id" nil)
                           :reply_anchor_author (nativeGet reply "reply_anchor_author" nil)
                           :reply_anchor_root (nativeGet reply "reply_anchor_root" nil)
+                          :reply_native_anchor (not (not (nativeGet args "native_anchor")))
                           :reply_thread_id
                           (or (nativeGet reply "native_thread_id") (nativeGet address "native_thread_id" nil))
                           :reply_in_thread
@@ -1150,6 +1178,9 @@
                            (if follow-up (can context "message.read" address)
                              (outboundPrincipalAllows context record "message.read")))
                 (must (failure "forbidden")))))
+          (when (nativeGet record "reply_native_anchor")
+            (must (nativeReplyAllowed context connection (nativeGet record "destination")
+              (nativeGet record "native_reply_to") (nativeGet record "reply_anchor_root"))))
           (when (nativeGet record "reply_record_id")
             (let* ((actor-context (if follow-up context (Object/assign (js-object) context
                      (js-object :principal (js-object :principal_id (nativeGet record "principal_id"))))))
@@ -1197,6 +1228,7 @@
                       "native_parent_id"
                       "native_root_id"
                       "native_thread_id"
+                      "candidate_message_id"
                       "evidence_level"
                       "definite_not_sent"
                       "retryable"
@@ -1253,8 +1285,9 @@
                     (put part :state "accepted")
                     (put attempt :state "accepted")
                     (put part :native_message_id (nativeGet fact "native_message_id"))
-                    (when (nativeGet fact "native_parent_id") (put record :native_parent_id (nativeGet fact "native_parent_id")))
-                    (when (nativeGet fact "native_root_id") (put record :native_root_id (nativeGet fact "native_root_id")))
+                    (Reflect/deleteProperty record "candidate_message_id")
+                    (when (nonEmptyString (nativeGet fact "native_parent_id")) (put record :native_parent_id (nativeGet fact "native_parent_id")))
+                    (when (nonEmptyString (nativeGet fact "native_root_id")) (put record :native_root_id (nativeGet fact "native_root_id")))
                     (when (nativeGet fact "native_thread_id")
                       (put record :native_thread_id (nativeGet fact "native_thread_id"))
                       ;; Creating a topic also gives its original main message a
@@ -1276,6 +1309,9 @@
                     (put attempt :definite_not_sent t)
                     (put record :retryable (= (nativeGet fact "retryable") t)))
                   (t
+                    (when (and (not (nativeGet record "candidate_message_id"))
+                               (nonEmptyString (nativeGet fact "candidate_message_id")))
+                      (put record :candidate_message_id (nativeGet fact "candidate_message_id")))
                     (put record :state "unknown")
                     (put part :state "unknown")
                     (put attempt :state "unknown"))))
@@ -1421,7 +1457,7 @@
             (try
               (setq
                 receipt
-                (await (js-call port :lookup record (nativeCallContext context))))
+                (await (dispatchIm context (nativeGet record "connection_id") "lookup" (js-array record (nativeCallContext context)))))
               (catch unavailable
                 (when (eq unavailable djReturn16Token) (throw unavailable))
                 nil))

@@ -4,7 +4,7 @@
     nativeNullish
     nativeTypeOf
     nativeClearTimeout
-    nativeSetTimeout nativeGet)
+    nativeSetTimeout nativeGet nonEmptyString)
   (import "../../core/errors.eli" success failure)
   (import "../../core/types.eli"
     conversationKey
@@ -25,6 +25,31 @@
   (import "./lark-resources.eli" requestResource ensureUserNotices)
   (import "./lark-attachments.eli" createLarkAttachmentReader projectLarkContent)
   (import "../../../packages/lark/src/messages.eli" larkMessageMentionsAll)
+  (defun larkOutboundReceipt (outbound id message)
+    (let* ((address (nativeGet outbound "destination"))
+           (parent (nonEmptyString (nativeGet message "parent_id")))
+           (root (nonEmptyString (nativeGet message "root_id")))
+           (thread (nonEmptyString (nativeGet message "thread_id")))
+           (reply-to (nativeGet outbound "native_reply_to"))
+           (known-thread (or (nonEmptyString (nativeGet outbound "reply_thread_id"))
+             (nonEmptyString (nativeGet address "native_thread_id"))))
+           (topic (or (= (nativeGet outbound "reply_in_thread") t) known-thread))
+           (anchor-root (nonEmptyString (nativeGet outbound "reply_anchor_root"))))
+      (when (and id (= (nativeGet message "message_id") id)
+                 (= (nativeGet message "chat_id") (nativeGet address "native_chat_id"))
+                 (or (not known-thread) (= thread known-thread))
+                 (or (not topic) thread)
+                 (or (not anchor-root)
+                     (and (= parent reply-to)
+                          (or (not topic) (= root anchor-root) (and (not known-thread) (= root reply-to))))))
+        (js-object :state "accepted" :native_message_id id :native_thread_id thread
+          :native_parent_id parent :native_root_id root :evidence_level "native_protocol"))))
+  (defasync readLarkOutboundReceipt (http outbound id context)
+    (let* ((readback (await (js-call http :perform "get" (js-object :message_id id) context)))
+           (items (nativeGet (nativeGet (nativeGet readback "data") "data") "messages"))
+           (message (and (nativeGet readback "ok") (Array/isArray items) (= (js-length items) 1) (aref items 0))))
+      (or (larkOutboundReceipt outbound id message)
+        (js-object :state "unknown" :definite_not_sent false :candidate_message_id id :evidence_level "none"))))
   (defun watchAddress
     (config watch)
     (js-object
@@ -825,55 +850,12 @@
                                   (let ((response (await (js-call http :perform (if original "reply" "send") parameters context))))
                                     (if (nativeGet response "ok")
                                       (let* ((message (nativeGet (nativeGet response "data") "data"))
-                                             (message-id (nativeGet message "message_id"))
-                                             (anchor-root (nativeGet outbound "reply_anchor_root"))
-                                             (topic (nativeGet parameters "reply_in_thread")))
-                                        (when (and anchor-root (= (nativeTypeOf message-id) "string") (> (js-length message-id) 0)
-                                                   (= (nativeGet message "chat_id") (nativeGet destination "native_chat_id"))
-                                                   (or (not (nativeGet message "parent_id"))
-                                                       (and topic (or (not (nativeGet message "root_id")) (not (nativeGet message "thread_id"))))))
-                                          (let* ((readback (await (js-call http :perform "get" (js-object :message_id message-id) context)))
-                                                 (items (nativeGet (nativeGet (nativeGet readback "data") "data") "messages")))
-                                            (when (and (nativeGet readback "ok") (Array/isArray items) (= (js-length items) 1))
-                                              (setq message (aref items 0)))))
-                                        (if
-                                          (and
-                                            (=
-                                              (nativeTypeOf (nativeGet message "message_id"))
-                                              "string")
-                                            (> (js-length (nativeGet message "message_id")) 0)
-                                            (= (nativeGet message "message_id") message-id)
-                                            (=
-                                              (nativeGet message "chat_id")
-                                              (nativeGet destination "native_chat_id"))
-                                            (or (not (nativeGet outbound "reply_thread_id"))
-                                              (= (nativeGet outbound "reply_thread_id") (nativeGet message "thread_id")))
-                                            (or (not anchor-root)
-                                              (and (= (nativeGet message "parent_id") original)
-                                                (or (not topic) (= (nativeGet message "root_id") anchor-root))))
-                                            (or (not (nativeGet parameters "reply_in_thread"))
-                                              (and (= (nativeTypeOf (nativeGet message "thread_id")) "string")
-                                                (> (js-length (nativeGet message "thread_id")) 0))))
-                                          (js-object
-                                            :state
-                                            "accepted"
-                                            :native_message_id
-                                            (nativeGet message "message_id")
-                                            :native_thread_id
-                                            (nativeGet message "thread_id" nil)
-                                            :native_parent_id (if (= (nativeTypeOf (nativeGet message "parent_id")) "string")
-                                                                (nativeGet message "parent_id") nil)
-                                            :native_root_id (if (= (nativeTypeOf (nativeGet message "root_id")) "string")
-                                                              (nativeGet message "root_id") nil)
-                                            :evidence_level
-                                            "native_protocol")
-                                          (js-object
-                                            :state
-                                            "unknown"
-                                            :definite_not_sent
-                                            false
-                                            :evidence_level
-                                            "none")))
+                                             (id (nonEmptyString (nativeGet message "message_id")))
+                                             (receipt (larkOutboundReceipt outbound id message)))
+                                        (or receipt
+                                          (if (and id (nativeGet outbound "reply_anchor_root"))
+                                            (await (readLarkOutboundReceipt http outbound id context))
+                                            (js-object :state "unknown" :definite_not_sent false :evidence_level "none"))))
                                       ;; An HTTP request can lose the post-send response. It cannot
                                       ;; supply a blanket definite-not-sent guarantee from exit status.
                                       (js-object
@@ -956,13 +938,9 @@
                           :lookup
                           (async
                             (outbound context)
-                            (js-object
-                              :state
-                              "unknown"
-                              :status
-                              "unsupported"
-                              :definite_not_sent
-                              false))
+                            (let ((id (nonEmptyString (nativeGet outbound "candidate_message_id"))))
+                              (if id (await (readLarkOutboundReceipt http outbound id context))
+                                (js-object :state "unknown" :status "unsupported" :definite_not_sent false))))
                           :pendingWork
                           (lambda () (+ (nativeGet active "size")
                             (if http (js-call http :pendingWork) 0)))

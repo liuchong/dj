@@ -101,9 +101,12 @@
       (when verified-author (js-call targets :add verified-author))
       (when reply-to
         (let* ((sent (queryOne context "SELECT o.payload FROM outbound o JOIN echo_index e ON e.outbound_id=o.outbound_id WHERE e.connection_id=? AND e.native_message_id=?" id reply-to))
-          (parent (if sent (nativeGet (JSON/parse (nativeGet sent "payload")) "native_reply_to") reply-to))
+          (outbound (and sent (JSON/parse (nativeGet sent "payload"))))
+          (parent (if outbound (nativeGet outbound "native_reply_to") reply-to))
           (row (and parent (queryOne context
             "SELECT payload FROM events WHERE connection_id=? AND native_message_id=? AND json_extract(payload,'$.conversation.native_chat_id')=? AND event_kind IN ('message.created','message.edited') AND tombstone=0 ORDER BY ingress_seq DESC LIMIT 1" id parent chat))))
+          (when (nativeGet outbound "reply_anchor_author")
+            (js-call targets :add (nativeGet outbound "reply_anchor_author")))
           (when row (js-call targets :add (nativeGet (nativeGet (JSON/parse (nativeGet row "payload")) "sender") "id")))))
       (js-call (Array/from (js-call (nativeGet content "text" "") :matchAll
         (new globalThis.RegExp "<at\\s+user_id=[\"']([^\"']+)[\"'][^>]*>|<@([A-Z0-9]+)(?:\\|[^>]+)?>" "g"))) :forEach

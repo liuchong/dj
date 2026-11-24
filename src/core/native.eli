@@ -13,6 +13,8 @@
   (defconst nativeEncodeURIComponent (get NativeGlobal :encodeURIComponent))
   (defun nativeImport (specifier) (js* "import(specifier)"))
   (defun nativeTypeOf (value) (js* "typeof value"))
+  (defun nonEmptyString (value)
+    (if (and (= (nativeTypeOf value) "string") (> (js-length value) 0)) value nil))
   (defun nativeNullish (value) (or (eq value nil) (undefined? value)))
   (defun nativeBitAnd (left right) (js* "left & right"))
   (defun nativeGet (object key &rest fallback)
@@ -26,7 +28,7 @@
     NativeNumber
     NativeBigInt
     nativeImport
-    nativeTypeOf
+    nativeTypeOf nonEmptyString
     nativeNullish
     nativeBitAnd
     nativeGet

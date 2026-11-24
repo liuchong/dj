@@ -1,5 +1,5 @@
 (module dj.messaging.actions
-  (import "../core/native.eli" nativeGet nativeTypeOf)
+  (import "../core/native.eli" nativeGet nativeTypeOf nonEmptyString)
   (import "../core/errors.eli" success failure)
   (import "../application/context.eli" must requirePermission can nativeCallContext typedRef utcNow)
   (import "../application/write-batch.eli" enqueueWrite)
@@ -81,6 +81,9 @@
         (let* ((scope (resolveTarget context args)) (address (nativeGet scope "address"))
           (revision (nativeGet scope "identity_revision")) (id (nativeGet scope "native_message_id"))
           (message (await (nativeMessage context scope)))
+          (sender (nativeGet message "sender"))
+          (author (and (= (nativeGet sender "sender_type") "user")
+            (= (nativeGet sender "id_type") "open_id") (nonEmptyString (nativeGet sender "id"))))
           (parameters (js-object :message_id id)) (command nil))
           (if (= operation "message.reaction.list")
             (progn
@@ -95,7 +98,7 @@
               (setq command (cond ((= operation "message.recall") "recall") ((= operation "message.edit") "edit")
                 ((= operation "message.reaction.add") "reaction_create") (t "reaction_delete")))
               (when (js-call (js-array "edit" "reaction_create") :includes command)
-                (must (checkRecipients context address id (nativeGet args "content" (js-object :text "")))))
+                (must (checkRecipients context address id (nativeGet args "content" (js-object :text "")) false author)))
               (when (= command "edit")
                 (unless (= (nativeGet message "msg_type") (if (= (nativeGet (nativeGet args "content") "type") "markdown") "post" "text"))
                   (must (failure "unsupported" (js-object :details (js-object :reason "message_edit_format_mismatch")))))
@@ -108,7 +111,7 @@
                 (accepted (js-call context :accept (lambda (tx operation-id)
                   (must (ownerGuard context)) (currentConnection context address revision)
                   (when (js-call (js-array "edit" "reaction_create") :includes command)
-                    (must (checkRecipients context address id (nativeGet args "content" (js-object :text "")))))
+                    (must (checkRecipients context address id (nativeGet args "content" (js-object :text "")) false author)))
                   (setq created t)
                   (success (js-object :action_id operation-id :operation operation :connection_id (nativeGet address "connection_id")
                     :identity_revision revision :destination address :native_message_id id :state "unknown" :confirmed false
@@ -120,7 +123,7 @@
                       (try (must (ownerGuard context)) (currentConnection context address revision)
                         (unless (can context "message.send" address) (must (failure "forbidden")))
                         (when (js-call (js-array "edit" "reaction_create") :includes command)
-                          (must (checkRecipients context address id (nativeGet args "content" (js-object :text "")))))
+                          (must (checkRecipients context address id (nativeGet args "content" (js-object :text "")) false author)))
                         (await (invoke context scope command parameters))
                         (catch error (or (nativeGet error "domain_result") (failure "unavailable")))))))
                     (put data :updated_at (utcNow context))

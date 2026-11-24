@@ -790,8 +790,8 @@
           :reply_in_thread boolSchema
           :reply_to_outbound_id nullableString
           :native_reply_to nullableString
-          :native_parent_id stringSchema
-          :native_root_id stringSchema
+          :native_parent_id nullableString
+          :native_root_id nullableString
           :native_thread_id nullableString
           :revision
           integerSchema

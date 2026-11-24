@@ -354,10 +354,10 @@
     },
     {
       "operation": "message.reply",
-      "required_contract": "reply_context_id:Ref、content:TextContent",
-      "optional_contract": "无",
+      "required_contract": "reply_context_id、outbound_id 或 Lark native_anchor 三选一；content:TextContent",
+      "optional_contract": "reply_in_thread、force_send",
       "key_contract": "K",
-      "output_contract": "Outbound/state/revision；固定原账号/消息/话题，不能另带 destination",
+      "output_contract": "Outbound/state/revision；固定原账号/消息/话题；原生父消息、根消息及话题 ID",
       "valid_arguments": {
         "reply_context_id": "rpl_test",
         "content": {
