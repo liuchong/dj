@@ -38,6 +38,7 @@
       "attachments"
       "reply_context_id"
       "reply_authority"
+      "outbound_policy"
       "allowed_actions"))
   (defun selectedEnvelope (envelope)
     (unless (and (= (nativeGet envelope "schema_version") 1)

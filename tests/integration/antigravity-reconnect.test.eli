@@ -81,6 +81,7 @@
                        (if (nativeGet state "auth_missing") "" (nativeGet state "token")))
                      (t (await (metadataCommand file args context))))))))
                (f (await (createFixture "ag-reconnect" "one" (js-object :configure (lambda (config ports)
+                 (put (nativeGet ports "clock") :monoNow (lambda () (performance/now)))
                  (put config :managed_profiles (js-array))
                  (js-call (nativeGet config "principals") :forEach (lambda (actor)
                    (when (= (nativeGet actor "principal_id") "A")

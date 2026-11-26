@@ -13,6 +13,7 @@
   (import "../../src/adapters/im/lark-inbox.eli" createLarkInboxPoller)
   (import "../../src/adapters/im/lark-events.eli" normalizeLarkEvent)
   (import "../../src/core/errors.eli" success)
+  (import "../../src/messaging/recipients.eli" optOutNotice)
   (import "../support/telegram-http.eli" telegramFixture nativeMessage)
   (defasync setup () (await (createFixture "im" "one")))
   (withCase
@@ -57,7 +58,7 @@
           :resolveConversation
           (async
             (address context application)
-            (put (nativeGet f "A") :grants (js-array))
+            (put (nativeGet f "A") :disabled t)
             (put (nativeGet f "A") :authorization_revision 2)
             (js-object :ok t :address address :evidence_level "native_protocol")))
         (let
@@ -70,6 +71,7 @@
                   (nativeGet f "A")
                   "conversation.resolve"
                   (js-object :connection_id "lark" :chat_id "c1" :thread_id nil)))))
+          (put (nativeGet f "A") :disabled false)
           (js-call (expect (nativeGet revoked "ok")) :toBe false)
           (js-call (expect (nativeGet (nativeGet revoked "error") "code")) :toBe "forbidden"))))
     closeFixture)
@@ -926,7 +928,7 @@
                 (nativeGet (nativeGet body "reply_parameters") "allow_sending_without_reply" false))
               :toBe
               false)
-            (js-call (expect (nativeGet body "text")) :toBe "literal <b>*中文😀*</b>")
+            (js-call (expect (nativeGet body "text")) :toBe (str "literal <b>*中文😀*</b>\n\n" optOutNotice))
             (js-call (expect (nativeGet body "parse_mode")) :toBeUndefined)
             (js-call (expect (nativeGet record "state")) :toBe "accepted")
             (js-call (expect (nativeGet record "native_message_ids")) :toContain "501")))))
@@ -1146,7 +1148,7 @@
               (js-call (expect (nativeGet (js-call (js-call db :query
                 "SELECT payload FROM poll_checkpoints WHERE conversation_key='inbox:p2p_chat'") :get) "payload")) :toBe activation))
             (setq fail t)
-            (let ((n 0)) (while (and (< n 20) (not (= (nativeGet (js-call poller :status) "state") "degraded")))
+            (let ((n 0)) (while (and (< n 20) (not (= (nativeGet (js-call poller :status) "state") "blocked")))
               (await (funcall step)) (setq n (1+ n))))
             (js-call (expect (nativeGet (nativeGet (js-call poller :status) "native_error") "code")) :toBe 99991672)
             (let* ((user-poller poller)
@@ -1171,7 +1173,7 @@
               (let ((n 0)) (while (< n 12) (await (funcall step)) (setq n (1+ n))))
               (js-call (expect (nativeGet (js-call bot-poller :status) "interval_seconds")) :toBe 2)
               (js-call (expect (nativeGet (js-call bot-poller :status) "state")) :toBe "ready")
-              (js-call (expect (nativeGet (js-call user-poller :status) "state")) :toBe "degraded")
+              (js-call (expect (nativeGet (js-call user-poller :status) "state")) :toBe "blocked")
               (let ((rows (js-call (js-call db :query
                   "SELECT payload FROM im_event_inbox WHERE connection_id='lark-bot'") :all)))
                 (js-call (expect (js-length rows)) :toBe 2)
@@ -1285,7 +1287,9 @@
             :content (js-object :type "text" :text "reply without message grants") :idempotency_key "free-reply")))
           (js-call (expect (js-length inputs)) :toBe 1)
           (js-call (expect (nativeGet (nativeGet message "content") "text")) :toBe "available without message grants")
+          (put (nativeGet f "X") :disabled t)
           (js-call (expect (nativeGet (await (js-call f :call (nativeGet f "X") "message.reply" reply-args)) "ok")) :toBe false)
+          (put (nativeGet f "X") :disabled false)
           (let ((reply (await (callOk f "A" "message.reply" reply-args))))
             (await (js-call f :tick))
             (js-call (expect (nativeGet (await (callOk f "A" "outbound.get" (js-object :outbound_id (nativeGet reply "outbound_id")))) "state")) :toBe "accepted")

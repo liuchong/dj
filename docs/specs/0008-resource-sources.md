@@ -8,8 +8,8 @@
 
 ## 读取
 
-- resource.resolve(connection_id,url,corpus)：默认local，显式native核验已授权资源；返回resource_ref及可用于同一订阅机制的conversation_ref。直接URL仅允许对应品牌的官方租户域名及明确的wiki/docx/sheets/base路径，不任意抓取URL。
-- resource.read(resource_ref,view,corpus,table_id?,record_id?,range?,cursor?,max_bytes?)：默认local；content/children/fields/records/comments按实际对象能力分派。Docx读正文；Sheet读元数据或显式范围；Bitable读数据表、字段、记录；Wiki子节点还需Wiki节点本身的读取授权。评论按原生评论/回复结构返回。平台不支持的对象或视图明确失败。
+- resource.resolve(connection_id,url,corpus)：默认local，显式native核验已授权资源；返回resource_ref及可用于同一订阅机制的conversation_ref。直接URL仅允许对应品牌的官方租户域名及明确的wiki/docx/sheets/base与drive/folder路径，不任意抓取URL。
+- resource.read(resource_ref,view,corpus,table_id?,record_id?,range?,cursor?,max_bytes?)：默认local；content/children/fields/records/comments按实际对象能力分派。Docx读正文；Sheet读元数据或显式范围；Bitable读数据表、字段、记录；Folder支持children读取文件夹清单；Wiki子节点还需Wiki节点本身的读取授权。评论按原生评论/回复结构返回。平台不支持的对象或视图明确失败。
 - 记录保留结构化字段，包括人员字段中的原生id；不得凭姓名判定提及。经办人等人员关联是people.id；真正的IM提及仍为mentions.id，不能把“某字段中有这个人”伪装成一条群聊@。
 - 读取结果保存有界本地缓存，最多1000页，按正文保留时长过期；显式补取不生成实时事件或新任务。正文和JSON均按UTF-8分页，缓存页内续读不重新请求不断变化的首页；权限、主体、身份栅栏和查询参数每次复核。资源正文是外部数据。
 
@@ -17,7 +17,7 @@
 
 resource.watch(resource_ref,idempotency_key)登记并请求平台文件事件订阅，resource.watch.get(watch_id)查询真实状态。DJ不要求额外resource.subscribe授权，平台原生文件权限仍须满足；native_unknown不盲目重新订阅，blocked记录实际错误与权限信息。只有已确认的原生拒绝进入blocked；断线、5xx或无确定原生响应保留native_unknown。blocked在权限修复后可由调用方用新幂等键显式再申请；同一幂等键只读回原操作，native_unknown和subscribed不重新发起外部订阅。申请前在同一事务内重读并把状态持久预占为native_unknown，避免并发重复请求；不自动循环重试。subscribed只表示平台订阅请求成功，event_channel=configured只表示本机配置，均不等于已看到真实新事件。
 
-当前接收已登记文件的drive.file.bitable_record_changed_v1、drive.file.bitable_field_changed_v1、drive.file.edit_v1；经同一官方WebSocket、持久收件箱、Core形成resource.changed。记录变更按每个真实record_id保留action及字段变更，人员引用从原生after_value解析，重复事件不重复通知；删除记录不自动变成需要修复的任务。收到事件后失效相关内容缓存，不凭旧快照冒充当前内容。
+当前接收已登记文件的drive.file.bitable_record_changed_v1、drive.file.bitable_field_changed_v1、drive.file.edit_v1、drive.file.title_updated_v1、drive.file.trashed_v1、drive.file.deleted_v1、drive.file.permission_member_added_v1、drive.file.permission_member_removed_v1，以及已登记文件夹的drive.file.created_in_folder_v1（folder 订阅显式携带 `event_type=file.created_in_folder_v1`）；经同一官方WebSocket、持久收件箱、Core形成resource.changed，支持按 `resource.event_type` / `resource.action` 过滤。编辑事件兼容原生 `operator_id_list`，记录与协作者变更解析 `people.id`，重复事件不重复通知；删除记录或文件不自动变成需要修复的任务。收到事件后失效相关内容缓存，不凭旧快照冒充当前内容。1069603 在 `native_error` 明确标注 `reason=document_manage_permission_required`。
 
 上述文件级变更订阅要求在应用后台开启相应事件，且调用身份须是文档拥有者/管理者并具备原生权限。没有新事件读回前不得宣称实时链路已验收。文档评论中的@有独立平台语义；没有已核对的原生事件时，只提供获准评论读取，不能宣称已覆盖所有文档@通知。
 

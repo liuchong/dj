@@ -24,7 +24,7 @@
       (marks (new globalThis.Map)) (calls (js-array)) (replies (js-array))
       (state (js-object :acks 0 :reaction_seq 0 :enabled false :root nil
         :user_only_ids (new globalThis.Set) :bot_lag_ids (new globalThis.Map) :app_open_id nil
-        :inbox_denied_ids (new globalThis.Set) :search_lag_ids (new globalThis.Set)
+        :inbox_denied_ids (new globalThis.Set) :reaction_denied_ids (new globalThis.Set) :search_lag_ids (new globalThis.Set)
         :rate_limit_remaining 0 :retry_after_seconds 6))
       (project-message (lambda (message bot)
         (when message
@@ -101,9 +101,11 @@
                   (t (js-object :key key :path path :method method))))
                 (cond
                   ((js-call path :endsWith "/ws/endpoint")
-                    (Response/json (js-object :code 0 :data (js-object
-                      :URL (str "wss://fixture.larksuite.com/ws?service_id=1&app=" (nativeGet body "AppID"))
-                      :ClientConfig (js-object :PingInterval 90)))))
+                    (if (nativeGet state "ws_down")
+                      (Response/json (js-object :code 1000 :msg "ws unavailable") (js-object :status 503))
+                      (Response/json (js-object :code 0 :data (js-object
+                        :URL (str "wss://fixture.larksuite.com/ws?service_id=1&app=" (nativeGet body "AppID"))
+                        :ClientConfig (js-object :PingInterval 90))))))
                   ((js-call path :endsWith "/authen/v1/user_info")
                     (Response/json (js-object :code 0 :data (js-object :open_id "ou_self"))))
                   ((js-call path :endsWith "/tenant_access_token/internal")
@@ -112,8 +114,14 @@
                     (let* ((message-id (aref reaction 1)) (mark-key (str key ":" message-id))
                       (existing (js-call marks :get mark-key)))
                       (cond
-                        ((= method "GET") (Response/json (js-object :code 0 :data
-                          (js-object :items (if existing (js-array existing) (js-array)) :has_more false))))
+                        ((= method "GET")
+                          (cond
+                            ((nativeGet state "reaction_missing_scope")
+                              (Response/json (js-object :code 99991672 :error (js-object :permission_violations (js-array (js-object :subject "im:message.reactions:read")))) (js-object :status 403)))
+                            ((js-call (nativeGet state "reaction_denied_ids") :has message-id)
+                              (Response/json (js-object :code 230013 :msg "forbidden") (js-object :status 403)))
+                            (t (Response/json (js-object :code 0 :data
+                              (js-object :items (if existing (js-array existing) (js-array)) :has_more false))))))
                         ((= method "POST")
                           (put state :reaction_seq (1+ (nativeGet state "reaction_seq")))
                           (let ((mark (js-object :reaction_id (str "reaction-" (nativeGet state "reaction_seq"))
@@ -149,8 +157,11 @@
                       :items (js-call (js-array (js-object :chat_id "c1")) :concat (nativeGet state "extra_chats" (js-array)))
                       :has_more false))))
                   ((= path "/open-apis/im/v1/pins")
-                    (if (nativeGet state "pin_fail") (Response/json (js-object :code 99991663))
-                      (let* ((pins (nativeGet (nativeGet state "pins") key (js-array)))
+                    (cond
+                      ((nativeGet state "pin_missing_scope")
+                        (Response/json (js-object :code 99991672 :error (js-object :permission_violations (js-array (js-object :subject "im:chat.pins:read")))) (js-object :status 403)))
+                      ((nativeGet state "pin_fail") (Response/json (js-object :code 99991663)))
+                      (t (let* ((pins (nativeGet (nativeGet state "pins") key (js-array)))
                         (visible (js-call pins :filter (lambda (pin)
                           (and (= (nativeGet pin "chat_id") (js-call query :get "chat_id"))
                             (>= (NativeNumber (nativeGet pin "create_time")) (NativeNumber (js-call query :get "start_time")))
@@ -159,7 +170,7 @@
                         (more (and (nativeGet state "pin_paginate") (= offset 0) (> (js-length visible) 1))))
                         (Response/json (js-object :code 0 :data (js-object :items
                           (if (nativeGet state "pin_paginate") (js-call visible :slice offset (1+ offset)) visible)
-                          :has_more (if more t false) :page_token (if more "pin-page-two" nil)))))))
+                          :has_more (if more t false) :page_token (if more "pin-page-two" nil))))))))
                   ((or (= path "/open-apis/search/v2/message") (= path "/open-apis/im/v1/messages"))
                     (if (and (> (nativeGet state "rate_limit_remaining" 0) 0) (not bot))
                       (progn
@@ -194,6 +205,13 @@
                                     (when projected (js-call selected :push projected)))))))))
                         (Response/json (js-object :code 0 :data (js-object :items selected :has_more false))))))
                   ;; User document-notice setup is unrelated to IM collection.
+                  ((and (nativeGet state "notice_mock") (js-call path :endsWith "/user/subscription_status"))
+                    (if (nativeGet state "notice_transient_fail")
+                      (Response/json (js-object :code 500 :msg "temp") (js-object :status 503))
+                      (Response/json (js-object :code 0 :data (js-object :is_subscribe (nativeGet state "notice_subscribed" false))))))
+                  ((and (nativeGet state "notice_mock") (js-call path :endsWith "/user/subscription"))
+                    (put state :notice_subscribed t)
+                    (Response/json (js-object :code 0 :data (js-object))))
                   (t (Response/json (js-object :code 99991663))))))))
             (js-call (nativeGet ports "im_ports") :set "lark" (createLarkEventPort user ports))
             (let ((bot (js-call (nativeGet config "connections") :find (lambda (c) (= (nativeGet c "connection_id") "lark-bot")))))
@@ -1268,5 +1286,105 @@
         (js-call (expect (js-length inputs)) :toBe 10)
         (js-call (expect (nativeGet (nativeGet (nativeGet (aref inputs 9) "envelope") "source") "native_message_id"))
           :toBe "after-429")
+        (finally (js-call db :close))))) cleanup)
+
+  (withCase "T40.lark-capability-isolation.integration" setup (async (f)
+    (let* ((agent (await (bindRecipient f)))
+           (clock (nativeGet f "clock"))
+           (state (nativeGet f "hybrid_state"))
+           (messages (nativeGet f "messages"))
+           (inputs (nativeGet (nativeGet f "opencode") "inputs"))
+           (db (new Database (resolve (nativeGet f "root") "state/dj.sqlite") (js-object :readonly t)))
+           (stamp (lambda () (str (Date/parse (js-call clock :utcNow))))))
+      (try
+        (put state :enabled t)
+        (put state :pin_missing_scope t)
+        (put state :reaction_missing_scope t)
+        (put state :notice_mock t)
+        (put state :notice_transient_fail t)
+        (let ((p (await (callOk f "A" "subscription.preview" (js-object
+                   :expected_revision 0 :spec (js-object :agent_id (nativeGet agent "agent_id")
+                     :rules (js-array (js-object :id "default" :enabled t :event_kinds (js-array "message.created" "message.pinned" "message.reaction.added")
+                       :predicate (js-object :any (js-array
+                         (js-object :field "addressed_self" :op "eq" :value t)
+                         (js-object :field "event_kind" :op "eq" :value "message.pinned")
+                         (js-object :field "event_kind" :op "eq" :value "message.reaction.added")))))))))))
+          (await (callOk f "A" "subscription.set" (js-object :preview_id (nativeGet p "preview_id")
+            :expected_revision 0 :idempotency_key "cap-iso-sub"))))
+        ;; 1. Missing scopes on pins/reactions mark only those subsystems blocked; core poll_fallback stays ready and messages deliver.
+        (js-call messages :set "cap-seed" (js-object :message_id "cap-seed" :chat_id "c1" :chat_type "group"
+          :create_time (funcall stamp) :msg_type "text"
+          :body (js-object :content "{\"text\":\"@_user_1 core stays healthy\"}")
+          :sender (js-object :id "ou_other" :id_type "open_id" :sender_type "user")
+          :mentions (js-array (js-object :key "@_user_1" :id "ou_self" :id_type "open_id"))))
+        (await (advance f 12 10))
+        (let* ((probe (await (callOk f "O" "connection.probe" (js-object :connection_id "lark"))))
+               (es (nativeGet probe "event_source"))
+               (pf (nativeGet es "poll_fallback"))
+               (layers (nativeGet es "capability_layers")))
+          (js-call (expect (nativeGet pf "state")) :toBe "ready")
+          (js-call (expect (nativeGet (nativeGet pf "pin_poll") "state")) :toBe "blocked")
+          (js-call (expect (nativeGet (nativeGet pf "reaction_poll") "state")) :toBe "blocked")
+          (js-call (expect (nativeGet (nativeGet layers "messages") "mode")) :toBe "websocket+http")
+          (js-call (expect (nativeGet (nativeGet layers "pins") "state")) :toBe "blocked")
+          (js-call (expect (nativeGet (nativeGet layers "reactions") "mode")) :toBe "websocket_only")
+          (js-call (expect (nativeGet (nativeGet layers "reactions") "state")) :toBe "ready")
+          (js-call (expect (js-length inputs)) :toBe 1)
+          (js-call (expect (nativeGet (nativeGet (nativeGet (aref inputs 0) "envelope") "source") "native_message_id")) :toBe "cap-seed"))
+        ;; 2. Drop WebSocket: messages layer gracefully degrades to http_fallback with state=ready, and new HTTP message still delivers.
+        (put state :ws_down t)
+        (let ((ws (js-call (nativeGet f "wire_sockets") :get "cli_user")))
+          (when ws (js-call ws :close)))
+        (await (advance f 2 10))
+        (js-call messages :set "http-fallback-msg" (js-object :message_id "http-fallback-msg" :chat_id "c1" :chat_type "group"
+          :create_time (funcall stamp) :msg_type "text"
+          :body (js-object :content "{\"text\":\"@_user_1 via http fallback\"}")
+          :sender (js-object :id "ou_other" :id_type "open_id" :sender_type "user")
+          :mentions (js-array (js-object :key "@_user_1" :id "ou_self" :id_type "open_id"))))
+        (await (advance f 5 10))
+        (let* ((probe (await (callOk f "O" "connection.probe" (js-object :connection_id "lark"))))
+               (layers (nativeGet (nativeGet probe "event_source") "capability_layers")))
+          (js-call (expect (nativeGet (nativeGet probe "event_source") "state")) :toBe "disconnected")
+          (js-call (expect (nativeGet (nativeGet layers "messages") "mode")) :toBe "http_fallback")
+          (js-call (expect (nativeGet (nativeGet layers "messages") "state")) :toBe "ready")
+          (js-call (expect (js-length inputs)) :toBe 2)
+          (js-call (expect (nativeGet (nativeGet (nativeGet (aref inputs 1) "envelope") "source") "native_message_id")) :toBe "http-fallback-msg"))
+        ;; 3. Recover WS and clear transient user_document_notices failure -> auto-upgrades back to websocket+http & subscribed.
+        (put state :ws_down false)
+        (put state :notice_transient_fail false)
+        (await (advance f 5 800))
+        (let* ((probe (await (callOk f "O" "connection.probe" (js-object :connection_id "lark"))))
+               (es (nativeGet probe "event_source"))
+               (layers (nativeGet es "capability_layers")))
+          (js-call (expect (nativeGet es "state")) :toBe "connected")
+          (js-call (expect (nativeGet (nativeGet es "user_document_notices") "state")) :toBe "subscribed")
+          (js-call (expect (nativeGet (nativeGet layers "messages") "mode")) :toBe "websocket+http")
+          (js-call (expect (nativeGet (nativeGet layers "document_notices") "mode")) :toBe "websocket"))
+        ;; 4. Single permanently refused message does not block reaction polling or leave WS reaction receipts stuck in retrying.
+        (put state :pin_missing_scope false)
+        (put state :reaction_missing_scope false)
+        (js-call (nativeGet state "reaction_denied_ids") :add "cap-seed")
+        (js-call messages :set "cap-ok-after-skip" (js-object :message_id "cap-ok-after-skip" :chat_id "c1" :chat_type "group"
+          :create_time (funcall stamp) :msg_type "text"
+          :body (js-object :content "{\"text\":\"@_user_1 ok after skip\"}")
+          :sender (js-object :id "ou_other" :id_type "open_id" :sender_type "user")
+          :mentions (js-array (js-object :key "@_user_1" :id "ou_self" :id_type "open_id"))))
+        (emit f "cli_user" "cap-ok-after-skip")
+        ;; Emit WS reaction against a permanently deleted message ID (230013).
+        (js-call (nativeGet state "inbox_denied_ids") :add "deleted-reaction-msg")
+        (let* ((wire (js-object :header (js-object :event_id "ws-del-react" :event_type "im.message.reaction.created_v1" :app_id "cli_user")
+                 :event (js-object :message_id "deleted-reaction-msg" :reaction_type (js-object :emoji_type "ThumbsUp")
+                   :operator_type "user" :user_id (js-object :open_id "ou_other") :action_time (funcall stamp))))
+               (bytes (encodeLarkFrame (js-object :seq 1 :service 1 :method 1
+                 :headers (js-array (js-object :key "type" :value "event") (js-object :key "message_id" :value "ws-del-react"))
+                 :payload (Buffer/from (JSON/stringify wire) "utf8")))))
+          (js-call (js-call (nativeGet f "wire_sockets") :get "cli_user") :dispatchEvent
+            (new globalThis.MessageEvent "message" (js-object :data bytes))))
+        (await (advance f 6 10))
+        (let ((receipt (js-call (js-call db :query "SELECT state,last_error FROM lark_event_receipts WHERE connection_id='lark' AND event_id='ws-del-react'") :get))
+              (retrying (js-call (js-call db :query "SELECT count(*) AS n FROM lark_event_receipts WHERE connection_id='lark' AND state='retrying'") :get)))
+          (js-call (expect (nativeGet receipt "state")) :toBe "ignored")
+          (js-call (expect (nativeGet receipt "last_error")) :toBe "reaction_message_unavailable")
+          (js-call (expect (nativeGet retrying "n")) :toBe 0))
         (finally (js-call db :close))))) cleanup)
 )

@@ -161,7 +161,7 @@
         (js-call (expect (nativeGet response "ok")) :toBe t)
         (js-call (expect (nativeGet (aref (nativeGet (nativeGet (nativeGet response "data") "data") "messages") 0) "content")) :toBe "official content"))
       (await (js-call transport :perform "list" (js-object :chat_id "c1" :order "desc" :limit 20) call))
-      (js-call (expect (aref paths 1)) :toBe "https://open.larksuite.com/open-apis/im/v1/messages/om-test")
+      (js-call (expect (aref paths 1)) :toBe "https://open.larksuite.com/open-apis/im/v1/messages/om-test?user_id_type=open_id")
       (js-call (expect (js-call (aref paths 2) :includes "container_id_type=chat")) :toBe t)
       (js-call (expect (js-call (aref paths 2) :includes "page_size=20")) :toBe t)
       (js-call transport :close))) (lambda (x) nil))

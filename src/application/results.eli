@@ -539,7 +539,7 @@
           :capabilities
           (ref "capabilities")
           :event_source
-          (obj (js-object :event_receipts (ref "event_receipts") :user_document_notices (js-object :type "object" :additionalProperties t) :poll_fallback (js-object :type "object" :additionalProperties t) :requested_coverage stringSchema :personal_inbox stringSchema :state stringSchema :reason nullableString :identity stringSchema :send_identity stringSchema :native_code integerSchema :transport stringSchema :coverage stringSchema :last_received_at nullableString :reaction_event_type stringSchema :last_reaction_at nullableString :missing_scopes (arr stringSchema) :console_url nullableString :required_events (arr stringSchema)))
+          (obj (js-object :event_receipts (ref "event_receipts") :user_document_notices (js-object :type "object" :additionalProperties t) :capability_layers (js-object :type "object" :additionalProperties t) :poll_fallback (js-object :type "object" :additionalProperties t) :requested_coverage stringSchema :personal_inbox stringSchema :state stringSchema :reason nullableString :identity stringSchema :send_identity stringSchema :native_code integerSchema :transport stringSchema :coverage stringSchema :last_received_at nullableString :reaction_event_type stringSchema :last_reaction_at nullableString :missing_scopes (arr stringSchema) :console_url nullableString :required_events (arr stringSchema)))
           :credential_state
           stringSchema
           :checked_at
@@ -608,7 +608,7 @@
           :submitted_count integerSchema))))
   (put definitions :message_recovery (obj (strings "recovery_id connection_id" (js-object :identity_revision integerSchema
     :event_ids (arr stringSchema) :native_message_ids (arr stringSchema) :created_count integerSchema :edited_count integerSchema :history_only boolSchema :recovered_count integerSchema :realtime boolSchema))))
-  (put definitions :lark_resource (obj (strings "connection_id kind token node_token space_id title url resource_ref conversation_ref event_type action recipient_id comment_id"
+  (put definitions :lark_resource (obj (strings "connection_id kind token node_token space_id title url resource_ref conversation_ref event_type action recipient_id comment_id child_kind child_token"
     (js-object :table_id nullableString :record_id nullableString :reply_id nullableString :is_mentioned boolSchema))))
   (put definitions :resource_page (obj (strings "text format as_of"
     (js-object :resource (ref "lark_resource") :data (js-object) :offset_bytes integerSchema :next_offset_bytes integerSchema :total_bytes integerSchema
@@ -628,11 +628,12 @@
   (put definitions :ingress_evidence (obj (strings "kind operation_id requested_by reason recovered_at" (js-object :history_only boolSchema))))
   (put definitions :topic (obj (strings "topic_key kind root_message_id" (js-object :native_thread_id nullableString :parent_message_id nullableString))))
   (put definitions :reply_authority (obj (strings "recipient_principal_id expires_at")))
+  (put definitions :outbound_policy (obj (strings "status reason" (js-object :reactions_blocked boolSchema :force_send_required boolSchema))))
   (put definitions :inbox_envelope (obj (js-object
     :schema_version integerSchema :kind stringSchema :origin stringSchema
     :delivery_id nullableString :inbox_id stringSchema :event_id stringSchema
     :source (ref "delivery_source") :sender (ref "sender") :content (ref "content")
-    :attachments (arr (ref "attachment")) :reply_context_id nullableString :reply_authority (ref "reply_authority") :allowed_actions (arr stringSchema)
+    :attachments (arr (ref "attachment")) :reply_context_id nullableString :reply_authority (ref "reply_authority") :outbound_policy (ref "outbound_policy") :allowed_actions (arr stringSchema)
     :matched (ref "matched_summary")
     :group_dispatch (obj (strings "group_id target_key selected_agent_id"))
     :dispatch_context (obj (strings "context_id identity_binding_id connection_id identity basis"))

@@ -46,6 +46,11 @@
                     (= (nativeGet item "required_profile") "real")
                     (not (nativeGet selection "real"))
                     (not (nativeGet selection "case_id"))))
+                (not
+                  (and
+                    (= (nativeGet item "required_profile") "native-opencode")
+                    (not (nativeGet (nativeGet globalThis.process "env") "DJ_OPENCODE_ENDPOINT_FILE"))
+                    (not (nativeGet selection "case_id"))))
                 (or
                   (undefined? (nativeGet selection "case_id"))
                   (= id (nativeGet selection "case_id"))))

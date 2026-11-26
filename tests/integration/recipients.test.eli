@@ -189,4 +189,37 @@
         (js-call (expect (nativeGet invalid "ok")) :toBe false))
       (await (setPolicy f 3 (policy "allow")))
       (put (nativeGet peer "capabilities") :max_text_bytes 100)
-      (js-call (expect (code (await (send f ref "footer-limit" (js-call "x" :repeat 90))))) :toBe "limit_exceeded"))) closeFixture))
+      (js-call (expect (code (await (send f ref "footer-limit" (js-call "x" :repeat 90))))) :toBe "limit_exceeded")
+      ;; Inbound events from denied/opted-out senders still deliver notifications,
+      ;; annotating outbound_policy while blocking ordinary replies unless forced.
+      (put (nativeGet peer "capabilities") :max_text_bytes 4096)
+      (let ((agent (await (bindRecipient f))))
+        (await (subscribe f agent "lark"))
+        (await (setPolicy f 4 (policy "deny")))
+        (await (ingest f (event "blocked-still-notifies" "inbound must arrive" "human-1")))
+        (await (turns f)) (await (turns f))
+        (let* ((inputs (nativeGet (nativeGet f "opencode") "inputs"))
+               (before-count (js-length inputs))
+               (envelope (nativeGet (aref inputs (- before-count 1)) "envelope"))
+               (rc-id (nativeGet envelope "reply_context_id")))
+          (js-call (expect before-count) :toBeGreaterThan 0)
+          (js-call (expect (nativeGet envelope "outbound_policy")) :toEqual
+            (js-object :status "blocked" :reason "recipient_blocked" :reactions_blocked t :force_send_required t))
+          (js-call (expect rc-id) :toBeTruthy)
+          (js-call (expect (js-call (nativeGet envelope "allowed_actions") :includes "reply")) :toBe t)
+          (js-call (expect (code (await (js-call f :call (nativeGet f "A") "message.reply"
+            (js-object :reply_context_id rc-id :content (js-object :type "text" :text "blocked reply") :idempotency_key "reply-blocked"))))) :toBe "recipient_blocked")
+          (let ((forced-reply (await (callOk f "A" "message.reply"
+            (js-object :reply_context_id rc-id :content (js-object :type "text" :text "explicit reply") :force_send t :idempotency_key "reply-forced")))))
+            (js-call (expect (nativeGet forced-reply "force_send")) :toBe t))
+          (await (turns f))
+          (js-call (expect (countSent f)) :toBe 2)
+          (await (ingest f (event "optout-td-inbound" "TD" "human-opt")))
+          (await (setPolicy f 5 (policy "allow")))
+          (await (ingest f (event "optout-still-notifies" "opted out inbound" "human-opt")))
+          (await (turns f)) (await (turns f))
+          (let* ((inputs2 (nativeGet (nativeGet f "opencode") "inputs"))
+                 (envelope2 (nativeGet (aref inputs2 (- (js-length inputs2) 1)) "envelope")))
+            (js-call (expect (js-length inputs2)) :toBeGreaterThan before-count)
+            (js-call (expect (nativeGet envelope2 "outbound_policy")) :toEqual
+              (js-object :status "blocked" :reason "recipient_opted_out" :reactions_blocked t :force_send_required t))))))) closeFixture))

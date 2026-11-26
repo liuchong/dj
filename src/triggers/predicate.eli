@@ -35,6 +35,8 @@
         :resource.token "string"
         :resource.table_id "string"
         :resource.record_id "string"
+        :resource.event_type "string"
+        :resource.action "string"
         :sender.id "string"
         :sender.kind "string"
         :sender.person_id "string"

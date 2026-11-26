@@ -64,7 +64,7 @@
     (when (nativeGet (nativeGet f "reaction_poll_state") "release_messages")
       (funcall (nativeGet (nativeGet f "reaction_poll_state") "release_messages")))
     (try (await (closeFixture f)) (finally (put NativeGlobal :WebSocket (nativeGet f "old_socket")))))
-  (defun record (time) (js-object :reaction_id "native-pin" :action_time time
+  (defun record (time &optional reaction-id) (js-object :reaction_id (or reaction-id "native-pin") :action_time time
     :reaction_type (js-object :emoji_type "Pin") :operator (js-object :operator_type "user" :operator_id "ou_self")))
   (withCase "T41.reaction-poll.integration" setup (async (f)
     (let* ((agent (await (bindRecipient f))) (state (nativeGet f "reaction_poll_state"))
@@ -105,7 +105,7 @@
       (await (advance f 8))
       (js-call (expect (js-length inputs)) :toBe 1)
       (setq time (str (Date/parse (js-call (nativeGet f "clock") :utcNow))))
-      (put state :records (js-array (record time)))
+      (put state :records (js-array (record time "native-pin-2")))
       (await (advance f 8))
       (js-call (expect (js-length inputs)) :toBe 2)
       ;; Hundreds of retained candidates no longer determine a new message's wait.
@@ -122,7 +122,7 @@
       (put state :queried (js-array))
       (put state :hold_messages t)
       (setq time (str (Date/parse (js-call (nativeGet f "clock") :utcNow))))
-      (js-call (nativeGet state "per_message") :set "priority" (js-array (record time)))
+      (js-call (nativeGet state "per_message") :set "priority" (js-array (record time "native-pin-3")))
       (await (js-call f :ingest (createdEvent "lark" "priority" "new message with Pin")))
       (await (advance f 60 100))
       (js-call (expect (js-call (nativeGet state "queried") :includes "priority")) :toBe t)
@@ -130,7 +130,7 @@
       (js-call (expect (nativeGet state "release_messages")) :toBeTruthy)
       ;; A later reaction is detected by the recent lane, not only the first read.
       (setq time (str (Date/parse (js-call (nativeGet f "clock") :utcNow))))
-      (js-call (nativeGet state "per_message") :set "priority" (js-array (record time)))
+      (js-call (nativeGet state "per_message") :set "priority" (js-array (record time "native-pin-4")))
       (await (advance f 160 100))
       (js-call (expect (js-length inputs)) :toBe 4)
       (put state :hold_messages false)
@@ -138,7 +138,7 @@
       (await (advance f 3))
       ;; Original is outside the four-message recent set. A later mark must
       ;; still reach the same recipient through the fair archive sweep.
-      (put state :records (js-array (record (str (Date/parse (js-call (nativeGet f "clock") :utcNow))))))
+      (put state :records (js-array (record (str (Date/parse (js-call (nativeGet f "clock") :utcNow))) "native-pin-5")))
       (await (advance f 300))
       (js-call (expect (js-length inputs)) :toBe 5)
       (js-call (expect (js-call (nativeGet state "queried") :includes "archive-0")) :toBe false)
@@ -146,7 +146,7 @@
       (let ((before (nativeGet state "reads")))
         (put state :records (js-array))
         (await (advance f 30 100))
-        (put state :records (js-array (record (str (Date/parse (js-call (nativeGet f "clock") :utcNow))))))
+        (put state :records (js-array (record (str (Date/parse (js-call (nativeGet f "clock") :utcNow))) "native-pin-6")))
         (await (advance f 160 100))
         (js-call (expect (js-length inputs)) :toBe 6)
         (js-call (expect (> (nativeGet state "reads") before)) :toBe t))

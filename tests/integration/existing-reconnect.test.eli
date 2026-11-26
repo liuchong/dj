@@ -261,6 +261,7 @@
                  (inbox-port (createClaudeInboxPort (js-object :endpoints (js-array inbox-endpoint)) host-overrides))
                  (kimi-port (createKimiDshPort "kimi" (js-object :endpoints (js-array kimi-endpoint)) host-overrides)))
             (setq f (await (createFixture "existing-reconnect" "one" (js-object :configure (lambda (config ports)
+              (put (nativeGet ports "clock") :monoNow (lambda () (performance/now)))
               (put config :managed_profiles (js-array))
               (js-call (nativeGet config "principals") :forEach (lambda (actor)
                 (when (= (nativeGet actor "principal_id") "A")

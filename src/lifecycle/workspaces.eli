@@ -29,7 +29,7 @@
             (success (js-object :directory directory :workspace_ref ref))
             (failure "forbidden" (js-object :details (js-object :reason "creation_workspace_unresolved")
               :next_actions (js-array "Pass directory and its discovered workspace_ref, or use the configured base workspace.")))))
-        ((and (js-call (nativeGet instance "workspace_refs" (js-array)) :includes ref)
+        ((and (or (= ref base) (js-call (nativeGet instance "workspace_refs" (js-array)) :includes ref))
               (or (not directory) (= directory (nativeGet instance "directory"))))
           (success (js-object :directory directory :workspace_ref ref)))
         (t (failure "forbidden" (js-object :details (js-object :reason "creation_workspace_out_of_scope")

@@ -3,6 +3,7 @@
   (import "../resources/service.eli" resourceEnvelope)
   (import "../messaging/context.eli" envelopeContext)
   (import "../messaging/reply-context.eli" replyAuthority)
+  (import "../messaging/recipients.eli" checkRecipients)
   (import "../dispatch/contexts.eli" existingSelection prepareIdentity activateIdentity)
   (import "../dispatch/notifications.eli" notificationState)
   (import "./working.eli" trackWorking finishWorking)
@@ -415,6 +416,17 @@
             (when (nativeGet event "reaction") (put envelope :reaction (nativeGet event "reaction")))
             (put envelope :reply_route (js-object :status (if (and (= (nativeGet selected "status") "ready") (not reply)) "forbidden" (nativeGet selected "status"))
               :connection_id (nativeGet selected "connection_id" "") :identity (nativeGet selected "identity" "") :basis (nativeGet selected "basis" "") :mention_ids (nativeGet selected "mention_ids")))
+            (unless resource-event
+              (let* ((dest-address (if (nativeGet selected "destination") (nativeGet selected "destination") (nativeGet event "conversation")))
+                (verified-author (if (= (nativeGet dest-address "connection_id") (nativeGet (nativeGet event "conversation") "connection_id"))
+                  (nativeGet (nativeGet event "sender") "id") nil))
+                (recipient-check (checkRecipients context dest-address nil nil nil verified-author)))
+                (unless (nativeGet recipient-check "ok")
+                  (put envelope :outbound_policy (js-object
+                    :status "blocked"
+                    :reason (nativeGet (nativeGet recipient-check "error") "code")
+                    :reactions_blocked t
+                    :force_send_required t)))))
             (when (> (js-length instructions) 0) (put envelope :instructions instructions))
             (when (nativeGet record "inbox_id") (put envelope :inbox_id (nativeGet record "inbox_id")))
             (when (nativeGet instructions "overflow") (put envelope :instruction_overflow t))

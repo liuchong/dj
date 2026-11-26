@@ -1,0 +1,111 @@
+(module dj.adapters.im.lark-capabilities
+  (import "../../core/native.eli" nativeGet nativeTypeOf)
+
+  ;; Unified error classification and layered capability projection for Lark/Feishu.
+  ;; Missing scopes or permission refusals block only the affected capability layer
+  ;; while lower-priority fallbacks and unrelated capabilities remain active.
+
+  (defun extractMissingScopes (source)
+    (let* ((details (nativeGet source "details"))
+           (wire-err (nativeGet source "error"))
+           (raw (or (nativeGet source "missing_scopes")
+                    (and details (nativeGet details "missing_scopes"))
+                    (and wire-err (nativeGet wire-err "permission_violations")))))
+      (if (Array/isArray raw) raw (js-array))))
+
+  (defun classifyCapabilityError (error &optional min-seconds)
+    (let* ((floor-sec (or min-seconds 5))
+           (details (nativeGet error "details" (js-object)))
+           (http-status (nativeGet error "http_status" (nativeGet details "http_status" 0)))
+           (native-code (nativeGet error "native_code" (nativeGet details "native_code" -1)))
+           (missing (extractMissingScopes error))
+           (retry-after (nativeGet error "retry_after_seconds" (nativeGet details "retry_after_seconds" 0)))
+           (code (nativeGet error "code"))
+           (safe-retry (if (Number/isFinite retry-after) retry-after 0)))
+      (cond
+        ((or (> (js-length missing) 0) (= native-code 99991672) (= native-code 1069603))
+          (js-object
+            :kind "permission_blocked"
+            :state "blocked"
+            :retry_seconds (Math/max 300 floor-sec)
+            :problem (js-object
+              :code native-code
+              :http_status http-status
+              :reason (if (= native-code 1069603) "document_manage_permission_required" "missing_permission")
+              :missing_scopes missing)))
+        ((or (= http-status 429) (= code "rate_limited"))
+          (js-object
+            :kind "rate_limited"
+            :state "degraded"
+            :retry_seconds (Math/max 5 (Math/max floor-sec safe-retry))
+            :problem (js-object
+              :code native-code
+              :http_status http-status
+              :reason "rate_limited"
+              :missing_scopes (js-array))))
+        (t
+          (js-object
+            :kind "transient"
+            :state "degraded"
+            :retry_seconds (Math/max floor-sec safe-retry)
+            :problem (js-object
+              :code native-code
+              :http_status http-status
+              :reason (nativeGet details "reason" "request_failed")
+              :missing_scopes (js-array)))))))
+
+  (defun dualLayer (primary-state fallback-state)
+    (let* ((p-ready (or (= primary-state "connected") (= primary-state "ready")))
+           (f-ready (= fallback-state "ready"))
+           (mode (cond
+                   ((and p-ready f-ready) "websocket+http")
+                   (p-ready "websocket_only")
+                   (f-ready "http_fallback")
+                   (t "unavailable")))
+           (state (cond
+                    ((or p-ready f-ready) "ready")
+                    ((and (= primary-state "blocked") (= fallback-state "blocked")) "blocked")
+                    ((or (js-call (js-array "degraded" "connecting" "disconnected") :includes primary-state)
+                         (js-call (js-array "degraded" "starting") :includes fallback-state))
+                      "degraded")
+                    (t "unavailable"))))
+      (js-object
+        :mode mode
+        :state state
+        :primary (js-object :transport "websocket" :state primary-state)
+        :fallback (js-object :transport "http_poll" :state fallback-state))))
+
+  (defun errorHealthState (err)
+    (if (or (= (nativeGet err "reason") "missing_permission")
+            (= (nativeGet err "reason") "document_manage_permission_required")
+            (> (js-length (nativeGet err "missing_scopes" (js-array))) 0))
+      "blocked"
+      "degraded"))
+
+  (defun composeCapabilityLayers (ws-state ws-reason poller-status notice-status identity)
+    (let* ((msg-poll (or (and poller-status (nativeGet poller-status "state")) "unavailable"))
+           (edit-poll (or (and poller-status (nativeGet (nativeGet poller-status "edit_poll") "state")) "unavailable"))
+           (react-poll (or (and poller-status (nativeGet (nativeGet poller-status "reaction_poll") "state")) "unavailable"))
+           (pin-poll (or (and poller-status (nativeGet (nativeGet poller-status "pin_poll") "state")) "unavailable"))
+           (notice-state (or (and notice-status (nativeGet notice-status "state")) "not_requested")))
+      (js-object
+        :messages (dualLayer ws-state msg-poll)
+        :edits (dualLayer ws-state edit-poll)
+        :reactions (dualLayer ws-state react-poll)
+        :pins (js-object
+          :mode (cond ((= pin-poll "ready") "http_poll") ((= pin-poll "idle") "idle") (t "unavailable"))
+          :state pin-poll
+          :primary (js-object :transport "http_poll" :state pin-poll))
+        :document_notices (if (= identity "user")
+          (js-object
+            :mode (if (= notice-state "subscribed") "websocket" "unavailable")
+            :state notice-state
+            :primary (js-object :transport "websocket" :state notice-state))
+          (js-object :mode "not_applicable" :state "not_applicable"))
+        :resources (js-object
+          :mode (if (= ws-state "connected") "websocket+recovery" "recovery_only")
+          :state (if (= ws-state "connected") "ready" "degraded")
+          :primary (js-object :transport "websocket" :state ws-state :reason ws-reason)
+          :fallback (js-object :transport "explicit_recovery" :state "ready")))))
+
+  (export extractMissingScopes classifyCapabilityError errorHealthState composeCapabilityLayers))

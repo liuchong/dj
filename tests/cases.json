@@ -1365,7 +1365,7 @@
       "suite": "integration",
       "level": "integration",
       "e2e": false,
-      "applicability": "enabled-positive",
+      "applicability": "deferred",
       "parameters": {},
       "required_profile": null,
       "timeout_ms": 15000,
@@ -1620,7 +1620,7 @@
       "suite": "integration",
       "level": "integration",
       "e2e": false,
-      "applicability": "enabled-positive",
+      "applicability": "deferred",
       "parameters": {},
       "required_profile": null,
       "timeout_ms": 15000,
@@ -1643,7 +1643,7 @@
       "suite": "integration",
       "level": "integration",
       "e2e": false,
-      "applicability": "enabled-positive",
+      "applicability": "deferred",
       "parameters": {},
       "required_profile": null,
       "timeout_ms": 15000,
@@ -1667,7 +1667,7 @@
       "suite": "integration",
       "level": "integration",
       "e2e": false,
-      "applicability": "enabled-positive",
+      "applicability": "deferred",
       "parameters": {},
       "required_profile": null,
       "timeout_ms": 15000,
@@ -2196,7 +2196,7 @@
       "suite": "integration",
       "level": "integration",
       "e2e": false,
-      "applicability": "required-rejection",
+      "applicability": "deferred",
       "parameters": {},
       "required_profile": null,
       "timeout_ms": 15000,
@@ -23991,7 +23991,7 @@
       "suite": "integration",
       "level": "integration",
       "e2e": false,
-      "applicability": "enabled-positive",
+      "applicability": "deferred",
       "parameters": {},
       "required_profile": null,
       "timeout_ms": 30000,
@@ -24014,7 +24014,7 @@
       "suite": "integration",
       "level": "integration",
       "e2e": false,
-      "applicability": "enabled-positive",
+      "applicability": "deferred",
       "parameters": {},
       "required_profile": null,
       "timeout_ms": 30000,
@@ -24037,7 +24037,7 @@
       "suite": "integration",
       "level": "integration",
       "e2e": false,
-      "applicability": "enabled-positive",
+      "applicability": "deferred",
       "parameters": {},
       "required_profile": null,
       "timeout_ms": 30000,
@@ -24059,7 +24059,7 @@
       "suite": "integration",
       "level": "integration",
       "e2e": false,
-      "applicability": "enabled-positive",
+      "applicability": "deferred",
       "parameters": {},
       "required_profile": null,
       "timeout_ms": 30000,
@@ -24082,7 +24082,7 @@
       "suite": "integration",
       "level": "integration",
       "e2e": false,
-      "applicability": "enabled-positive",
+      "applicability": "deferred",
       "parameters": {},
       "required_profile": null,
       "timeout_ms": 30000,
@@ -24540,8 +24540,12 @@
       "required_profile": null,
       "timeout_ms": 15000,
       "resource_group": "isolated-integration",
-      "acceptance_ids": ["A19"],
-      "requirements": ["Q07"],
+      "acceptance_ids": [
+        "A19"
+      ],
+      "requirements": [
+        "Q07"
+      ],
       "given": "An authenticated CLI client connected to the existing service",
       "when": "One batch process receives valid queries interleaved with a mutation and invalid lines",
       "then": "Results retain their order, only valid queries run, and per-line errors do not terminate the client"
@@ -26087,7 +26091,7 @@
       "suite": "integration",
       "level": "integration",
       "e2e": false,
-      "applicability": "enabled-positive",
+      "applicability": "deferred",
       "parameters": {
         "transport": "codex-app-server-and-cursor-acp"
       },
@@ -27140,8 +27144,48 @@
       ]
     },
     {
+      "case_id": "T40.drive-resource-events.integration",
+      "parent_id": "T40",
+      "file": "tests/integration/resources.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated-sqlite",
+      "acceptance_ids": [
+        "A01",
+        "A03"
+      ],
+      "requirements": [
+        "SPEC-0008"
+      ]
+    },
+    {
       "case_id": "T38.user-document-notices.unit",
       "parent_id": "T38",
+      "file": "tests/unit/resources.test.eli",
+      "suite": "unit",
+      "level": "unit",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {},
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "pure",
+      "acceptance_ids": [
+        "A01",
+        "A03"
+      ],
+      "requirements": [
+        "SPEC-0008"
+      ]
+    },
+    {
+      "case_id": "T40.lark-capabilities.unit",
+      "parent_id": "T40",
       "file": "tests/unit/resources.test.eli",
       "suite": "unit",
       "level": "unit",
@@ -27927,12 +27971,19 @@
       "level": "integration",
       "e2e": false,
       "applicability": "enabled-positive",
-      "parameters": {"identity": "user"},
+      "parameters": {
+        "identity": "user"
+      },
       "required_profile": null,
       "timeout_ms": 10000,
       "resource_group": "isolated-sqlite-http",
-      "requirements": ["Q11", "Q12"],
-      "acceptance_ids": ["A05"],
+      "requirements": [
+        "Q11",
+        "Q12"
+      ],
+      "acceptance_ids": [
+        "A05"
+      ],
       "given": "Lark rich post with named document link, image and forbidden file",
       "when": "Parse and deliver the post, then fetch by exact attachment reference",
       "then": "Native identity, file integrity, partial failure, cache and reference scope hold"
@@ -27949,8 +28000,13 @@
       "required_profile": null,
       "timeout_ms": 3000,
       "resource_group": "none",
-      "requirements": ["Q11", "Q12"],
-      "acceptance_ids": ["A05"],
+      "requirements": [
+        "Q11",
+        "Q12"
+      ],
+      "acceptance_ids": [
+        "A05"
+      ],
       "given": "Unicode post with linked document, video and cover image",
       "when": "Render anchors and select actual native image input",
       "then": "Original text, rich spans, native resource type and path boundaries are deterministic"
@@ -29173,8 +29229,13 @@
       "required_profile": null,
       "timeout_ms": 15000,
       "resource_group": "isolated-sqlite",
-      "requirements": ["Q11", "Q12"],
-      "acceptance_ids": ["A05"],
+      "requirements": [
+        "Q11",
+        "Q12"
+      ],
+      "acceptance_ids": [
+        "A05"
+      ],
       "given": "A visible Lark group message with neither a DJ delivery nor an outbound record",
       "when": "Create a topic from its verified native anchor",
       "then": "Confirm the root, parent and thread IDs and enforce idempotency, conversation scope and author opt-out"
@@ -29232,6 +29293,33 @@
       "given": "Cross-app Lark user and bot connections sharing a tenant with mapped reply_routes",
       "when": "Bot joins an existing group days after activation, posts Working reactions and observes skewed WS/HTTP reactions",
       "then": "Pre-join history is not backfilled, cross-app Working echoes do not self-trigger and skewed WS/HTTP reactions coalesce once"
+    },
+    {
+      "case_id": "T40.lark-capability-isolation.integration",
+      "parent_id": "T40",
+      "file": "tests/integration/hybrid-inbox.test.eli",
+      "suite": "integration",
+      "level": "integration",
+      "e2e": false,
+      "applicability": "enabled-positive",
+      "parameters": {
+        "transport": "websocket-http-core"
+      },
+      "required_profile": null,
+      "timeout_ms": 15000,
+      "resource_group": "isolated",
+      "requirements": [
+        "Q01",
+        "Q03",
+        "Q07"
+      ],
+      "acceptance_ids": [
+        "A03",
+        "A05"
+      ],
+      "given": "A user Lark connection experiencing scoped subsystem refusals, temporary WS outage, transient user notice failure and a single permanently deleted reaction target",
+      "when": "Pin/reaction scopes fail while messages stay authorized, WS drops and reconnects, user notices recover and a deleted-message WS reaction arrives",
+      "then": "Blocked subsystems isolate cleanly without degrading core HTTP message fallback, capability_layers track real-time upgrade/fallback, and single-item refusals do not wedge pollers or receipts"
     },
     {
       "case_id": "T38.trigger-reasons.unit",

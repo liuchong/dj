@@ -31,6 +31,7 @@
     "build:test": "bun dist-tools/tools/build.mjs --scope all",
     "package:directory": "bun dist-tools/tools/package.mjs",
     "test": "bun dist-tools/tools/verify.mjs --suite unit",
+    "verify:core": "bun dist-tools/tools/verify.mjs --suite unit && bun dist-tools/tools/verify.mjs --suite integration",
     "test:unit": "bun dist-tools/tools/verify.mjs --suite unit",
     "test:integration": "bun dist-tools/tools/verify.mjs --suite integration",
     "test:system": "bun dist-tools/tools/verify.mjs --suite system",

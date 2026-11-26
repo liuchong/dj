@@ -83,7 +83,7 @@
                         (progn
                           (js-call (expect (nativeGet stored "instance_epoch")) :toBe (nativeGet session "instance_epoch"))
                           (js-call (expect (nativeGet delivery "state")) :toBe "deferred")
-                          (js-call (expect (nativeGet delivery "blocked_reason")) :toBe "instance_stopping")
+                          (js-call (expect (nativeGet delivery "blocked_reason")) :toBe "stale_reference")
                           (js-call (expect (js-length (nativeGet peer "inputs"))) :toBe 0)
                           (js-call (expect (nativeGet (js-call (js-call reader :query "SELECT COUNT(*) AS n FROM attempts") :get) "n")) :toBe 0))))
                     (finally (js-call reader :close)))))

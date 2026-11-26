@@ -18,7 +18,8 @@
                 (if post
                   (progn (js-call sent :push body)
                     (when (= variant "send-response-loss") (throw (new globalThis.Error "native response lost")))
-                    (Response/json (js-object :code 0 :data (js-object :message_id "om_fixture_reply" :chat_id "c1"))))
+                    (Response/json (js-object :code 0 :data (Object/assign (js-object :message_id "om_fixture_reply" :chat_id "c1")
+                      (if (= (nativeGet body "reply_in_thread") t) (js-object :thread_id "t1") (js-object))))))
                   (let* ((page (js-call (nativeGet url "searchParams") :get "page_token"))
                     (message (js-object :message_id "m1" :msg_type "text" :chat_id "c1" :create_time "1767225603000"
                       :body (js-object :content "{\"text\":\"observed text\"}")

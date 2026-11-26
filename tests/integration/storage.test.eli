@@ -3094,9 +3094,10 @@
                 (js-call repository :insert "operations" (js-object :operation_id op-id :principal_id "O"
                   :operation "session.send" :key_hash op-id :request_hash op-id :state "accepted"
                   :created_at "2026-01-01T00:00:00Z" :result_expires_at "2026-01-02T00:00:00Z"))
-                (js-call repository :insert "deliveries" (js-object :delivery_id del-id :route_id rid
+                (js-call repository :insert "deliveries" (Object/assign (js-object :delivery_id del-id :route_id rid
                   :origin "direct" :principal_id "O" :operation_id op-id :delivery_seq seq
-                  :state st :revision 1 :expires_at "2026-01-02T00:00:00Z")))
+                  :state st :revision 1 :expires_at "2026-01-02T00:00:00Z")
+                  (if (js-call (js-array "r5" "r6") :includes rid) (js-object :delivery_policy (js-object :busy "queue")) (js-object)))))
               (setq k (1+ k))))
           (js-object :ok t :data nil))))
         (let* ((route-keyset-sql
