@@ -37,6 +37,7 @@ Kimi Work / Code Web 与 DSH Desktop / Web 的形态、既有实例接收及调�
   2. 在 `0700` 私有配置目录下建立 `0600` token 文件与引用该 token 及同一服务 UDS 的 `0600` 专用 client profile JSON（参考 `config/client.example.json` 结构，使用实际文件路径而非提交进公开仓库）。
   3. 将绑定该原对话的这一行专用 CLI profile 路径记入其私有持久 `session.rules` 并读回：**可由原对话使用自身专用 profile 保存并读回，或由经用户明确授权（例如安装任务）且持有该准确目标 `session.rules.manage` 权限的安装调用方以自身真实主体仅追加保存该 profile 接线说明并读回（完整保留原有 `text` 与 `reply_routes`，只写路径不存 token，不代改其他业务规则）**；私密路径、token 和真实会话绑定绝不入公开 Git 仓库。两类权限保持独立：安装/配置侧的 `session.rules.manage` 权限不授予运行时完结投递资格，运行时 `delivery.complete` 仍严格只能由原接收主体（或服务规定的获准 `operator`）执行。
 - **安全边界与实话原则**：同操作系统 UID 下把专用 profile 与凭据文件设为 `0600`（并放入 `0700` 目录）只阻挡其他 OS 用户访问，并将受限凭据从默认共享 `client.json` 分离以免常规工具误用；**同 UID `0600` 文件本身不对同 UID 下的其他进程提供操作系统级权限隔离**。真正的权限边界来自 DJ 服务侧的凭据认证、`target_constraint` 与 `delivery.working` / `delivery.complete` 主体相等门禁；调用方不得依赖通知原文、自报 `thread_id`、`reply_context_id` 或共享读权限充当身份，缺失专用 profile 或核对失败须立刻停止。
+- **轻量化命名辅助 MCP 代理（可选）**：当原对话希望以独立受限 MCP 入口调用（自带 JSON Schema）而非仅走 CLI 时，除上述专用 CLI 外，也可用 `dj skill config --target codex --client-profile PRIVATE_PROFILE --mcp-url http://127.0.0.1:<port>/mcp --server-name dj_recipient --no-control --tools ...` 生成轻量化命名辅助 MCP 配置：它使用同一受限主体凭据、`--no-control` 不重复启动控制接收端且不写 `caller-context.json`，`--tools` 在代理层过滤 `tools/list` 并拦截白名单外 `tools/call`，服务侧仍完整执行全部主体权限门禁。
 
 | 工具 | MCP 配置位置/结构 | 最小使用方式 |
 |---|---|---|

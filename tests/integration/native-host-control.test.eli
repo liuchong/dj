@@ -1,7 +1,7 @@
 (module dj.tests.integration.native-host-control
   (import "../../src/core/native.eli" nativeGet)
   (import "../../src/connectors/codex.eli" activateCodexControl ensureCodexControl superviseCodexControl)
-  (import "../../src/connectors/codex-mcp.eli" createCodexMcpProxy collectCallerCandidates)
+  (import "../../src/connectors/codex-mcp.eli" createCodexMcpProxy parseProxyArgs collectCallerCandidates)
   (import "../../src/adapters/agent/desktop.eli" createDesktopPort)
   (import "bun:sqlite" Database)
   (import "node:net" createServer)
@@ -545,6 +545,82 @@
           (js-call stdin :end)
           (await (js-call proxy :start))
           (setq proxy nil)
+          (let* ((parsed-args (parseProxyArgs (js-array "node" "mcp.mjs"
+                   "--url" "http://127.0.0.1:53270/mcp"
+                   "--token-file" token-file "--no-control"
+                   "--tools" "dj_agent_whoami,dj_service_status")))
+                 (stdin2 (new PassThrough))
+                 (stdout2 (new PassThrough))
+                 (out-buf2 "")
+                 (replies2 (js-array))
+                 (recv-dir2 (join root "scoped-receivers"))
+                 (proxy2 nil)
+                 (wait-reply2 (async (target-id)
+                   (let ((deadline (+ (performance/now) 3000)) (match nil))
+                     (while (and (< (performance/now) deadline) (not match))
+                       (setq match (js-call replies2 :find (lambda (item) (= (nativeGet item "id") target-id))))
+                       (unless match
+                         (await (new globalThis.Promise (lambda (done) (globalThis.setTimeout done 15))))))
+                     (unless match (throw (new globalThis.Error (str "missing scoped reply for id " target-id))))
+                     match)))
+                 (scoped-fetch (async (url init)
+                   (let* ((body (JSON/parse (nativeGet init "body")))
+                          (method (nativeGet body "method")))
+                     (cond
+                       ((= method "initialize")
+                         (js-object :status 200
+                           :headers (new globalThis.Headers (js-object :content-type "application/json" :mcp-session-id "sid-scoped"))
+                           :text (async () (JSON/stringify (js-object :jsonrpc "2.0" :id (nativeGet body "id")
+                             :result (js-object :protocolVersion "2025-03-26" :capabilities (js-object)))))))
+                       ((= method "notifications/initialized")
+                         (js-object :status 202 :headers (new globalThis.Headers) :text (async () "")))
+                       ((= method "tools/list")
+                         (js-object :status 200
+                           :headers (new globalThis.Headers (js-object :content-type "application/json" :mcp-session-id "sid-scoped"))
+                           :text (async () (JSON/stringify (js-object :jsonrpc "2.0" :id (nativeGet body "id")
+                             :result (js-object :tools (js-array
+                               (js-object :name "dj_service_status")
+                               (js-object :name "dj_message_reply"))))))))
+                       ((= method "tools/call")
+                         (js-object :status 200
+                           :headers (new globalThis.Headers (js-object :content-type "application/json" :mcp-session-id "sid-scoped"))
+                           :text (async () (JSON/stringify (js-object :jsonrpc "2.0" :id (nativeGet body "id")
+                             :result (js-object :content (js-array (js-object :type "text" :text "scoped-ok"))))))))
+                       (t (throw (new globalThis.Error (str "unexpected method " method)))))))))
+            (js-call (expect (nativeGet parsed-args "disable_control")) :toBe t)
+            (js-call (expect (nativeGet parsed-args "skip_caller_save")) :toBe t)
+            (js-call (expect (nativeGet parsed-args "allowed_tools")) :toEqual (js-array "dj_agent_whoami" "dj_service_status"))
+            (js-call stdout2 :on "data" (lambda (chunk)
+              (setq out-buf2 (str out-buf2 (js-call chunk :toString "utf8")))
+              (let ((idx (js-call out-buf2 :indexOf "\n")))
+                (while (>= idx 0)
+                  (let ((line (js-call (js-call out-buf2 :slice 0 idx) :trim)))
+                    (setq out-buf2 (js-call out-buf2 :slice (1+ idx)))
+                    (when (> (js-length line) 0) (js-call replies2 :push (JSON/parse line))))
+                  (setq idx (js-call out-buf2 :indexOf "\n"))))))
+            (setq proxy2 (createCodexMcpProxy (js-object :url "http://127.0.0.1:53270/mcp"
+              :token_file token-file :stdin stdin2 :stdout stdout2
+              :receiver_root recv-dir2 :codex_home codex-home
+              :fetch_fn scoped-fetch :disable_control t :skip_caller_save t
+              :allowed_tools (js-array "dj_agent_whoami" "dj_service_status"))))
+            (try
+              (js-call stdin2 :write (str (JSON/stringify (js-object :jsonrpc "2.0" :id 10 :method "initialize"
+                :params (js-object :protocolVersion "2025-03-26" :capabilities (js-object) :clientInfo (js-object :name "codex" :version "1.0")))) "\n"))
+              (await (funcall wait-reply2 10))
+              (js-call stdin2 :write (str (JSON/stringify (js-object :jsonrpc "2.0" :id 11 :method "tools/list" :params (js-object))) "\n"))
+              (let ((list2 (await (funcall wait-reply2 11))))
+                (js-call (expect (js-length (nativeGet (nativeGet list2 "result") "tools"))) :toBe 1)
+                (js-call (expect (nativeGet (aref (nativeGet (nativeGet list2 "result") "tools") 0) "name")) :toBe "dj_service_status"))
+              (js-call stdin2 :write (str (JSON/stringify (js-object :jsonrpc "2.0" :id 12 :method "tools/call"
+                :params (js-object :name "dj_message_reply" :arguments (js-object)
+                  :_meta (js-object :x-codex-turn-metadata (js-object :thread_id "thread-should-not-save" :turn_id "turn-1"))))) "\n"))
+              (let ((blocked (await (funcall wait-reply2 12))))
+                (js-call (expect (nativeGet (nativeGet blocked "error") "code")) :toBe -32602)
+                (js-call (expect (existsSync (join recv-dir2 "caller-context.json"))) :toBe false))
+              (js-call stdin2 :end)
+              (await (js-call proxy2 :start))
+              (setq proxy2 nil)
+              (finally (when proxy2 (await (js-call proxy2 :close "test_cleanup"))))))
           (finally
             (when proxy (await (js-call proxy :close "test_cleanup")))))))
     (async (root) (await (rm root (js-object :recursive t :force t)))))
